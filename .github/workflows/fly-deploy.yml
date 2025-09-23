@@ -47,7 +47,7 @@ jobs:
       - name: Run database migrations
         run: |
           echo "🔄 Running database migrations..."
-          flyctl ssh console -a ludora-api -C "cd /app && npm run migrate:prod"
+          flyctl ssh console -a ludora-api -C "sh -c 'cd /app && npm run migrate:prod'"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
