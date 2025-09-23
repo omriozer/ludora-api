@@ -1,0 +1,107 @@
+import { DataTypes } from 'sequelize';
+import { baseFields, baseOptions } from './baseModel.js';
+
+export default function(sequelize) {
+  const Course = sequelize.define('Course', {
+    ...baseFields,
+    title: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    short_description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    category: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    price: {
+      type: DataTypes.DECIMAL,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    is_published: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    image_url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    image_is_private: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false,
+    },
+    tags: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    target_audience: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    difficulty_level: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    access_days: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    is_lifetime_access: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false,
+    },
+    // Course-specific fields
+    course_modules: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: [],
+    },
+    total_duration_minutes: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    creator_user_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      references: {
+        model: 'user',
+        key: 'id'
+      }
+    },
+  }, {
+    ...baseOptions,
+    tableName: 'course',
+    indexes: [
+      {
+        fields: ['category'],
+      },
+      {
+        fields: ['is_published'],
+      },
+      {
+        fields: ['creator_user_id'],
+      },
+    ],
+  });
+
+  Course.associate = function(models) {
+    Course.belongsTo(models.User, { 
+      foreignKey: 'creator_user_id', 
+      as: 'creator',
+      targetKey: 'id'
+    });
+    // Note: Purchases will reference this via polymorphic relation
+  };
+
+  return Course;
+}

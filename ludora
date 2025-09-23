@@ -1,0 +1,43 @@
+#!/bin/bash
+# Ludora utilities wrapper for API repository
+
+# Check for help flags
+if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "help" ]; then
+    echo "🎮 Ludora API Management"
+    echo "========================"
+    echo ""
+    echo "Available commands for API repository:"
+    echo ""
+    echo "📦 Deployment:"
+    echo "  deploy-api              Deploy this API server to Fly.io"
+    echo ""
+    echo "🔌 Access:"
+    echo "  ssh-api                 SSH into API server"
+    echo "  connect-db              Connect to PostgreSQL database"
+    echo ""
+    echo "📋 Monitoring:"
+    echo "  logs api                View API server logs"
+    echo "  status                  Check API server status"
+    echo "  health-check            Run comprehensive health check"
+    echo ""
+    echo "🗄️  Database:"
+    echo "  backup-db               Database backup operations"
+    echo ""
+    echo "🔐 Configuration:"
+    echo "  manage-secrets          Manage API environment variables"
+    echo ""
+    echo "Examples:"
+    echo "  ./ludora deploy-api           # Deploy this API"
+    echo "  ./ludora ssh-api              # SSH to API server"
+    echo "  ./ludora logs api             # View API logs"
+    echo "  ./ludora status               # Check all services"
+    echo "  ./ludora health-check --quick # Quick health check"
+    echo ""
+    echo "💡 Tip: You can also use commands from any other repository:"
+    echo "  ./ludora deploy-frontend      # Deploy frontend from here"
+    echo "  ./ludora ssh-frontend         # SSH to frontend server"
+    echo ""
+    exit 0
+fi
+
+exec ../ludora-utils/scripts/ludora.sh "$@"

@@ -1,0 +1,32 @@
+app = "ludora-api"
+primary_region = "ord"
+
+[build]
+
+[env]
+  ENVIRONMENT = "production"
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    timeout = "5s"
+
+[machine]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# File storage handled by AWS S3
