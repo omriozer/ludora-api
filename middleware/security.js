@@ -7,6 +7,11 @@ export function enforceHTTPS(req, res, next) {
     return next();
   }
 
+  // Skip HTTPS enforcement for health checks and internal Fly.io requests
+  if (req.path === '/health' || req.path === '/' || req.headers['fly-client-ip']) {
+    return next();
+  }
+
   // Check if request is already HTTPS
   const isHTTPS = req.secure ||
                   req.headers['x-forwarded-proto'] === 'https' ||
