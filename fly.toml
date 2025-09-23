@@ -6,10 +6,10 @@ primary_region = "ord"
 [env]
   ENVIRONMENT = "production"
   NODE_ENV = "production"
-  PORT = "3000"
+  PORT = "3003"
 
 [http_service]
-  internal_port = 3000
+  internal_port = 3003
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
