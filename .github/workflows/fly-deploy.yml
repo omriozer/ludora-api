@@ -33,6 +33,7 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
+          SKIP_DB_SETUP: true
 
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
