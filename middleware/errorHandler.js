@@ -249,17 +249,16 @@ export function globalErrorHandler(error, req, res, next) {
 // 404 handler for undefined routes
 export function notFoundHandler(req, res) {
   const error = new NotFoundError(`Route ${req.method} ${req.originalUrl} not found`);
+
+  // Log the 404 for monitoring purposes
+  ErrorLogger.log(error, req, 'warn');
+
+  // Never expose available routes - this is a security vulnerability
   res.status(404).json({
     error: {
       message: error.message,
       code: error.code,
-      statusCode: 404,
-      availableRoutes: {
-        auth: ['/api/auth/login', '/api/auth/register', '/api/auth/me'],
-        entities: ['/api/entities/{type}', '/api/entities/{type}/{id}'],
-        functions: ['/api/functions/{functionName}'],
-        integrations: ['/api/integrations/{integration}']
-      }
+      statusCode: 404
     }
   });
 }
@@ -279,8 +278,12 @@ export async function healthCheckErrorHandler(req, res) {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       environment: process.env.ENVIRONMENT || 'development',
-      version: process.env.npm_package_version || '1.0.0',
-      services: {
+      version: process.env.npm_package_version || '1.0.0'
+    };
+
+    // Only expose detailed service status in development
+    if (process.env.ENVIRONMENT === 'development') {
+      health.services = {
         database: 'checking...',
         email: process.env.EMAIL_HOST ? 'configured' : 'not_configured',
         storage: process.env.USE_S3 === 'true' ? 's3' : 'local',
@@ -288,8 +291,13 @@ export async function healthCheckErrorHandler(req, res) {
           openai: process.env.OPENAI_API_KEY ? 'configured' : 'not_configured',
           anthropic: process.env.ANTHROPIC_API_KEY ? 'configured' : 'not_configured'
         }
-      }
-    };
+      };
+    } else {
+      // In production, only expose minimal service status
+      health.services = {
+        database: 'checking...'
+      };
+    }
 
     // Check database connection
     try {
