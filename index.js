@@ -166,6 +166,7 @@ const server = app.listen(PORT, () => {
   console.log(`🚀 Ludora API Server running on port ${PORT}`);
   console.log(`📁 Environment: ${env}`);
   console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+  console.log(`✅ Server successfully started with updated environment variables`);
 });
 
 // Ensure the server stays alive
