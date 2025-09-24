@@ -107,19 +107,41 @@ drop_database() {
     fi
 }
 
-# Function to setup tables using Node.js script
+# Function to setup tables using direct schema creation
 setup_tables() {
-    echo "📋 Setting up database tables..."
-    
-    # Check if Node.js script exists
-    if [ ! -f "scripts/setup-db.js" ]; then
-        echo "❌ setup-db.js not found in scripts/ directory"
+    echo "📋 Setting up database tables with direct schema creation..."
+
+    # Check if schema creation script exists
+    if [ ! -f "scripts/create-schema.sql" ]; then
+        echo "❌ scripts/create-schema.sql not found"
         exit 1
     fi
-    
-    # Run the Node.js setup script
-    node scripts/setup-db.js $ENVIRONMENT
-    
+
+    # Create complete schema directly
+    echo "🏗️  Creating database schema..."
+    PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f scripts/create-schema.sql
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Schema creation completed successfully"
+    else
+        echo "❌ Schema creation failed"
+        exit 1
+    fi
+
+    # Run seeders if they exist
+    if [ -d "seeders" ] && [ "$(ls -A seeders 2>/dev/null)" ]; then
+        echo "🌱 Running database seeders..."
+        if [ "$ENVIRONMENT" = "production" ]; then
+            ENVIRONMENT=production npx sequelize-cli db:seed:all
+        elif [ "$ENVIRONMENT" = "staging" ]; then
+            ENVIRONMENT=staging npx sequelize-cli db:seed:all
+        else
+            npx sequelize-cli db:seed:all
+        fi
+    else
+        echo "ℹ️  No seeders found, skipping seeding step"
+    fi
+
     echo "✅ Tables setup completed"
 }
 
