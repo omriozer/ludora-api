@@ -311,7 +311,7 @@ CREATE TABLE "file" (
     "difficulty_level" VARCHAR(255),
     "access_days" INTEGER,
     "is_lifetime_access" BOOLEAN DEFAULT false,
-    "file_url" VARCHAR(255) NOT NULL,
+    "file_url" VARCHAR(255),
     "file_is_private" BOOLEAN DEFAULT true,
     "preview_file_url" VARCHAR(255),
     "preview_file_is_private" BOOLEAN DEFAULT false,

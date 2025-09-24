@@ -63,7 +63,7 @@ export default function(sequelize) {
     // File-specific fields
     file_url: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
     },
     file_is_private: {
       type: DataTypes.BOOLEAN,
