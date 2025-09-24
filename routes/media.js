@@ -526,8 +526,8 @@ router.post('/file/upload', authenticateToken, s3Upload.single('file'), async (r
       });
     }
 
-    // Initialize FileService
-    const fileService = new FileService();
+    // Use FileService instance (it's already instantiated)
+    const fileService = FileService;
 
     // Get environment for folder structure
     const environment = process.env.ENVIRONMENT || 'development';
