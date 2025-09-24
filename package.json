@@ -54,12 +54,7 @@
     "maintenance:health": "curl -s http://localhost:3003/health | jq .",
     "maintenance:status": "npm run pm2:status && echo '\n--- Log Sizes ---' && npm run logs:size",
     "maintenance:cleanup": "npm run logs:backup && npm run logs:clean && pm2 flush && echo 'Maintenance cleanup completed'",
-    "migrate": "npx sequelize-cli db:migrate",
-    "migrate:staging": "ENVIRONMENT=staging npx sequelize-cli db:migrate",
-    "migrate:prod": "ENVIRONMENT=production npx sequelize-cli db:migrate",
-    "migrate:undo": "npx sequelize-cli db:migrate:undo",
-    "migrate:undo:staging": "ENVIRONMENT=staging npx sequelize-cli db:migrate:undo",
-    "migrate:status": "npx sequelize-cli db:migrate:status",
+    "schema:check": "echo 'Use db:test to verify database schema'",
     "db:create": "npx sequelize-cli db:create",
     "db:drop": "npx sequelize-cli db:drop"
   },

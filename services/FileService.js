@@ -83,7 +83,7 @@ class FileService {
 
         const fullPath = path.join(localPath, fileName);
         fs.writeFileSync(fullPath, file.buffer);
-        
+
         url = `/uploads/${filePath}`;
         size = file.buffer.length;
       }
@@ -114,6 +114,75 @@ class FileService {
       };
     } catch (error) {
       console.error('Error uploading file:', error);
+      throw error;
+    }
+  }
+
+  // Upload file with custom path (for file entities)
+  async uploadFileEntity({ file, s3Path, preserveOriginalName = true }) {
+    try {
+      // Validate file
+      this.validateFile(file);
+
+      // Use original filename or generate new one
+      const fileName = preserveOriginalName ? file.originalname : `${generateId()}.${this.getFileExtension(file.originalname)}`;
+      const fullS3Key = `${s3Path}/${fileName}`;
+
+      let url, size;
+
+      if (this.useS3 && this.s3) {
+        // Upload to S3
+        const uploadParams = {
+          Bucket: this.bucketName,
+          Key: fullS3Key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          // Ensure private access
+          ACL: undefined
+        };
+
+        const result = await this.s3.upload(uploadParams).promise();
+        url = result.Location;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            url,
+            key: fullS3Key,
+            fileName,
+            mimeType: file.mimetype,
+            size,
+            uploadedAt: new Date().toISOString()
+          }
+        };
+      } else {
+        // Local storage fallback
+        const localPath = path.join(this.localStoragePath, s3Path);
+        if (!fs.existsSync(localPath)) {
+          fs.mkdirSync(localPath, { recursive: true });
+        }
+
+        const fullPath = path.join(localPath, fileName);
+        fs.writeFileSync(fullPath, file.buffer);
+
+        url = `/uploads/${s3Path}/${fileName}`;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            url,
+            key: `${s3Path}/${fileName}`,
+            fileName,
+            mimeType: file.mimetype,
+            size,
+            uploadedAt: new Date().toISOString()
+          }
+        };
+      }
+    } catch (error) {
+      console.error('Error uploading file entity:', error);
       throw error;
     }
   }

@@ -302,22 +302,46 @@ router.post('/cleanupStaticTexts', authenticateToken, async (req, res) => {
 router.post('/deleteFile', authenticateToken, async (req, res) => {
   try {
     const { fileId, filePath, entityType } = req.body;
-    
+
     if (fileId && entityType) {
-      // Delete from database using EntityService
+      // Delete File entity from database (includes automatic S3 cleanup via EntityService)
       const result = await EntityService.delete(entityType, fileId);
       res.json({
         success: true,
-        message: 'File record deleted successfully',
+        message: `${entityType} record and associated files deleted successfully`,
         data: result
       });
     } else if (filePath) {
-      // For actual file system deletion, implement later with cloud storage
-      res.json({
-        success: true,
-        message: 'File path deletion queued (implement with cloud storage)',
-        data: { filePath, queued: true }
-      });
+      // Direct file path deletion from S3
+      try {
+        const { deleteFileFromStorage } = await import('./media.js');
+
+        // Extract file entity ID and user ID from the file path if possible
+        // Expected format: environment/userId/fileEntityId/filename
+        const pathParts = filePath.split('/');
+        if (pathParts.length >= 3) {
+          const userId = pathParts[1];
+          const fileEntityId = pathParts[2];
+
+          const deleted = await deleteFileFromStorage(fileEntityId, userId);
+
+          res.json({
+            success: deleted,
+            message: deleted ? 'File deleted from storage successfully' : 'File not found in storage',
+            data: { filePath, deleted }
+          });
+        } else {
+          res.status(400).json({
+            error: 'Invalid file path format. Expected: environment/userId/fileEntityId/filename'
+          });
+        }
+      } catch (error) {
+        console.error('Error deleting file from storage:', error);
+        res.status(500).json({
+          error: 'Failed to delete file from storage',
+          details: error.message
+        });
+      }
     } else {
       res.status(400).json({ error: 'Either fileId with entityType or filePath is required' });
     }

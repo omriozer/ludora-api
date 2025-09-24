@@ -4,6 +4,7 @@ import path from 'path';
 import multer from 'multer';
 import { authenticateToken } from '../middleware/auth.js';
 import AuthService from '../services/AuthService.js';
+import FileService from '../services/FileService.js';
 import models from '../models/index.js';
 
 const router = express.Router();
@@ -431,10 +432,47 @@ const fileUpload = multer({
   }
 });
 
-// File upload endpoint for File entities
-router.post('/file/upload', authenticateToken, fileUpload.single('file'), async (req, res) => {
+// S3-based file upload configuration
+const s3Upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 500 * 1024 * 1024 // 500MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow PDF, Word, Excel, PowerPoint, images, and other common file types
+    const allowedMimes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'application/zip',
+      'application/x-zip-compressed',
+      'text/plain',
+      'video/mp4',
+      'video/quicktime',
+      'video/x-msvideo'
+    ];
+
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type not allowed. Allowed types: ${allowedMimes.join(', ')}`), false);
+    }
+  }
+});
+
+// File upload endpoint for File entities using S3
+router.post('/file/upload', authenticateToken, s3Upload.single('file'), async (req, res) => {
   try {
-    const { fileEntityId } = req.body;
+    const { fileEntityId, uploadAsSystem } = req.body;
     const user = req.user;
 
     if (!req.file) {
@@ -455,8 +493,6 @@ router.post('/file/upload', authenticateToken, fileUpload.single('file'), async 
     const fileEntity = await models.File.findByPk(fileEntityId);
 
     if (!fileEntity) {
-      // Clean up uploaded file since entity doesn't exist
-      fs.unlinkSync(req.file.path);
       return res.status(404).json({
         error: 'File entity not found',
         message: `No File entity found with ID ${fileEntityId}`
@@ -464,14 +500,47 @@ router.post('/file/upload', authenticateToken, fileUpload.single('file'), async 
     }
 
     // Check if user is the creator or admin
-    if (fileEntity.creator_user_id !== user.id && !user.is_admin) {
-      // Clean up uploaded file since user doesn't have permission
-      fs.unlinkSync(req.file.path);
+    const isAdmin = user.role === 'admin';
+    const isCreator = fileEntity.creator_user_id === user.id;
+
+    if (!isCreator && !isAdmin) {
       return res.status(403).json({
         error: 'Access denied',
         message: 'You can only upload files for File entities you created'
       });
     }
+
+    // Determine if this should be uploaded as system asset or content creator asset
+    let uploaderUserId = user.id;
+    let uploaderType = 'content_creator';
+
+    if (isAdmin && uploadAsSystem === 'true') {
+      uploaderUserId = 'system';
+      uploaderType = 'system';
+
+      // Update the File entity to be created by Ludora (system)
+      await fileEntity.update({
+        creator_user_id: 'system',
+        created_by: 'Ludora',
+        created_by_id: 'system'
+      });
+    }
+
+    // Initialize FileService
+    const fileService = new FileService();
+
+    // Get environment for folder structure
+    const environment = process.env.ENVIRONMENT || 'development';
+
+    // Create S3 folder structure: environment/uploaderUserId/fileEntityId/
+    const s3Folder = `${environment}/${uploaderUserId}/${fileEntityId}`;
+
+    // Upload file to S3 with custom path structure
+    const uploadResult = await fileService.uploadFileEntity({
+      file: req.file,
+      s3Path: s3Folder,
+      preserveOriginalName: true
+    });
 
     // Determine file type based on mime type
     let fileType = 'other';
@@ -481,38 +550,43 @@ router.post('/file/upload', authenticateToken, fileUpload.single('file'), async 
     else if (req.file.mimetype.includes('excel') || req.file.mimetype.includes('sheet')) fileType = 'xlsx';
     else if (req.file.mimetype.startsWith('image/')) fileType = 'image';
     else if (req.file.mimetype.includes('zip')) fileType = 'zip';
+    else if (req.file.mimetype.startsWith('video/')) fileType = 'video';
+    else if (req.file.mimetype === 'text/plain') fileType = 'text';
 
-    // Update the File entity to mark it has a local file and set file type
+    // Update the File entity with S3 information
     await fileEntity.update({
       file_type: fileType,
-      file_is_private: true, // Local files are always private
-      file_url: null // Clear any previous URL since we're now using local storage
+      file_is_private: true, // S3 files are private, accessed through signed URLs
+      file_url: uploadResult.data.url // Store S3 URL
     });
 
     // Log the upload
-    console.log(`File uploaded: ${req.file.filename} for entity ${fileEntityId} by user ${user.id}`);
+    console.log(`File uploaded to S3: ${req.file.originalname} for entity ${fileEntityId} by ${uploaderType} ${user.id}`, {
+      s3Key: uploadResult.data.key || `${s3Folder}/${req.file.originalname}`,
+      fileType,
+      uploaderType,
+      environment
+    });
 
     res.json({
       success: true,
-      fileEntityId: fileEntityId,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      fileType: fileType,
-      uploadPath: req.file.path,
-      downloadUrl: `/api/media/file/download/${fileEntityId}`,
-      uploadedBy: user.id,
-      uploadedAt: new Date().toISOString(),
-      message: 'File uploaded successfully'
+      data: {
+        fileEntityId: fileEntityId,
+        filename: req.file.originalname,
+        size: req.file.size,
+        fileType: fileType,
+        s3Url: uploadResult.data.url,
+        s3Key: uploadResult.data.key || `${s3Folder}/${req.file.originalname}`,
+        uploadedBy: uploaderUserId,
+        uploaderType: uploaderType,
+        uploadedAt: new Date().toISOString(),
+        downloadUrl: `/api/media/file/download/${fileEntityId}`
+      },
+      message: `File uploaded successfully to ${environment} environment as ${uploaderType} asset`
     });
 
   } catch (error) {
     console.error('File upload error:', error);
-
-    // Clean up uploaded file on error
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
 
     res.status(500).json({
       error: 'Upload failed',
@@ -681,12 +755,16 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
 // File deletion helper function (to be called when File entity is deleted)
 export const deleteFileFromStorage = async (fileEntityId, creatorUserId) => {
   try {
+    let localDeleted = false;
+    let s3Deleted = false;
+
+    // Delete from local storage (if exists)
     const fileDir = path.join(FILES_STORAGE_DIR, creatorUserId, fileEntityId);
 
     if (fs.existsSync(fileDir)) {
       // Remove the entire directory for this file entity
       fs.rmSync(fileDir, { recursive: true, force: true });
-      console.log(`🗑️  File directory deleted: ${fileDir}`);
+      console.log(`🗑️  Local file directory deleted: ${fileDir}`);
 
       // Clean up empty parent directory if it exists
       const userDir = path.join(FILES_STORAGE_DIR, creatorUserId);
@@ -695,10 +773,77 @@ export const deleteFileFromStorage = async (fileEntityId, creatorUserId) => {
         console.log(`🗑️  Empty user directory deleted: ${userDir}`);
       }
 
-      return true;
+      localDeleted = true;
     }
 
-    return false; // File directory didn't exist
+    // Delete from S3 (if S3 is enabled)
+    if (process.env.USE_S3 === 'true') {
+      try {
+        const AWS = (await import('aws-sdk')).default;
+
+        // Configure AWS S3
+        AWS.config.update({
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+          region: process.env.AWS_REGION || 'us-east-1'
+        });
+
+        const s3 = new AWS.S3();
+        const bucketName = process.env.AWS_S3_BUCKET;
+        const environment = process.env.ENVIRONMENT || 'development';
+
+        // Delete files for both content creator and system folders
+        const s3Folders = [
+          `${environment}/${creatorUserId}/${fileEntityId}/`,
+          `${environment}/system/${fileEntityId}/`
+        ];
+
+        let deletedFromS3 = false;
+
+        for (const folderPrefix of s3Folders) {
+          // List all objects in the folder
+          const listParams = {
+            Bucket: bucketName,
+            Prefix: folderPrefix
+          };
+
+          const listedObjects = await s3.listObjectsV2(listParams).promise();
+
+          if (listedObjects.Contents && listedObjects.Contents.length > 0) {
+            // Delete all objects in the folder
+            const deleteParams = {
+              Bucket: bucketName,
+              Delete: {
+                Objects: listedObjects.Contents.map(obj => ({ Key: obj.Key }))
+              }
+            };
+
+            const deleteResult = await s3.deleteObjects(deleteParams).promise();
+            console.log(`🗑️  S3 files deleted from ${folderPrefix}:`, deleteResult.Deleted?.length || 0);
+            deletedFromS3 = true;
+          }
+        }
+
+        s3Deleted = deletedFromS3;
+
+        if (deletedFromS3) {
+          console.log(`✅ S3 cleanup completed for file entity ${fileEntityId}`);
+        } else {
+          console.log(`ℹ️  No S3 files found for file entity ${fileEntityId}`);
+        }
+
+      } catch (s3Error) {
+        console.error(`❌ S3 deletion failed for entity ${fileEntityId}:`, s3Error);
+        // Don't fail the entire operation if S3 deletion fails
+      }
+    }
+
+    // Return true if either local or S3 deletion was successful
+    const success = localDeleted || s3Deleted;
+    console.log(`🗑️  File deletion summary for ${fileEntityId}: Local=${localDeleted}, S3=${s3Deleted}, Success=${success}`);
+
+    return success;
+
   } catch (error) {
     console.error(`Failed to delete file storage for entity ${fileEntityId}:`, error);
     return false;

@@ -44,10 +44,10 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      - name: Run database migrations
+      - name: Setup database schema
         run: |
-          echo "🔄 Running database migrations..."
-          flyctl ssh console -a ludora-api -C "sh -c 'cd /app && npm run migrate:prod'"
+          echo "🔄 Setting up database schema..."
+          flyctl ssh console -a ludora-api -C "sh -c 'cd /app && npm run db:setup:prod'"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 

@@ -24,7 +24,7 @@ fi
 
 if [ -f "$ENV_FILE" ]; then
     echo "📁 Loading environment from: $ENV_FILE"
-    export $(grep -v '^#' $ENV_FILE | xargs)
+    export $(grep -v '^#' $ENV_FILE | grep -v '^$' | sed 's/#.*$//' | xargs)
 else
     echo "⚠️  Environment file $ENV_FILE not found, using defaults"
 fi
