@@ -162,12 +162,28 @@ app.use(globalErrorHandler);
 
 const PORT = process.env.PORT || 3003;
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Ludora API Server running on port ${PORT}`);
-  console.log(`📁 Environment: ${env}`);
-  console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-  console.log(`✅ Server successfully started with updated environment variables`);
-});
+// Initialize database before starting server
+async function startServer() {
+  try {
+    // Initialize database schema and seeders
+    const DatabaseInitService = await import('./services/DatabaseInitService.js');
+    await DatabaseInitService.default.initialize();
+
+    const server = app.listen(PORT, () => {
+      console.log(`🚀 Ludora API Server running on port ${PORT}`);
+      console.log(`📁 Environment: ${env}`);
+      console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+      console.log(`✅ Server successfully started with updated environment variables`);
+    });
+
+    return server;
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+const server = await startServer();
 
 // Ensure the server stays alive
 server.on('error', (err) => {

@@ -44,16 +44,10 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      - name: Setup database schema
-        run: |
-          echo "🔄 Setting up database schema..."
-          flyctl ssh console -a ludora-api -C "sh -c 'cd /app && npm run db:setup:prod'"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
       - name: Health check
         run: |
           echo "Waiting for deployment to be ready..."
-          sleep 30
+          sleep 60
           curl -f https://ludora-api.fly.dev/health || exit 1
           echo "✅ API deployment successful and healthy!"
+          echo "ℹ️  Database initialization handled automatically on application startup"
