@@ -1,15 +1,24 @@
 // Ludora API Server - Enhanced Security Version
-import express from 'express';
 import dotenv from 'dotenv';
 
-// Load environment-specific .env file first
+// Load environment-specific .env file FIRST before any other imports
 const env = process.env.ENVIRONMENT || 'development';
-const envFile = env === 'production' ? '.env' : `${env}.env`;
-dotenv.config({ path: envFile });
+const envFile = env === 'production' ? '.env' : `.env.${env}`;
+console.log(`🔧 Loading environment from: ${envFile}`);
+const result = dotenv.config({ path: envFile });
+if (result.error) {
+  console.error(`❌ Failed to load ${envFile}:`, result.error);
+} else {
+  console.log(`✅ Successfully loaded ${envFile}`);
+  console.log(`🔑 JWT_SECRET found: ${process.env.JWT_SECRET ? 'YES' : 'NO'}`);
+}
+
+// Now import other modules after environment is loaded
+import express from 'express';
 
 // Initialize secrets service (validates critical secrets)
 import SecretsService from './services/SecretsService.js';
-SecretsService.validateSecrets();
+// Don't call validateSecrets here - SecretsService constructor already validates
 
 // Initialize Firebase (this must come before importing routes that use it)
 import './config/firebase.js';
