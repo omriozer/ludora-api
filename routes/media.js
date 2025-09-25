@@ -4,6 +4,8 @@ import path from 'path';
 import multer from 'multer';
 import { authenticateToken } from '../middleware/auth.js';
 import AuthService from '../services/AuthService.js';
+
+const authService = new AuthService();
 import FileService from '../services/FileService.js';
 import models from '../models/index.js';
 
@@ -27,7 +29,7 @@ const authenticateTokenOrQuery = async (req, res, next) => {
 
 
     // Use AuthService to verify the token
-    const tokenData = await AuthService.verifyToken(token);
+    const tokenData = await authService.verifyToken(token);
     req.user = tokenData;
     next();
 

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "start:dev": "ENVIRONMENT=development node index.js",
+    "dev:prod": "bash -c 'echo \"🔗 Starting database proxy to PRODUCTION...\"; flyctl proxy 5433:5432 -a ludora-db & PROXY_PID=$!; echo \"⏳ Waiting for proxy...\"; sleep 3; echo \"🚀 Starting API server with PROD DB...\"; trap \"echo \\\"🛑 Stopping proxy...\\\"; kill $PROXY_PID 2>/dev/null\" EXIT; DB_HOST=localhost DB_PORT=5433 DB_NAME=postgres DB_USER=postgres DB_PASSWORD=2SpoAsK11AJAhhE ENVIRONMENT=development node index.js'",
     "start:staging": "ENVIRONMENT=staging node index.js",
     "start:prod": "ENVIRONMENT=production node index.js",
     "dev": "ENVIRONMENT=development nodemon index.js",

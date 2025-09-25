@@ -1,4 +1,6 @@
-import AuthService from '../services/AuthService.js';
+import AuthService from '../services/authService.js';
+
+const authService = new AuthService();
 
 // Middleware to verify tokens
 export async function authenticateToken(req, res, next) {
@@ -10,7 +12,7 @@ export async function authenticateToken(req, res, next) {
       return res.status(401).json({ error: 'Access token required' });
     }
 
-    const tokenData = await AuthService.verifyToken(token);
+    const tokenData = await authService.verifyToken(token);
     req.user = tokenData;
     next();
   } catch (error) {
@@ -27,7 +29,7 @@ export async function optionalAuth(req, res, next) {
     
     if (token) {
       try {
-        const tokenData = await AuthService.verifyToken(token);
+        const tokenData = await authService.verifyToken(token);
         req.user = tokenData;
       } catch (error) {
         // Continue without authentication if token is invalid
@@ -51,9 +53,9 @@ export function requireRole(requiredRole = 'user') {
       }
 
       // Get user from database for fresh role information
-      const user = req.user.user || await AuthService.getUserByToken(req.headers['authorization']?.split(' ')[1]);
+      const user = req.user.user || await authService.getUserByToken(req.headers['authorization']?.split(' ')[1]);
       
-      AuthService.validatePermissions(user, requiredRole);
+      authService.validatePermissions(user, requiredRole);
       req.userRecord = user; // Attach full user record
       next();
     } catch (error) {
@@ -78,7 +80,7 @@ export function requireUserType(requiredUserType) {
       }
 
       // Get user from database for fresh user_type information
-      const user = req.user.user || await AuthService.getUserByToken(req.headers['authorization']?.split(' ')[1]);
+      const user = req.user.user || await authService.getUserByToken(req.headers['authorization']?.split(' ')[1]);
       
       if (!user.user_type || user.user_type !== requiredUserType) {
         return res.status(403).json({ error: `${requiredUserType} user type required` });

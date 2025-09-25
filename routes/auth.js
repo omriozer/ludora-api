@@ -2,7 +2,9 @@ import express from 'express';
 import { admin } from '../config/firebase.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
-import AuthService from '../services/AuthService.js';
+import AuthService from '../services/authService.js';
+
+const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
 
 const router = express.Router();
@@ -10,7 +12,7 @@ const router = express.Router();
 // Login endpoint with validation and rate limiting
 router.post('/login', rateLimiters.auth, validateBody(schemas.login), async (req, res) => {
   try {
-    const result = await AuthService.loginWithEmailPassword(req.body);
+    const result = await authService.loginWithEmailPassword(req.body);
     res.json(result);
   } catch (error) {
     console.error('Login error:', error);
@@ -21,7 +23,7 @@ router.post('/login', rateLimiters.auth, validateBody(schemas.login), async (req
 // Register endpoint
 router.post('/register', rateLimiters.auth, validateBody(schemas.register), async (req, res) => {
   try {
-    const result = await AuthService.registerUser(req.body);
+    const result = await authService.registerUser(req.body);
     
     // Send welcome email
     try {
@@ -57,7 +59,7 @@ router.post('/logout', (req, res) => {
 // Get current user info
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await AuthService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
+    const user = await authService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
     
     // Return clean user data - all from database, no confusing customClaims
     res.json({
@@ -90,7 +92,7 @@ router.get('/me', authenticateToken, async (req, res) => {
 // Update current user profile
 router.put('/update-profile', authenticateToken, async (req, res) => {
   try {
-    const user = await AuthService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
+    const user = await authService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
     const { full_name, phone, education_level, content_creator_agreement_sign_date } = req.body;
     
     // Only allow updating specific fields
@@ -156,12 +158,12 @@ router.post('/custom-token', async (req, res) => {
     }
 
     // Fallback to JWT token
-    const user = await AuthService.getUserByToken(uid);
+    const user = await authService.getUserByToken(uid);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const customToken = AuthService.createJWTToken({
+    const customToken = authService.createJWTToken({
       uid: user.id,
       email: user.email,
       role: user.role,
@@ -185,7 +187,7 @@ router.post('/set-claims', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'UID is required' });
     }
 
-    const result = await AuthService.setCustomClaims({
+    const result = await authService.setCustomClaims({
       adminUserId: req.user.uid,
       targetUserId: uid,
       claims
@@ -207,10 +209,10 @@ router.post('/verify', async (req, res) => {
       return res.status(400).json({ error: 'ID token is required' });
     }
 
-    const tokenData = await AuthService.verifyToken(idToken);
+    const tokenData = await authService.verifyToken(idToken);
     
     // Create our own JWT token for the verified user
-    const jwtToken = AuthService.createJWTToken({
+    const jwtToken = authService.createJWTToken({
       uid: tokenData.uid,
       email: tokenData.email,
       role: tokenData.role,
@@ -240,7 +242,7 @@ router.post('/verify', async (req, res) => {
 // Forgot password endpoint
 router.post('/forgot-password', rateLimiters.auth, validateBody(schemas.passwordReset), async (req, res) => {
   try {
-    const result = await AuthService.generatePasswordResetToken(req.body.email);
+    const result = await authService.generatePasswordResetToken(req.body.email);
     
     // Send password reset email
     try {
@@ -266,7 +268,7 @@ router.post('/forgot-password', rateLimiters.auth, validateBody(schemas.password
 // Reset password endpoint
 router.post('/reset-password', rateLimiters.auth, validateBody(schemas.newPassword), async (req, res) => {
   try {
-    const result = await AuthService.resetPassword(req.body);
+    const result = await authService.resetPassword(req.body);
     res.json(result);
   } catch (error) {
     console.error('Password reset error:', error);
