@@ -2,7 +2,7 @@ import express from 'express';
 import { admin } from '../config/firebase.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
-import AuthService from '../services/authService.js';
+import AuthService from '../services/AuthService.js';
 
 const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
