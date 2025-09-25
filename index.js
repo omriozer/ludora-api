@@ -18,7 +18,7 @@ import express from 'express';
 
 // Initialize secrets service (validates critical secrets)
 import SecretsService from './services/SecretsService.js';
-// Don't call validateSecrets here - SecretsService constructor already validates
+const secretsService = new SecretsService();
 
 // Initialize Firebase (this must come before importing routes that use it)
 import './config/firebase.js';

@@ -5,11 +5,12 @@ import SecretsService from '../services/SecretsService.js';
 try {
   // Load environment-specific .env file
   const env = process.env.ENVIRONMENT || 'development';
-  const envFile = env === 'production' ? '.env' : `${env}.env`;
+  const envFile = env === 'production' ? '.env' : `.env.${env}`;
   dotenv.config({ path: envFile });
 
   // Get Firebase service account from secrets service (environment variable)
-  const serviceAccount = SecretsService.getFirebaseServiceAccount();
+  const secretsService = new SecretsService();
+  const serviceAccount = secretsService.getFirebaseServiceAccount();
 
   if (!serviceAccount) {
     console.warn('⚠️ Firebase service account not configured - Firebase features will be disabled');

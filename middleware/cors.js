@@ -79,10 +79,13 @@ class CORSConfig {
         'Origin',
         'X-Requested-With',
         'Content-Type',
+        'content-type',
         'Accept',
         'Authorization',
         'X-API-Key',
-        'X-Request-ID'
+        'X-Request-ID',
+        'Cache-Control',
+        'Pragma'
       ],
       exposedHeaders: [
         'X-Request-ID',
@@ -149,8 +152,27 @@ class CORSConfig {
       credentials: true,
       optionsSuccessStatus: 200,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-      allowedHeaders: '*',
-      exposedHeaders: '*'
+      allowedHeaders: [
+        'Origin',
+        'X-Requested-With',
+        'Content-Type',
+        'content-type',
+        'Accept',
+        'Authorization',
+        'X-API-Key',
+        'X-Request-ID',
+        'Cache-Control',
+        'Pragma',
+        'X-Custom-Header',
+        '*'
+      ],
+      exposedHeaders: [
+        'X-Request-ID',
+        'X-Total-Count',
+        'X-Rate-Limit-Remaining',
+        'X-Rate-Limit-Reset',
+        '*'
+      ]
     });
   }
 
@@ -179,15 +201,18 @@ class CORSConfig {
     return (req, res, next) => {
       // Development override
       if (devCors && process.env.CORS_DEV_OVERRIDE === 'true') {
+        console.log('🔧 CORS: Using DEVELOPMENT CORS for', req.method, req.path, 'from origin:', req.headers.origin);
         return devCors(req, res, next);
       }
 
       // Webhook routes
       if (req.path.startsWith('/api/webhooks/') || req.path.includes('/webhook')) {
+        console.log('🔧 CORS: Using WEBHOOK CORS for', req.method, req.path, 'from origin:', req.headers.origin);
         return webhookCors(req, res, next);
       }
 
       // Default to main CORS
+      console.log('🔧 CORS: Using MAIN CORS for', req.method, req.path, 'from origin:', req.headers.origin);
       return mainCors(req, res, next);
     };
   }

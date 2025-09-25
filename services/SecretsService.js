@@ -244,4 +244,4 @@ class SecretsService {
   }
 }
 
-export default new SecretsService();
+export default SecretsService;
