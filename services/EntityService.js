@@ -579,11 +579,25 @@ class EntityService {
         updated_at: new Date()
       };
 
-      // Remove Product-specific fields from entity data
-      const productOnlyFields = ['title', 'description', 'category', 'product_type', 'price',
-                                'is_published', 'image_url', 'youtube_video_id', 'youtube_video_title',
-                                'tags', 'target_audience', 'access_days', 'is_sample'];
+      // Remove fields that are definitely Product-only and don't belong in entity tables
+      const productOnlyFields = ['product_type', 'is_sample'];
       productOnlyFields.forEach(field => delete entityFields[field]);
+
+      // For specific entity types, remove fields that they don't have in their schema
+      if (entityType === 'workshop') {
+        // Workshop doesn't have title, it uses workshop-specific fields
+        delete entityFields.title;
+      } else if (entityType === 'course') {
+        // Course doesn't have title in the same way
+        delete entityFields.title;
+      } else if (entityType === 'tool') {
+        // Tool doesn't have title field
+        delete entityFields.title;
+      } else if (entityType === 'game') {
+        // Game doesn't have title field
+        delete entityFields.title;
+      }
+      // File keeps title, description, and other shared fields since File model has them
 
       // Create the type-specific entity first
       const entity = await EntityModel.create(entityFields, { transaction });
