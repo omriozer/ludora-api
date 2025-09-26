@@ -47,10 +47,6 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: true,
     },
-    difficulty_level: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
     access_days: {
       type: DataTypes.INTEGER,
       allowNull: true,

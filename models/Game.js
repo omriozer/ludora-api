@@ -110,13 +110,6 @@ export default function(sequelize) {
         }
       }
     },
-    difficulty_level: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      validate: {
-        isIn: [['beginner', 'intermediate', 'advanced']]
-      }
-    },
     estimated_duration: {
       type: DataTypes.INTEGER,
       allowNull: true,

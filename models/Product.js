@@ -55,9 +55,6 @@ export default (sequelize) => {
     target_audience: {
       type: DataTypes.STRING
     },
-    difficulty_level: {
-      type: DataTypes.STRING
-    },
     access_days: {
       type: DataTypes.DECIMAL
     },

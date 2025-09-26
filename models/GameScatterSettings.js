@@ -45,14 +45,6 @@ export default function(sequelize) {
         max: 50
       }
     },
-    difficulty_level: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      defaultValue: 'medium',
-      validate: {
-        isIn: [['easy', 'medium', 'hard']]
-      }
-    },
     time_limit_seconds: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -87,9 +79,6 @@ export default function(sequelize) {
       {
         fields: ['game_id'],
         unique: true
-      },
-      {
-        fields: ['difficulty_level']
       },
       {
         fields: ['board_size']

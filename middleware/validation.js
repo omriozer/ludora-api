@@ -229,7 +229,6 @@ export const schemas = {
     image_is_private: Joi.boolean().default(false),
     tags: Joi.array().items(Joi.string()).default([]),
     target_audience: Joi.string().allow(null, ''),
-    difficulty_level: Joi.string().allow(null, ''),
     access_days: Joi.number().integer().min(0).allow(null),
     is_lifetime_access: Joi.boolean().default(false),
     
@@ -296,7 +295,6 @@ export const schemas = {
     image_is_private: Joi.boolean(),
     tags: Joi.array().items(Joi.string()),
     target_audience: Joi.string().allow(null, ''),
-    difficulty_level: Joi.string().allow(null, ''),
     access_days: Joi.number().integer().min(0).allow(null),
     is_lifetime_access: Joi.boolean(),
     workshop_type: Joi.string().valid('recorded', 'online_live'),
