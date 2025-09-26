@@ -59,6 +59,7 @@ import gameContentTemplatesRoutes from './routes/gameContentTemplates.js';
 import gameContentUsageRoutes from './routes/gameContentUsage.js';
 import logsRoutes from './routes/logs.js';
 import webhookRoutes from './routes/webhooks.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 
@@ -122,6 +123,7 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/game-content-templates', gameContentTemplatesRoutes);
 app.use('/api/games', gameContentUsageRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
