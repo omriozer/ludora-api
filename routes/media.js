@@ -8,6 +8,7 @@ import AuthService from '../services/AuthService.js';
 const authService = new AuthService();
 import FileService from '../services/FileService.js';
 import models from '../models/index.js';
+import { MEDIA_ENABLED_PRODUCT_TYPES } from '../constants/productTypes.js';
 
 const router = express.Router();
 
@@ -58,7 +59,7 @@ router.get('/video/:entityType/:entityId', authenticateTokenOrQuery, async (req,
     const user = req.user;
 
     // Validate entity type
-    const validTypes = ['workshop', 'course', 'file', 'tool'];
+    const validTypes = MEDIA_ENABLED_PRODUCT_TYPES;
     if (!validTypes.includes(entityType)) {
       return res.status(400).json({ error: 'Invalid entity type' });
     }

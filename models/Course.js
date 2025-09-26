@@ -91,12 +91,13 @@ export default function(sequelize) {
   });
 
   Course.associate = function(models) {
-    Course.belongsTo(models.User, { 
-      foreignKey: 'creator_user_id', 
+    Course.belongsTo(models.User, {
+      foreignKey: 'creator_user_id',
       as: 'creator',
       targetKey: 'id'
     });
     // Note: Purchases will reference this via polymorphic relation
+    // Product references this via polymorphic association (product_type + entity_id)
   };
 
   return Course;

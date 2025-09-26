@@ -3,6 +3,7 @@ import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
 import EntityService from '../services/EntityService.js';
 import models from '../models/index.js';
+import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 
 const router = express.Router();
 
@@ -32,7 +33,7 @@ async function checkContentCreatorPermissions(user, entityType) {
   }
 
   // For product types, check specific content creator permissions
-  if (['workshop', 'course', 'file', 'tool', 'game'].includes(entityType)) {
+  if (ALL_PRODUCT_TYPES.includes(entityType)) {
     try {
       const settings = await models.Settings.findAll();
       if (!settings || settings.length === 0) {

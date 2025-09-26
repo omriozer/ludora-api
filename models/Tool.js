@@ -102,12 +102,13 @@ export default function(sequelize) {
   });
 
   Tool.associate = function(models) {
-    Tool.belongsTo(models.User, { 
-      foreignKey: 'creator_user_id', 
+    Tool.belongsTo(models.User, {
+      foreignKey: 'creator_user_id',
       as: 'creator',
       targetKey: 'id'
     });
     // Note: Purchases will reference this via polymorphic relation
+    // Product references this via polymorphic association (product_type + entity_id)
   };
 
   return Tool;

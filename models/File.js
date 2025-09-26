@@ -115,12 +115,13 @@ export default function(sequelize) {
   });
 
   File.associate = function(models) {
-    File.belongsTo(models.User, { 
-      foreignKey: 'creator_user_id', 
+    File.belongsTo(models.User, {
+      foreignKey: 'creator_user_id',
       as: 'creator',
       targetKey: 'id'
     });
     // Note: Purchases will reference this via polymorphic relation
+    // Product references this via polymorphic association (product_type + entity_id)
   };
 
   return File;

@@ -124,12 +124,13 @@ export default function(sequelize) {
   });
 
   Workshop.associate = function(models) {
-    Workshop.belongsTo(models.User, { 
-      foreignKey: 'creator_user_id', 
+    Workshop.belongsTo(models.User, {
+      foreignKey: 'creator_user_id',
       as: 'creator',
       targetKey: 'id'
     });
     // Note: Purchases will reference this via polymorphic relation
+    // Product references this via polymorphic association (product_type + entity_id)
   };
 
   return Workshop;

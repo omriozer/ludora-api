@@ -281,6 +281,9 @@ export default function(sequelize) {
       as: 'contentCreator'
     });
 
+    // Note: Purchases will reference this via polymorphic relation
+    // Product references this via polymorphic association (product_type + entity_id)
+
     // Other existing associations can be added here
   };
 

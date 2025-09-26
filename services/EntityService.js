@@ -1,6 +1,7 @@
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
 import { Op } from 'sequelize';
+import { PRODUCT_TYPES_WITH_CREATORS, NORMALIZED_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { NotFoundError, BadRequestError, ConflictError } from '../middleware/errorHandler.js';
 
 class EntityService {
@@ -124,7 +125,7 @@ class EntityService {
       };
       
       // Include creator information for entities that have creator relationships
-      const entitiesWithCreators = ['product', 'workshop', 'course', 'file', 'tool'];
+      const entitiesWithCreators = PRODUCT_TYPES_WITH_CREATORS;
       if (entitiesWithCreators.includes(entityType)) {
         queryOptions.include = [{
           model: this.models.User,
@@ -132,6 +133,31 @@ class EntityService {
           attributes: ['id', 'full_name', 'email'],
           required: false // LEFT JOIN to include entities even without creators
         }];
+
+        // For product entities, include the related type-specific data
+        if (entityType === 'product') {
+          queryOptions.include.push(
+            {
+              model: this.models.Course,
+              as: 'course',
+              required: false
+            },
+            {
+              model: this.models.Workshop,
+              as: 'workshop',
+              required: false
+            },
+            {
+              model: this.models.File,
+              as: 'file',
+              required: false
+            }
+          );
+        }
+
+        // For specific entity types, we don't include product data here anymore
+        // Product references entities via polymorphic association
+        // Use separate methods to get product data when needed
       }
       
       // Allow options to override the order if explicitly provided
@@ -191,13 +217,18 @@ class EntityService {
         return await this.createGame(data, createdBy);
       }
 
+      // Handle normalized product structure
+      if (NORMALIZED_PRODUCT_TYPES.includes(entityType)) {
+        return await this.createProductTypeEntity(entityType, data, createdBy);
+      }
+
       // Add audit fields
       const entityData = {
         ...data,
         created_at: new Date(),
         updated_at: new Date(),
         // For entities with creator_user_id field, use that instead of created_by
-        ...(createdBy && ['product', 'workshop', 'course', 'file', 'tool'].includes(entityType)
+        ...(createdBy && PRODUCT_TYPES_WITH_CREATORS.includes(entityType)
           ? { creator_user_id: createdBy }
           : { created_by: createdBy, created_by_id: createdBy }
         )
@@ -248,38 +279,6 @@ class EntityService {
     }
   }
 
-  // Delete entity
-  async delete(entityType, id) {
-    try {
-      const Model = this.getModel(entityType);
-
-      const entity = await Model.findByPk(id);
-      if (!entity) {
-        throw new Error(`${entityType} not found`);
-      }
-
-      // Handle file cleanup for File entities before deletion
-      if (entityType === 'file') {
-        try {
-          // Import the file deletion helper from media routes
-          const { deleteFileFromStorage } = await import('../routes/media.js');
-          const fileDeleted = await deleteFileFromStorage(id, entity.creator_user_id);
-          if (fileDeleted) {
-            console.log(`Successfully deleted file storage for entity ${id}`);
-          }
-        } catch (fileError) {
-          console.error(`Error deleting file storage for entity ${id}:`, fileError);
-          // Don't fail the entity deletion if file cleanup fails
-        }
-      }
-
-      await entity.destroy();
-      return { id, deleted: true };
-    } catch (error) {
-      console.error(`Error deleting ${entityType}:`, error);
-      throw error;
-    }
-  }
 
   // Bulk operations
   async bulkCreate(entityType, dataArray, createdBy = null) {
@@ -561,6 +560,224 @@ class EntityService {
       return game;
     } catch (error) {
       console.error('Error finding game by ID:', error);
+      throw error;
+    }
+  }
+
+  // Create product-type entities with proper Product relationship
+  async createProductTypeEntity(entityType, data, createdBy = null) {
+    const transaction = await this.models.sequelize.transaction();
+
+    try {
+      const EntityModel = this.getModel(entityType);
+
+      // Prepare the type-specific data (entity record)
+      const entityFields = {
+        ...data,
+        creator_user_id: createdBy,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      // Remove Product-specific fields from entity data
+      const productOnlyFields = ['title', 'description', 'category', 'product_type', 'price',
+                                'is_published', 'image_url', 'youtube_video_id', 'youtube_video_title',
+                                'tags', 'target_audience', 'access_days', 'is_sample'];
+      productOnlyFields.forEach(field => delete entityFields[field]);
+
+      // Create the type-specific entity first
+      const entity = await EntityModel.create(entityFields, { transaction });
+
+      // Extract fields that belong to the Product table
+      const productFields = {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        product_type: entityType,
+        entity_id: entity.id, // Reference to the entity
+        price: data.price || 0,
+        is_published: data.is_published || false,
+        image_url: data.image_url,
+        youtube_video_id: data.youtube_video_id,
+        youtube_video_title: data.youtube_video_title,
+        tags: data.tags || [],
+        target_audience: data.target_audience,
+        access_days: data.access_days,
+        is_sample: data.is_sample || false,
+        creator_user_id: createdBy,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      // Create the Product record with entity_id reference
+      const product = await this.models.Product.create(productFields, { transaction });
+
+      await transaction.commit();
+
+      // Return combined data structure
+      return {
+        ...product.toJSON(),
+        [entityType]: entity.toJSON()
+      };
+
+    } catch (error) {
+      await transaction.rollback();
+      console.error(`Error creating ${entityType} with product:`, error);
+      throw new Error(`Failed to create ${entityType}: ${error.message}`);
+    }
+  }
+
+  // Find entity with product data (polymorphic lookup)
+  async findEntityWithProduct(entityType, entityId) {
+    try {
+      // Find the entity
+      const EntityModel = this.getModel(entityType);
+      const entity = await EntityModel.findByPk(entityId);
+      if (!entity) {
+        throw new Error(`${entityType} not found`);
+      }
+
+      // Find the product that references this entity
+      const product = await this.models.Product.findOne({
+        where: {
+          product_type: entityType,
+          entity_id: entityId
+        }
+      });
+
+      if (!product) {
+        // Entity exists but no product references it - return just the entity
+        return entity.toJSON();
+      }
+
+      // Return combined structure
+      return {
+        ...product.toJSON(),
+        [entityType]: entity.toJSON()
+      };
+    } catch (error) {
+      console.error(`Error finding ${entityType} with product:`, error);
+      throw error;
+    }
+  }
+
+  // Delete product with cascade delete to entity
+  async deleteProductWithEntity(productId) {
+    const transaction = await this.models.sequelize.transaction();
+
+    try {
+      // Find the product
+      const product = await this.models.Product.findByPk(productId, { transaction });
+      if (!product) {
+        throw new Error('Product not found');
+      }
+
+      const { product_type, entity_id } = product;
+
+      // Delete the entity first
+      const EntityModel = this.getModel(product_type);
+      const entity = await EntityModel.findByPk(entity_id, { transaction });
+      if (entity) {
+        await entity.destroy({ transaction });
+      }
+
+      // Delete the product
+      await product.destroy({ transaction });
+
+      await transaction.commit();
+
+      return { id: productId, deleted: true, entityDeleted: !!entity };
+    } catch (error) {
+      await transaction.rollback();
+      console.error(`Error deleting product with cascade:`, error);
+      throw error;
+    }
+  }
+
+  // Override delete method to handle product cascade delete
+  async delete(entityType, id) {
+    // Check if this is a product deletion
+    if (entityType === 'product') {
+      return await this.deleteProductWithEntity(id);
+    }
+
+    // For entity deletion, also check if there's a product referencing it
+    if (NORMALIZED_PRODUCT_TYPES.includes(entityType)) {
+      const transaction = await this.models.sequelize.transaction();
+
+      try {
+        // Find entity
+        const EntityModel = this.getModel(entityType);
+        const entity = await EntityModel.findByPk(id, { transaction });
+        if (!entity) {
+          throw new Error(`${entityType} not found`);
+        }
+
+        // Find and delete any product referencing this entity
+        const product = await this.models.Product.findOne({
+          where: {
+            product_type: entityType,
+            entity_id: id
+          },
+          transaction
+        });
+
+        if (product) {
+          await product.destroy({ transaction });
+        }
+
+        // Handle file cleanup for File entities before deletion
+        if (entityType === 'file') {
+          try {
+            const { deleteFileFromStorage } = await import('../routes/media.js');
+            const fileDeleted = await deleteFileFromStorage(id, entity.creator_user_id);
+            if (fileDeleted) {
+              console.log(`Successfully deleted file storage for entity ${id}`);
+            }
+          } catch (fileError) {
+            console.error(`Error deleting file storage for entity ${id}:`, fileError);
+          }
+        }
+
+        // Delete the entity
+        await entity.destroy({ transaction });
+
+        await transaction.commit();
+
+        return { id, deleted: true, productDeleted: !!product };
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
+      }
+    }
+
+    // For non-product entities, use original delete logic
+    try {
+      const Model = this.getModel(entityType);
+
+      const entity = await Model.findByPk(id);
+      if (!entity) {
+        throw new Error(`${entityType} not found`);
+      }
+
+      // Handle file cleanup for File entities before deletion
+      if (entityType === 'file') {
+        try {
+          const { deleteFileFromStorage } = await import('../routes/media.js');
+          const fileDeleted = await deleteFileFromStorage(id, entity.creator_user_id);
+          if (fileDeleted) {
+            console.log(`Successfully deleted file storage for entity ${id}`);
+          }
+        } catch (fileError) {
+          console.error(`Error deleting file storage for entity ${id}:`, fileError);
+        }
+      }
+
+      await entity.destroy();
+      return { id, deleted: true };
+    } catch (error) {
+      console.error(`Error deleting ${entityType}:`, error);
       throw error;
     }
   }

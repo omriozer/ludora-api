@@ -30,23 +30,12 @@ export default (sequelize) => {
       type: DataTypes.STRING
     },
     youtube_video_id: {
-      type: DataTypes.STRING
+      type: DataTypes.STRING,
+      allowNull: true
     },
     youtube_video_title: {
-      type: DataTypes.STRING
-    },
-    file_url: {
-      type: DataTypes.STRING
-    },
-    preview_file_url: {
-      type: DataTypes.STRING
-    },
-    file_type: {
-      type: DataTypes.STRING
-    },
-    downloads_count: {
-      type: DataTypes.DECIMAL,
-      defaultValue: 0
+      type: DataTypes.STRING,
+      allowNull: true
     },
     tags: {
       type: DataTypes.JSONB,
@@ -56,20 +45,8 @@ export default (sequelize) => {
       type: DataTypes.STRING
     },
     access_days: {
-      type: DataTypes.DECIMAL
-    },
-    is_lifetime_access: {
-      type: DataTypes.BOOLEAN
-    },
-    workshop_id: {
-      type: DataTypes.STRING
-    },
-    course_modules: {
-      type: DataTypes.JSONB,
-      defaultValue: []
-    },
-    total_duration_minutes: {
-      type: DataTypes.DECIMAL
+      type: DataTypes.DECIMAL,
+      allowNull: true
     },
     is_sample: {
       type: DataTypes.BOOLEAN
@@ -81,29 +58,9 @@ export default (sequelize) => {
         key: 'id'
       }
     },
-    workshop_type: {
-      type: DataTypes.STRING
-    },
-    video_file_url: {
-      type: DataTypes.STRING
-    },
-    scheduled_date: {
-      type: DataTypes.DATE
-    },
-    meeting_link: {
-      type: DataTypes.STRING
-    },
-    meeting_password: {
-      type: DataTypes.STRING
-    },
-    meeting_platform: {
-      type: DataTypes.STRING
-    },
-    max_participants: {
-      type: DataTypes.INTEGER
-    },
-    duration_minutes: {
-      type: DataTypes.INTEGER
+    entity_id: {
+      type: DataTypes.STRING,
+      allowNull: false
     }
   }, {
     tableName: 'product',
@@ -115,7 +72,13 @@ export default (sequelize) => {
       { fields: ['creator_user_id'] },
       { fields: ['is_published'] },
       { fields: ['is_sample'] },
-      { fields: ['product_type'] }
+      { fields: ['product_type'] },
+      { fields: ['entity_id'] },
+      {
+        unique: true,
+        fields: ['product_type', 'entity_id'],
+        name: 'unique_product_type_entity_id'
+      }
     ]
   });
 
@@ -124,6 +87,55 @@ export default (sequelize) => {
       foreignKey: 'creator_user_id',
       as: 'creator'
     });
+
+    // Store models reference for polymorphic lookups
+    Product.models = models;
+  };
+
+  // Polymorphic association methods
+  Product.prototype.getEntity = async function() {
+    const models = this.constructor.models;
+    const ModelClass = models[this.product_type.charAt(0).toUpperCase() + this.product_type.slice(1)];
+    if (!ModelClass) {
+      throw new Error(`Model for product_type '${this.product_type}' not found`);
+    }
+    return await ModelClass.findByPk(this.entity_id);
+  };
+
+  Product.prototype.getEntityWithData = async function() {
+    const entity = await this.getEntity();
+    return {
+      ...this.toJSON(),
+      [this.product_type]: entity ? entity.toJSON() : null
+    };
+  };
+
+  // Static method to find product with entity data
+  Product.findWithEntity = async function(productId) {
+    const product = await this.findByPk(productId);
+    if (!product) return null;
+    return await product.getEntityWithData();
+  };
+
+  // Static method to create product with entity (for EntityService)
+  Product.createWithEntity = async function(productData, entityData, transaction) {
+    const models = this.models;
+
+    // Create the entity first
+    const EntityModel = models[productData.product_type.charAt(0).toUpperCase() + productData.product_type.slice(1)];
+    if (!EntityModel) {
+      throw new Error(`Model for product_type '${productData.product_type}' not found`);
+    }
+
+    const entity = await EntityModel.create(entityData, { transaction });
+
+    // Create the product with entity_id reference
+    const product = await this.create({
+      ...productData,
+      entity_id: entity.id
+    }, { transaction });
+
+    return { product, entity };
   };
 
   return Product;

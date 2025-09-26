@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { PURCHASABLE_PRODUCT_TYPES } from '../constants/productTypes.js';
 
 export default function(sequelize) {
   const Purchase = sequelize.define('Purchase', {
@@ -117,7 +118,7 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: true,
       validate: {
-        isIn: [['workshop', 'course', 'file', 'tool', 'game', 'subscription']]
+        isIn: [PURCHASABLE_PRODUCT_TYPES]
       }
     },
     purchasable_id: {

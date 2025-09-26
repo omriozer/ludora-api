@@ -228,13 +228,17 @@ class PaymentService {
 
       // If payment successful, handle post-payment logic
       if (status === 'completed' || status === 'approved') {
-        // Update product download count
+        // Update download count for file products (only files have downloads_count)
         if (purchase.product_id) {
           const product = await this.models.Product.findByPk(purchase.product_id);
-          if (product) {
-            await product.update({
-              downloads_count: (product.downloads_count || 0) + 1
-            });
+          if (product && product.product_type === 'file') {
+            // Find the associated file entity using polymorphic reference
+            const fileEntity = await this.models.File.findByPk(product.entity_id);
+            if (fileEntity) {
+              await fileEntity.update({
+                downloads_count: (fileEntity.downloads_count || 0) + 1
+              });
+            }
           }
         }
 
