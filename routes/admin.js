@@ -16,6 +16,14 @@ router.post('/database/dev', async (req, res) => {
   try {
     console.log('🔧 Starting development database manager (Adminer)...');
 
+    // Check if we're in a production environment (Fly.io)
+    if (process.env.FLY_APP_NAME) {
+      return res.status(400).json({
+        error: 'Development database manager not available in production environment',
+        suggestion: 'Use production database manager instead'
+      });
+    }
+
     // Path to the development adminer script
     const scriptPath = path.join(process.cwd(), '..', 'scripts', 'run-adminer-dev.sh');
 
@@ -23,7 +31,8 @@ router.post('/database/dev', async (req, res) => {
     if (!fs.existsSync(scriptPath)) {
       return res.status(404).json({
         error: 'Development adminer script not found',
-        path: scriptPath
+        path: scriptPath,
+        suggestion: 'This endpoint is only available in local development environment'
       });
     }
 
@@ -66,14 +75,38 @@ router.post('/database/prod', async (req, res) => {
   try {
     console.log('🔧 Starting production database manager (Adminer)...');
 
-    // Path to the production adminer script
+    // Check if we're in a production environment (Fly.io)
+    if (process.env.FLY_APP_NAME) {
+      // In production, we can't run local adminer scripts
+      // Instead, provide information about accessing the database
+      return res.json({
+        success: true,
+        message: 'Production database access information',
+        environment: 'production',
+        instructions: {
+          local_proxy: 'Run locally: flyctl proxy 5433:5432 -a ludora-db',
+          adminer_local: 'Then run: npm run db:gui:prod',
+          direct_connection: {
+            host: 'ludora-db.fly.dev',
+            port: 5432,
+            database: 'postgres',
+            username: 'postgres',
+            note: 'Password available in Fly secrets'
+          }
+        },
+        warning: 'Database management must be done from local development environment with proper proxy setup'
+      });
+    }
+
+    // Local development environment - try to use production adminer script
     const scriptPath = path.join(process.cwd(), '..', 'scripts', 'run-adminer-prod.sh');
 
     // Check if script exists
     if (!fs.existsSync(scriptPath)) {
       return res.status(404).json({
         error: 'Production adminer script not found',
-        path: scriptPath
+        path: scriptPath,
+        suggestion: 'Run: flyctl proxy 5433:5432 -a ludora-db && npm run db:gui:prod'
       });
     }
 
