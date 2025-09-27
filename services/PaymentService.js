@@ -24,7 +24,7 @@ class PaymentService {
       // Log the confirmation
       await this.models.EmailLog.create({
         id: generateId(),
-        recipient_email: email || purchase.buyer_email,
+        recipient_email: email,
         subject: 'Payment Confirmation',
         content: `Your payment of $${amount} has been confirmed.`,
         trigger_type: 'payment_confirmation',
@@ -172,16 +172,18 @@ class PaymentService {
           throw new Error('Product not found');
         }
 
-        // Create purchase record
+        // Create purchase record with clean schema
         purchase = await this.models.Purchase.create({
           id: generateId(),
-          product_id: productId,
+          buyer_user_id: userId,
+          purchasable_type: product.product_type,
+          purchasable_id: product.entity_id,
           payment_amount: amount,
           original_price: product.price,
           payment_status: 'pending',
-          environment: environment || process.env.ENVIRONMENT || 'development',
-          created_at: new Date(),
-          updated_at: new Date()
+          metadata: {
+            environment: environment || process.env.ENVIRONMENT || 'development'
+          }
         });
       }
 
@@ -222,7 +224,7 @@ class PaymentService {
       // Update purchase with callback data
       await purchase.update({
         payment_status: status,
-        buyer_email: payerEmail || purchase.buyer_email,
+        // buyer_user_id is already set and immutable
         updated_at: new Date()
       });
 

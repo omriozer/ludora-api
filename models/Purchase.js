@@ -8,128 +8,92 @@ export default function(sequelize) {
       primaryKey: true,
       allowNull: false,
     },
+    buyer_user_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      references: {
+        model: 'user',
+        key: 'id',
+        onDelete: 'RESTRICT',
+        onUpdate: 'CASCADE'
+      }
+    },
     order_number: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(100),
       allowNull: true,
     },
-    product_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    workshop_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    buyer_name: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    buyer_email: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    buyer_phone: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    payment_status: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    payment_amount: {
-      type: DataTypes.DECIMAL,
-      allowNull: true,
-    },
-    original_price: {
-      type: DataTypes.DECIMAL,
-      allowNull: true,
-    },
-    discount_amount: {
-      type: DataTypes.DECIMAL,
-      allowNull: true,
-    },
-    coupon_code: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    access_until: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    purchased_access_days: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-    },
-    purchased_lifetime_access: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: false,
-    },
-    download_count: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      defaultValue: 0,
-    },
-    first_accessed: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    last_accessed: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    environment: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    is_recording_only: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: false,
-    },
-    is_subscription_renewal: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: false,
-    },
-    subscription_plan_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    is_subscription_upgrade: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: false,
-    },
-    upgrade_proration_amount: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    subscription_cycle_start: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    subscription_cycle_end: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    // Polymorphic fields for new entity system
+    // Polymorphic product reference (clean)
     purchasable_type: {
-      type: DataTypes.STRING,
-      allowNull: true,
+      type: DataTypes.STRING(50),
+      allowNull: false,
       validate: {
         isIn: [PURCHASABLE_PRODUCT_TYPES]
       }
     },
     purchasable_id: {
       type: DataTypes.STRING,
+      allowNull: false,
+    },
+    // Payment information
+    payment_amount: {
+      type: DataTypes.DECIMAL(10,2),
+      allowNull: false,
+    },
+    original_price: {
+      type: DataTypes.DECIMAL(10,2),
+      allowNull: false,
+    },
+    discount_amount: {
+      type: DataTypes.DECIMAL(10,2),
+      allowNull: true,
+      defaultValue: 0,
+    },
+    coupon_code: {
+      type: DataTypes.STRING(100),
       allowNull: true,
     },
-    // Access control fields
+    payment_method: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    payment_status: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      defaultValue: 'pending',
+      validate: {
+        isIn: [['pending', 'completed', 'failed', 'refunded']]
+      }
+    },
+    transaction_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    // Access control (simplified)
     access_expires_at: {
       type: DataTypes.DATE,
       allowNull: true, // null means lifetime access
     },
+    // Usage tracking
+    download_count: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0,
+    },
+    first_accessed_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    last_accessed_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    // Flexible metadata for additional data
+    metadata: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+    },
+    // Standard timestamps
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -140,80 +104,74 @@ export default function(sequelize) {
       allowNull: false,
       defaultValue: DataTypes.NOW,
     },
-    created_by: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    created_by_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
   }, {
     tableName: 'purchase',
     timestamps: false,
     indexes: [
       {
-        fields: ['buyer_email'],
+        fields: ['buyer_user_id'],
+        name: 'idx_purchase_buyer_user_id'
       },
       {
-        fields: ['product_id'],
+        fields: ['purchasable_type', 'purchasable_id'],
+        name: 'idx_purchase_polymorphic'
       },
       {
         fields: ['payment_status'],
-      },
-      {
-        fields: ['order_number'],
-      },
-      // New polymorphic indexes
-      {
-        fields: ['purchasable_type', 'purchasable_id'],
+        name: 'idx_purchase_payment_status'
       },
       {
         fields: ['access_expires_at'],
+        name: 'idx_purchase_access_expires'
+      },
+      {
+        fields: ['order_number'],
+        name: 'idx_purchase_order_number'
+      },
+      {
+        fields: ['created_at'],
+        name: 'idx_purchase_created_at'
       },
     ],
   });
 
   Purchase.associate = function(models) {
-    // Legacy association (will be deprecated) - removed Product reference as it doesn't exist
-    Purchase.belongsTo(models.User, { foreignKey: 'buyer_email', targetKey: 'email' });
-    
-    // New polymorphic associations
-    Purchase.belongsTo(models.Workshop, { 
-      foreignKey: 'purchasable_id', 
+    // Proper FK association to user
+    Purchase.belongsTo(models.User, {
+      foreignKey: 'buyer_user_id',
+      as: 'buyer'
+    });
+
+    // Clean polymorphic associations
+    Purchase.belongsTo(models.Workshop, {
+      foreignKey: 'purchasable_id',
       constraints: false,
       scope: { purchasable_type: 'workshop' },
       as: 'workshop'
     });
-    Purchase.belongsTo(models.Course, { 
-      foreignKey: 'purchasable_id', 
+    Purchase.belongsTo(models.Course, {
+      foreignKey: 'purchasable_id',
       constraints: false,
       scope: { purchasable_type: 'course' },
       as: 'course'
     });
-    Purchase.belongsTo(models.File, { 
-      foreignKey: 'purchasable_id', 
+    Purchase.belongsTo(models.File, {
+      foreignKey: 'purchasable_id',
       constraints: false,
       scope: { purchasable_type: 'file' },
       as: 'file'
     });
-    Purchase.belongsTo(models.Tool, { 
-      foreignKey: 'purchasable_id', 
+    Purchase.belongsTo(models.Tool, {
+      foreignKey: 'purchasable_id',
       constraints: false,
       scope: { purchasable_type: 'tool' },
       as: 'tool'
     });
-    Purchase.belongsTo(models.Game, { 
-      foreignKey: 'purchasable_id', 
+    Purchase.belongsTo(models.Game, {
+      foreignKey: 'purchasable_id',
       constraints: false,
       scope: { purchasable_type: 'game' },
       as: 'game'
-    });
-    Purchase.belongsTo(models.SubscriptionPlan, { 
-      foreignKey: 'purchasable_id', 
-      constraints: false,
-      scope: { purchasable_type: 'subscription' },
-      as: 'subscriptionPlan'
     });
   };
 

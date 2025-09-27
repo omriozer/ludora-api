@@ -8,12 +8,12 @@ class AccessControlService {
   }
 
   // Check if user has access to a specific entity
-  async checkAccess(userEmail, entityType, entityId) {
+  async checkAccess(userId, entityType, entityId) {
     try {
       // Get the purchase record for this user and entity
       const purchase = await this.models.Purchase.findOne({
         where: {
-          buyer_email: userEmail,
+          buyer_user_id: userId,
           purchasable_type: entityType,
           purchasable_id: entityId,
           payment_status: 'completed', // Only successful payments
@@ -21,7 +21,14 @@ class AccessControlService {
             { access_expires_at: null }, // Lifetime access
             { access_expires_at: { [Op.gt]: new Date() } } // Not expired
           ]
-        }
+        },
+        include: [
+          {
+            model: this.models.User,
+            as: 'buyer',
+            attributes: ['id', 'email', 'full_name']
+          }
+        ]
       });
 
       return {
@@ -37,10 +44,10 @@ class AccessControlService {
   }
 
   // Get all purchases for a user
-  async getUserPurchases(userEmail, options = {}) {
+  async getUserPurchases(userId, options = {}) {
     try {
       const whereClause = {
-        buyer_email: userEmail,
+        buyer_user_id: userId,
         payment_status: 'completed',
         purchasable_type: { [Op.not]: null } // Only polymorphic purchases
       };
@@ -84,12 +91,21 @@ class AccessControlService {
             { access_expires_at: { [Op.gt]: new Date() } } // Not expired
           ]
         },
-        attributes: ['buyer_email', 'access_expires_at', 'created_at'],
+        include: [
+          {
+            model: this.models.User,
+            as: 'buyer',
+            attributes: ['id', 'email', 'full_name']
+          }
+        ],
+        attributes: ['buyer_user_id', 'access_expires_at', 'created_at'],
         order: [['created_at', 'DESC']]
       });
 
       return purchases.map(purchase => ({
-        email: purchase.buyer_email,
+        userId: purchase.buyer_user_id,
+        email: purchase.buyer?.email,
+        fullName: purchase.buyer?.full_name,
         purchasedAt: purchase.created_at,
         isLifetimeAccess: !purchase.access_expires_at,
         expiresAt: purchase.access_expires_at
@@ -101,14 +117,13 @@ class AccessControlService {
   }
 
   // Create a new purchase and grant access
-  async grantAccess(userEmail, entityType, entityId, options = {}) {
+  async grantAccess(userId, entityType, entityId, options = {}) {
     try {
-      const { 
-        accessDays = null, 
+      const {
+        accessDays = null,
         isLifetimeAccess = false,
         price = 0,
-        orderId = null,
-        createdBy = null 
+        orderId = null
       } = options;
 
       // Calculate access expiration
@@ -118,22 +133,18 @@ class AccessControlService {
         accessExpiresAt.setDate(accessExpiresAt.getDate() + accessDays);
       }
 
-      // Create purchase record
+      // Create clean purchase record
       const purchaseData = {
         id: this.generatePurchaseId(),
-        buyer_email: userEmail,
+        buyer_user_id: userId,
         purchasable_type: entityType,
         purchasable_id: entityId,
         payment_status: 'completed',
         payment_amount: price,
         original_price: price,
-        purchased_access_days: accessDays,
-        purchased_lifetime_access: isLifetimeAccess,
         access_expires_at: accessExpiresAt,
         order_number: orderId,
-        created_at: new Date(),
-        updated_at: new Date(),
-        created_by: createdBy
+        metadata: options.metadata || {}
       };
 
       const purchase = await this.models.Purchase.create(purchaseData);
@@ -145,11 +156,11 @@ class AccessControlService {
   }
 
   // Revoke access for a user to an entity
-  async revokeAccess(userEmail, entityType, entityId) {
+  async revokeAccess(userId, entityType, entityId) {
     try {
       const deletedCount = await this.models.Purchase.destroy({
         where: {
-          buyer_email: userEmail,
+          buyer_user_id: userId,
           purchasable_type: entityType,
           purchasable_id: entityId
         }

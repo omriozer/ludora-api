@@ -88,24 +88,23 @@ router.get('/video/:entityType/:entityId', authenticateTokenOrQuery, async (req,
     // Check if user has access (same logic as VideoViewer)
     let hasAccess = false;
 
-    // Check purchases
+    // Check purchases using clean schema
     const purchases = await models.Purchase.findAll({
       where: {
-        buyer_email: user.email,
-        payment_status: 'paid'
+        buyer_user_id: user.id,
+        payment_status: 'completed' // Updated status
       }
     });
 
     const entityPurchases = purchases.filter(purchase =>
-      (purchase.purchasable_id === entityId && purchase.purchasable_type === entityType) ||
-      (purchase.product_id === entityId) // Legacy fallback
+      purchase.purchasable_id === entityId && purchase.purchasable_type === entityType
     );
 
     if (entityPurchases.length > 0) {
       const userPurchase = entityPurchases[0];
-      if (userPurchase.purchased_lifetime_access ||
-          (userPurchase.access_until && new Date(userPurchase.access_until) > new Date()) ||
-          (!userPurchase.access_until && !userPurchase.purchased_lifetime_access)) {
+      // Clean access logic: access_expires_at null = lifetime, or not expired
+      if (!userPurchase.access_expires_at ||
+          new Date(userPurchase.access_expires_at) > new Date()) {
         hasAccess = true;
       }
     }
@@ -118,17 +117,16 @@ router.get('/video/:entityType/:entityId', authenticateTokenOrQuery, async (req,
       try {
         const orderNumber = `FREE-AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         await models.Purchase.create({
+          id: `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           order_number: orderNumber,
+          buyer_user_id: user.id,
           purchasable_type: entityType,
           purchasable_id: entityId,
-          buyer_name: user.display_name || user.full_name,
-          buyer_email: user.email,
-          buyer_phone: user.phone || '',
-          payment_status: 'paid',
+          payment_status: 'completed', // Updated status
           payment_amount: 0,
           original_price: 0,
-          purchased_lifetime_access: true,
-          first_accessed: new Date()
+          access_expires_at: null, // null = lifetime access
+          first_accessed_at: new Date()
         });
       } catch (autoAccessError) {
         console.error('Failed to create auto-access record:', autoAccessError);
@@ -617,7 +615,7 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
     // Check purchases
     const purchases = await models.Purchase.findAll({
       where: {
-        buyer_email: user.email,
+        buyer_user_id: user.id,
         payment_status: 'paid'
       }
     });
@@ -629,9 +627,9 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
 
     if (entityPurchases.length > 0) {
       const userPurchase = entityPurchases[0];
-      if (userPurchase.purchased_lifetime_access ||
-          (userPurchase.access_until && new Date(userPurchase.access_until) > new Date()) ||
-          (!userPurchase.access_until && !userPurchase.purchased_lifetime_access)) {
+      // Clean access logic: access_expires_at null = lifetime, or not expired
+      if (!userPurchase.access_expires_at ||
+          new Date(userPurchase.access_expires_at) > new Date()) {
         hasAccess = true;
       }
     }
@@ -647,10 +645,8 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
           order_number: orderNumber,
           purchasable_type: 'file',
           purchasable_id: fileEntityId,
-          buyer_name: user.display_name || user.full_name,
-          buyer_email: user.email,
-          buyer_phone: user.phone || '',
-          payment_status: 'paid',
+          buyer_user_id: user.id,
+          payment_status: 'completed',
           payment_amount: 0,
           original_price: 0,
           purchased_lifetime_access: true,

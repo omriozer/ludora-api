@@ -8,10 +8,10 @@ const router = express.Router();
 // GET /access/check/:entityType/:entityId - Check if user has access to entity
 router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) => {
   const { entityType, entityId } = req.params;
-  const userEmail = req.user.email;
+  const userId = req.user.id;
 
   try {
-    const accessInfo = await AccessControlService.checkAccess(userEmail, entityType, entityId);
+    const accessInfo = await AccessControlService.checkAccess(userId, entityType, entityId);
     res.json(accessInfo);
   } catch (error) {
     console.error('Error checking access:', error);
@@ -21,7 +21,7 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
 
 // GET /access/my-purchases - Get all purchases for authenticated user
 router.get('/my-purchases', authenticateToken, async (req, res) => {
-  const userEmail = req.user.email;
+  const userId = req.user.id;
   const { entityType, activeOnly } = req.query;
 
   try {
@@ -30,7 +30,7 @@ router.get('/my-purchases', authenticateToken, async (req, res) => {
       activeOnly: activeOnly === 'true'
     };
 
-    const purchases = await AccessControlService.getUserPurchases(userEmail, options);
+    const purchases = await AccessControlService.getUserPurchases(userId, options);
     res.json(purchases);
   } catch (error) {
     console.error('Error getting user purchases:', error);
