@@ -147,7 +147,7 @@ router.get('/:videoId/access', requireAuth, async (req, res) => {
     const { videoId } = req.params;
     const user = req.user;
 
-    const accessResult = await checkVideoAccess(user.id, videoId, user.email);
+    const accessResult = await checkVideoAccess(user.id, videoId);
     
     res.json({
       videoId: videoId,
@@ -248,7 +248,7 @@ router.get('/:videoId/info', requireAuth, async (req, res) => {
     const user = req.user;
 
     // First check if user has access
-    const accessResult = await checkVideoAccess(user.id, videoId, user.email);
+    const accessResult = await checkVideoAccess(user.id, videoId);
     
     if (!accessResult.hasAccess) {
       return res.status(403).json({

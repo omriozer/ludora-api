@@ -12,10 +12,9 @@ import db from '../models/index.js';
  * Check if a user has access to a specific video
  * @param {string} userId - The user's ID
  * @param {string} videoId - The video ID (can be product_id or video file reference)
- * @param {string} userEmail - The user's email (for purchase lookup)
  * @returns {Promise<Object>} Access result with status and details
  */
-export async function checkVideoAccess(userId, videoId, userEmail) {
+export async function checkVideoAccess(userId, videoId) {
   try {
     // First, find the product that contains this video
     const product = await findProductByVideoId(videoId);
@@ -29,7 +28,7 @@ export async function checkVideoAccess(userId, videoId, userEmail) {
     }
 
     // Check if user has purchased this specific product
-    const purchaseAccess = await checkPurchaseAccess(userEmail, product.id);
+    const purchaseAccess = await checkPurchaseAccess(userId, product.id);
     if (purchaseAccess.hasAccess) {
       return purchaseAccess;
     }
@@ -110,24 +109,15 @@ async function findProductByVideoId(videoId) {
 
 /**
  * Check if user has purchased access to the product
- * @param {string} userEmail - User's email
+ * @param {string} userId - User's ID
  * @param {string} productId - Product ID
  * @returns {Promise<Object>} Access result
  */
-async function checkPurchaseAccess(userEmail, productId) {
-  // First find the user by email
-  const user = await db.User.findOne({
-    where: { email: userEmail }
-  });
-
-  if (!user) {
-    return { hasAccess: false, reason: 'user_not_found' };
-  }
-
-  // Then find purchase by user ID and product ID
+async function checkPurchaseAccess(userId, productId) {
+  // Find purchase by user ID and product ID directly
   const purchase = await db.Purchase.findOne({
     where: {
-      buyer_user_id: user.id,
+      buyer_user_id: userId,
       purchasable_id: productId, // Use new polymorphic field
       purchasable_type: 'product', // Specify it's a product
       payment_status: 'completed'
@@ -328,11 +318,10 @@ async function checkCreatorAccess(userId, productId) {
  * Get detailed access information for a user and video
  * @param {string} userId - User ID
  * @param {string} videoId - Video ID
- * @param {string} userEmail - User email
  * @returns {Promise<Object>} Detailed access information
  */
-export async function getVideoAccessDetails(userId, videoId, userEmail) {
-  const accessResult = await checkVideoAccess(userId, videoId, userEmail);
+export async function getVideoAccessDetails(userId, videoId) {
+  const accessResult = await checkVideoAccess(userId, videoId);
   
   if (!accessResult.hasAccess) {
     return accessResult;
@@ -371,7 +360,7 @@ export async function videoAccessMiddleware(req, res, next) {
       });
     }
 
-    const accessResult = await checkVideoAccess(user.id, videoId, user.email);
+    const accessResult = await checkVideoAccess(user.id, videoId);
 
     if (!accessResult.hasAccess) {
       return res.status(403).json({

@@ -41,7 +41,7 @@ async function runTests() {
     console.log(`   Video: ${testCase.videoId}`);
     
     try {
-      const result = await checkVideoAccess(testCase.userId, testCase.videoId, testCase.userEmail);
+      const result = await checkVideoAccess(testCase.userId, testCase.videoId);
       
       console.log(`   ✅ Access Result:`, {
         hasAccess: result.hasAccess,
