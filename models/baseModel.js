@@ -17,13 +17,13 @@ export const baseFields = {
     allowNull: false,
     defaultValue: DataTypes.NOW,
   },
-  created_by: {
+  creator_user_id: {
     type: DataTypes.STRING,
     allowNull: true,
-  },
-  created_by_id: {
-    type: DataTypes.STRING,
-    allowNull: true,
+    references: {
+      model: 'user',
+      key: 'id'
+    }
   },
 };
 

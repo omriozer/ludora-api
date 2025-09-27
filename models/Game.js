@@ -117,7 +117,7 @@ export default function(sequelize) {
         min: 1
       }
     },
-    content_creator_id: {
+    creator_user_id: {
       type: DataTypes.STRING,
       allowNull: true,
       references: {
@@ -142,10 +142,7 @@ export default function(sequelize) {
         fields: ['device_compatibility']
       },
       {
-        fields: ['content_creator_id']
-      },
-      {
-        fields: ['created_by_id']
+        fields: ['creator_user_id']
       }
     ]
   });
@@ -219,10 +216,10 @@ export default function(sequelize) {
     });
   };
 
-  Game.findByContentCreator = function(contentCreatorId, options = {}) {
+  Game.findByCreator = function(creatorUserId, options = {}) {
     return this.findAll({
       where: {
-        content_creator_id: contentCreatorId,
+        creator_user_id: creatorUserId,
         ...options.where
       },
       ...options
@@ -272,13 +269,8 @@ export default function(sequelize) {
 
     // User associations
     Game.belongsTo(models.User, {
-      foreignKey: 'created_by_id',
+      foreignKey: 'creator_user_id',
       as: 'creator'
-    });
-
-    Game.belongsTo(models.User, {
-      foreignKey: 'content_creator_id',
-      as: 'contentCreator'
     });
 
     // Note: Purchases will reference this via polymorphic relation

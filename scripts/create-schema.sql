@@ -2,8 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict 7DpHXI5Tw8s9jcRzNXJsUf1mgmeNPeXisNW8YI2bnjtzgiRVPLGaCUDyQhmFzbG
-
 -- Dumped from database version 15.14 (Homebrew)
 -- Dumped by pg_dump version 15.14 (Homebrew)
 
@@ -533,6 +531,7 @@ CREATE TABLE public.memory_pairing_rules (
 -- Name: product; Type: TABLE; Schema: public; Owner: -
 --
 
+-- Clean polymorphic Product table - no entity-specific fields
 CREATE TABLE public.product (
     id character varying(255) NOT NULL,
     title character varying(255),
@@ -545,30 +544,13 @@ CREATE TABLE public.product (
     image_url character varying(255),
     youtube_video_id character varying(255),
     youtube_video_title character varying(255),
-    file_url character varying(255),
-    preview_file_url character varying(255),
-    file_type character varying(255),
-    downloads_count numeric,
     tags jsonb,
     target_audience character varying(255),
     difficulty_level character varying(255),
     access_days numeric,
-    is_lifetime_access boolean,
-    workshop_id character varying(255),
-    course_modules jsonb,
-    total_duration_minutes numeric,
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    creator_user_id character varying(255),
-    workshop_type character varying(255),
-    video_file_url character varying(255),
-    scheduled_date timestamp with time zone,
-    meeting_link character varying(255),
-    meeting_password character varying(255),
-    meeting_platform character varying(255),
-    max_participants integer,
-    duration_minutes integer
+    creator_user_id character varying(255)
 );
 
 
@@ -1446,6 +1428,4 @@ CREATE INDEX idx_workshop_type ON public.workshop USING btree (workshop_type);
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict 7DpHXI5Tw8s9jcRzNXJsUf1mgmeNPeXisNW8YI2bnjtzgiRVPLGaCUDyQhmFzbG
 

@@ -79,11 +79,11 @@ create_database() {
     " 2>/dev/null || echo "   User creation skipped or failed (may already exist)"
     
     # Create database if not exists
-    PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -c "
-        SELECT 'CREATE DATABASE $DB_NAME OWNER $DB_USER'
-        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')
-        \gexec
-    " 2>/dev/null || echo "   Database creation skipped or failed (may already exist)"
+    if ! PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -lqt | cut -d \| -f 1 | grep -qw $DB_NAME; then
+        PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" 2>/dev/null || echo "   Database creation failed"
+    else
+        echo "   Database $DB_NAME already exists"
+    fi
     
     # Grant privileges
     PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -c "

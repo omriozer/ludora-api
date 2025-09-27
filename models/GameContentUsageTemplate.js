@@ -55,7 +55,7 @@ export default function(sequelize) {
       defaultValue: false,
       comment: 'True if template can be used across game types'
     },
-    created_by: {
+    creator_user_id: {
       type: DataTypes.STRING,
       allowNull: true,
       references: {
@@ -87,7 +87,7 @@ export default function(sequelize) {
         fields: ['is_global']
       },
       {
-        fields: ['created_by']
+        fields: ['creator_user_id']
       }
     ]
   });
@@ -96,7 +96,7 @@ export default function(sequelize) {
   GameContentUsageTemplate.associate = function(models) {
     // Belongs to User (creator)
     GameContentUsageTemplate.belongsTo(models.User, {
-      foreignKey: 'created_by',
+      foreignKey: 'creator_user_id',
       as: 'creator',
       onDelete: 'SET NULL',
       onUpdate: 'CASCADE'

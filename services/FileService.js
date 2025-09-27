@@ -97,7 +97,7 @@ class FileService {
         file_type: file.mimetype,
         created_at: new Date(),
         updated_at: new Date(),
-        created_by: userId
+        creator_user_id: userId
       });
 
       return {

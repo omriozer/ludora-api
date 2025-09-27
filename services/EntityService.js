@@ -134,26 +134,8 @@ class EntityService {
           required: false // LEFT JOIN to include entities even without creators
         }];
 
-        // For product entities, include the related type-specific data
-        if (entityType === 'product') {
-          queryOptions.include.push(
-            {
-              model: this.models.Course,
-              as: 'course',
-              required: false
-            },
-            {
-              model: this.models.Workshop,
-              as: 'workshop',
-              required: false
-            },
-            {
-              model: this.models.File,
-              as: 'file',
-              required: false
-            }
-          );
-        }
+        // Product entities use polymorphic associations via entity_id + product_type
+        // No direct associations to include here
 
         // For specific entity types, we don't include product data here anymore
         // Product references entities via polymorphic association
@@ -227,11 +209,8 @@ class EntityService {
         ...data,
         created_at: new Date(),
         updated_at: new Date(),
-        // For entities with creator_user_id field, use that instead of created_by
-        ...(createdBy && PRODUCT_TYPES_WITH_CREATORS.includes(entityType)
-          ? { creator_user_id: createdBy }
-          : { created_by: createdBy, created_by_id: createdBy }
-        )
+        // All entities now use creator_user_id standardized field
+        ...(createdBy && { creator_user_id: createdBy })
       };
 
       const entity = await Model.create(entityData);
@@ -268,8 +247,8 @@ class EntityService {
       // Don't allow updating certain fields
       delete updateData.id;
       delete updateData.created_at;
-      delete updateData.created_by;
-      delete updateData.created_by_id;
+      // Remove creator field from update data (shouldn't be changed)
+      delete updateData.creator_user_id;
 
       await entity.update(updateData);
       return entity;
@@ -290,11 +269,8 @@ class EntityService {
         id: data.id || generateId(),
         created_at: new Date(),
         updated_at: new Date(),
-        // For entities with creator_user_id field, use that instead of created_by
-        ...(createdBy && ['product', 'workshop', 'course', 'file', 'tool'].includes(entityType)
-          ? { creator_user_id: createdBy } 
-          : { created_by: createdBy, created_by_id: createdBy }
-        )
+        // All entities now use creator_user_id standardized field
+        ...(createdBy && { creator_user_id: createdBy })
       }));
 
       const results = await Model.bulkCreate(entities);
@@ -445,8 +421,7 @@ class EntityService {
         ...gameData,
         created_at: new Date(),
         updated_at: new Date(),
-        created_by: createdBy,
-        created_by_id: createdBy
+        creator_user_id: createdBy
       };
 
       // Create the main game record
@@ -520,8 +495,8 @@ class EntityService {
       // Don't allow updating certain fields
       delete updateData.id;
       delete updateData.created_at;
-      delete updateData.created_by;
-      delete updateData.created_by_id;
+      // Remove creator field from update data (shouldn't be changed)
+      delete updateData.creator_user_id;
 
       // Update main game record
       await game.update(updateData, { transaction });
