@@ -44,12 +44,16 @@ export default (sequelize) => {
     target_audience: {
       type: DataTypes.STRING
     },
+    difficulty_level: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isIn: [['beginner', 'intermediate', 'advanced']]
+      }
+    },
     access_days: {
       type: DataTypes.DECIMAL,
-      allowNull: true
-    },
-    is_sample: {
-      type: DataTypes.BOOLEAN
+      allowNull: true // NULL = lifetime access
     },
     creator_user_id: {
       type: DataTypes.STRING,
@@ -71,9 +75,10 @@ export default (sequelize) => {
       { fields: ['category'] },
       { fields: ['creator_user_id'] },
       { fields: ['is_published'] },
-      { fields: ['is_sample'] },
       { fields: ['product_type'] },
       { fields: ['entity_id'] },
+      { fields: ['difficulty_level'] },
+      { fields: ['access_days'] },
       {
         unique: true,
         fields: ['product_type', 'entity_id'],
@@ -90,6 +95,19 @@ export default (sequelize) => {
 
     // Store models reference for polymorphic lookups
     Product.models = models;
+  };
+
+  // Access control methods
+  Product.prototype.isLifetimeAccess = function() {
+    return this.access_days === null || this.access_days === undefined;
+  };
+
+  Product.prototype.hasTimeLimit = function() {
+    return !this.isLifetimeAccess();
+  };
+
+  Product.prototype.getAccessDuration = function() {
+    return this.isLifetimeAccess() ? 'lifetime' : `${this.access_days} days`;
   };
 
   // Polymorphic association methods

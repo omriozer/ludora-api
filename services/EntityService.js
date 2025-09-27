@@ -374,7 +374,7 @@ class EntityService {
       }
 
       // Force strict boolean for known boolean fields
-      if (["is_published", "is_active", "is_lifetime_access"].includes(key)) {
+      if (["is_published", "is_active"].includes(key)) {
         if (typeof value === "string") {
           if (value === "true") value = true;
           else if (value === "false") value = false;
