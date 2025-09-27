@@ -128,6 +128,32 @@ setup_tables() {
         exit 1
     fi
 
+    # Mark schema-included migrations as completed to avoid conflicts
+    echo "📋 Marking schema-included migrations as completed..."
+    PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "
+        INSERT INTO \"SequelizeMeta\" (name) VALUES
+        ('20250926000002-implement-polymorphic-product-association.cjs'),
+        ('20250927000001-clean-purchase-schema.cjs')
+        ON CONFLICT (name) DO NOTHING;
+    " 2>/dev/null || echo "   Migration marking completed"
+
+    # Run migrations to add any additional tables
+    echo "🔄 Running database migrations..."
+    if [ "$ENVIRONMENT" = "production" ]; then
+        ENVIRONMENT=production npx sequelize-cli db:migrate
+    elif [ "$ENVIRONMENT" = "staging" ]; then
+        ENVIRONMENT=staging npx sequelize-cli db:migrate
+    else
+        npx sequelize-cli db:migrate
+    fi
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Migrations completed successfully"
+    else
+        echo "❌ Migrations failed"
+        exit 1
+    fi
+
     # Run seeders if they exist
     if [ -d "seeders" ] && [ "$(ls -A seeders 2>/dev/null)" ]; then
         echo "🌱 Running database seeders..."

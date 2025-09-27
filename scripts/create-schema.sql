@@ -1,726 +1,1452 @@
--- Database Schema Creation Script for Ludora API
--- Generated from migrations analysis
--- PostgreSQL compatible schema
+--
+-- PostgreSQL database dump
+--
 
-BEGIN;
+\restrict 7DpHXI5Tw8s9jcRzNXJsUf1mgmeNPeXisNW8YI2bnjtzgiRVPLGaCUDyQhmFzbG
 
--- Create ENUM types first
-CREATE TYPE "enum_game_content_rule_instance_rule_type" AS ENUM (
+-- Dumped from database version 15.14 (Homebrew)
+-- Dumped by pg_dump version 15.14 (Homebrew)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
+
+
+--
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA public IS '';
+
+
+--
+-- Name: enum_game_content_rule_instance_rule_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.enum_game_content_rule_instance_rule_type AS ENUM (
     'attribute_based',
     'content_list',
     'complex_attribute',
     'relation_based'
 );
 
-CREATE TYPE "enum_game_content_rule_rule_type" AS ENUM (
+
+--
+-- Name: enum_game_content_rule_rule_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.enum_game_content_rule_rule_type AS ENUM (
     'attribute_based',
     'content_list',
     'complex_attribute',
     'relation_based'
 );
 
-CREATE TYPE "enum_memory_pairing_rules_rule_type" AS ENUM (
+
+--
+-- Name: enum_memory_pairing_rules_rule_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.enum_memory_pairing_rules_rule_type AS ENUM (
     'manual_pairs',
     'attribute_match',
     'content_type_match',
     'semantic_match'
 );
 
--- Create basic tables without foreign key dependencies first
 
--- Users table (base table)
-CREATE TABLE "user" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "email" VARCHAR(255),
-    "full_name" VARCHAR(255),
-    "disabled" VARCHAR(255),
-    "is_verified" BOOLEAN,
-    "_app_role" VARCHAR(255),
-    "role" VARCHAR(255) NOT NULL DEFAULT 'user',
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "is_active" BOOLEAN DEFAULT true,
-    "last_login" TIMESTAMP WITH TIME ZONE,
-    "phone" VARCHAR(255),
-    "education_level" VARCHAR(255),
-    "content_creator_agreement_sign_date" TIMESTAMP WITH TIME ZONE,
-    "user_type" VARCHAR(255)
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: SequelizeMeta; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."SequelizeMeta" (
+    name character varying(255) NOT NULL
 );
 
--- Settings table
-CREATE TABLE "settings" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "subscription_system_enabled" BOOLEAN,
-    "default_recording_access_days" DECIMAL,
-    "recording_lifetime_access" BOOLEAN,
-    "default_course_access_days" DECIMAL,
-    "course_lifetime_access" BOOLEAN,
-    "default_file_access_days" DECIMAL,
-    "file_lifetime_access" BOOLEAN,
-    "contact_email" VARCHAR(255),
-    "contact_phone" VARCHAR(255),
-    "site_description" TEXT,
-    "logo_url" VARCHAR(255),
-    "site_name" VARCHAR(255),
-    "maintenance_mode" BOOLEAN,
-    "student_invitation_expiry_days" DECIMAL,
-    "parent_consent_required" BOOLEAN,
-    "nav_order" JSONB,
-    "nav_files_text" VARCHAR(255),
-    "nav_files_icon" VARCHAR(255),
-    "nav_files_visibility" VARCHAR(255),
-    "nav_files_enabled" BOOLEAN,
-    "nav_games_text" VARCHAR(255),
-    "nav_games_icon" VARCHAR(255),
-    "nav_games_visibility" VARCHAR(255),
-    "nav_games_enabled" BOOLEAN,
-    "nav_workshops_text" VARCHAR(255),
-    "nav_workshops_icon" VARCHAR(255),
-    "nav_workshops_visibility" VARCHAR(255),
-    "nav_workshops_enabled" BOOLEAN,
-    "nav_courses_text" VARCHAR(255),
-    "nav_courses_icon" VARCHAR(255),
-    "nav_courses_visibility" VARCHAR(255),
-    "nav_courses_enabled" BOOLEAN,
-    "nav_classrooms_text" VARCHAR(255),
-    "nav_classrooms_icon" VARCHAR(255),
-    "nav_classrooms_visibility" VARCHAR(255),
-    "nav_classrooms_enabled" BOOLEAN,
-    "nav_account_text" VARCHAR(255),
-    "nav_account_icon" VARCHAR(255),
-    "nav_account_visibility" VARCHAR(255),
-    "nav_account_enabled" BOOLEAN,
-    "nav_content_creators_text" VARCHAR(255),
-    "nav_content_creators_icon" VARCHAR(255),
-    "nav_content_creators_visibility" VARCHAR(255),
-    "nav_content_creators_enabled" BOOLEAN,
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255),
-    "allow_content_creator_workshops" BOOLEAN DEFAULT true,
-    "allow_content_creator_courses" BOOLEAN DEFAULT true,
-    "allow_content_creator_files" BOOLEAN DEFAULT true,
-    "allow_content_creator_tools" BOOLEAN DEFAULT true,
-    "allow_content_creator_games" BOOLEAN DEFAULT true
+
+--
+-- Name: attribute; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.attribute (
+    id character varying(255) NOT NULL,
+    type character varying(255),
+    value character varying(255),
+    added_by character varying(255),
+    approved_by character varying(255),
+    is_approved boolean,
+    source character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Attributes table
-CREATE TABLE "attribute" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "type" VARCHAR(255),
-    "value" VARCHAR(255),
-    "added_by" VARCHAR(255),
-    "approved_by" VARCHAR(255),
-    "is_approved" BOOLEAN,
-    "source" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: audiofile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audiofile (
+    id character varying(255) NOT NULL,
+    name character varying(255),
+    file_url character varying(255),
+    duration numeric,
+    volume numeric,
+    file_size numeric,
+    file_type character varying(255),
+    is_default_for jsonb,
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Audio files table
-CREATE TABLE "audiofile" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "name" VARCHAR(255),
-    "file_url" VARCHAR(255),
-    "duration" DECIMAL,
-    "volume" DECIMAL,
-    "file_size" DECIMAL,
-    "file_type" VARCHAR(255),
-    "is_default_for" JSONB,
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: category; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.category (
+    id character varying(255) NOT NULL,
+    name character varying(255),
+    is_default boolean,
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Categories table
-CREATE TABLE "category" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "name" VARCHAR(255),
-    "is_default" BOOLEAN,
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: classroom; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.classroom (
+    id character varying(255) NOT NULL,
+    name character varying(255),
+    grade_level character varying(255),
+    year character varying(255),
+    teacher_id character varying(255),
+    description character varying(255),
+    is_active boolean,
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Schools table
-CREATE TABLE "school" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: classroommembership; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.classroommembership (
+    id character varying(255) NOT NULL,
+    classroom_id character varying(255),
+    student_user_id character varying(255),
+    teacher_id character varying(255),
+    joined_at character varying(255),
+    status character varying(255),
+    notes character varying(255),
+    student_display_name character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Classrooms table
-CREATE TABLE "classroom" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "name" VARCHAR(255),
-    "grade_level" VARCHAR(255),
-    "year" VARCHAR(255),
-    "teacher_id" VARCHAR(255),
-    "description" VARCHAR(255),
-    "is_active" BOOLEAN,
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: contentlist; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.contentlist (
+    id character varying(255) NOT NULL,
+    name character varying(255),
+    description character varying(255),
+    added_by character varying(255),
+    approved_by character varying(255),
+    is_approved boolean,
+    source character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Classroom membership table
-CREATE TABLE "classroommembership" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "classroom_id" VARCHAR(255),
-    "student_user_id" VARCHAR(255),
-    "teacher_id" VARCHAR(255),
-    "joined_at" VARCHAR(255),
-    "status" VARCHAR(255),
-    "notes" VARCHAR(255),
-    "student_display_name" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: contentrelationship; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.contentrelationship (
+    id character varying(255) NOT NULL,
+    source_id character varying(255),
+    source_type character varying(255),
+    target_id character varying(255),
+    target_type character varying(255),
+    relationship_types jsonb,
+    difficulty character varying(255),
+    added_by character varying(255),
+    approved_by character varying(255),
+    is_approved boolean,
+    source character varying(255),
+    context_data character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Content lists table
-CREATE TABLE "contentlist" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "name" VARCHAR(255),
-    "description" VARCHAR(255),
-    "added_by" VARCHAR(255),
-    "approved_by" VARCHAR(255),
-    "is_approved" BOOLEAN,
-    "source" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: contenttag; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.contenttag (
+    id character varying(255) NOT NULL,
+    content_id character varying(255),
+    content_type character varying(255),
+    tag_id character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Content relationships table
-CREATE TABLE "contentrelationship" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "source_id" VARCHAR(255),
-    "source_type" VARCHAR(255),
-    "target_id" VARCHAR(255),
-    "target_type" VARCHAR(255),
-    "relationship_types" JSONB,
-    "difficulty" VARCHAR(255),
-    "added_by" VARCHAR(255),
-    "approved_by" VARCHAR(255),
-    "is_approved" BOOLEAN,
-    "source" VARCHAR(255),
-    "context_data" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: coupon; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.coupon (
+    id character varying(255) NOT NULL,
+    code character varying(255),
+    name character varying(255),
+    description character varying(255),
+    discount_type character varying(255),
+    discount_value numeric,
+    minimum_amount numeric,
+    usage_limit character varying(255),
+    usage_count numeric,
+    valid_until character varying(255),
+    is_visible boolean,
+    is_admin_only boolean,
+    allow_stacking boolean,
+    stackable_with jsonb,
+    applicable_categories jsonb,
+    applicable_workshops jsonb,
+    workshop_types jsonb,
+    is_active boolean,
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Content tags table
-CREATE TABLE "contenttag" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "content_id" VARCHAR(255),
-    "content_type" VARCHAR(255),
-    "tag_id" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: course; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.course (
+    id character varying(255) NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    short_description text,
+    category character varying(255),
+    price numeric DEFAULT '0'::numeric NOT NULL,
+    is_published boolean DEFAULT false NOT NULL,
+    image_url character varying(255),
+    image_is_private boolean DEFAULT false,
+    tags jsonb,
+    target_audience character varying(255),
+    difficulty_level character varying(255),
+    access_days integer,
+    is_lifetime_access boolean DEFAULT false,
+    course_modules jsonb DEFAULT '[]'::jsonb,
+    total_duration_minutes integer,
+    creator_user_id character varying(255),
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Coupons table
-CREATE TABLE "coupon" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "code" VARCHAR(255),
-    "name" VARCHAR(255),
-    "description" VARCHAR(255),
-    "discount_type" VARCHAR(255),
-    "discount_value" DECIMAL,
-    "minimum_amount" DECIMAL,
-    "usage_limit" VARCHAR(255),
-    "usage_count" DECIMAL,
-    "valid_until" VARCHAR(255),
-    "is_visible" BOOLEAN,
-    "is_admin_only" BOOLEAN,
-    "allow_stacking" BOOLEAN,
-    "stackable_with" JSONB,
-    "applicable_categories" JSONB,
-    "applicable_workshops" JSONB,
-    "workshop_types" JSONB,
-    "is_active" BOOLEAN,
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE course; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.course IS 'Educational courses available in the platform';
+
+
+--
+-- Name: file; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.file (
+    id character varying(255) NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    short_description text,
+    category character varying(255),
+    price numeric DEFAULT '0'::numeric NOT NULL,
+    is_published boolean DEFAULT false NOT NULL,
+    image_url character varying(255),
+    image_is_private boolean DEFAULT false,
+    tags jsonb,
+    target_audience character varying(255),
+    difficulty_level character varying(255),
+    access_days integer,
+    is_lifetime_access boolean DEFAULT false,
+    file_url character varying(255),
+    file_is_private boolean DEFAULT true,
+    preview_file_url character varying(255),
+    preview_file_is_private boolean DEFAULT false,
+    file_type character varying(255),
+    downloads_count integer DEFAULT 0,
+    creator_user_id character varying(255),
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Courses table
-CREATE TABLE "course" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "title" VARCHAR(255) NOT NULL,
-    "description" TEXT,
-    "short_description" TEXT,
-    "category" VARCHAR(255),
-    "price" DECIMAL NOT NULL DEFAULT '0',
-    "is_published" BOOLEAN NOT NULL DEFAULT false,
-    "image_url" VARCHAR(255),
-    "image_is_private" BOOLEAN DEFAULT false,
-    "tags" JSONB,
-    "target_audience" VARCHAR(255),
-    "difficulty_level" VARCHAR(255),
-    "access_days" INTEGER,
-    "is_lifetime_access" BOOLEAN DEFAULT false,
-    "course_modules" JSONB DEFAULT '[]',
-    "total_duration_minutes" INTEGER,
-    "creator_user_id" VARCHAR(255),
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE file; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.file IS 'Downloadable files and resources';
+
+
+--
+-- Name: game; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.game (
+    id character varying(255) NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255),
+    title character varying(255),
+    description text,
+    short_description text,
+    game_type character varying(255),
+    price numeric DEFAULT '0'::numeric NOT NULL,
+    is_published boolean DEFAULT false NOT NULL,
+    image_url character varying(255),
+    image_is_private boolean DEFAULT false,
+    subject character varying(255),
+    skills jsonb DEFAULT '[]'::jsonb,
+    age_range character varying(255),
+    grade_range character varying(255),
+    device_compatibility character varying(255) DEFAULT 'both'::character varying NOT NULL,
+    game_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    tags jsonb DEFAULT '[]'::jsonb,
+    difficulty_level character varying(255),
+    estimated_duration integer,
+    content_creator_id character varying(255)
 );
 
--- Files table
-CREATE TABLE "file" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "title" VARCHAR(255) NOT NULL,
-    "description" TEXT,
-    "short_description" TEXT,
-    "category" VARCHAR(255),
-    "price" DECIMAL NOT NULL DEFAULT '0',
-    "is_published" BOOLEAN NOT NULL DEFAULT false,
-    "image_url" VARCHAR(255),
-    "image_is_private" BOOLEAN DEFAULT false,
-    "tags" JSONB,
-    "target_audience" VARCHAR(255),
-    "difficulty_level" VARCHAR(255),
-    "access_days" INTEGER,
-    "is_lifetime_access" BOOLEAN DEFAULT false,
-    "file_url" VARCHAR(255),
-    "file_is_private" BOOLEAN DEFAULT true,
-    "preview_file_url" VARCHAR(255),
-    "preview_file_is_private" BOOLEAN DEFAULT false,
-    "file_type" VARCHAR(255),
-    "downloads_count" INTEGER DEFAULT '0',
-    "creator_user_id" VARCHAR(255),
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE game; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.game IS 'Educational games and interactive content';
+
+
+--
+-- Name: game_content_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.game_content_rule (
+    id character varying(255) NOT NULL,
+    template_id character varying(255) NOT NULL,
+    rule_type public.enum_game_content_rule_rule_type NOT NULL,
+    rule_config json NOT NULL,
+    priority integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
 );
 
--- Games table
-CREATE TABLE "game" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255),
-    "title" VARCHAR(255),
-    "description" TEXT,
-    "short_description" TEXT,
-    "game_type" VARCHAR(255),
-    "price" DECIMAL NOT NULL DEFAULT '0',
-    "is_published" BOOLEAN NOT NULL DEFAULT false,
-    "image_url" VARCHAR(255),
-    "image_is_private" BOOLEAN DEFAULT false,
-    "subject" VARCHAR(255),
-    "skills" JSONB DEFAULT '[]',
-    "age_range" VARCHAR(255),
-    "grade_range" VARCHAR(255),
-    "device_compatibility" VARCHAR(255) NOT NULL DEFAULT 'both',
-    "game_settings" JSONB NOT NULL DEFAULT '{}',
-    "tags" JSONB DEFAULT '[]',
-    "difficulty_level" VARCHAR(255),
-    "estimated_duration" INTEGER,
-    "content_creator_id" VARCHAR(255)
+
+--
+-- Name: game_content_rule_instance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.game_content_rule_instance (
+    id character varying(255) NOT NULL,
+    game_usage_id character varying(255) NOT NULL,
+    rule_type public.enum_game_content_rule_instance_rule_type NOT NULL,
+    rule_config json NOT NULL,
+    priority integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
 );
 
--- Game content rules table
-CREATE TABLE "game_content_rule" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "template_id" VARCHAR(255) NOT NULL,
-    "rule_type" "enum_game_content_rule_rule_type" NOT NULL,
-    "rule_config" JSON NOT NULL,
-    "priority" INTEGER NOT NULL DEFAULT '0',
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL
+
+--
+-- Name: gamesession; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gamesession (
+    id character varying(255) NOT NULL,
+    user_id character varying(255),
+    guest_ip character varying(255),
+    game_id character varying(255),
+    game_type character varying(255),
+    session_start_time character varying(255),
+    session_end_time character varying(255),
+    duration_seconds character varying(255),
+    session_data character varying(255),
+    completed boolean,
+    score character varying(255),
+    exit_reason character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Game content rule instances table
-CREATE TABLE "game_content_rule_instance" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "game_usage_id" VARCHAR(255) NOT NULL,
-    "rule_type" "enum_game_content_rule_instance_rule_type" NOT NULL,
-    "rule_config" JSON NOT NULL,
-    "priority" INTEGER NOT NULL DEFAULT '0',
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL
+
+--
+-- Name: image; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.image (
+    id character varying(255) NOT NULL,
+    file_url character varying(255),
+    description character varying(255),
+    added_by character varying(255),
+    approved_by character varying(255),
+    is_approved boolean,
+    source character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Game sessions table
-CREATE TABLE "gamesession" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "user_id" VARCHAR(255),
-    "guest_ip" VARCHAR(255),
-    "game_id" VARCHAR(255),
-    "game_type" VARCHAR(255),
-    "session_start_time" VARCHAR(255),
-    "session_end_time" VARCHAR(255),
-    "duration_seconds" VARCHAR(255),
-    "session_data" VARCHAR(255),
-    "completed" BOOLEAN,
-    "score" VARCHAR(255),
-    "exit_reason" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.logs (
+    id integer NOT NULL,
+    source_type character varying(10) NOT NULL,
+    log_type character varying(20) DEFAULT 'log'::character varying NOT NULL,
+    message text NOT NULL,
+    user_id character varying(255),
+    created_at timestamp with time zone DEFAULT now()
 );
 
--- Images table
-CREATE TABLE "image" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "file_url" VARCHAR(255),
-    "description" VARCHAR(255),
-    "added_by" VARCHAR(255),
-    "approved_by" VARCHAR(255),
-    "is_approved" BOOLEAN,
-    "source" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE logs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.logs IS 'Application logging and audit trail';
+
+
+--
+-- Name: logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.logs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.logs_id_seq OWNED BY public.logs.id;
+
+
+--
+-- Name: manual_memory_pairs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manual_memory_pairs (
+    id character varying(255) NOT NULL,
+    pairing_rule_id character varying(255) NOT NULL,
+    content_a_id character varying(255) NOT NULL,
+    content_a_type character varying(50) NOT NULL,
+    content_b_id character varying(255) NOT NULL,
+    content_b_type character varying(50) NOT NULL,
+    pair_metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
 );
 
--- Logs table
-CREATE TABLE "logs" (
-    "id" SERIAL PRIMARY KEY,
-    "source_type" VARCHAR(10) NOT NULL,
-    "log_type" VARCHAR(20) NOT NULL DEFAULT 'log',
-    "message" TEXT NOT NULL,
-    "user_id" VARCHAR(255),
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+
+--
+-- Name: memory_pairing_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.memory_pairing_rules (
+    id character varying(255) NOT NULL,
+    game_id character varying(255) NOT NULL,
+    rule_type public.enum_memory_pairing_rules_rule_type NOT NULL,
+    content_type_a character varying(50),
+    content_type_b character varying(50),
+    attribute_name character varying(100),
+    pair_config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    priority integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
 );
 
--- Manual memory pairs table
-CREATE TABLE "manual_memory_pairs" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "pairing_rule_id" VARCHAR(255) NOT NULL,
-    "content_a_id" VARCHAR(255) NOT NULL,
-    "content_a_type" VARCHAR(50) NOT NULL,
-    "content_b_id" VARCHAR(255) NOT NULL,
-    "content_b_type" VARCHAR(50) NOT NULL,
-    "pair_metadata" JSONB DEFAULT '{}',
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL
+
+--
+-- Name: product; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product (
+    id character varying(255) NOT NULL,
+    title character varying(255),
+    description text,
+    category character varying(255),
+    product_type character varying(255),
+    price numeric,
+    is_published boolean,
+    image_url character varying(255),
+    youtube_video_id character varying(255),
+    youtube_video_title character varying(255),
+    file_url character varying(255),
+    preview_file_url character varying(255),
+    file_type character varying(255),
+    downloads_count numeric,
+    tags jsonb,
+    target_audience character varying(255),
+    difficulty_level character varying(255),
+    access_days numeric,
+    is_lifetime_access boolean,
+    workshop_id character varying(255),
+    course_modules jsonb,
+    total_duration_minutes numeric,
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    creator_user_id character varying(255),
+    workshop_type character varying(255),
+    video_file_url character varying(255),
+    scheduled_date timestamp with time zone,
+    meeting_link character varying(255),
+    meeting_password character varying(255),
+    meeting_platform character varying(255),
+    max_participants integer,
+    duration_minutes integer
 );
 
--- Memory pairing rules table
-CREATE TABLE "memory_pairing_rules" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "game_id" VARCHAR(255) NOT NULL,
-    "rule_type" "enum_memory_pairing_rules_rule_type" NOT NULL,
-    "content_type_a" VARCHAR(50),
-    "content_type_b" VARCHAR(50),
-    "attribute_name" VARCHAR(100),
-    "pair_config" JSONB NOT NULL DEFAULT '{}',
-    "priority" INTEGER NOT NULL DEFAULT '0',
-    "is_active" BOOLEAN NOT NULL DEFAULT true,
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL
+
+--
+-- Name: purchase; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.purchase (
+    id character varying(255) NOT NULL,
+    order_number character varying(255),
+    product_id character varying(255),
+    workshop_id character varying(255),
+    buyer_name character varying(255),
+    buyer_email character varying(255),
+    buyer_phone character varying(255),
+    payment_status character varying(255),
+    payment_amount numeric,
+    original_price numeric,
+    discount_amount numeric,
+    coupon_code character varying(255),
+    access_until character varying(255),
+    purchased_access_days numeric,
+    purchased_lifetime_access boolean,
+    download_count numeric,
+    first_accessed character varying(255),
+    last_accessed character varying(255),
+    environment character varying(255),
+    is_recording_only boolean,
+    is_subscription_renewal boolean,
+    subscription_plan_id character varying(255),
+    is_subscription_upgrade boolean,
+    upgrade_proration_amount character varying(255),
+    subscription_cycle_start character varying(255),
+    subscription_cycle_end character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255),
+    purchasable_type character varying(255),
+    purchasable_id character varying(255),
+    access_expires_at timestamp with time zone
 );
 
--- Products table
-CREATE TABLE "product" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "title" VARCHAR(255),
-    "description" TEXT,
-    "category" VARCHAR(255),
-    "product_type" VARCHAR(255),
-    "price" DECIMAL,
-    "is_published" BOOLEAN,
-    "image_url" VARCHAR(255),
-    "youtube_video_id" VARCHAR(255),
-    "youtube_video_title" VARCHAR(255),
-    "file_url" VARCHAR(255),
-    "preview_file_url" VARCHAR(255),
-    "file_type" VARCHAR(255),
-    "downloads_count" DECIMAL,
-    "tags" JSONB,
-    "target_audience" VARCHAR(255),
-    "difficulty_level" VARCHAR(255),
-    "access_days" DECIMAL,
-    "is_lifetime_access" BOOLEAN,
-    "workshop_id" VARCHAR(255),
-    "course_modules" JSONB,
-    "total_duration_minutes" DECIMAL,
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "creator_user_id" VARCHAR(255),
-    "workshop_type" VARCHAR(255),
-    "video_file_url" VARCHAR(255),
-    "scheduled_date" TIMESTAMP WITH TIME ZONE,
-    "meeting_link" VARCHAR(255),
-    "meeting_password" VARCHAR(255),
-    "meeting_platform" VARCHAR(255),
-    "max_participants" INTEGER,
-    "duration_minutes" INTEGER
+
+--
+-- Name: TABLE purchase; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.purchase IS 'Purchase records and access tracking';
+
+
+--
+-- Name: school; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.school (
+    id character varying(255) NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Purchases table
-CREATE TABLE "purchase" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "order_number" VARCHAR(255),
-    "product_id" VARCHAR(255),
-    "workshop_id" VARCHAR(255),
-    "buyer_name" VARCHAR(255),
-    "buyer_email" VARCHAR(255),
-    "buyer_phone" VARCHAR(255),
-    "payment_status" VARCHAR(255),
-    "payment_amount" DECIMAL,
-    "original_price" DECIMAL,
-    "discount_amount" DECIMAL,
-    "coupon_code" VARCHAR(255),
-    "access_until" VARCHAR(255),
-    "purchased_access_days" DECIMAL,
-    "purchased_lifetime_access" BOOLEAN,
-    "download_count" DECIMAL,
-    "first_accessed" VARCHAR(255),
-    "last_accessed" VARCHAR(255),
-    "environment" VARCHAR(255),
-    "is_recording_only" BOOLEAN,
-    "is_subscription_renewal" BOOLEAN,
-    "subscription_plan_id" VARCHAR(255),
-    "is_subscription_upgrade" BOOLEAN,
-    "upgrade_proration_amount" VARCHAR(255),
-    "subscription_cycle_start" VARCHAR(255),
-    "subscription_cycle_end" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255),
-    "purchasable_type" VARCHAR(255),
-    "purchasable_id" VARCHAR(255),
-    "access_expires_at" TIMESTAMP WITH TIME ZONE
+
+--
+-- Name: settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.settings (
+    id character varying(255) NOT NULL,
+    subscription_system_enabled boolean,
+    default_recording_access_days numeric,
+    recording_lifetime_access boolean,
+    default_course_access_days numeric,
+    course_lifetime_access boolean,
+    default_file_access_days numeric,
+    file_lifetime_access boolean,
+    contact_email character varying(255),
+    contact_phone character varying(255),
+    site_description text,
+    logo_url character varying(255),
+    site_name character varying(255),
+    maintenance_mode boolean,
+    student_invitation_expiry_days numeric,
+    parent_consent_required boolean,
+    nav_order jsonb,
+    nav_files_text character varying(255),
+    nav_files_icon character varying(255),
+    nav_files_visibility character varying(255),
+    nav_files_enabled boolean,
+    nav_games_text character varying(255),
+    nav_games_icon character varying(255),
+    nav_games_visibility character varying(255),
+    nav_games_enabled boolean,
+    nav_workshops_text character varying(255),
+    nav_workshops_icon character varying(255),
+    nav_workshops_visibility character varying(255),
+    nav_workshops_enabled boolean,
+    nav_courses_text character varying(255),
+    nav_courses_icon character varying(255),
+    nav_courses_visibility character varying(255),
+    nav_courses_enabled boolean,
+    nav_classrooms_text character varying(255),
+    nav_classrooms_icon character varying(255),
+    nav_classrooms_visibility character varying(255),
+    nav_classrooms_enabled boolean,
+    nav_account_text character varying(255),
+    nav_account_icon character varying(255),
+    nav_account_visibility character varying(255),
+    nav_account_enabled boolean,
+    nav_content_creators_text character varying(255),
+    nav_content_creators_icon character varying(255),
+    nav_content_creators_visibility character varying(255),
+    nav_content_creators_enabled boolean,
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255),
+    allow_content_creator_workshops boolean DEFAULT true,
+    allow_content_creator_courses boolean DEFAULT true,
+    allow_content_creator_files boolean DEFAULT true,
+    allow_content_creator_tools boolean DEFAULT true,
+    allow_content_creator_games boolean DEFAULT true
 );
 
--- Site text table
-CREATE TABLE "sitetext" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "key" VARCHAR(255),
-    "text" TEXT,
-    "category" VARCHAR(255),
-    "description" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE settings; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.settings IS 'Application configuration and settings';
+
+
+--
+-- Name: sitetext; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sitetext (
+    id character varying(255) NOT NULL,
+    key character varying(255),
+    text text,
+    category character varying(255),
+    description character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Subscription plans table
-CREATE TABLE "subscriptionplan" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "name" VARCHAR(255),
-    "description" VARCHAR(255),
-    "price" DECIMAL,
-    "billing_period" VARCHAR(255),
-    "has_discount" BOOLEAN,
-    "discount_type" VARCHAR(255),
-    "discount_value" DECIMAL,
-    "discount_valid_until" VARCHAR(255),
-    "is_active" BOOLEAN,
-    "is_default" BOOLEAN,
-    "plan_type" VARCHAR(255),
-    "benefits" JSONB,
-    "sort_order" DECIMAL,
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE sitetext; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sitetext IS 'Configurable text content for the site';
+
+
+--
+-- Name: subscriptionplan; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.subscriptionplan (
+    id character varying(255) NOT NULL,
+    name character varying(255),
+    description character varying(255),
+    price numeric,
+    billing_period character varying(255),
+    has_discount boolean,
+    discount_type character varying(255),
+    discount_value numeric,
+    discount_valid_until character varying(255),
+    is_active boolean,
+    is_default boolean,
+    plan_type character varying(255),
+    benefits jsonb,
+    sort_order numeric,
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Tools table
-CREATE TABLE "tool" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "title" VARCHAR(255) NOT NULL,
-    "description" TEXT,
-    "short_description" TEXT,
-    "category" VARCHAR(255),
-    "price" DECIMAL NOT NULL DEFAULT '0',
-    "is_published" BOOLEAN NOT NULL DEFAULT false,
-    "image_url" VARCHAR(255),
-    "image_is_private" BOOLEAN DEFAULT false,
-    "tags" JSONB,
-    "target_audience" VARCHAR(255),
-    "difficulty_level" VARCHAR(255),
-    "access_days" INTEGER,
-    "is_lifetime_access" BOOLEAN DEFAULT false,
-    "tool_url" VARCHAR(255),
-    "tool_config" JSONB DEFAULT '{}',
-    "access_type" VARCHAR(255) DEFAULT 'direct',
-    "creator_user_id" VARCHAR(255),
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: tool; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tool (
+    id character varying(255) NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    short_description text,
+    category character varying(255),
+    price numeric DEFAULT '0'::numeric NOT NULL,
+    is_published boolean DEFAULT false NOT NULL,
+    image_url character varying(255),
+    image_is_private boolean DEFAULT false,
+    tags jsonb,
+    target_audience character varying(255),
+    difficulty_level character varying(255),
+    access_days integer,
+    is_lifetime_access boolean DEFAULT false,
+    tool_url character varying(255),
+    tool_config jsonb DEFAULT '{}'::jsonb,
+    access_type character varying(255) DEFAULT 'direct'::character varying,
+    creator_user_id character varying(255),
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Webhook logs table
-CREATE TABLE "webhooklog" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE tool; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tool IS 'Educational tools and utilities';
+
+
+--
+-- Name: user; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."user" (
+    id character varying(255) NOT NULL,
+    email character varying(255),
+    full_name character varying(255),
+    disabled character varying(255),
+    is_verified boolean,
+    _app_role character varying(255),
+    role character varying(255) DEFAULT 'user'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    is_active boolean DEFAULT true,
+    last_login timestamp with time zone,
+    phone character varying(255),
+    education_level character varying(255),
+    content_creator_agreement_sign_date timestamp with time zone,
+    user_type character varying(255)
 );
 
--- Words table
-CREATE TABLE "word" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "vocalized" VARCHAR(255),
-    "word" VARCHAR(255),
-    "root" VARCHAR(255),
-    "context" VARCHAR(255),
-    "difficulty" DECIMAL,
-    "added_by" VARCHAR(255),
-    "approved_by" VARCHAR(255),
-    "is_approved" BOOLEAN,
-    "source" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: TABLE "user"; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public."user" IS 'User accounts and authentication information';
+
+
+--
+-- Name: webhooklog; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhooklog (
+    id character varying(255) NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Worden table
-CREATE TABLE "worden" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "word" VARCHAR(255),
-    "difficulty" DECIMAL,
-    "added_by" VARCHAR(255),
-    "approved_by" VARCHAR(255),
-    "is_approved" BOOLEAN,
-    "source" VARCHAR(255),
-    "is_sample" BOOLEAN,
-    "created_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updated_at" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: word; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.word (
+    id character varying(255) NOT NULL,
+    vocalized character varying(255),
+    word character varying(255),
+    root character varying(255),
+    context character varying(255),
+    difficulty numeric,
+    added_by character varying(255),
+    approved_by character varying(255),
+    is_approved boolean,
+    source character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Workshops table
-CREATE TABLE "workshop" (
-    "id" VARCHAR(255) PRIMARY KEY NOT NULL,
-    "title" VARCHAR(255) NOT NULL,
-    "description" TEXT,
-    "short_description" TEXT,
-    "category" VARCHAR(255),
-    "price" DECIMAL NOT NULL DEFAULT '0',
-    "is_published" BOOLEAN NOT NULL DEFAULT false,
-    "image_url" VARCHAR(255),
-    "image_is_private" BOOLEAN DEFAULT false,
-    "tags" JSONB,
-    "target_audience" VARCHAR(255),
-    "difficulty_level" VARCHAR(255),
-    "access_days" INTEGER,
-    "is_lifetime_access" BOOLEAN DEFAULT false,
-    "workshop_type" VARCHAR(255) NOT NULL DEFAULT 'recorded',
-    "video_file_url" VARCHAR(255),
-    "scheduled_date" TIMESTAMP WITH TIME ZONE,
-    "meeting_link" VARCHAR(255),
-    "meeting_password" VARCHAR(255),
-    "meeting_platform" VARCHAR(255),
-    "max_participants" INTEGER,
-    "duration_minutes" INTEGER,
-    "creator_user_id" VARCHAR(255),
-    "created_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-    "created_by" VARCHAR(255),
-    "created_by_id" VARCHAR(255)
+
+--
+-- Name: worden; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.worden (
+    id character varying(255) NOT NULL,
+    word character varying(255),
+    difficulty numeric,
+    added_by character varying(255),
+    approved_by character varying(255),
+    is_approved boolean,
+    source character varying(255),
+    is_sample boolean,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    created_by character varying(255),
+    created_by_id character varying(255)
 );
 
--- Add indexes for better performance
-CREATE INDEX idx_user_email ON "user"("email");
-CREATE INDEX idx_user_role ON "user"("role");
-CREATE INDEX idx_user_is_active ON "user"("is_active");
 
-CREATE INDEX idx_course_is_published ON "course"("is_published");
-CREATE INDEX idx_course_creator ON "course"("creator_user_id");
-CREATE INDEX idx_course_category ON "course"("category");
+--
+-- Name: workshop; Type: TABLE; Schema: public; Owner: -
+--
 
-CREATE INDEX idx_file_is_published ON "file"("is_published");
-CREATE INDEX idx_file_creator ON "file"("creator_user_id");
-CREATE INDEX idx_file_category ON "file"("category");
+CREATE TABLE public.workshop (
+    id character varying(255) NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    short_description text,
+    category character varying(255),
+    price numeric DEFAULT '0'::numeric NOT NULL,
+    is_published boolean DEFAULT false NOT NULL,
+    image_url character varying(255),
+    image_is_private boolean DEFAULT false,
+    tags jsonb,
+    target_audience character varying(255),
+    difficulty_level character varying(255),
+    access_days integer,
+    is_lifetime_access boolean DEFAULT false,
+    workshop_type character varying(255) DEFAULT 'recorded'::character varying NOT NULL,
+    video_file_url character varying(255),
+    scheduled_date timestamp with time zone,
+    meeting_link character varying(255),
+    meeting_password character varying(255),
+    meeting_platform character varying(255),
+    max_participants integer,
+    duration_minutes integer,
+    creator_user_id character varying(255),
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    created_by character varying(255),
+    created_by_id character varying(255)
+);
 
-CREATE INDEX idx_game_is_published ON "game"("is_published");
-CREATE INDEX idx_game_creator ON "game"("content_creator_id");
-CREATE INDEX idx_game_type ON "game"("game_type");
 
-CREATE INDEX idx_tool_is_published ON "tool"("is_published");
-CREATE INDEX idx_tool_creator ON "tool"("creator_user_id");
-CREATE INDEX idx_tool_category ON "tool"("category");
+--
+-- Name: TABLE workshop; Type: COMMENT; Schema: public; Owner: -
+--
 
-CREATE INDEX idx_workshop_is_published ON "workshop"("is_published");
-CREATE INDEX idx_workshop_creator ON "workshop"("creator_user_id");
-CREATE INDEX idx_workshop_category ON "workshop"("category");
-CREATE INDEX idx_workshop_type ON "workshop"("workshop_type");
+COMMENT ON TABLE public.workshop IS 'Workshop content (recorded and live)';
 
-CREATE INDEX idx_purchase_buyer_email ON "purchase"("buyer_email");
-CREATE INDEX idx_purchase_product_id ON "purchase"("product_id");
-CREATE INDEX idx_purchase_workshop_id ON "purchase"("workshop_id");
-CREATE INDEX idx_purchase_payment_status ON "purchase"("payment_status");
 
-CREATE INDEX idx_gamesession_user_id ON "gamesession"("user_id");
-CREATE INDEX idx_gamesession_game_id ON "gamesession"("game_id");
+--
+-- Name: logs id; Type: DEFAULT; Schema: public; Owner: -
+--
 
-CREATE INDEX idx_classroom_teacher_id ON "classroom"("teacher_id");
-CREATE INDEX idx_classroommembership_classroom_id ON "classroommembership"("classroom_id");
-CREATE INDEX idx_classroommembership_student_user_id ON "classroommembership"("student_user_id");
+ALTER TABLE ONLY public.logs ALTER COLUMN id SET DEFAULT nextval('public.logs_id_seq'::regclass);
 
-CREATE INDEX idx_logs_user_id ON "logs"("user_id");
-CREATE INDEX idx_logs_source_type ON "logs"("source_type");
-CREATE INDEX idx_logs_log_type ON "logs"("log_type");
-CREATE INDEX idx_logs_created_at ON "logs"("created_at");
 
-CREATE INDEX idx_memory_pairing_rules_game_id ON "memory_pairing_rules"("game_id");
-CREATE INDEX idx_manual_memory_pairs_pairing_rule_id ON "manual_memory_pairs"("pairing_rule_id");
+--
+-- Name: SequelizeMeta SequelizeMeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
 
-CREATE INDEX idx_game_content_rule_template_id ON "game_content_rule"("template_id");
-CREATE INDEX idx_game_content_rule_instance_game_usage_id ON "game_content_rule_instance"("game_usage_id");
+ALTER TABLE ONLY public."SequelizeMeta"
+    ADD CONSTRAINT "SequelizeMeta_pkey" PRIMARY KEY (name);
 
--- Add comments for documentation
-COMMENT ON TABLE "user" IS 'User accounts and authentication information';
-COMMENT ON TABLE "course" IS 'Educational courses available in the platform';
-COMMENT ON TABLE "file" IS 'Downloadable files and resources';
-COMMENT ON TABLE "game" IS 'Educational games and interactive content';
-COMMENT ON TABLE "tool" IS 'Educational tools and utilities';
-COMMENT ON TABLE "workshop" IS 'Workshop content (recorded and live)';
-COMMENT ON TABLE "purchase" IS 'Purchase records and access tracking';
-COMMENT ON TABLE "settings" IS 'Application configuration and settings';
-COMMENT ON TABLE "sitetext" IS 'Configurable text content for the site';
-COMMENT ON TABLE "logs" IS 'Application logging and audit trail';
 
-COMMIT;
+--
+-- Name: attribute attribute_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.attribute
+    ADD CONSTRAINT attribute_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audiofile audiofile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audiofile
+    ADD CONSTRAINT audiofile_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: category category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.category
+    ADD CONSTRAINT category_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: classroom classroom_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classroom
+    ADD CONSTRAINT classroom_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: classroommembership classroommembership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classroommembership
+    ADD CONSTRAINT classroommembership_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: contentlist contentlist_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contentlist
+    ADD CONSTRAINT contentlist_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: contentrelationship contentrelationship_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contentrelationship
+    ADD CONSTRAINT contentrelationship_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: contenttag contenttag_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contenttag
+    ADD CONSTRAINT contenttag_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: coupon coupon_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.coupon
+    ADD CONSTRAINT coupon_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: course course_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.course
+    ADD CONSTRAINT course_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: file file_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.file
+    ADD CONSTRAINT file_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: game_content_rule_instance game_content_rule_instance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.game_content_rule_instance
+    ADD CONSTRAINT game_content_rule_instance_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: game_content_rule game_content_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.game_content_rule
+    ADD CONSTRAINT game_content_rule_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: game game_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.game
+    ADD CONSTRAINT game_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: gamesession gamesession_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gamesession
+    ADD CONSTRAINT gamesession_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: image image_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.image
+    ADD CONSTRAINT image_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: logs logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.logs
+    ADD CONSTRAINT logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: manual_memory_pairs manual_memory_pairs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manual_memory_pairs
+    ADD CONSTRAINT manual_memory_pairs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: memory_pairing_rules memory_pairing_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_pairing_rules
+    ADD CONSTRAINT memory_pairing_rules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product product_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product
+    ADD CONSTRAINT product_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: purchase purchase_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase
+    ADD CONSTRAINT purchase_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: school school_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.school
+    ADD CONSTRAINT school_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sitetext sitetext_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sitetext
+    ADD CONSTRAINT sitetext_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: subscriptionplan subscriptionplan_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subscriptionplan
+    ADD CONSTRAINT subscriptionplan_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tool tool_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tool
+    ADD CONSTRAINT tool_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."user"
+    ADD CONSTRAINT user_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: webhooklog webhooklog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhooklog
+    ADD CONSTRAINT webhooklog_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: word word_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.word
+    ADD CONSTRAINT word_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: worden worden_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worden
+    ADD CONSTRAINT worden_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workshop workshop_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workshop
+    ADD CONSTRAINT workshop_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_classroom_teacher_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_classroom_teacher_id ON public.classroom USING btree (teacher_id);
+
+
+--
+-- Name: idx_classroommembership_classroom_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_classroommembership_classroom_id ON public.classroommembership USING btree (classroom_id);
+
+
+--
+-- Name: idx_classroommembership_student_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_classroommembership_student_user_id ON public.classroommembership USING btree (student_user_id);
+
+
+--
+-- Name: idx_course_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_course_category ON public.course USING btree (category);
+
+
+--
+-- Name: idx_course_creator; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_course_creator ON public.course USING btree (creator_user_id);
+
+
+--
+-- Name: idx_course_is_published; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_course_is_published ON public.course USING btree (is_published);
+
+
+--
+-- Name: idx_file_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_file_category ON public.file USING btree (category);
+
+
+--
+-- Name: idx_file_creator; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_file_creator ON public.file USING btree (creator_user_id);
+
+
+--
+-- Name: idx_file_is_published; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_file_is_published ON public.file USING btree (is_published);
+
+
+--
+-- Name: idx_game_content_rule_instance_game_usage_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_game_content_rule_instance_game_usage_id ON public.game_content_rule_instance USING btree (game_usage_id);
+
+
+--
+-- Name: idx_game_content_rule_template_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_game_content_rule_template_id ON public.game_content_rule USING btree (template_id);
+
+
+--
+-- Name: idx_game_creator; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_game_creator ON public.game USING btree (content_creator_id);
+
+
+--
+-- Name: idx_game_is_published; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_game_is_published ON public.game USING btree (is_published);
+
+
+--
+-- Name: idx_game_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_game_type ON public.game USING btree (game_type);
+
+
+--
+-- Name: idx_gamesession_game_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gamesession_game_id ON public.gamesession USING btree (game_id);
+
+
+--
+-- Name: idx_gamesession_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gamesession_user_id ON public.gamesession USING btree (user_id);
+
+
+--
+-- Name: idx_logs_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_logs_created_at ON public.logs USING btree (created_at);
+
+
+--
+-- Name: idx_logs_log_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_logs_log_type ON public.logs USING btree (log_type);
+
+
+--
+-- Name: idx_logs_source_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_logs_source_type ON public.logs USING btree (source_type);
+
+
+--
+-- Name: idx_logs_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_logs_user_id ON public.logs USING btree (user_id);
+
+
+--
+-- Name: idx_manual_memory_pairs_pairing_rule_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_manual_memory_pairs_pairing_rule_id ON public.manual_memory_pairs USING btree (pairing_rule_id);
+
+
+--
+-- Name: idx_memory_pairing_rules_game_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_memory_pairing_rules_game_id ON public.memory_pairing_rules USING btree (game_id);
+
+
+--
+-- Name: idx_purchase_buyer_email; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_purchase_buyer_email ON public.purchase USING btree (buyer_email);
+
+
+--
+-- Name: idx_purchase_payment_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_purchase_payment_status ON public.purchase USING btree (payment_status);
+
+
+--
+-- Name: idx_purchase_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_purchase_product_id ON public.purchase USING btree (product_id);
+
+
+--
+-- Name: idx_purchase_workshop_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_purchase_workshop_id ON public.purchase USING btree (workshop_id);
+
+
+--
+-- Name: idx_tool_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tool_category ON public.tool USING btree (category);
+
+
+--
+-- Name: idx_tool_creator; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tool_creator ON public.tool USING btree (creator_user_id);
+
+
+--
+-- Name: idx_tool_is_published; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tool_is_published ON public.tool USING btree (is_published);
+
+
+--
+-- Name: idx_user_email; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_email ON public."user" USING btree (email);
+
+
+--
+-- Name: idx_user_is_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_is_active ON public."user" USING btree (is_active);
+
+
+--
+-- Name: idx_user_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_role ON public."user" USING btree (role);
+
+
+--
+-- Name: idx_workshop_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workshop_category ON public.workshop USING btree (category);
+
+
+--
+-- Name: idx_workshop_creator; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workshop_creator ON public.workshop USING btree (creator_user_id);
+
+
+--
+-- Name: idx_workshop_is_published; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workshop_is_published ON public.workshop USING btree (is_published);
+
+
+--
+-- Name: idx_workshop_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workshop_type ON public.workshop USING btree (workshop_type);
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict 7DpHXI5Tw8s9jcRzNXJsUf1mgmeNPeXisNW8YI2bnjtzgiRVPLGaCUDyQhmFzbG
+
