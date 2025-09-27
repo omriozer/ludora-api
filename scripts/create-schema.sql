@@ -578,20 +578,24 @@ CREATE TABLE public.product (
 
 CREATE TABLE public.purchase (
     id character varying(255) NOT NULL,
-    order_number character varying(255),
     buyer_user_id character varying(255) NOT NULL,
-    entity_type character varying(255) NOT NULL,
-    entity_id character varying(255) NOT NULL,
-    payment_status character varying(255),
-    payment_amount numeric,
-    original_price numeric,
-    discount_amount numeric,
-    coupon_code character varying(255),
-    purchased_access_days numeric,
-    purchased_lifetime_access boolean,
+    order_number character varying(100),
+    purchasable_type character varying(50) NOT NULL,
+    purchasable_id character varying(255) NOT NULL,
+    payment_amount numeric(10,2) NOT NULL,
+    original_price numeric(10,2) NOT NULL,
+    discount_amount numeric(10,2) DEFAULT 0,
+    coupon_code character varying(100),
+    payment_method character varying(50),
+    payment_status character varying(50) DEFAULT 'pending'::character varying NOT NULL,
+    transaction_id character varying(255),
     access_expires_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now()
+    download_count integer DEFAULT 0,
+    first_accessed_at timestamp with time zone,
+    last_accessed_at timestamp with time zone,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1343,10 +1347,28 @@ CREATE INDEX idx_purchase_payment_status ON public.purchase USING btree (payment
 
 
 --
--- Name: idx_purchase_entity; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_purchase_polymorphic; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_purchase_entity ON public.purchase USING btree (entity_type, entity_id);
+CREATE INDEX idx_purchase_polymorphic ON public.purchase USING btree (purchasable_type, purchasable_id);
+
+--
+-- Name: idx_purchase_access_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_purchase_access_expires ON public.purchase USING btree (access_expires_at);
+
+--
+-- Name: idx_purchase_order_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_purchase_order_number ON public.purchase USING btree (order_number);
+
+--
+-- Name: idx_purchase_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_purchase_created_at ON public.purchase USING btree (created_at);
 
 
 
