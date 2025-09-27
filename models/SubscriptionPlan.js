@@ -29,7 +29,8 @@ export default function(sequelize) {
 
   SubscriptionPlan.associate = function(models) {
     // Define associations here
-    SubscriptionPlan.hasMany(models.Purchase, { foreignKey: 'subscription_plan_id' });
+    // Note: subscription_plan_id field doesn't exist in current Purchase schema
+    // SubscriptionPlan.hasMany(models.Purchase, { foreignKey: 'subscription_plan_id' });
     SubscriptionPlan.hasMany(models.SubscriptionHistory, { foreignKey: 'subscription_plan_id' });
     SubscriptionPlan.hasMany(models.SubscriptionHistory, { foreignKey: 'previous_plan_id', as: 'PreviousPlanHistories' });
   };
