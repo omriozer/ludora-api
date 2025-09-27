@@ -111,11 +111,7 @@ module.exports = {
       },
       template_id: {
         type: Sequelize.STRING,
-        allowNull: true,
-        references: {
-          model: 'gamecontentusagetemplate',
-          key: 'id'
-        }
+        allowNull: true
       },
       name: {
         type: Sequelize.STRING,
