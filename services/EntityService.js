@@ -108,23 +108,6 @@ class EntityService {
       // Extract sort parameter from query if it exists
       const { sort, ...whereQuery } = query;
 
-      // Special handling for purchase entity with buyer_email
-      if (entityType === 'purchase' && whereQuery._buyer_email) {
-        // Find user by email first
-        const user = await this.models.User.findOne({
-          where: { email: whereQuery._buyer_email }
-        });
-
-        if (!user) {
-          // No user found with this email, return empty results
-          return [];
-        }
-
-        // Replace _buyer_email with buyer_user_id
-        const { _buyer_email, ...restQuery } = whereQuery;
-        whereQuery.buyer_user_id = user.id;
-      }
-
       // Build where clause from query parameters (excluding sort)
       const where = this.buildWhereClause(whereQuery, entityType);
 
@@ -364,17 +347,9 @@ class EntityService {
   buildWhereClause(query, entityType = null) {
     const where = {};
 
-    // Special handling for purchase entity - convert buyer_email to buyer_user_id
-    if (entityType === 'purchase' && query.buyer_email) {
-      // We need to handle this in the find method itself with a join
-      // For now, skip the buyer_email and let the find method handle it
-      const { buyer_email, ...restQuery } = query;
-      query = { ...restQuery, _buyer_email: buyer_email }; // Keep it with a prefix for later processing
-    }
-
     Object.entries(query).forEach(([key, value]) => {
-      // Skip pagination parameters and special prefixed parameters
-      if (["limit", "offset", "order"].includes(key) || key.startsWith('_')) {
+      // Skip pagination parameters
+      if (["limit", "offset", "order"].includes(key)) {
         return;
       }
 
