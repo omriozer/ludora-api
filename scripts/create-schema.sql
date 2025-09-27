@@ -73,15 +73,6 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: SequelizeMeta; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public."SequelizeMeta" (
-    name character varying(255) NOT NULL
-);
-
-
---
 -- Name: attribute; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -548,6 +539,7 @@ CREATE TABLE public.product (
     description text,
     category character varying(255),
     product_type character varying(255),
+    entity_id character varying(255) NOT NULL,
     price numeric,
     is_published boolean,
     image_url character varying(255),
@@ -587,38 +579,19 @@ CREATE TABLE public.product (
 CREATE TABLE public.purchase (
     id character varying(255) NOT NULL,
     order_number character varying(255),
-    product_id character varying(255),
-    workshop_id character varying(255),
-    buyer_name character varying(255),
-    buyer_email character varying(255),
-    buyer_phone character varying(255),
+    buyer_user_id character varying(255) NOT NULL,
+    entity_type character varying(255) NOT NULL,
+    entity_id character varying(255) NOT NULL,
     payment_status character varying(255),
     payment_amount numeric,
     original_price numeric,
     discount_amount numeric,
     coupon_code character varying(255),
-    access_until character varying(255),
     purchased_access_days numeric,
     purchased_lifetime_access boolean,
-    download_count numeric,
-    first_accessed character varying(255),
-    last_accessed character varying(255),
-    environment character varying(255),
-    is_recording_only boolean,
-    is_subscription_renewal boolean,
-    subscription_plan_id character varying(255),
-    is_subscription_upgrade boolean,
-    upgrade_proration_amount character varying(255),
-    subscription_cycle_start character varying(255),
-    subscription_cycle_end character varying(255),
-    is_sample boolean,
+    access_expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255),
-    purchasable_type character varying(255),
-    purchasable_id character varying(255),
-    access_expires_at timestamp with time zone
+    updated_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -936,12 +909,6 @@ COMMENT ON TABLE public.workshop IS 'Workshop content (recorded and live)';
 ALTER TABLE ONLY public.logs ALTER COLUMN id SET DEFAULT nextval('public.logs_id_seq'::regclass);
 
 
---
--- Name: SequelizeMeta SequelizeMeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public."SequelizeMeta"
-    ADD CONSTRAINT "SequelizeMeta_pkey" PRIMARY KEY (name);
 
 
 --
@@ -1103,6 +1070,13 @@ ALTER TABLE ONLY public.memory_pairing_rules
 ALTER TABLE ONLY public.product
     ADD CONSTRAINT product_pkey PRIMARY KEY (id);
 
+--
+-- Name: product product_entity_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product
+    ADD CONSTRAINT product_entity_unique UNIQUE (product_type, entity_id);
+
 
 --
 -- Name: purchase purchase_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1110,6 +1084,7 @@ ALTER TABLE ONLY public.product
 
 ALTER TABLE ONLY public.purchase
     ADD CONSTRAINT purchase_pkey PRIMARY KEY (id);
+
 
 
 --
@@ -1158,6 +1133,13 @@ ALTER TABLE ONLY public.tool
 
 ALTER TABLE ONLY public."user"
     ADD CONSTRAINT user_pkey PRIMARY KEY (id);
+
+--
+-- Name: purchase purchase_buyer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase
+    ADD CONSTRAINT purchase_buyer_user_id_fkey FOREIGN KEY (buyer_user_id) REFERENCES public."user"(id);
 
 
 --
@@ -1347,10 +1329,10 @@ CREATE INDEX idx_memory_pairing_rules_game_id ON public.memory_pairing_rules USI
 
 
 --
--- Name: idx_purchase_buyer_email; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_purchase_buyer_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_purchase_buyer_email ON public.purchase USING btree (buyer_email);
+CREATE INDEX idx_purchase_buyer_user_id ON public.purchase USING btree (buyer_user_id);
 
 
 --
@@ -1361,17 +1343,12 @@ CREATE INDEX idx_purchase_payment_status ON public.purchase USING btree (payment
 
 
 --
--- Name: idx_purchase_product_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_purchase_entity; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_purchase_product_id ON public.purchase USING btree (product_id);
+CREATE INDEX idx_purchase_entity ON public.purchase USING btree (entity_type, entity_id);
 
 
---
--- Name: idx_purchase_workshop_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_purchase_workshop_id ON public.purchase USING btree (workshop_id);
 
 
 --
