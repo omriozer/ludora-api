@@ -104,7 +104,7 @@ export default function(sequelize) {
 
   User.associate = function(models) {
     // Define associations here
-    User.hasMany(models.Purchase, { foreignKey: 'buyer_email', sourceKey: 'email' });
+    User.hasMany(models.Purchase, { foreignKey: 'buyer_user_id', as: 'purchases' });
     User.hasMany(models.GameSession, { foreignKey: 'user_id' });
     User.hasMany(models.SubscriptionHistory, { foreignKey: 'user_id' });
     User.hasMany(models.Classroom, { foreignKey: 'teacher_id' });

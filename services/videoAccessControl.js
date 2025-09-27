@@ -115,10 +115,21 @@ async function findProductByVideoId(videoId) {
  * @returns {Promise<Object>} Access result
  */
 async function checkPurchaseAccess(userEmail, productId) {
+  // First find the user by email
+  const user = await db.User.findOne({
+    where: { email: userEmail }
+  });
+
+  if (!user) {
+    return { hasAccess: false, reason: 'user_not_found' };
+  }
+
+  // Then find purchase by user ID and product ID
   const purchase = await db.Purchase.findOne({
     where: {
-      buyer_email: userEmail,
-      product_id: productId,
+      buyer_user_id: user.id,
+      purchasable_id: productId, // Use new polymorphic field
+      purchasable_type: 'product', // Specify it's a product
       payment_status: 'completed'
     },
     order: [['created_at', 'DESC']] // Get the most recent purchase
