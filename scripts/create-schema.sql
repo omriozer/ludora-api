@@ -85,8 +85,7 @@ CREATE TABLE public.attribute (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -106,8 +105,7 @@ CREATE TABLE public.audiofile (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -122,8 +120,7 @@ CREATE TABLE public.category (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -142,8 +139,7 @@ CREATE TABLE public.classroom (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -163,8 +159,7 @@ CREATE TABLE public.classroommembership (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -183,8 +178,7 @@ CREATE TABLE public.contentlist (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -208,8 +202,7 @@ CREATE TABLE public.contentrelationship (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -225,8 +218,7 @@ CREATE TABLE public.contenttag (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -256,8 +248,7 @@ CREATE TABLE public.coupon (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -285,8 +276,7 @@ CREATE TABLE public.course (
     creator_user_id character varying(255),
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -304,29 +294,11 @@ COMMENT ON TABLE public.course IS 'Educational courses available in the platform
 CREATE TABLE public.file (
     id character varying(255) NOT NULL,
     title character varying(255) NOT NULL,
-    description text,
-    short_description text,
-    category character varying(255),
-    price numeric DEFAULT '0'::numeric NOT NULL,
-    is_published boolean DEFAULT false NOT NULL,
-    image_url character varying(255),
-    image_is_private boolean DEFAULT false,
-    tags jsonb,
-    target_audience character varying(255),
-    difficulty_level character varying(255),
-    access_days integer,
-    is_lifetime_access boolean DEFAULT false,
     file_url character varying(255),
-    file_is_private boolean DEFAULT true,
-    preview_file_url character varying(255),
-    preview_file_is_private boolean DEFAULT false,
     file_type character varying(255),
-    downloads_count integer DEFAULT 0,
     creator_user_id character varying(255),
     created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    created_by character varying(255),
-    created_by_id character varying(255)
+    updated_at timestamp with time zone NOT NULL
 );
 
 
@@ -345,8 +317,7 @@ CREATE TABLE public.game (
     id character varying(255) NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255),
+    creator_user_id character varying(255),
     title character varying(255),
     description text,
     short_description text,
@@ -364,7 +335,7 @@ CREATE TABLE public.game (
     tags jsonb DEFAULT '[]'::jsonb,
     difficulty_level character varying(255),
     estimated_duration integer,
-    content_creator_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -425,8 +396,7 @@ CREATE TABLE public.gamesession (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -445,8 +415,7 @@ CREATE TABLE public.image (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -596,8 +565,7 @@ CREATE TABLE public.school (
     id character varying(255) NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -654,8 +622,7 @@ CREATE TABLE public.settings (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255),
+    creator_user_id character varying(255),
     allow_content_creator_workshops boolean DEFAULT true,
     allow_content_creator_courses boolean DEFAULT true,
     allow_content_creator_files boolean DEFAULT true,
@@ -684,8 +651,7 @@ CREATE TABLE public.sitetext (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -718,8 +684,7 @@ CREATE TABLE public.subscriptionplan (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -748,8 +713,7 @@ CREATE TABLE public.tool (
     creator_user_id character varying(255),
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -798,8 +762,7 @@ CREATE TABLE public.webhooklog (
     id character varying(255) NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -821,8 +784,7 @@ CREATE TABLE public.word (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -841,8 +803,7 @@ CREATE TABLE public.worden (
     is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -876,8 +837,7 @@ CREATE TABLE public.workshop (
     creator_user_id character varying(255),
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    created_by character varying(255),
-    created_by_id character varying(255)
+    creator_user_id character varying(255)
 );
 
 
@@ -1241,7 +1201,7 @@ CREATE INDEX idx_game_content_rule_template_id ON public.game_content_rule USING
 -- Name: idx_game_creator; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_game_creator ON public.game USING btree (content_creator_id);
+CREATE INDEX idx_game_creator ON public.game USING btree (creator_user_id);
 
 
 --
