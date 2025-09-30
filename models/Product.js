@@ -11,6 +11,10 @@ export default (sequelize) => {
     title: {
       type: DataTypes.STRING
     },
+    short_description: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     description: {
       type: DataTypes.TEXT
     },
@@ -35,6 +39,14 @@ export default (sequelize) => {
     },
     youtube_video_title: {
       type: DataTypes.STRING,
+      allowNull: true
+    },
+    marketing_video_title: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    marketing_video_duration: {
+      type: DataTypes.INTEGER,
       allowNull: true
     },
     tags: {

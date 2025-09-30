@@ -156,6 +156,20 @@ class EntityService {
       }
 
       const results = await Model.findAll(queryOptions);
+
+      // Post-process results to add default creator name when creator is null
+      if (entitiesWithCreators.includes(entityType)) {
+        results.forEach(entity => {
+          if (!entity.creator && entity.creator_user_id) {
+            entity.dataValues.creator = {
+              id: null,
+              full_name: 'Ludora',
+              email: null
+            };
+          }
+        });
+      }
+
       return results;
     } catch (error) {
       console.error(`Error finding ${entityType}:`, error);
@@ -171,10 +185,35 @@ class EntityService {
 
     try {
       const Model = this.getModel(entityType);
-      const entity = await Model.findByPk(id);
+
+      // Build query options with creator include for entities that have creators
+      const queryOptions = { where: { id } };
+      const entitiesWithCreators = PRODUCT_TYPES_WITH_CREATORS;
+
+      if (entitiesWithCreators.includes(entityType)) {
+        queryOptions.include = [{
+          model: this.models.User,
+          as: 'creator',
+          attributes: ['id', 'full_name', 'email'],
+          required: false // LEFT JOIN to include entities even without creators
+        }];
+      }
+
+      const entity = await Model.findOne(queryOptions);
 
       if (!entity) {
         throw new NotFoundError(`${this.toPascalCase(entityType)} with ID ${id} not found`);
+      }
+
+      // Post-process to add default creator name when creator is null
+      if (entitiesWithCreators.includes(entityType)) {
+        if (!entity.creator && entity.creator_user_id) {
+          entity.dataValues.creator = {
+            id: null,
+            full_name: 'Ludora',
+            email: null
+          };
+        }
       }
 
       return entity;

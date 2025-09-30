@@ -129,6 +129,34 @@ export function requireOwnership(getResourceOwnerId) {
   };
 }
 
+// Video streaming authentication middleware - supports both header and query parameter
+export async function authenticateTokenForVideo(req, res, next) {
+  try {
+    // Try header first (standard authentication)
+    let token = null;
+    const authHeader = req.headers['authorization'];
+    if (authHeader) {
+      token = authHeader.split(' ')[1];
+    }
+
+    // If no header token, try query parameter (for video streaming)
+    if (!token && req.query.authToken) {
+      token = req.query.authToken;
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    const tokenData = await authService.verifyToken(token);
+    req.user = tokenData;
+    next();
+  } catch (error) {
+    console.error('Video authentication error:', error);
+    res.status(403).json({ error: error.message || 'Invalid or expired token' });
+  }
+}
+
 // Middleware to validate API key (for external integrations)
 export function validateApiKey(req, res, next) {
   try {

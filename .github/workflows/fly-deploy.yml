@@ -14,8 +14,8 @@ jobs:
   deploy:
     name: Deploy API to Fly.io
     runs-on: ubuntu-latest
-    # TEMPORARILY DISABLED FOR LOCAL DEVELOPMENT
-    if: false && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true))
+    # TEMPORARILY DISABLED FOR LOCAL DEVELOPMENT BY ADDING "if: false &&"
+    if: (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true))
 
     steps:
       - name: Checkout code

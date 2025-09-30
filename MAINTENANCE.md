@@ -209,13 +209,13 @@ npm run maintenance:status
 
 The API runs on different ports per environment:
 - **Development**: Port 3003
-- **Staging**: Port 3004
+- **Staging**: Port 3003
 - **Production**: Port 3005
 
 Check if ports are in use:
 ```bash
 lsof -i :3003  # Development
-lsof -i :3004  # Staging
+lsof -i :3003  # Staging
 lsof -i :3005  # Production
 ```
 

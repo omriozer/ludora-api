@@ -26,7 +26,8 @@ class CORSConfig {
 
     // Default fallback for development
     if (urls.length === 0) {
-      urls.push('http://localhost:5173', 'http://localhost:3000');
+      const defaultPort = process.env.DEFAULT_PORT || process.env.PORT || '3000';
+      urls.push('http://localhost:5173', `http://localhost:${defaultPort}`);
     }
 
     console.log('✅ Configured frontend URLs:', urls);

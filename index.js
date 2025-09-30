@@ -53,6 +53,7 @@ import functionRoutes from './routes/functions.js';
 import integrationRoutes from './routes/integrations.js';
 import authRoutes from './routes/auth.js';
 import videoRoutes from './routes/videos.js';
+import filesRoutes from './routes/files.js';
 import accessRoutes from './routes/access.js';
 import mediaRoutes from './routes/media.js';
 import gameContentTemplatesRoutes from './routes/gameContentTemplates.js';
@@ -118,6 +119,7 @@ app.use('/api/entities', entityRoutes);
 app.use('/api/functions', functionRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/videos', videoRoutes);
+app.use('/api/files', filesRoutes);
 app.use('/api/access', accessRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/game-content-templates', gameContentTemplatesRoutes);
@@ -171,7 +173,7 @@ app.use(notFoundHandler);
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
 
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || process.env.DEFAULT_PORT || 3000;
 
 // Initialize database before starting server
 async function startServer() {

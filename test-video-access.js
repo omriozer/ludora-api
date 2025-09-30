@@ -108,7 +108,7 @@ async function testDatabaseModels() {
 function generateCurlCommands() {
   console.log('\n📡 API Testing Commands (using curl)\n');
   
-  const baseUrl = 'http://localhost:3003';
+  const baseUrl = `http://localhost:${process.env.PORT || process.env.DEFAULT_PORT || '3000'}`;
   
   console.log('1. Upload a video:');
   console.log(`curl -X POST -F "file=@test-video.mp4" -H "Authorization: Bearer YOUR_JWT_TOKEN" ${baseUrl}/api/videos/upload`);

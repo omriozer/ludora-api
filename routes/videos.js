@@ -2,8 +2,6 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
-import multer from 'multer';
-import { v4 as uuidv4 } from 'uuid';
 import { authenticateToken as requireAuth } from '../middleware/auth.js';
 import { checkVideoAccess, videoAccessMiddleware } from '../services/videoAccessControl.js';
 
@@ -13,13 +11,8 @@ const router = express.Router();
 const stat = promisify(fs.stat);
 const access = promisify(fs.access);
 
-// Video storage directory
-const VIDEO_STORAGE_DIR = path.resolve('./uploads/videos');
+// DEPRECATED: Local video storage removed - all videos now use S3
 
-// Ensure videos directory exists
-if (!fs.existsSync(VIDEO_STORAGE_DIR)) {
-  fs.mkdirSync(VIDEO_STORAGE_DIR, { recursive: true });
-}
 
 /**
  * Video streaming endpoint with HTTP Range support and access control
@@ -165,78 +158,11 @@ router.get('/:videoId/access', requireAuth, async (req, res) => {
   }
 });
 
-/**
- * Video upload endpoint
- * POST /api/videos/upload
- */
+// DEPRECATED: Local video upload configuration removed
+// All video uploads now use unified S3 endpoints in /api/files/
 
-// Configure multer for video uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, VIDEO_STORAGE_DIR);
-  },
-  filename: (req, file, cb) => {
-    // Generate a unique filename using UUID
-    const uniqueId = uuidv4();
-    const extension = path.extname(file.originalname);
-    cb(null, uniqueId + extension);
-  }
-});
-
-const upload = multer({ 
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 * 1024 // 10GB limit
-  },
-  fileFilter: (req, file, cb) => {
-    // Only allow video files
-    if (file.mimetype.startsWith('video/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only video files are allowed'), false);
-    }
-  }
-});
-
-router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ 
-        error: 'No video file uploaded',
-        message: 'Please select a video file to upload'
-      });
-    }
-
-    // Extract the video ID from the filename (without extension)
-    const videoId = path.parse(req.file.filename).name;
-
-    // Log the upload
-    console.log(`Video uploaded: ${req.file.filename} by user ${req.user.id}`);
-
-    res.json({
-      success: true,
-      videoId: videoId,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      // Return the streaming URL (with access control)
-      streamUrl: `/api/videos/${videoId}/stream`,
-      // Add file_uri for ProductModal compatibility (private file)
-      file_uri: `/api/videos/${videoId}/stream`,
-      accessCheckUrl: `/api/videos/${videoId}/access`,
-      uploadedBy: req.user.id,
-      uploadedAt: new Date().toISOString(),
-      message: 'Video uploaded successfully'
-    });
-    
-  } catch (error) {
-    console.error('Video upload error:', error);
-    res.status(500).json({
-      error: 'Upload failed',
-      message: 'Failed to process video upload'
-    });
-  }
-});
+// DEPRECATED ENDPOINTS - Use /api/files/upload-public-video and /api/files/upload-private-video instead
+// These endpoints are kept for backward compatibility only
 
 /**
  * Get video metadata

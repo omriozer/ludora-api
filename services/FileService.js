@@ -187,6 +187,163 @@ class FileService {
     }
   }
 
+  // Upload public file (accessible without authentication)
+  async uploadPublicFile({ file, contentType, entityType, entityId, preserveOriginalName = true }) {
+    try {
+      // Validate file
+      this.validateFile(file);
+
+      // Get environment (development/production)
+      const environment = process.env.ENVIRONMENT || 'development';
+
+      // Build public S3 path: [environment]/public/[contentType]/[entityType]/[entityId]/
+      const s3Path = `${environment}/public/${contentType}/${entityType}/${entityId}`;
+
+      // Use original filename or generate new one
+      const fileName = preserveOriginalName ? file.originalname : `${generateId()}.${this.getFileExtension(file.originalname)}`;
+      const fullS3Key = `${s3Path}/${fileName}`;
+
+      let url, size;
+
+      if (this.useS3 && this.s3) {
+        // Upload to S3 with public access
+        const uploadParams = {
+          Bucket: this.bucketName,
+          Key: fullS3Key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          ACL: 'public-read' // Make publicly accessible
+        };
+
+        const result = await this.s3.upload(uploadParams).promise();
+        url = result.Location;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            url,
+            key: fullS3Key,
+            fileName,
+            mimeType: file.mimetype,
+            size,
+            uploadedAt: new Date().toISOString(),
+            accessLevel: 'public',
+            s3Path
+          }
+        };
+      } else {
+        // Local storage fallback
+        const localPath = path.join(this.localStoragePath, s3Path);
+        if (!fs.existsSync(localPath)) {
+          fs.mkdirSync(localPath, { recursive: true });
+        }
+
+        const fullPath = path.join(localPath, fileName);
+        fs.writeFileSync(fullPath, file.buffer);
+
+        url = `/uploads/${s3Path}/${fileName}`;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            url,
+            key: `${s3Path}/${fileName}`,
+            fileName,
+            mimeType: file.mimetype,
+            size,
+            uploadedAt: new Date().toISOString(),
+            accessLevel: 'public',
+            s3Path
+          }
+        };
+      }
+    } catch (error) {
+      console.error('Error uploading public file:', error);
+      throw error;
+    }
+  }
+
+  // Enhanced uploadFileEntity for private files with environment-first structure
+  async uploadPrivateFileEntity({ file, contentType, entityType, entityId, userId, preserveOriginalName = true }) {
+    try {
+      // Validate file
+      this.validateFile(file);
+
+      // Get environment (development/production)
+      const environment = process.env.ENVIRONMENT || 'development';
+
+      // Build private S3 path: [environment]/private/[userId]/[contentType]/[entityType]/[entityId]/
+      const s3Path = `${environment}/private/${userId}/${contentType}/${entityType}/${entityId}`;
+
+      // Use original filename or generate new one
+      const fileName = preserveOriginalName ? file.originalname : `${generateId()}.${this.getFileExtension(file.originalname)}`;
+      const fullS3Key = `${s3Path}/${fileName}`;
+
+      let url, size;
+
+      if (this.useS3 && this.s3) {
+        // Upload to S3
+        const uploadParams = {
+          Bucket: this.bucketName,
+          Key: fullS3Key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          // Ensure private access
+          ACL: undefined
+        };
+
+        const result = await this.s3.upload(uploadParams).promise();
+        url = result.Location;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            url,
+            key: fullS3Key,
+            fileName,
+            mimeType: file.mimetype,
+            size,
+            uploadedAt: new Date().toISOString(),
+            accessLevel: 'private',
+            s3Path
+          }
+        };
+      } else {
+        // Local storage fallback
+        const localPath = path.join(this.localStoragePath, s3Path);
+        if (!fs.existsSync(localPath)) {
+          fs.mkdirSync(localPath, { recursive: true });
+        }
+
+        const fullPath = path.join(localPath, fileName);
+        fs.writeFileSync(fullPath, file.buffer);
+
+        url = `/uploads/${s3Path}/${fileName}`;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            url,
+            key: `${s3Path}/${fileName}`,
+            fileName,
+            mimeType: file.mimetype,
+            size,
+            uploadedAt: new Date().toISOString(),
+            accessLevel: 'private',
+            s3Path
+          }
+        };
+      }
+    } catch (error) {
+      console.error('Error uploading private file entity:', error);
+      throw error;
+    }
+  }
+
   // Upload private file
   async uploadPrivateFile({ file, folder = 'private', tags = [], userId }) {
     try {
@@ -414,6 +571,9 @@ class FileService {
       throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
     }
 
+    // Debug logging for file validation
+    console.log(`🔍 FileService validation - File mimetype: "${file.mimetype}", originalname: "${file.originalname}"`);
+
     // Check file type
     const allowedTypes = [
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -422,12 +582,15 @@ class FileService {
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'audio/mpeg', 'audio/wav', 'audio/ogg',
-      'video/mp4', 'video/avi', 'video/mov'
+      'video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/x-ms-wmv'
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
+      console.error(`❌ File type "${file.mimetype}" not in allowed types:`, allowedTypes);
       throw new Error(`File type ${file.mimetype} not allowed`);
     }
+
+    console.log(`✅ File validation passed for ${file.mimetype}`);
   }
 
   // Get file extension from filename
@@ -464,6 +627,210 @@ class FileService {
     } catch (error) {
       console.error('Error deleting file:', error);
       throw error;
+    }
+  }
+
+  // Stream S3 object for public access (for marketing videos)
+  async createS3Stream(s3Key) {
+    try {
+      if (!this.useS3 || !this.s3) {
+        throw new Error('S3 not configured for streaming');
+      }
+
+      const params = {
+        Bucket: this.bucketName,
+        Key: s3Key
+      };
+
+      // Return the S3 stream object
+      return this.s3.getObject(params).createReadStream();
+    } catch (error) {
+      console.error('Error creating S3 stream:', error);
+      throw error;
+    }
+  }
+
+  // Get S3 object metadata
+  async getS3ObjectMetadata(s3Key) {
+    try {
+      if (!this.useS3 || !this.s3) {
+        throw new Error('S3 not configured');
+      }
+
+      const params = {
+        Bucket: this.bucketName,
+        Key: s3Key
+      };
+
+      const metadata = await this.s3.headObject(params).promise();
+      return {
+        success: true,
+        data: {
+          size: metadata.ContentLength,
+          contentType: metadata.ContentType,
+          lastModified: metadata.LastModified,
+          etag: metadata.ETag
+        }
+      };
+    } catch (error) {
+      console.error('Error getting S3 object metadata:', error);
+      throw error;
+    }
+  }
+
+  // Upload public marketing video (always .mp4)
+  async uploadPublicVideo({ file, entityType, entityId }) {
+    try {
+      // Validate file
+      this.validateFile(file);
+
+      // Validate that it's a video file
+      if (!file.mimetype.startsWith('video/')) {
+        throw new Error('File must be a video');
+      }
+
+      // Get environment (development/production)
+      const environment = process.env.ENVIRONMENT || 'development';
+
+      // Build public video path: [env]/public/marketing/videos/[entityType]/[entityId]/video.mp4
+      const s3Path = `${environment}/public/marketing/videos/${entityType}/${entityId}`;
+      const fileName = 'video.mp4'; // Standardized filename
+      const fullS3Key = `${s3Path}/${fileName}`;
+
+      let url, size;
+
+      if (this.useS3 && this.s3) {
+        // Upload to S3 (bucket has public ACLs blocked, so no ACL parameter needed)
+        const uploadParams = {
+          Bucket: this.bucketName,
+          Key: fullS3Key,
+          Body: file.buffer,
+          ContentType: 'video/mp4' // Standardized content type
+          // Note: No ACL parameter - bucket has public ACLs blocked
+        };
+
+        const result = await this.s3.upload(uploadParams).promise();
+        url = result.Location;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            url,
+            key: fullS3Key,
+            fileName,
+            mimeType: 'video/mp4',
+            size,
+            uploadedAt: new Date().toISOString(),
+            accessLevel: 'public',
+            s3Path,
+            entityType,
+            entityId
+          }
+        };
+      } else {
+        // For development without S3, still return structured response
+        // but indicate local fallback is not supported for videos
+        throw new Error('S3 storage required for video uploads');
+      }
+    } catch (error) {
+      console.error('Error uploading public video:', error);
+      throw error;
+    }
+  }
+
+  // Upload private video (always .mp4)
+  async uploadPrivateVideo({ file, entityType, entityId }) {
+    try {
+      // Validate file
+      this.validateFile(file);
+
+      // Validate that it's a video file
+      if (!file.mimetype.startsWith('video/')) {
+        throw new Error('File must be a video');
+      }
+
+      // Get environment (development/production)
+      const environment = process.env.ENVIRONMENT || 'development';
+
+      // Build private video path: [env]/private/content/videos/[entityType]/[entityId]/video.mp4
+      const s3Path = `${environment}/private/content/videos/${entityType}/${entityId}`;
+      const fileName = 'video.mp4'; // Standardized filename
+      const fullS3Key = `${s3Path}/${fileName}`;
+
+      let url, size;
+
+      if (this.useS3 && this.s3) {
+        // Upload to S3 with private access
+        const uploadParams = {
+          Bucket: this.bucketName,
+          Key: fullS3Key,
+          Body: file.buffer,
+          ContentType: 'video/mp4', // Standardized content type
+          ACL: undefined // Private access (default)
+        };
+
+        const result = await this.s3.upload(uploadParams).promise();
+        url = result.Location;
+        size = file.buffer.length;
+
+        return {
+          success: true,
+          data: {
+            // For private videos, return internal reference path, not direct S3 URL
+            url: `/api/files/stream-video/${entityType}/${entityId}`,
+            s3Url: url, // Keep S3 URL for internal use
+            key: fullS3Key,
+            fileName,
+            mimeType: 'video/mp4',
+            size,
+            uploadedAt: new Date().toISOString(),
+            accessLevel: 'private',
+            s3Path,
+            entityType,
+            entityId
+          }
+        };
+      } else {
+        // For development without S3, still return structured response
+        // but indicate local fallback is not supported for videos
+        throw new Error('S3 storage required for video uploads');
+      }
+    } catch (error) {
+      console.error('Error uploading private video:', error);
+      throw error;
+    }
+  }
+
+  // Delete S3 object
+  async deleteS3Object(s3Key) {
+    try {
+      if (!this.useS3 || !this.s3) {
+        throw new Error('S3 not configured');
+      }
+
+      console.log(`🗑️ Deleting S3 object: ${s3Key}`);
+
+      const params = {
+        Bucket: this.bucketName,
+        Key: s3Key
+      };
+
+      await this.s3.deleteObject(params).promise();
+      
+      console.log(`✅ Successfully deleted S3 object: ${s3Key}`);
+      return {
+        success: true,
+        key: s3Key,
+        message: 'Object deleted successfully'
+      };
+    } catch (error) {
+      console.error(`❌ Error deleting S3 object ${s3Key}:`, error);
+      return {
+        success: false,
+        error: error.message,
+        key: s3Key
+      };
     }
   }
 }
