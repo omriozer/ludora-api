@@ -69,6 +69,82 @@ async function checkContentCreatorPermissions(user, entityType) {
   return { allowed: true };
 }
 
+// Helper function to get full product with entity and creator
+async function getFullProduct(product) {
+  // Get the entity based on product_type and entity_id
+  let entity = null;
+  if (product.entity_id && product.product_type) {
+    const entityModel = EntityService.getModel(product.product_type);
+    entity = await entityModel.findByPk(product.entity_id);
+  }
+
+  // Get creator information
+  let creator = null;
+  if (product.creator_user_id) {
+    creator = await models.User.findByPk(product.creator_user_id, {
+      attributes: ['id', 'full_name', 'email', 'content_creator_agreement_sign_date']
+    });
+  }
+
+  // Merge all data
+  return {
+    ...product.toJSON(),
+    ...(entity ? entity.toJSON() : {}),
+    creator: creator ? {
+      id: creator.id,
+      full_name: creator.full_name,
+      email: creator.email,
+      is_content_creator: !!creator.content_creator_agreement_sign_date
+    } : null
+  };
+}
+
+// GET /entities/products/list - Get all products with full details and filtering
+router.get('/products/list', optionalAuth, async (req, res) => {
+  try {
+    const {
+      product_type,
+      category,
+      is_published,
+      limit,
+      offset,
+      sort_by = 'created_at',
+      sort_order = 'DESC'
+    } = req.query;
+
+    // Build where clause
+    const where = {};
+    if (product_type) where.product_type = product_type;
+    if (category) where.category = category;
+    if (is_published !== undefined) where.is_published = is_published === 'true';
+
+    // Build order clause
+    const validSortFields = ['created_at', 'updated_at', 'price', 'title', 'downloads_count'];
+    const sortField = validSortFields.includes(sort_by) ? sort_by : 'created_at';
+    const sortDirection = sort_order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    // Get products with pagination
+    const options = {
+      where,
+      order: [[sortField, sortDirection]],
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined
+    };
+
+    const products = await models.Product.findAll(options);
+
+    // Get full details for each product
+    const fullProducts = await Promise.all(
+      products.map(product => getFullProduct(product))
+    );
+
+    res.json(fullProducts);
+  } catch (error) {
+    console.error('Error fetching products list:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /entities/product/:id/details - Get product with full details (Product + Entity + Creator)
 // This MUST be before generic /:type/:id route to match correctly
 router.get('/product/:id/details', optionalAuth, async (req, res) => {
@@ -82,33 +158,7 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Get the entity based on product_type and entity_id
-    let entity = null;
-    if (product.entity_id && product.product_type) {
-      const entityModel = EntityService.getModel(product.product_type);
-      entity = await entityModel.findByPk(product.entity_id);
-    }
-
-    // Get creator information
-    let creator = null;
-    if (product.creator_user_id) {
-      creator = await models.User.findByPk(product.creator_user_id, {
-        attributes: ['id', 'full_name', 'email', 'content_creator_agreement_sign_date']
-      });
-    }
-
-    // Merge all data
-    const fullProduct = {
-      ...product.toJSON(),
-      ...(entity ? entity.toJSON() : {}),
-      creator: creator ? {
-        id: creator.id,
-        full_name: creator.full_name,
-        email: creator.email,
-        is_content_creator: !!creator.content_creator_agreement_sign_date
-      } : null
-    };
-
+    const fullProduct = await getFullProduct(product);
     res.json(fullProduct);
   } catch (error) {
     console.error('Error fetching product details:', error);
