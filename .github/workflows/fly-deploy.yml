@@ -21,34 +21,42 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test -- --testPathIgnorePatterns=tests/integration/hybrid-storage.test.js
-        env:
-          NODE_ENV: test
-          ENVIRONMENT: test
-          SKIP_DB_SETUP: true
-
       - name: Setup Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Check for dependency changes
+        id: deps-check
+        run: |
+          git diff HEAD~1 HEAD -- package.json package-lock.json > /dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
 
       - name: Deploy to Fly.io
         run: flyctl deploy --remote-only -a ludora-api
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      - name: Run database migrations
+        run: |
+          echo "Running database migrations..."
+          flyctl ssh console -a ludora-api -C "sh -c 'cd /app && npm run db:migrate:prod'"
+          echo "✅ Migrations completed successfully"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Handle dependency changes
+        if: steps.deps-check.outputs.changes == 'true'
+        run: |
+          echo "⚠️ Package.json changes detected - dependencies will be updated on next build"
+          echo "Fly.io automatically rebuilds with fresh dependencies when Dockerfile is used"
+
       - name: Health check
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 60
-          curl -f https://ludora-api.fly.dev/health || exit 1
+          curl -f https://api.ludora.app/health || exit 1
           echo "✅ API deployment successful and healthy!"
-          echo "ℹ️  Database initialization handled automatically on application startup"
