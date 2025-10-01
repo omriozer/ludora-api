@@ -70,7 +70,7 @@ async function checkContentCreatorPermissions(user, entityType) {
 }
 
 // Helper function to get full product with entity and creator
-async function getFullProduct(product) {
+async function getFullProduct(product, userId = null) {
   // Get the entity based on product_type and entity_id
   let entity = null;
   if (product.entity_id && product.product_type) {
@@ -86,6 +86,20 @@ async function getFullProduct(product) {
     });
   }
 
+  // Get purchase information if user is authenticated
+  let purchase = null;
+  if (userId && product.id) {
+    purchase = await models.Purchase.findOne({
+      where: {
+        buyer_user_id: userId,
+        purchasable_id: product.entity_id || product.id,
+        purchasable_type: product.product_type,
+        payment_status: 'completed'
+      },
+      attributes: ['id', 'payment_status', 'access_expires_at', 'created_at']
+    });
+  }
+
   // Merge all data
   return {
     ...product.toJSON(),
@@ -95,7 +109,8 @@ async function getFullProduct(product) {
       full_name: creator.full_name,
       email: creator.email,
       is_content_creator: !!creator.content_creator_agreement_sign_date
-    } : null
+    } : null,
+    purchase: purchase ? purchase.toJSON() : null
   };
 }
 
@@ -133,9 +148,12 @@ router.get('/products/list', optionalAuth, async (req, res) => {
 
     const products = await models.Product.findAll(options);
 
+    // Get user ID from auth if available
+    const userId = req.user?.uid || null;
+
     // Get full details for each product
     const fullProducts = await Promise.all(
-      products.map(product => getFullProduct(product))
+      products.map(product => getFullProduct(product, userId))
     );
 
     res.json(fullProducts);
@@ -158,7 +176,10 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const fullProduct = await getFullProduct(product);
+    // Get user ID from auth if available
+    const userId = req.user?.uid || null;
+
+    const fullProduct = await getFullProduct(product, userId);
     res.json(fullProduct);
   } catch (error) {
     console.error('Error fetching product details:', error);
