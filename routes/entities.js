@@ -4,6 +4,7 @@ import { validateBody, validateQuery, schemas, customValidators } from '../middl
 import EntityService from '../services/EntityService.js';
 import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
+import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 
 const router = express.Router();
 
@@ -86,6 +87,16 @@ async function getFullProduct(product, userId = null) {
     });
   }
 
+  // If creator_user_id is NULL or user lookup failed, use default 'Ludora' creator
+  if (!creator) {
+    creator = {
+      id: null,
+      full_name: 'Ludora',
+      email: null,
+      content_creator_agreement_sign_date: null
+    };
+  }
+
   // Get purchase information if user is authenticated
   let purchase = null;
   if (userId && product.id) {
@@ -115,12 +126,12 @@ async function getFullProduct(product, userId = null) {
     ...entityData,
     id: productData.id, // Ensure product ID is preserved
     entity_id: product.entity_id, // Keep entity_id reference
-    creator: creator ? {
+    creator: {
       id: creator.id,
       full_name: creator.full_name,
       email: creator.email,
       is_content_creator: !!creator.content_creator_agreement_sign_date
-    } : null,
+    },
     purchase: purchase ? purchase.toJSON() : null
   };
 }
@@ -202,15 +213,28 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
 // GET /entities/:type - Find entities with query params
 router.get('/:type', optionalAuth, customValidators.validateEntityType, validateQuery(schemas.entityQuery), async (req, res) => {
   const entityType = req.params.type;
-  
+
   try {
     const { limit, offset, ...query } = req.query;
     const options = {};
-    
+
     if (limit) options.limit = parseInt(limit);
     if (offset) options.offset = parseInt(offset);
-    
+
     const results = await EntityService.find(entityType, query, options);
+
+    // For Settings entity, add file_types_config to each result
+    if (entityType === 'settings') {
+      const enhancedResults = results.map(setting => {
+        const settingData = setting.toJSON ? setting.toJSON() : setting;
+        return {
+          ...settingData,
+          file_types_config: getFileTypesForFrontend()
+        };
+      });
+      return res.json(enhancedResults);
+    }
+
     res.json(results);
   } catch (error) {
     console.error('Error finding entities:', error);
@@ -272,7 +296,18 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
       return res.status(403).json({ error: permissionCheck.message });
     }
 
-    const entity = await EntityService.create(entityType, req.body, req.user.uid);
+    // Determine creator_user_id based on is_ludora_creator flag (admin-only)
+    let createdBy = req.user.uid;
+
+    // Only admins and sysadmins can create products without creator (Ludora products)
+    if (req.body.is_ludora_creator === true) {
+      if (user.role === 'admin' || user.role === 'sysadmin') {
+        createdBy = null; // Don't set creator_user_id - will default to Ludora
+      }
+      // If non-admin tries to set is_ludora_creator, ignore it and use their ID
+    }
+
+    const entity = await EntityService.create(entityType, req.body, createdBy);
     res.status(201).json(entity);
   } catch (error) {
     console.error('Error creating entity:', error);

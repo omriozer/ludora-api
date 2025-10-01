@@ -20,6 +20,16 @@ export default function(sequelize) {
         isIn: [['pdf', 'ppt', 'docx', 'zip', 'other']]
       }
     },
+    allow_preview: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
+    },
+    add_copyrights_footer: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
+    },
     creator_user_id: {
       type: DataTypes.STRING,
       allowNull: true,

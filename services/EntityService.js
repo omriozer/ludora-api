@@ -160,7 +160,10 @@ class EntityService {
       // Post-process results to add default creator name when creator is null
       if (entitiesWithCreators.includes(entityType)) {
         results.forEach(entity => {
-          if (!entity.creator && entity.creator_user_id) {
+          // Show 'Ludora' as creator when:
+          // 1. creator_user_id exists but user lookup failed
+          // 2. creator_user_id is NULL (system/Ludora product)
+          if (!entity.creator) {
             entity.dataValues.creator = {
               id: null,
               full_name: 'Ludora',
@@ -207,7 +210,10 @@ class EntityService {
 
       // Post-process to add default creator name when creator is null
       if (entitiesWithCreators.includes(entityType)) {
-        if (!entity.creator && entity.creator_user_id) {
+        // Show 'Ludora' as creator when:
+        // 1. creator_user_id exists but user lookup failed
+        // 2. creator_user_id is NULL (system/Ludora product)
+        if (!entity.creator) {
           entity.dataValues.creator = {
             id: null,
             full_name: 'Ludora',

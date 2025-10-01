@@ -9,33 +9,39 @@ const authService = new AuthService();
 import FileService from '../services/FileService.js';
 import models from '../models/index.js';
 import { MEDIA_ENABLED_PRODUCT_TYPES } from '../constants/productTypes.js';
+import { getAllAllowedMimeTypes, detectFileTypeFromMime } from '../constants/fileTypes.js';
 
 const router = express.Router();
 
 // Custom authentication middleware that checks token from header or query
 const authenticateTokenOrQuery = async (req, res, next) => {
   try {
+    console.log('🔐 Auth middleware hit:', { url: req.url, method: req.method });
     const authHeader = req.headers['authorization'];
     let token = null;
 
     if (authHeader) {
       token = authHeader.split(' ')[1]; // Bearer TOKEN
-    } else if (req.query.authToken) {
-      token = req.query.authToken; // From query parameter
+      console.log('🔐 Token from header:', token ? 'present' : 'missing');
+    } else if (req.query.authToken || req.query.token) {
+      token = req.query.authToken || req.query.token; // From query parameter
+      console.log('🔐 Token from query:', token ? 'present' : 'missing');
     }
 
     if (!token) {
+      console.log('🔐 No token found');
       return res.status(401).json({ error: 'Access token required' });
     }
 
 
     // Use AuthService to verify the token
     const tokenData = await authService.verifyToken(token);
+    console.log('🔐 Token verified for user:', tokenData.id);
     req.user = tokenData;
     next();
 
   } catch (error) {
-    console.error('Authentication error:', error);
+    console.error('🔐 Authentication error:', error);
     res.status(403).json({ error: error.message || 'Invalid or expired token' });
   }
 };
@@ -407,23 +413,8 @@ const fileUpload = multer({
     fileSize: 500 * 1024 * 1024 // 500MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Allow PDF, Word, Excel, PowerPoint, and common image files
-    const allowedMimes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-powerpoint',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'application/zip',
-      'application/x-zip-compressed'
-    ];
+    // Use centralized file type configuration
+    const allowedMimes = getAllAllowedMimeTypes();
 
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
@@ -440,27 +431,8 @@ const s3Upload = multer({
     fileSize: 500 * 1024 * 1024 // 500MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Allow PDF, Word, Excel, PowerPoint, images, and other common file types
-    const allowedMimes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-powerpoint',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'application/zip',
-      'application/x-zip-compressed',
-      'text/plain',
-      'video/mp4',
-      'video/quicktime',
-      'video/x-msvideo'
-    ];
+    // Use centralized file type configuration
+    const allowedMimes = getAllAllowedMimeTypes();
 
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
@@ -543,16 +515,8 @@ router.post('/file/upload', authenticateToken, s3Upload.single('file'), async (r
       preserveOriginalName: true
     });
 
-    // Determine file type based on mime type
-    let fileType = 'other';
-    if (req.file.mimetype === 'application/pdf') fileType = 'pdf';
-    else if (req.file.mimetype.includes('word')) fileType = 'docx';
-    else if (req.file.mimetype.includes('powerpoint')) fileType = 'ppt';
-    else if (req.file.mimetype.includes('excel') || req.file.mimetype.includes('sheet')) fileType = 'xlsx';
-    else if (req.file.mimetype.startsWith('image/')) fileType = 'image';
-    else if (req.file.mimetype.includes('zip')) fileType = 'zip';
-    else if (req.file.mimetype.startsWith('video/')) fileType = 'video';
-    else if (req.file.mimetype === 'text/plain') fileType = 'text';
+    // Determine file type based on mime type using centralized function
+    const fileType = detectFileTypeFromMime(req.file.mimetype);
 
     // Update the File entity with download URL (not direct S3 URL)
     // Use the API download endpoint which handles authentication and access control
@@ -603,6 +567,7 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
   try {
     const { fileEntityId } = req.params;
     const user = req.user;
+    console.log('🔍 File download route hit:', { fileEntityId, userId: user?.id });
 
     // Get File entity
     const fileEntity = await models.File.findByPk(fileEntityId);
