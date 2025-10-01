@@ -69,6 +69,53 @@ async function checkContentCreatorPermissions(user, entityType) {
   return { allowed: true };
 }
 
+// GET /entities/product/:id/details - Get product with full details (Product + Entity + Creator)
+// This MUST be before generic /:type/:id route to match correctly
+router.get('/product/:id/details', optionalAuth, async (req, res) => {
+  const productId = req.params.id;
+
+  try {
+    // Get the Product
+    const product = await models.Product.findByPk(productId);
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Get the entity based on product_type and entity_id
+    let entity = null;
+    if (product.entity_id && product.product_type) {
+      const entityModel = EntityService.getModel(product.product_type);
+      entity = await entityModel.findByPk(product.entity_id);
+    }
+
+    // Get creator information
+    let creator = null;
+    if (product.creator_user_id) {
+      creator = await models.User.findByPk(product.creator_user_id, {
+        attributes: ['id', 'full_name', 'email', 'content_creator_agreement_sign_date']
+      });
+    }
+
+    // Merge all data
+    const fullProduct = {
+      ...product.toJSON(),
+      ...(entity ? entity.toJSON() : {}),
+      creator: creator ? {
+        id: creator.id,
+        full_name: creator.full_name,
+        email: creator.email,
+        is_content_creator: !!creator.content_creator_agreement_sign_date
+      } : null
+    };
+
+    res.json(fullProduct);
+  } catch (error) {
+    console.error('Error fetching product details:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Generic CRUD routes for all entities
 // GET /entities/:type - Find entities with query params
 router.get('/:type', optionalAuth, customValidators.validateEntityType, validateQuery(schemas.entityQuery), async (req, res) => {
@@ -93,7 +140,7 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
 router.get('/:type/:id', optionalAuth, customValidators.validateEntityType, async (req, res) => {
   const entityType = req.params.type;
   const id = req.params.id;
-  
+
   try {
     const entity = await EntityService.findById(entityType, id);
     res.json(entity);

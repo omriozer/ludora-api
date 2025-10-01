@@ -8,10 +8,6 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: false,
     },
-    category: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
     // Core file-specific fields only
     file_url: {
       type: DataTypes.STRING,
@@ -36,9 +32,6 @@ export default function(sequelize) {
     ...baseOptions,
     tableName: 'file',
     indexes: [
-      {
-        fields: ['category'],
-      },
       {
         fields: ['file_type'],
       },

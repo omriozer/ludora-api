@@ -554,11 +554,13 @@ router.post('/file/upload', authenticateToken, s3Upload.single('file'), async (r
     else if (req.file.mimetype.startsWith('video/')) fileType = 'video';
     else if (req.file.mimetype === 'text/plain') fileType = 'text';
 
-    // Update the File entity with S3 information
+    // Update the File entity with download URL (not direct S3 URL)
+    // Use the API download endpoint which handles authentication and access control
+    const downloadUrl = `/api/media/file/download/${fileEntityId}`;
     await fileEntity.update({
       file_type: fileType,
-      file_is_private: true, // S3 files are private, accessed through signed URLs
-      file_url: uploadResult.data.url // Store S3 URL
+      file_is_private: true, // S3 files are private, accessed through API
+      file_url: downloadUrl // Store API download URL, not direct S3 URL
     });
 
     // Log the upload
@@ -609,57 +611,56 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
       return res.status(404).json({ error: 'File entity not found' });
     }
 
-    // Check if user has access (same logic as video access)
-    let hasAccess = false;
-
-    // Check purchases
-    const purchases = await models.Purchase.findAll({
+    // Find the Product associated with this File entity
+    const product = await models.Product.findOne({
       where: {
-        buyer_user_id: user.id,
-        payment_status: 'paid'
+        entity_id: fileEntityId,
+        product_type: 'file'
       }
     });
 
-    const entityPurchases = purchases.filter(purchase =>
-      (purchase.purchasable_id === fileEntityId && purchase.purchasable_type === 'file') ||
-      (purchase.product_id === fileEntityId) // Legacy fallback
-    );
-
-    if (entityPurchases.length > 0) {
-      const userPurchase = entityPurchases[0];
-      // Clean access logic: access_expires_at null = lifetime, or not expired
-      if (!userPurchase.access_expires_at ||
-          new Date(userPurchase.access_expires_at) > new Date()) {
-        hasAccess = true;
-      }
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found for this file' });
     }
 
-    // Auto-grant access for free items
-    if (!hasAccess && parseFloat(fileEntity.price || 0) === 0) {
-      hasAccess = true;
+    // Check if user has access
+    let hasAccess = false;
 
-      // Create purchase record for free item
-      try {
-        const orderNumber = `FREE-AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        await models.Purchase.create({
-          order_number: orderNumber,
-          purchasable_type: 'file',
-          purchasable_id: fileEntityId,
+    // 1. Admin/Sysadmin always has access
+    if (user.role === 'admin' || user.role === 'sysadmin') {
+      hasAccess = true;
+    }
+
+    // 2. Creator always has access
+    if (!hasAccess && (fileEntity.creator_user_id === user.id || product.creator_user_id === user.id)) {
+      hasAccess = true;
+    }
+
+    // 3. Check if file is free - all authenticated users can access
+    if (!hasAccess && parseFloat(product.price || 0) === 0) {
+      hasAccess = true;
+    }
+
+    // 4. Check purchases for paid files
+    if (!hasAccess && parseFloat(product.price || 0) > 0) {
+      const purchases = await models.Purchase.findAll({
+        where: {
           buyer_user_id: user.id,
-          payment_status: 'completed',
-          payment_amount: 0,
-          original_price: 0,
-          purchased_lifetime_access: true,
-          first_accessed: new Date()
-        });
-      } catch (autoAccessError) {
-        console.error('Failed to create auto-access record:', autoAccessError);
-      }
-    }
+          payment_status: 'paid'
+        }
+      });
 
-    // Creator always has access
-    if (!hasAccess && fileEntity.creator_user_id === user.id) {
-      hasAccess = true;
+      const productPurchase = purchases.find(purchase =>
+        purchase.product_id === product.id
+      );
+
+      if (productPurchase) {
+        // Check if access is still valid (not expired)
+        if (!productPurchase.access_expires_at ||
+            new Date(productPurchase.access_expires_at) > new Date()) {
+          hasAccess = true;
+        }
+      }
     }
 
     if (!hasAccess) {
@@ -673,58 +674,59 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Construct file path: uploads/files/[userid]/[FileId]/file_id.[fileType]
-    const creatorId = fileEntity.creator_user_id;
-    const fileDir = path.join(FILES_STORAGE_DIR, creatorId, fileEntityId);
+    // Get environment and construct S3 path
+    const environment = process.env.ENVIRONMENT || 'development';
+    const uploaderUserId = fileEntity.creator_user_id || 'system';
+    const s3Prefix = `${environment}/${uploaderUserId}/${fileEntityId}/`;
 
-    // Find the actual file (we need to check what extension it has)
-    let filePath = null;
-    if (fs.existsSync(fileDir)) {
-      const files = fs.readdirSync(fileDir);
-      const targetFile = files.find(f => f.startsWith(fileEntityId));
-      if (targetFile) {
-        filePath = path.join(fileDir, targetFile);
-      }
+    // Use FileService to list objects in the folder and find the file
+    const fileService = FileService;
+
+    if (!fileService.useS3 || !fileService.s3) {
+      return res.status(500).json({ error: 'S3 not configured for file storage' });
     }
 
-    if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found on storage' });
+    // List objects with the prefix to find the actual file
+    const listParams = {
+      Bucket: fileService.bucketName,
+      Prefix: s3Prefix,
+      MaxKeys: 10
+    };
+
+    const listResult = await fileService.s3.listObjectsV2(listParams).promise();
+
+    if (!listResult.Contents || listResult.Contents.length === 0) {
+      return res.status(404).json({ error: 'File not found in storage' });
     }
+
+    // Get the first file (should only be one per File entity)
+    const s3Object = listResult.Contents[0];
+    const s3Key = s3Object.Key;
+
+    // Get file metadata from S3
+    const metadata = await fileService.getS3ObjectMetadata(s3Key);
+    const fileSize = metadata.data.size;
+    const contentType = metadata.data.contentType || 'application/octet-stream';
+
+    // Extract filename from S3 key
+    const filename = s3Key.split('/').pop();
+    const extension = path.extname(filename);
 
     // Log successful file access
     console.log(`📁 File access granted: ${user.email} -> file/${fileEntityId}`, {
       userEmail: user.email,
       fileEntityId,
+      s3Key,
       timestamp: new Date().toISOString(),
       userAgent: req.headers['user-agent'],
       ip: req.ip,
-      hasLifetimeAccess: entityPurchases.length > 0 ? entityPurchases[0].purchased_lifetime_access : false,
-      accessType: parseFloat(fileEntity.price || 0) === 0 ? 'free' : 'paid'
+      accessType: parseFloat(product.price || 0) === 0 ? 'free' : 'paid'
     });
-
-    // Get file stats
-    const stats = fs.statSync(filePath);
-    const extension = path.extname(filePath);
-
-    // Set appropriate content type
-    let contentType = 'application/octet-stream';
-    if (extension === '.pdf') contentType = 'application/pdf';
-    else if (extension === '.docx') contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    else if (extension === '.doc') contentType = 'application/msword';
-    else if (extension === '.xlsx') contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    else if (extension === '.xls') contentType = 'application/vnd.ms-excel';
-    else if (extension === '.pptx') contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-    else if (extension === '.ppt') contentType = 'application/vnd.ms-powerpoint';
-    else if (extension === '.zip') contentType = 'application/zip';
-    else if (['.jpg', '.jpeg'].includes(extension)) contentType = 'image/jpeg';
-    else if (extension === '.png') contentType = 'image/png';
-    else if (extension === '.gif') contentType = 'image/gif';
-    else if (extension === '.webp') contentType = 'image/webp';
 
     // Set security headers
     res.set({
       'Content-Type': contentType,
-      'Content-Length': stats.size,
+      'Content-Length': fileSize,
       'Content-Disposition': `attachment; filename="${fileEntity.title}${extension}"`,
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
@@ -734,16 +736,17 @@ router.get('/file/download/:fileEntityId', authenticateTokenOrQuery, async (req,
       'Content-Security-Policy': "default-src 'self'"
     });
 
-    // Stream the file
-    const stream = fs.createReadStream(filePath);
-    stream.pipe(res);
+    // Create S3 stream and pipe to response
+    const s3Stream = await fileService.createS3Stream(s3Key);
 
-    stream.on('error', (error) => {
-      console.error('File stream error:', error);
+    s3Stream.on('error', (error) => {
+      console.error('S3 stream error:', error);
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to stream file' });
+        res.status(500).json({ error: 'Failed to stream file from storage' });
       }
     });
+
+    s3Stream.pipe(res);
 
   } catch (error) {
     console.error('File download error:', error);

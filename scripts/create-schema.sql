@@ -275,8 +275,7 @@ CREATE TABLE public.course (
     total_duration_minutes integer,
     creator_user_id character varying(255),
     created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    creator_user_id character varying(255)
+    updated_at timestamp with time zone NOT NULL
 );
 
 
@@ -334,8 +333,7 @@ CREATE TABLE public.game (
     game_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     tags jsonb DEFAULT '[]'::jsonb,
     difficulty_level character varying(255),
-    estimated_duration integer,
-    creator_user_id character varying(255)
+    estimated_duration integer
 );
 
 
@@ -505,6 +503,7 @@ CREATE TABLE public.product (
     id character varying(255) NOT NULL,
     title character varying(255),
     description text,
+    short_description character varying(255),
     category character varying(255),
     product_type character varying(255),
     entity_id character varying(255) NOT NULL,
@@ -513,6 +512,8 @@ CREATE TABLE public.product (
     image_url character varying(255),
     youtube_video_id character varying(255),
     youtube_video_title character varying(255),
+    marketing_video_title character varying(255),
+    marketing_video_duration integer,
     tags jsonb,
     target_audience character varying(255),
     difficulty_level character varying(255),
@@ -712,8 +713,7 @@ CREATE TABLE public.tool (
     access_type character varying(255) DEFAULT 'direct'::character varying,
     creator_user_id character varying(255),
     created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    creator_user_id character varying(255)
+    updated_at timestamp with time zone NOT NULL
 );
 
 
@@ -836,8 +836,7 @@ CREATE TABLE public.workshop (
     duration_minutes integer,
     creator_user_id character varying(255),
     created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    creator_user_id character varying(255)
+    updated_at timestamp with time zone NOT NULL
 );
 
 
@@ -1163,24 +1162,10 @@ CREATE INDEX idx_course_is_published ON public.course USING btree (is_published)
 
 
 --
--- Name: idx_file_category; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_file_category ON public.file USING btree (category);
-
-
---
 -- Name: idx_file_creator; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_file_creator ON public.file USING btree (creator_user_id);
-
-
---
--- Name: idx_file_is_published; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_file_is_published ON public.file USING btree (is_published);
 
 
 --
