@@ -101,9 +101,20 @@ async function getFullProduct(product, userId = null) {
   }
 
   // Merge all data
+  // IMPORTANT: Preserve product.id and explicitly rename entity.id to avoid conflicts
+  const productData = product.toJSON();
+  const entityData = entity ? entity.toJSON() : {};
+
+  // Remove 'id' from entity to prevent overwriting product.id
+  if (entityData.id) {
+    delete entityData.id;
+  }
+
   return {
-    ...product.toJSON(),
-    ...(entity ? entity.toJSON() : {}),
+    ...productData,
+    ...entityData,
+    id: productData.id, // Ensure product ID is preserved
+    entity_id: product.entity_id, // Keep entity_id reference
     creator: creator ? {
       id: creator.id,
       full_name: creator.full_name,
