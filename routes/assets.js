@@ -71,22 +71,20 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter
 
   // Step 2: Apply watermarks if needed
   if (shouldAddWatermarks) {
-    console.log('⚠️ Watermarks temporarily disabled for footer positioning debugging');
-    // Temporarily disabled to focus on footer positioning issue
-    // try {
-    //   // Always use the backend logo file
-    //   const logoUrl = path.join(process.cwd(), 'assets', 'images', 'logo.png');
+    try {
+      // Always use the backend logo file
+      const logoUrl = path.join(process.cwd(), 'assets', 'images', 'logo.png');
 
-    //   console.log('🔍 PDF Watermark: Logo URL resolution:', {
-    //     originalUrl: settings?.footer_settings?.logo?.url || settings?.logo_url,
-    //     resolvedUrl: logoUrl,
-    //     fileExists: logoUrl ? fs.existsSync(logoUrl) : false
-    //   });
-    //   finalPdfBuffer = await addPdfWatermarks(finalPdfBuffer, logoUrl);
-    //   console.log(`✅ Watermarks added successfully`);
-    // } catch (error) {
-    //   console.error('❌ Watermark addition failed, continuing without watermarks:', error);
-    // }
+      console.log('🔍 PDF Watermark: Logo URL resolution:', {
+        originalUrl: settings?.footer_settings?.logo?.url || settings?.logo_url,
+        resolvedUrl: logoUrl,
+        fileExists: logoUrl ? fs.existsSync(logoUrl) : false
+      });
+      finalPdfBuffer = await addPdfWatermarks(finalPdfBuffer, logoUrl);
+      console.log(`✅ Watermarks added successfully`);
+    } catch (error) {
+      console.error('❌ Watermark addition failed, continuing without watermarks:', error);
+    }
   }
 
   return finalPdfBuffer;
