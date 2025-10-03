@@ -5,18 +5,9 @@ import EntityService from '../services/EntityService.js';
 import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
+import { extractCopyrightText, updateFooterTextContent } from '../utils/footerSettingsHelper.js';
 
 const router = express.Router();
-
-// Helper function to validate entity type
-function validateEntityType(entityType) {
-  try {
-    EntityService.getModel(entityType);
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
 
 // Helper function to check content creator permissions
 async function checkContentCreatorPermissions(user, entityType) {
@@ -223,12 +214,17 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
 
     const results = await EntityService.find(entityType, query, options);
 
-    // For Settings entity, add file_types_config to each result
+    // For Settings entity, add file_types_config and backwards compatibility for copyright_footer_text
     if (entityType === 'settings') {
       const enhancedResults = results.map(setting => {
         const settingData = setting.toJSON ? setting.toJSON() : setting;
+
+        // Extract copyright_footer_text from footer_settings for backwards compatibility
+        const copyright_footer_text = extractCopyrightText(settingData.footer_settings) || settingData.copyright_footer_text;
+
         return {
           ...settingData,
+          copyright_footer_text, // Backwards compatibility
           file_types_config: getFileTypesForFrontend()
         };
       });
@@ -321,7 +317,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
   // Use entity-specific validation schemas when available
   const entityType = req.params.type;
   let validationSchema;
-  
+
   switch (entityType) {
     case 'workshop':
       validationSchema = schemas.workshopUpdate;
@@ -332,13 +328,42 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
     default:
       validationSchema = schemas.entityUpdate;
   }
-  
+
   return validateBody(validationSchema)(req, res, next);
 }, async (req, res) => {
   const entityType = req.params.type;
   const id = req.params.id;
-  
+
   try {
+    // For settings updates, handle footer_settings and copyright_footer_text synchronization
+    if (entityType === 'settings') {
+      if (req.body.footer_settings) {
+        // If footer_settings provided, extract copyright text for backwards compatibility
+        const copyrightText = extractCopyrightText(req.body.footer_settings);
+        if (copyrightText) {
+          req.body.copyright_footer_text = copyrightText;
+        }
+      } else if (req.body.copyright_footer_text) {
+        // If only copyright_footer_text provided, update footer_settings.text.content
+        // Get current settings to preserve other footer settings
+        const currentSettings = await models.Settings.findByPk(id);
+        if (currentSettings) {
+          req.body.footer_settings = updateFooterTextContent(
+            currentSettings.footer_settings,
+            req.body.copyright_footer_text
+          );
+        }
+      }
+    }
+
+    console.log('📝 Backend received update data:', req.body);
+    console.log('📝 Video fields received:', {
+      youtube_video_id: req.body.youtube_video_id,
+      youtube_video_title: req.body.youtube_video_title,
+      marketing_video_title: req.body.marketing_video_title,
+      marketing_video_duration: req.body.marketing_video_duration,
+      video_file_url: req.body.video_file_url
+    });
     const entity = await EntityService.update(entityType, id, req.body, req.user.uid);
     res.json(entity);
   } catch (error) {
@@ -417,6 +442,39 @@ router.get('/:type/count', optionalAuth, customValidators.validateEntityType, as
 router.get('/', optionalAuth, (req, res) => {
   const entityTypes = EntityService.getAvailableEntityTypes();
   res.json({ entityTypes, count: entityTypes.length });
+});
+
+// GET /entities/purchase/check-product-purchases/:productId - Check if product has completed non-free purchases
+router.get('/purchase/check-product-purchases/:productId', authenticateToken, async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    // Get the product to check if it's free
+    const product = await models.Product.findByPk(productId);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Check for completed purchases where product is not free
+    const purchases = await models.Purchase.findAll({
+      where: {
+        product_id: productId,
+        status: 'completed'
+      }
+    });
+
+    // Filter out free products
+    const nonFreePurchases = purchases.filter(() => product.price > 0);
+
+    res.json({
+      hasNonFreePurchases: nonFreePurchases.length > 0,
+      purchaseCount: nonFreePurchases.length,
+      isFree: product.price === 0 || product.is_free === true
+    });
+  } catch (error) {
+    console.error('Error checking product purchases:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;

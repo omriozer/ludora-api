@@ -99,6 +99,22 @@ export default (sequelize) => {
     ]
   });
 
+  // Hook to auto-set is_published=false for File products without documents
+  Product.addHook('beforeSave', async (product, options) => {
+    // Only check File products that are being set to published
+    if (product.product_type === 'file' && product.is_published === true) {
+      // Get the File entity
+      const models = sequelize.models;
+      const fileEntity = await models.File.findByPk(product.entity_id);
+
+      // If File has no file_name, force is_published to false
+      if (!fileEntity || !fileEntity.file_name) {
+        product.is_published = false;
+        console.log(`⚠️ Auto-set is_published=false for Product ${product.id} - File entity has no document`);
+      }
+    }
+  });
+
   Product.associate = function(models) {
     Product.belongsTo(models.User, {
       foreignKey: 'creator_user_id',

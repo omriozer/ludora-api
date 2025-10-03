@@ -4,6 +4,7 @@ import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
 import fs from 'fs';
 import path from 'path';
+import { constructS3Path } from '../utils/s3PathUtils.js';
 
 class FileService {
   constructor() {
@@ -193,15 +194,14 @@ class FileService {
       // Validate file
       this.validateFile(file);
 
-      // Get environment (development/production)
-      const environment = process.env.ENVIRONMENT || 'development';
-
-      // Build public S3 path: [environment]/public/[contentType]/[entityType]/[entityId]/
-      const s3Path = `${environment}/public/${contentType}/${entityType}/${entityId}`;
+      // Map contentType to standardized assetType for marketing videos
+      const assetType = contentType === 'marketing/videos' ? 'marketing-video' : contentType;
 
       // Use original filename or generate new one
       const fileName = preserveOriginalName ? file.originalname : `${generateId()}.${this.getFileExtension(file.originalname)}`;
-      const fullS3Key = `${s3Path}/${fileName}`;
+
+      // Use standardized S3 path construction
+      const fullS3Key = constructS3Path(entityType, entityId, assetType, fileName);
 
       let url, size;
 
@@ -228,13 +228,13 @@ class FileService {
             mimeType: file.mimetype,
             size,
             uploadedAt: new Date().toISOString(),
-            accessLevel: 'public',
-            s3Path
+            accessLevel: 'public'
           }
         };
       } else {
-        // Local storage fallback
-        const localPath = path.join(this.localStoragePath, s3Path);
+        // Local storage fallback - extract directory from full S3 key
+        const localDir = path.dirname(fullS3Key);
+        const localPath = path.join(this.localStoragePath, localDir);
         if (!fs.existsSync(localPath)) {
           fs.mkdirSync(localPath, { recursive: true });
         }
@@ -242,20 +242,19 @@ class FileService {
         const fullPath = path.join(localPath, fileName);
         fs.writeFileSync(fullPath, file.buffer);
 
-        url = `/uploads/${s3Path}/${fileName}`;
+        url = `/uploads/${fullS3Key}`;
         size = file.buffer.length;
 
         return {
           success: true,
           data: {
             url,
-            key: `${s3Path}/${fileName}`,
+            key: fullS3Key,
             fileName,
             mimeType: file.mimetype,
             size,
             uploadedAt: new Date().toISOString(),
-            accessLevel: 'public',
-            s3Path
+            accessLevel: 'public'
           }
         };
       }
@@ -271,15 +270,14 @@ class FileService {
       // Validate file
       this.validateFile(file);
 
-      // Get environment (development/production)
-      const environment = process.env.ENVIRONMENT || 'development';
-
-      // Build private S3 path: [environment]/private/[userId]/[contentType]/[entityType]/[entityId]/
-      const s3Path = `${environment}/private/${userId}/${contentType}/${entityType}/${entityId}`;
+      // Map contentType to standardized assetType
+      const assetType = contentType === 'content/videos' ? 'content-video' : contentType;
 
       // Use original filename or generate new one
       const fileName = preserveOriginalName ? file.originalname : `${generateId()}.${this.getFileExtension(file.originalname)}`;
-      const fullS3Key = `${s3Path}/${fileName}`;
+
+      // Use standardized S3 path construction (no userId)
+      const fullS3Key = constructS3Path(entityType, entityId, assetType, fileName);
 
       let url, size;
 
@@ -307,13 +305,13 @@ class FileService {
             mimeType: file.mimetype,
             size,
             uploadedAt: new Date().toISOString(),
-            accessLevel: 'private',
-            s3Path
+            accessLevel: 'private'
           }
         };
       } else {
-        // Local storage fallback
-        const localPath = path.join(this.localStoragePath, s3Path);
+        // Local storage fallback - extract directory from full S3 key
+        const localDir = path.dirname(fullS3Key);
+        const localPath = path.join(this.localStoragePath, localDir);
         if (!fs.existsSync(localPath)) {
           fs.mkdirSync(localPath, { recursive: true });
         }
@@ -321,20 +319,19 @@ class FileService {
         const fullPath = path.join(localPath, fileName);
         fs.writeFileSync(fullPath, file.buffer);
 
-        url = `/uploads/${s3Path}/${fileName}`;
+        url = `/uploads/${fullS3Key}`;
         size = file.buffer.length;
 
         return {
           success: true,
           data: {
             url,
-            key: `${s3Path}/${fileName}`,
+            key: fullS3Key,
             fileName,
             mimeType: file.mimetype,
             size,
             uploadedAt: new Date().toISOString(),
-            accessLevel: 'private',
-            s3Path
+            accessLevel: 'private'
           }
         };
       }
@@ -650,6 +647,26 @@ class FileService {
     }
   }
 
+  // Download S3 object to buffer
+  async downloadToBuffer(s3Key) {
+    try {
+      if (!this.useS3 || !this.s3) {
+        throw new Error('S3 not configured');
+      }
+
+      const params = {
+        Bucket: this.bucketName,
+        Key: s3Key
+      };
+
+      const data = await this.s3.getObject(params).promise();
+      return data.Body; // Returns Buffer
+    } catch (error) {
+      console.error('Error downloading to buffer:', error);
+      throw error;
+    }
+  }
+
   // Get S3 object metadata
   async getS3ObjectMetadata(s3Key) {
     try {
@@ -689,13 +706,11 @@ class FileService {
         throw new Error('File must be a video');
       }
 
-      // Get environment (development/production)
-      const environment = process.env.ENVIRONMENT || 'development';
-
-      // Build public video path: [env]/public/marketing/videos/[entityType]/[entityId]/video.mp4
-      const s3Path = `${environment}/public/marketing/videos/${entityType}/${entityId}`;
       const fileName = 'video.mp4'; // Standardized filename
-      const fullS3Key = `${s3Path}/${fileName}`;
+      const assetType = 'marketing-video'; // Standardized asset type
+
+      // Use standardized S3 path construction
+      const fullS3Key = constructS3Path(entityType, entityId, assetType, fileName);
 
       let url, size;
 
@@ -723,7 +738,6 @@ class FileService {
             size,
             uploadedAt: new Date().toISOString(),
             accessLevel: 'public',
-            s3Path,
             entityType,
             entityId
           }
@@ -750,13 +764,11 @@ class FileService {
         throw new Error('File must be a video');
       }
 
-      // Get environment (development/production)
-      const environment = process.env.ENVIRONMENT || 'development';
-
-      // Build private video path: [env]/private/content/videos/[entityType]/[entityId]/video.mp4
-      const s3Path = `${environment}/private/content/videos/${entityType}/${entityId}`;
       const fileName = 'video.mp4'; // Standardized filename
-      const fullS3Key = `${s3Path}/${fileName}`;
+      const assetType = 'content-video'; // Standardized asset type
+
+      // Use standardized S3 path construction
+      const fullS3Key = constructS3Path(entityType, entityId, assetType, fileName);
 
       let url, size;
 
@@ -786,7 +798,6 @@ class FileService {
             size,
             uploadedAt: new Date().toISOString(),
             accessLevel: 'private',
-            s3Path,
             entityType,
             entityId
           }
@@ -799,6 +810,45 @@ class FileService {
     } catch (error) {
       console.error('Error uploading private video:', error);
       throw error;
+    }
+  }
+
+  // Upload to S3 (generic method for any asset)
+  async uploadToS3({ buffer, key, contentType, metadata = {} }) {
+    try {
+      if (!this.useS3 || !this.s3) {
+        throw new Error('S3 not configured');
+      }
+
+      // Convert metadata values to strings (AWS S3 requirement)
+      const stringMetadata = {};
+      Object.keys(metadata).forEach(k => {
+        stringMetadata[k] = String(metadata[k]);
+      });
+
+      const uploadParams = {
+        Bucket: this.bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        Metadata: stringMetadata
+      };
+
+      const result = await this.s3.upload(uploadParams).promise();
+
+      return {
+        success: true,
+        url: result.Location,
+        key: result.Key,
+        etag: result.ETag,
+        size: buffer.length
+      };
+    } catch (error) {
+      console.error('Error uploading to S3:', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
@@ -817,7 +867,7 @@ class FileService {
       };
 
       await this.s3.deleteObject(params).promise();
-      
+
       console.log(`✅ Successfully deleted S3 object: ${s3Key}`);
       return {
         success: true,

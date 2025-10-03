@@ -9,9 +9,10 @@ export default function(sequelize) {
       allowNull: false,
     },
     // Core file-specific fields only
-    file_url: {
+    file_name: {
       type: DataTypes.STRING,
       allowNull: true,
+      comment: 'Original filename of uploaded document (e.g., "my-document.pdf"). NULL if not uploaded yet.'
     },
     file_type: {
       type: DataTypes.STRING,
@@ -29,6 +30,11 @@ export default function(sequelize) {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true
+    },
+    footer_settings: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Footer configuration (positions, styles, visibility). Text content comes from settings.'
     },
     creator_user_id: {
       type: DataTypes.STRING,

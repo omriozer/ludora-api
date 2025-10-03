@@ -295,6 +295,15 @@ class EntityService {
       // Remove creator field from update data (shouldn't be changed)
       delete updateData.creator_user_id;
 
+      console.log(`📝 EntityService updating ${entityType} with data:`, updateData);
+      console.log('📝 Video fields in EntityService:', {
+        youtube_video_id: updateData.youtube_video_id,
+        youtube_video_title: updateData.youtube_video_title,
+        marketing_video_title: updateData.marketing_video_title,
+        marketing_video_duration: updateData.marketing_video_duration,
+        video_file_url: updateData.video_file_url
+      });
+
       await entity.update(updateData);
       return entity;
     } catch (error) {
@@ -600,7 +609,7 @@ class EntityService {
       };
 
       // Remove fields that are definitely Product-only and don't belong in entity tables
-      const productOnlyFields = ['product_type', 'is_sample'];
+      const productOnlyFields = ['product_type', 'is_sample', 'is_published', 'price', 'category', 'image_url', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'access_days'];
       productOnlyFields.forEach(field => delete entityFields[field]);
 
       // For specific entity types, remove fields that they don't have in their schema
@@ -764,13 +773,11 @@ class EntityService {
         // Handle file cleanup for File entities before deletion
         if (entityType === 'file') {
           try {
-            const { deleteFileFromStorage } = await import('../routes/media.js');
-            const fileDeleted = await deleteFileFromStorage(id, entity.creator_user_id);
-            if (fileDeleted) {
-              console.log(`Successfully deleted file storage for entity ${id}`);
-            }
+            const { deleteAllFileAssets } = await import('../routes/assets.js');
+            const result = await deleteAllFileAssets(id);
+            console.log(`Successfully deleted file assets for entity ${id}:`, result);
           } catch (fileError) {
-            console.error(`Error deleting file storage for entity ${id}:`, fileError);
+            console.error(`Error deleting file assets for entity ${id}:`, fileError);
           }
         }
 
