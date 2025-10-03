@@ -252,7 +252,7 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
     }
 
     // Validate assetType
-    const validAssetTypes = ['marketing-video', 'content-video', 'document'];
+    const validAssetTypes = ['marketing-video', 'content-video', 'document', 'image'];
     if (!validAssetTypes.includes(assetType)) {
       return res.status(400).json({
         error: 'Invalid assetType',
@@ -275,6 +275,9 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
     let filename;
     if (assetType === 'marketing-video' || assetType === 'content-video') {
       filename = 'video.mp4'; // Standard video filename
+    } else if (assetType === 'image') {
+      // For images, use standard filename for predictable paths (like marketing videos)
+      filename = 'image.jpg';
     } else {
       filename = req.file.originalname; // Preserve original filename for documents
     }
@@ -313,7 +316,7 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
         }
       }
 
-      res.json({
+      const responseData = {
         success: true,
         s3Key,
         filename,
@@ -324,7 +327,11 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
         mimeType: req.file.mimetype,
         uploadedBy: req.user.id,
         uploadedAt: new Date().toISOString()
-      });
+      };
+
+      // Don't include direct URLs for security - frontend will construct predictable API paths
+
+      res.json(responseData);
 
     } catch (uploadError) {
       console.error('❌ S3 upload error:', uploadError);
@@ -549,6 +556,89 @@ router.post('/upload/video/private', authenticateToken, assetUpload.single('file
 });
 
 /**
+ * Serve Public Image
+ *
+ * Serves a public image directly from S3 storage.
+ * No authentication required for public images.
+ *
+ * @route GET /api/assets/image/:entityType/:entityId/:filename
+ * @access Public (no authentication required)
+ *
+ * @param {string} entityType - Type of entity (workshop, course, file, tool)
+ * @param {string} entityId - ID of the entity
+ * @param {string} filename - Image filename
+ *
+ * @returns {200} Image binary data
+ * @returns {404} Image not found
+ * @returns {500} Server error
+ *
+ * @example Get Product Image
+ * GET /api/assets/image/workshop/abc123/product-image.jpg
+ *
+ * Response: Binary image data with appropriate Content-Type header
+ */
+router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
+  try {
+    const { entityType, entityId, filename } = req.params;
+
+    console.log(`🖼️ Public image request: ${entityType}/${entityId}/${filename}`);
+
+    // Construct S3 path for public image
+    const s3Key = constructS3Path(entityType, entityId, 'image', filename);
+
+    try {
+      // Get image metadata first
+      const metadataResult = await fileService.getS3ObjectMetadata(s3Key);
+
+      if (!metadataResult.success) {
+        return res.status(404).json({
+          error: 'Image not found',
+          message: 'Image not found in storage'
+        });
+      }
+
+      // Stream image directly from S3
+      const stream = await fileService.createS3Stream(s3Key);
+
+      // Set appropriate headers
+      res.setHeader('Content-Type', metadataResult.data.contentType || 'image/jpeg');
+      res.setHeader('Content-Length', metadataResult.data.size);
+      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+
+      // Pipe stream to response
+      stream.pipe(res);
+
+      // Handle stream errors
+      stream.on('error', (error) => {
+        console.error('❌ Image stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: 'Stream error',
+            message: 'Failed to stream image from storage'
+          });
+        }
+      });
+
+      console.log(`✅ Image served: ${filename}`);
+
+    } catch (s3Error) {
+      console.error('❌ S3 image error:', s3Error);
+      return res.status(404).json({
+        error: 'Image not found',
+        message: 'Failed to retrieve image from S3'
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Image serve error:', error);
+    res.status(500).json({
+      error: 'Image serve failed',
+      message: 'Failed to process image request'
+    });
+  }
+});
+
+/**
  * Check Asset Existence
  *
  * Checks if an asset exists in S3 storage without downloading it.
@@ -632,6 +722,9 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
 
     if (assetType === 'marketing-video' || assetType === 'content-video') {
       targetFilename = 'video.mp4';
+    } else if (assetType === 'image') {
+      // For images, use standard filename for predictable paths
+      targetFilename = 'image.jpg';
     } else if (assetType === 'document' && entityType === 'file') {
       // For documents on File entities, get filename from database
       const fileEntity = await FileModel.findByPk(entityId);
@@ -1020,6 +1113,9 @@ router.delete('/:entityType/:entityId', authenticateToken, async (req, res) => {
 
     if (assetType === 'marketing-video' || assetType === 'content-video') {
       targetFilename = 'video.mp4';
+    } else if (assetType === 'image') {
+      // For images, use standard filename for predictable paths
+      targetFilename = 'image.jpg';
     } else if (assetType === 'document' && entityType === 'file') {
       // For documents on File entities, get filename from database
       const fileEntity = await FileModel.findByPk(entityId);

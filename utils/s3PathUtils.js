@@ -27,7 +27,7 @@ export function constructS3Path(entityType, entityId, assetType, filename) {
   const env = process.env.ENVIRONMENT || 'development';
 
   // Determine privacy level based on asset type
-  const privacy = assetType === 'marketing-video' ? 'public' : 'private';
+  const privacy = (assetType === 'marketing-video' || assetType === 'image') ? 'public' : 'private';
 
   return `${env}/${privacy}/${assetType}/${entityType}/${entityId}/${filename}`;
 }
