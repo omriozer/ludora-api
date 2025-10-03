@@ -297,8 +297,8 @@ class EntityService {
 
       console.log(`📝 EntityService updating ${entityType} with data:`, updateData);
       console.log('📝 Video fields in EntityService:', {
-        youtube_video_id: updateData.youtube_video_id,
-        youtube_video_title: updateData.youtube_video_title,
+        marketing_video_type: updateData.marketing_video_type,
+        marketing_video_id: updateData.marketing_video_id,
         marketing_video_title: updateData.marketing_video_title,
         marketing_video_duration: updateData.marketing_video_duration,
         video_file_url: updateData.video_file_url

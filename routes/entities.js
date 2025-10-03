@@ -358,8 +358,8 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
 
     console.log('📝 Backend received update data:', req.body);
     console.log('📝 Video fields received:', {
-      youtube_video_id: req.body.youtube_video_id,
-      youtube_video_title: req.body.youtube_video_title,
+      marketing_video_type: req.body.marketing_video_type,
+      marketing_video_id: req.body.marketing_video_id,
       marketing_video_title: req.body.marketing_video_title,
       marketing_video_duration: req.body.marketing_video_duration,
       video_file_url: req.body.video_file_url

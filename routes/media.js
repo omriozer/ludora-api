@@ -198,7 +198,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
     const { entityType, entityId } = req.params;
     const env = process.env.ENVIRONMENT || 'development';
 
-    console.log(`🎬 Video stream request: ${entityType}/${entityId}`);
 
     // Determine if this is a potential marketing video type
     const canBeMarketing = isMarketingVideoType(entityType);

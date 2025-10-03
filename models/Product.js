@@ -33,21 +33,25 @@ export default (sequelize) => {
     image_url: {
       type: DataTypes.STRING
     },
-    youtube_video_id: {
-      type: DataTypes.STRING,
-      allowNull: true
+    marketing_video_type: {
+      type: DataTypes.ENUM('youtube', 'uploaded'),
+      allowNull: true,
+      comment: 'Type of marketing video: youtube or uploaded file'
     },
-    youtube_video_title: {
+    marketing_video_id: {
       type: DataTypes.STRING,
-      allowNull: true
+      allowNull: true,
+      comment: 'YouTube video ID or entity ID for uploaded videos'
     },
     marketing_video_title: {
       type: DataTypes.STRING,
-      allowNull: true
+      allowNull: true,
+      comment: 'Title of the marketing video for display'
     },
     marketing_video_duration: {
       type: DataTypes.INTEGER,
-      allowNull: true
+      allowNull: true,
+      comment: 'Duration of the marketing video in seconds'
     },
     tags: {
       type: DataTypes.JSONB,

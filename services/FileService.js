@@ -628,7 +628,7 @@ class FileService {
   }
 
   // Stream S3 object for public access (for marketing videos)
-  async createS3Stream(s3Key) {
+  async createS3Stream(s3Key, range = null) {
     try {
       if (!this.useS3 || !this.s3) {
         throw new Error('S3 not configured for streaming');
@@ -638,6 +638,11 @@ class FileService {
         Bucket: this.bucketName,
         Key: s3Key
       };
+
+      // Add range if provided (for HTTP range requests)
+      if (range && range.start !== undefined && range.end !== undefined) {
+        params.Range = `bytes=${range.start}-${range.end}`;
+      }
 
       // Return the S3 stream object
       return this.s3.getObject(params).createReadStream();

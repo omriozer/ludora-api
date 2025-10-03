@@ -273,9 +273,11 @@ export const schemas = {
     max_participants: Joi.number().integer().min(1).allow(null),
     duration_minutes: Joi.number().integer().min(1).allow(null),
     
-    // Optional fields that may be sent from frontend but aren't used for workshops
-    youtube_video_id: Joi.string().allow(null, ''),
-    youtube_video_title: Joi.string().allow(null, ''),
+    // Optional marketing video fields that may be sent from frontend
+    marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null),
+    marketing_video_id: Joi.string().allow(null, ''),
+    marketing_video_title: Joi.string().allow(null, ''),
+    marketing_video_duration: Joi.number().integer().min(1).allow(null),
     file_url: Joi.string().allow(null, ''),
     preview_file_url: Joi.string().allow(null, ''),
     file_type: Joi.string().allow(null, ''),
@@ -304,9 +306,11 @@ export const schemas = {
     max_participants: Joi.number().integer().min(1).allow(null),
     duration_minutes: Joi.number().integer().min(1).allow(null),
     
-    // Optional fields that may be sent from frontend but aren't used for workshops
-    youtube_video_id: Joi.string().allow(null, ''),
-    youtube_video_title: Joi.string().allow(null, ''),
+    // Optional marketing video fields that may be sent from frontend
+    marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null),
+    marketing_video_id: Joi.string().allow(null, ''),
+    marketing_video_title: Joi.string().allow(null, ''),
+    marketing_video_duration: Joi.number().integer().min(1).allow(null),
     file_url: Joi.string().allow(null, ''),
     preview_file_url: Joi.string().allow(null, ''),
     file_type: Joi.string().allow(null, ''),
