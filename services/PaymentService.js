@@ -50,13 +50,18 @@ class PaymentService {
     try {
       // TODO: Implement actual PayPlus API connection test
       // For now, return mock success
+      // Auto-detect PayPlus environment
+      const deploymentEnv = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
+      const payplusEnv = deploymentEnv === 'production' ? 'production' : 'sandbox';
+
       return {
         success: true,
         message: 'PayPlus connection test successful',
-        data: { 
-          connected: true, 
+        data: {
+          connected: true,
           timestamp: new Date().toISOString(),
-          environment: process.env.PAYPLUS_ENV || 'sandbox'
+          environment: payplusEnv,
+          deploymentEnvironment: deploymentEnv
         }
       };
     } catch (error) {
@@ -172,6 +177,21 @@ class PaymentService {
           throw new Error('Product not found');
         }
 
+        // Check for existing purchases to prevent duplicates
+        const existingPurchases = await this.models.Purchase.findAll({
+          where: {
+            buyer_user_id: userId,
+            purchasable_type: product.product_type,
+            purchasable_id: product.entity_id
+          }
+        });
+
+        // Check if user has any non-refunded purchases for this product
+        const nonRefundedPurchases = existingPurchases.filter(p => p.payment_status !== 'refunded');
+        if (nonRefundedPurchases.length > 0) {
+          throw new Error(`You already have an existing purchase for this product. Status: ${nonRefundedPurchases[0].payment_status}. Multiple purchases for the same product are not allowed unless the previous purchase was refunded.`);
+        }
+
         // Create purchase record with clean schema
         purchase = await this.models.Purchase.create({
           id: generateId(),
@@ -191,9 +211,14 @@ class PaymentService {
         throw new Error('Product not found for payment');
       }
 
-      // TODO: Integrate with actual PayPlus API
-      // For development, create a local payment simulation page
-      const paymentPageUrl = `${frontendOrigin || 'http://localhost:5173'}/payment-simulator?purchaseId=${purchase.id}&amount=${purchase.payment_amount}&env=${environment}`;
+      // Integrate with actual PayPlus API
+      const paymentPageUrl = await this.createPayplusPaymentLink({
+        purchase,
+        product,
+        returnUrl,
+        callbackUrl,
+        environment
+      });
 
       return {
         success: true,
@@ -288,6 +313,161 @@ class PaymentService {
       console.error('Error checking payment status:', error);
       throw error;
     }
+  }
+
+  // Create PayPlus payment link using their API
+  async createPayplusPaymentLink({ purchase, product, returnUrl, callbackUrl, environment }) {
+    try {
+      // Get PayPlus configuration based on environment
+      const config = this.getPayplusConfig(environment);
+
+      // Prepare PayPlus API payload
+      const payload = {
+        payment_page_uid: config.paymentPageUid,
+        amount: purchase.payment_amount,
+        currency_code: 'ILS',
+        sendEmailApproval: true,
+        sendEmailFailure: true,
+        refURL_success: returnUrl,
+        refURL_failure: returnUrl,
+        refURL_callback: callbackUrl,
+        charge_method: 1, // 1 = immediate charge, 2 = authorization only
+        custom_invoice_number: purchase.id,
+        custom_invoice_name: product.title || product.name,
+        more_info: `Purchase: ${product.title || product.name}`,
+        charge_default: 1 // Default to credit card
+      };
+
+      // Add subscription settings if product has recurring billing
+      if (product.subscription_type && product.subscription_type !== 'none') {
+        payload.charge_method = 3; // Recurring payment
+        payload.recurring_settings = {
+          intervalType: this.getPayplusIntervalType(product.subscription_type),
+          intervalCount: 1,
+          totalOccurrences: product.subscription_total_cycles || 0, // 0 = unlimited
+          trialDays: product.trial_days || 0
+        };
+      }
+
+      console.log('🚀 PayPlus API Request:', {
+        url: `${config.apiBaseUrl}/PaymentPages/generateLink`,
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': config.apiKey ? `${config.apiKey.substring(0, 8)}...` : 'MISSING',
+          'secret-key': config.secretKey ? `${config.secretKey.substring(0, 8)}...` : 'MISSING'
+        },
+        payload: JSON.stringify(payload, null, 2)
+      });
+
+      // Make API call to PayPlus
+      const response = await fetch(`${config.apiBaseUrl}/PaymentPages/generateLink`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': config.apiKey,
+          'secret-key': config.secretKey
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`PayPlus API error: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+
+      console.log('🔍 PayPlus API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: JSON.stringify(data, null, 2)
+      });
+
+      if (!data.data?.payment_page_link) {
+        console.error('❌ PayPlus API Error - Missing payment_page_link:', {
+          received_data: data,
+          expected_field: 'data.payment_page_link',
+          available_fields: Object.keys(data || {}),
+          data_fields: Object.keys(data?.data || {})
+        });
+        throw new Error(`PayPlus API did not return a payment link. Response: ${JSON.stringify(data)}`);
+      }
+
+      // Store PayPlus transaction reference
+      await purchase.update({
+        metadata: {
+          ...purchase.metadata,
+          payplus_page_request_uid: data.data.page_request_uid,
+          payplus_qr_code: data.data.qr_code_image,
+          environment: environment
+        }
+      });
+
+      return data.data.payment_page_link;
+
+    } catch (error) {
+      console.error('Error creating PayPlus payment link:', error);
+
+      // Check if PayPlus is not configured and provide helpful error
+      if (!process.env.PAYPLUS_API_KEY || !process.env.PAYPLUS_SECRET_KEY || !process.env.PAYPLUS_PAYMENT_PAGE_UID) {
+        throw new Error('PayPlus payment gateway is not configured. Please add PAYPLUS_API_KEY, PAYPLUS_SECRET_KEY, and PAYPLUS_PAYMENT_PAGE_UID to your environment variables.');
+      }
+
+      throw error;
+    }
+  }
+
+  // Get PayPlus configuration based on environment
+  getPayplusConfig(environment) {
+    // Determine PayPlus environment:
+    // 1. Admin override from frontend (environment parameter)
+    // 2. Automatic: production deployment = production, others = test/sandbox
+    let payplusEnv;
+
+    if (environment === 'test' || environment === 'production') {
+      // Admin override via frontend toggle
+      payplusEnv = environment === 'test' ? 'sandbox' : 'production';
+    } else {
+      // Automatic environment detection
+      const deploymentEnv = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
+      payplusEnv = deploymentEnv === 'production' ? 'production' : 'sandbox';
+    }
+
+    const config = {
+      apiBaseUrl: payplusEnv === 'production'
+        ? 'https://restapi.payplus.co.il/api/v1.0'
+        : 'https://restapidev.payplus.co.il/api/v1.0',
+      apiKey: process.env.PAYPLUS_API_KEY,
+      secretKey: process.env.PAYPLUS_SECRET_KEY,
+      paymentPageUid: process.env.PAYPLUS_PAYMENT_PAGE_UID
+    };
+
+    // Validate configuration
+    if (!config.apiKey || !config.secretKey || !config.paymentPageUid) {
+      console.warn('PayPlus configuration incomplete:', {
+        hasApiKey: !!config.apiKey,
+        hasSecretKey: !!config.secretKey,
+        hasPaymentPageUid: !!config.paymentPageUid,
+        payplusEnvironment: payplusEnv,
+        deploymentEnvironment: process.env.ENVIRONMENT || process.env.NODE_ENV,
+        adminOverride: environment || 'none'
+      });
+    }
+
+    return config;
+  }
+
+  // Convert subscription types to PayPlus interval types
+  getPayplusIntervalType(subscriptionType) {
+    const intervalMap = {
+      'weekly': 1,      // Weekly
+      'monthly': 2,     // Monthly
+      'quarterly': 3,   // Quarterly
+      'yearly': 4,      // Yearly
+      'daily': 5        // Daily
+    };
+
+    return intervalMap[subscriptionType] || 2; // Default to monthly
   }
 }
 

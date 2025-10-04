@@ -249,6 +249,11 @@ class EntityService {
         return await this.createProductTypeEntity(entityType, data, createdBy);
       }
 
+      // Handle Purchase-specific duplicate prevention
+      if (entityType === 'purchase') {
+        return await this.createPurchaseWithDuplicateCheck(data);
+      }
+
       // Add audit fields
       const entityData = {
         ...data,
@@ -820,6 +825,50 @@ class EntityService {
     } catch (error) {
       console.error(`Error deleting ${entityType}:`, error);
       throw error;
+    }
+  }
+
+  // Create Purchase with duplicate prevention
+  async createPurchaseWithDuplicateCheck(data) {
+    try {
+      const PurchaseModel = this.getModel('purchase');
+
+      // Check if user already has a pending purchase for the same product
+      if (data.buyer_user_id && data.purchasable_type && data.purchasable_id && data.payment_status === 'pending') {
+        const existingPurchase = await PurchaseModel.findOne({
+          where: {
+            buyer_user_id: data.buyer_user_id,
+            purchasable_type: data.purchasable_type,
+            purchasable_id: data.purchasable_id,
+            payment_status: 'pending'
+          }
+        });
+
+        if (existingPurchase) {
+          console.log('Found existing pending purchase for same product:', existingPurchase.id);
+          return existingPurchase;
+        }
+      }
+
+      // Generate ID if not provided
+      if (!data.id) {
+        data.id = generateId();
+      }
+
+      // Add audit fields
+      const purchaseData = {
+        ...data,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      const purchase = await PurchaseModel.create(purchaseData);
+      console.log('Created new purchase:', purchase.id);
+      return purchase;
+
+    } catch (error) {
+      console.error('Error creating purchase with duplicate check:', error);
+      throw new Error(`Failed to create purchase: ${error.message}`);
     }
   }
 

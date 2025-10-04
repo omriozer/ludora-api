@@ -2,6 +2,8 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import PaymentService from '../services/PaymentService.js';
+import models from '../models/index.js';
 
 const router = express.Router();
 
@@ -101,6 +103,106 @@ router.post('/paypal',
   })
 );
 
+// PayPlus webhooks (Israeli payment gateway)
+router.post('/payplus',
+  asyncHandler(async (req, res) => {
+    try {
+      console.log(`📨 PayPlus webhook received`);
+      console.log('PayPlus headers:', JSON.stringify(req.headers, null, 2));
+      console.log('PayPlus body:', JSON.stringify(req.body, null, 2));
+
+      // Log webhook for debugging
+      await models.WebhookLog?.create({
+        webhook_type: 'payplus_payment',
+        payload: JSON.stringify(req.body),
+        status: 'received',
+        source_ip: req.ip,
+        created_at: new Date(),
+        updated_at: new Date()
+      }).catch(err => console.log('WebhookLog not available:', err.message));
+
+      // Extract PayPlus callback data
+      const {
+        page_request_uid,
+        transaction_uid,
+        status_name,
+        amount,
+        customer_name,
+        customer_email,
+        custom_invoice_number, // This should be our purchase ID
+        payment_date
+      } = req.body;
+
+      if (!custom_invoice_number) {
+        console.warn('PayPlus webhook missing custom_invoice_number (purchase ID)');
+        return res.status(400).json({ error: 'Missing purchase ID' });
+      }
+
+      // Map PayPlus status to our internal status
+      const statusMap = {
+        'success': 'completed',
+        'approved': 'completed',
+        'failed': 'failed',
+        'error': 'failed',
+        'cancelled': 'cancelled',
+        'refunded': 'refunded'
+      };
+
+      const paymentStatus = statusMap[status_name?.toLowerCase()] || 'pending';
+
+      // Process the payment callback
+      const result = await PaymentService.handlePayplusCallback({
+        paymentId: custom_invoice_number,
+        status: paymentStatus,
+        amount: parseFloat(amount) || 0,
+        transactionId: transaction_uid,
+        payerEmail: customer_email,
+        payerName: customer_name,
+        paymentDate: payment_date,
+        payplusData: {
+          page_request_uid,
+          transaction_uid,
+          status_name
+        }
+      });
+
+      console.log(`✅ PayPlus payment processed:`, {
+        purchaseId: custom_invoice_number,
+        status: paymentStatus,
+        amount,
+        success: result.success
+      });
+
+      res.status(200).json({
+        message: 'PayPlus webhook processed successfully',
+        purchaseId: custom_invoice_number,
+        status: paymentStatus,
+        processed: true
+      });
+
+    } catch (error) {
+      console.error('❌ PayPlus webhook processing failed:', error);
+
+      // Log the error but still return 200 to avoid PayPlus retrying
+      await models.WebhookLog?.create({
+        webhook_type: 'payplus_payment',
+        payload: JSON.stringify(req.body),
+        status: 'failed',
+        error_message: error.message,
+        source_ip: req.ip,
+        created_at: new Date(),
+        updated_at: new Date()
+      }).catch(err => console.log('WebhookLog not available:', err.message));
+
+      res.status(200).json({
+        message: 'PayPlus webhook received but processing failed',
+        error: error.message,
+        processed: false
+      });
+    }
+  })
+);
+
 // Generic webhook endpoint
 router.post('/generic/:provider',
   verifyWebhookSignature('generic'),
@@ -126,7 +228,7 @@ router.get('/health', (req, res) => {
   res.status(200).json({
     message: 'Webhook endpoint is healthy',
     timestamp: new Date().toISOString(),
-    supportedProviders: ['github', 'stripe', 'paypal', 'generic']
+    supportedProviders: ['github', 'stripe', 'paypal', 'payplus', 'generic']
   });
 });
 
