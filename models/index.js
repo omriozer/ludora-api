@@ -18,7 +18,6 @@ import Category from './Category.js';
 import Coupon from './Coupon.js';
 import SupportMessage from './SupportMessage.js';
 import Notification from './Notification.js';
-import SiteText from './SiteText.js';
 import Purchase from './Purchase.js';
 import Product from './Product.js';
 import Workshop from './Workshop.js';
@@ -72,7 +71,6 @@ const models = {
   Coupon: Coupon(sequelize),
   SupportMessage: SupportMessage(sequelize),
   Notification: Notification(sequelize),
-  SiteText: SiteText(sequelize),
   Purchase: Purchase(sequelize),
   Product: Product(sequelize),
   Workshop: Workshop(sequelize),

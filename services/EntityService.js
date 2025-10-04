@@ -65,7 +65,6 @@ class EntityService {
   toPascalCase(str) {
     // Special mappings for compound words that don't follow standard camelCase
     const specialMappings = {
-      'sitetext': 'SiteText',
       'emailtemplate': 'EmailTemplate',
       'emaillog': 'EmailLog',
       'supportmessage': 'SupportMessage',

@@ -265,38 +265,6 @@ router.post('/uploadVerbsBulk', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/cleanupStaticTexts', authenticateToken, async (req, res) => {
-  try {
-    const { criteria } = req.body;
-    
-    // Find duplicate or unused static texts
-    const duplicateTexts = await models.SiteText.findAll({
-      where: {
-        is_active: false,
-        ...(criteria?.language && { language: criteria.language }),
-        ...(criteria?.updatedBefore && { updated_at: { [models.Sequelize.Op.lt]: new Date(criteria.updatedBefore) } })
-      }
-    });
-
-    // Delete the identified texts
-    const deletedIds = duplicateTexts.map(text => text.id);
-    const deletedCount = await models.SiteText.destroy({
-      where: { id: { [models.Sequelize.Op.in]: deletedIds } }
-    });
-
-    res.json({
-      success: true,
-      message: 'Static texts cleaned up',
-      data: { 
-        cleaned: deletedCount,
-        deletedIds
-      }
-    });
-  } catch (error) {
-    console.error('Error cleaning up static texts:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // File Functions
 router.post('/deleteFile', authenticateToken, async (req, res) => {
