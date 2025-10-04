@@ -60,12 +60,11 @@ export default (sequelize) => {
     target_audience: {
       type: DataTypes.STRING
     },
-    difficulty_level: {
-      type: DataTypes.STRING,
+    type_attributes: {
+      type: DataTypes.JSONB,
       allowNull: true,
-      validate: {
-        isIn: [['beginner', 'intermediate', 'advanced']]
-      }
+      defaultValue: {},
+      comment: 'Type-specific attributes based on product_type'
     },
     access_days: {
       type: DataTypes.DECIMAL,
@@ -93,7 +92,6 @@ export default (sequelize) => {
       { fields: ['is_published'] },
       { fields: ['product_type'] },
       { fields: ['entity_id'] },
-      { fields: ['difficulty_level'] },
       { fields: ['access_days'] },
       {
         unique: true,
