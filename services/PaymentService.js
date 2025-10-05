@@ -321,6 +321,11 @@ class PaymentService {
       // Get PayPlus configuration based on environment
       const config = this.getPayplusConfig(environment);
 
+      // Force correct callback URL to our webhook endpoint
+      const webhookCallbackUrl = process.env.ENVIRONMENT === 'production'
+        ? 'https://api.ludora.app/api/webhooks/payplus'
+        : 'https://api.ludora.app/api/webhooks/payplus';
+
       // Prepare PayPlus API payload
       const payload = {
         payment_page_uid: config.paymentPageUid,
@@ -330,7 +335,7 @@ class PaymentService {
         sendEmailFailure: true,
         refURL_success: returnUrl,
         refURL_failure: returnUrl,
-        refURL_callback: callbackUrl,
+        refURL_callback: webhookCallbackUrl, // Always use webhook endpoint
         charge_method: 1, // 1 = immediate charge, 2 = authorization only
         // Removed custom_invoice_number - was causing PayPlus errors due to non-numeric format
         custom_invoice_name: product.title || product.name,
