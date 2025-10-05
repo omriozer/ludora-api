@@ -332,7 +332,7 @@ class PaymentService {
         refURL_failure: returnUrl,
         refURL_callback: callbackUrl,
         charge_method: 1, // 1 = immediate charge, 2 = authorization only
-        custom_invoice_number: purchase.id,
+        // Removed custom_invoice_number - was causing PayPlus errors due to non-numeric format
         custom_invoice_name: product.title || product.name,
         more_info: `Purchase: ${product.title || product.name}`,
         charge_default: 1 // Default to credit card

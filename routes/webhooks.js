@@ -129,13 +129,26 @@ router.post('/payplus',
         amount,
         customer_name,
         customer_email,
-        custom_invoice_number, // This should be our purchase ID
         payment_date
       } = req.body;
 
-      if (!custom_invoice_number) {
-        console.warn('PayPlus webhook missing custom_invoice_number (purchase ID)');
-        return res.status(400).json({ error: 'Missing purchase ID' });
+      if (!page_request_uid) {
+        console.warn('PayPlus webhook missing page_request_uid');
+        return res.status(400).json({ error: 'Missing page_request_uid' });
+      }
+
+      // Find purchase by page_request_uid stored in metadata
+      const purchase = await models.Purchase.findOne({
+        where: {
+          metadata: {
+            payplus_page_request_uid: page_request_uid
+          }
+        }
+      });
+
+      if (!purchase) {
+        console.warn(`PayPlus webhook: No purchase found for page_request_uid: ${page_request_uid}`);
+        return res.status(404).json({ error: 'Purchase not found for this payment' });
       }
 
       // Map PayPlus status to our internal status
@@ -152,7 +165,7 @@ router.post('/payplus',
 
       // Process the payment callback
       const result = await PaymentService.handlePayplusCallback({
-        paymentId: custom_invoice_number,
+        paymentId: purchase.id,
         status: paymentStatus,
         amount: parseFloat(amount) || 0,
         transactionId: transaction_uid,
@@ -167,7 +180,8 @@ router.post('/payplus',
       });
 
       console.log(`✅ PayPlus payment processed:`, {
-        purchaseId: custom_invoice_number,
+        purchaseId: purchase.id,
+        pageRequestUid: page_request_uid,
         status: paymentStatus,
         amount,
         success: result.success
@@ -175,7 +189,8 @@ router.post('/payplus',
 
       res.status(200).json({
         message: 'PayPlus webhook processed successfully',
-        purchaseId: custom_invoice_number,
+        purchaseId: purchase.id,
+        pageRequestUid: page_request_uid,
         status: paymentStatus,
         processed: true
       });
