@@ -449,9 +449,15 @@ class PaymentService {
       apiBaseUrl: payplusEnv === 'production'
         ? 'https://restapi.payplus.co.il/api/v1.0'
         : 'https://restapidev.payplus.co.il/api/v1.0',
-      apiKey: process.env.PAYPLUS_API_KEY,
-      secretKey: process.env.PAYPLUS_SECRET_KEY,
-      paymentPageUid: process.env.PAYPLUS_PAYMENT_PAGE_UID
+      apiKey: payplusEnv === 'production'
+        ? process.env.PAYPLUS_API_KEY
+        : (process.env.PAYPLUS_STAGING_API_KEY || process.env.PAYPLUS_API_KEY),
+      secretKey: payplusEnv === 'production'
+        ? process.env.PAYPLUS_SECRET_KEY
+        : (process.env.PAYPLUS_STAGING_SECRET_KEY || process.env.PAYPLUS_SECRET_KEY),
+      paymentPageUid: payplusEnv === 'production'
+        ? process.env.PAYPLUS_PAYMENT_PAGE_UID
+        : (process.env.PAYPLUS_STAGING_PAYMENT_PAGE_UID || process.env.PAYPLUS_PAYMENT_PAGE_UID)
     };
 
     // Validate configuration
@@ -462,9 +468,18 @@ class PaymentService {
         hasPaymentPageUid: !!config.paymentPageUid,
         payplusEnvironment: payplusEnv,
         deploymentEnvironment: process.env.ENVIRONMENT || process.env.NODE_ENV,
-        adminOverride: environment || 'none'
+        adminOverride: environment || 'none',
+        usingCredentials: payplusEnv === 'production' ? 'production' : 'staging-or-fallback'
       });
     }
+
+    console.log('🔧 PayPlus Configuration:', {
+      environment: payplusEnv,
+      apiUrl: config.apiBaseUrl,
+      hasCredentials: !!(config.apiKey && config.secretKey && config.paymentPageUid),
+      credentialSource: payplusEnv === 'production' ? 'PAYPLUS_*' : 'PAYPLUS_STAGING_* (or fallback)',
+      adminOverride: environment
+    });
 
     return config;
   }
