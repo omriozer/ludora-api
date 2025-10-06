@@ -33,7 +33,7 @@ class EmailService {
   async sendEmail({ to, subject, html, text, from, templateId = null, relatedEntityId = null }) {
     try {
       const emailData = {
-        from: from || process.env.DEFAULT_FROM_EMAIL || 'noreply@ludora.com',
+        from: from || process.env.DEFAULT_FROM_EMAIL || 'noreply@ludora.app',
         to,
         subject,
         html: html || text,

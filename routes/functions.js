@@ -332,7 +332,7 @@ router.post('/createSignedUrl', authenticateToken, async (req, res) => {
     const expiresAt = new Date(Date.now() + 3600000); // 1 hour
     
     // In a real implementation, this would integrate with cloud storage
-    const signedUrl = `https://storage.ludora.com/files/${operation}/${encodeURIComponent(fileName)}?token=${token}&expires=${expiresAt.getTime()}`;
+    const signedUrl = `https://storage.ludora.app/files/${operation}/${encodeURIComponent(fileName)}?token=${token}&expires=${expiresAt.getTime()}`;
 
     res.json({
       success: true,

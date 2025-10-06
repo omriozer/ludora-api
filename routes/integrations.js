@@ -94,7 +94,7 @@ router.post('/generateImage', authenticateToken, rateLimiters.llm, validateBody(
     const imageResult = {
       imageId: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       prompt,
-      url: `https://images.ludora.com/generated/${Date.now()}.png`,
+      url: `https://images.ludora.app/generated/${Date.now()}.png`,
       size,
       style,
       quality,
