@@ -59,9 +59,9 @@ export default function(sequelize) {
     payment_status: {
       type: DataTypes.STRING(50),
       allowNull: false,
-      defaultValue: 'pending',
+      defaultValue: 'cart',
       validate: {
-        isIn: [['pending', 'completed', 'failed', 'refunded']]
+        isIn: [['cart', 'pending', 'completed', 'failed', 'refunded']]
       }
     },
     transaction_id: {

@@ -145,7 +145,8 @@ router.post('/payplus',
       }
 
       // Find purchase by page_request_uid stored in metadata
-      const purchase = await models.Purchase.findOne({
+      // Try multiple lookup strategies since PayPlus field names may vary
+      let purchase = await models.Purchase.findOne({
         where: {
           metadata: {
             payplus_page_request_uid: page_request_uid
@@ -153,8 +154,43 @@ router.post('/payplus',
         }
       });
 
+      // If not found, try alternative field names that PayPlus might use
       if (!purchase) {
-        console.warn(`PayPlus webhook: No purchase found for page_request_uid: ${page_request_uid}`);
+        console.log(`🔍 PayPlus webhook: Trying alternative lookup for page_request_uid: ${page_request_uid}`);
+
+        // Try with different metadata field names
+        const alternatives = [
+          { payplus_payment_page_request_uid: page_request_uid },
+          { page_request_uid: page_request_uid },
+          { payment_page_request_uid: page_request_uid }
+        ];
+
+        for (const whereClause of alternatives) {
+          purchase = await models.Purchase.findOne({
+            where: { metadata: whereClause }
+          });
+          if (purchase) {
+            console.log(`✅ Found purchase using alternative metadata field:`, whereClause);
+            break;
+          }
+        }
+      }
+
+      // If still not found, try finding by transaction_uid as a last resort
+      if (!purchase && transaction_uid) {
+        console.log(`🔍 PayPlus webhook: Trying lookup by transaction_uid: ${transaction_uid}`);
+        purchase = await models.Purchase.findOne({
+          where: {
+            transaction_id: transaction_uid
+          }
+        });
+        if (purchase) {
+          console.log(`✅ Found purchase using transaction_uid`);
+        }
+      }
+
+      if (!purchase) {
+        console.warn(`❌ PayPlus webhook: No purchase found for page_request_uid: ${page_request_uid} or transaction_uid: ${transaction_uid}`);
         return res.status(404).json({ error: 'Purchase not found for this payment' });
       }
 
