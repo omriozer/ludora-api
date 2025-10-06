@@ -122,16 +122,22 @@ router.post('/payplus',
         updated_at: new Date()
       }).catch(err => console.log('WebhookLog not available:', err.message));
 
-      // Extract PayPlus callback data
+      // Extract PayPlus callback data from transaction object
+      const transaction = req.body.transaction || req.body;
       const {
-        page_request_uid,
-        transaction_uid,
-        status_name,
+        payment_page_request_uid: page_request_uid,
+        uid: transaction_uid,
+        status_code,
         amount,
-        customer_name,
-        customer_email,
-        payment_date
-      } = req.body;
+        date: payment_date
+      } = transaction;
+
+      // Extract customer data from customer object
+      const customer = req.body.customer || {};
+      const {
+        name: customer_name,
+        email: customer_email
+      } = customer;
 
       if (!page_request_uid) {
         console.warn('PayPlus webhook missing page_request_uid');
@@ -153,7 +159,9 @@ router.post('/payplus',
       }
 
       // Map PayPlus status to our internal status
+      // PayPlus sends status_code: "000" for successful payments
       const statusMap = {
+        '000': 'completed',  // PayPlus success code
         'success': 'completed',
         'approved': 'completed',
         'failed': 'failed',
@@ -162,7 +170,7 @@ router.post('/payplus',
         'refunded': 'refunded'
       };
 
-      const paymentStatus = statusMap[status_name?.toLowerCase()] || 'pending';
+      const paymentStatus = statusMap[status_code] || statusMap[status_name?.toLowerCase()] || 'pending';
 
       // Process the payment callback
       const result = await PaymentService.handlePayplusCallback({
@@ -176,7 +184,7 @@ router.post('/payplus',
         payplusData: {
           page_request_uid,
           transaction_uid,
-          status_name
+          status_code
         }
       });
 
