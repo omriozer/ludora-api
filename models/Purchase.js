@@ -93,6 +93,17 @@ export default function(sequelize) {
       allowNull: true,
       defaultValue: {},
     },
+    // Transaction reference for multi-item payments
+    transaction_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      references: {
+        model: 'transaction',
+        key: 'id',
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE'
+      }
+    },
     // Standard timestamps
     created_at: {
       type: DataTypes.DATE,
@@ -140,6 +151,12 @@ export default function(sequelize) {
     Purchase.belongsTo(models.User, {
       foreignKey: 'buyer_user_id',
       as: 'buyer'
+    });
+
+    // Association to transaction for multi-item payments
+    Purchase.belongsTo(models.Transaction, {
+      foreignKey: 'transaction_id',
+      as: 'transaction'
     });
 
     // Clean polymorphic associations

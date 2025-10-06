@@ -135,37 +135,87 @@ class PaymentService {
   }
 
   // Create PayPlus payment page
-  async createPayplusPaymentPage({ purchaseId, amount, productId, userId, returnUrl, callbackUrl, environment, frontendOrigin }) {
+  async createPayplusPaymentPage({ purchaseId, purchaseIds, amount, productId, userId, returnUrl, callbackUrl, environment, frontendOrigin }) {
     try {
-      let purchase;
-      let product;
+      let purchases = [];
+      let products = [];
+      let totalAmount = 0;
 
-      if (purchaseId) {
-        // New purchase-based flow - use existing Purchase record
-        purchase = await this.models.Purchase.findByPk(purchaseId);
-        if (!purchase) {
-          throw new Error('Purchase not found');
+      // Handle both single purchase (legacy) and multiple purchases (cart)
+      const idsToProcess = purchaseIds || (purchaseId ? [purchaseId] : []);
+
+      if (idsToProcess.length > 0) {
+        // Multi-item cart flow - get all purchases
+        purchases = await this.models.Purchase.findAll({
+          where: { id: idsToProcess }
+        });
+
+        if (purchases.length !== idsToProcess.length) {
+          throw new Error('Some purchases not found');
         }
 
-        // Get product info from Purchase record
-        if (purchase.product_id) {
-          product = await this.models.Product.findByPk(purchase.product_id);
-        } else if (purchase.purchasable_type && purchase.purchasable_id) {
-          // Handle new polymorphic structure
-          const entityMap = {
-            'workshop': this.models.Workshop,
-            'course': this.models.Course,
-            'file': this.models.File,
-            'tool': this.models.Tool,
-            'game': this.models.Game,
-            'product': this.models.Product
-          };
+        // Calculate total amount from all purchases
+        totalAmount = purchases.reduce((sum, purchase) => {
+          return sum + parseFloat(purchase.payment_amount || 0);
+        }, 0);
 
-          const entityModel = entityMap[purchase.purchasable_type];
-          if (entityModel) {
-            product = await entityModel.findByPk(purchase.purchasable_id);
+        // Get product info for each purchase
+        for (const purchase of purchases) {
+          let product = null;
+
+          if (purchase.product_id) {
+            product = await this.models.Product.findByPk(purchase.product_id);
+          } else if (purchase.purchasable_type && purchase.purchasable_id) {
+            // Handle new polymorphic structure
+            const entityMap = {
+              'workshop': this.models.Workshop,
+              'course': this.models.Course,
+              'file': this.models.File,
+              'tool': this.models.Tool,
+              'game': this.models.Game,
+              'product': this.models.Product
+            };
+
+            const entityModel = entityMap[purchase.purchasable_type];
+            if (entityModel) {
+              product = await entityModel.findByPk(purchase.purchasable_id);
+            }
+          }
+
+          if (product) {
+            products.push({
+              purchase,
+              product,
+              title: purchase.metadata?.product_title || product.title || product.name,
+              amount: purchase.payment_amount
+            });
           }
         }
+
+        // Create Transaction record for multi-item payment
+        const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        const transaction = await this.models.Transaction.create({
+          id: transactionId,
+          total_amount: totalAmount,
+          payment_status: 'pending',
+          payment_method: 'payplus',
+          environment: environment || 'production',
+          created_at: new Date(),
+          updated_at: new Date()
+        });
+
+        // Update all purchases to reference this transaction and set to pending
+        await this.models.Purchase.update(
+          {
+            payment_status: 'pending',
+            transaction_id: transactionId,
+            updated_at: new Date()
+          },
+          { where: { id: idsToProcess } }
+        );
+
+        console.log(`🛒 Created transaction ${transactionId} for ${purchases.length} purchases, total: ₪${totalAmount}`);
+
       } else {
         // Legacy product-based flow
         if (!productId || !amount) {
@@ -205,21 +255,36 @@ class PaymentService {
             environment: environment || process.env.ENVIRONMENT || 'development'
           }
         });
+
+        // For legacy single product flow, add to arrays for consistent processing
+        purchases = [purchase];
+        products = [{
+          purchase,
+          product,
+          title: product.title || product.name,
+          amount: purchase.payment_amount
+        }];
+        totalAmount = parseFloat(purchase.payment_amount);
       }
 
-      if (!product) {
-        throw new Error('Product not found for payment');
+      if (products.length === 0) {
+        throw new Error('No products found for payment');
       }
 
-      // Generate return URLs if not provided
+      // Generate return URLs - use transaction ID for multi-item, purchase ID for single item
+      const orderRef = purchases.length > 1
+        ? purchases[0].transaction_id
+        : purchases[0].order_number || purchases[0].id;
+
       const baseReturnUrl = returnUrl || `${frontendOrigin || 'https://ludora.app'}/payment-result`;
-      const successUrl = `${baseReturnUrl}?status=success&order=${purchase.order_number}`;
-      const failureUrl = `${baseReturnUrl}?status=failure&order=${purchase.order_number}`;
+      const successUrl = `${baseReturnUrl}?status=success&order=${orderRef}`;
+      const failureUrl = `${baseReturnUrl}?status=failure&order=${orderRef}`;
 
       // Integrate with actual PayPlus API
       const paymentPageUrl = await this.createPayplusPaymentLink({
-        purchase,
-        product,
+        purchases,
+        products,
+        totalAmount,
         returnUrl,
         successUrl,
         failureUrl,
@@ -232,10 +297,13 @@ class PaymentService {
         message: 'Payment page created',
         data: {
           payment_url: paymentPageUrl,
-          paymentId: purchase.id,
-          amount: purchase.payment_amount || amount,
-          productTitle: product.title || product.name,
-          environment: environment || 'production'
+          paymentId: purchases.length === 1 ? purchases[0].id : purchases[0].transaction_id,
+          amount: totalAmount,
+          productTitle: products.length === 1
+            ? products[0].title
+            : `${products.length} items`,
+          environment: environment || 'production',
+          itemCount: products.length
         }
       };
     } catch (error) {
@@ -323,7 +391,7 @@ class PaymentService {
   }
 
   // Create PayPlus payment link using their API
-  async createPayplusPaymentLink({ purchase, product, returnUrl, successUrl, failureUrl, callbackUrl, environment }) {
+  async createPayplusPaymentLink({ purchases, products, totalAmount, returnUrl, successUrl, failureUrl, callbackUrl, environment }) {
     try {
       // Get PayPlus configuration based on environment
       const config = this.getPayplusConfig(environment);
@@ -333,10 +401,20 @@ class PaymentService {
         ? 'https://api.ludora.app/api/webhooks/payplus'
         : 'https://api.ludora.app/api/webhooks/payplus';
 
+      // Create payment description for multi-item purchases
+      const paymentDescription = products.length === 1
+        ? `Purchase: ${products[0].title}`
+        : `Cart purchase: ${products.length} items`;
+
+      // Create invoice name for PayPlus
+      const invoiceName = products.length === 1
+        ? products[0].title
+        : `Cart (${products.length} items)`;
+
       // Prepare PayPlus API payload
       const payload = {
         payment_page_uid: config.paymentPageUid,
-        amount: purchase.payment_amount,
+        amount: totalAmount,
         currency_code: 'ILS',
         sendEmailApproval: true,
         sendEmailFailure: true,
@@ -344,20 +422,26 @@ class PaymentService {
         refURL_failure: failureUrl || returnUrl,
         refURL_callback: webhookCallbackUrl, // Always use webhook endpoint
         charge_method: 1, // 1 = immediate charge, 2 = authorization only
-        // Removed custom_invoice_number - was causing PayPlus errors due to non-numeric format
-        custom_invoice_name: product.title || product.name,
-        more_info: `Purchase: ${product.title || product.name}`,
-        charge_default: 1 // Default to credit card
+        custom_invoice_name: invoiceName,
+        more_info: paymentDescription,
+        charge_default: 1, // Default to credit card
+        // Add item details for PayPlus (if supported)
+        items: products.map(item => ({
+          name: item.title,
+          amount: parseFloat(item.amount),
+          quantity: 1
+        }))
       };
 
-      // Add subscription settings if product has recurring billing
-      if (product.subscription_type && product.subscription_type !== 'none') {
+      // Add subscription settings if any product has recurring billing
+      const firstProduct = products[0]?.product;
+      if (firstProduct && firstProduct.subscription_type && firstProduct.subscription_type !== 'none') {
         payload.charge_method = 3; // Recurring payment
         payload.recurring_settings = {
-          intervalType: this.getPayplusIntervalType(product.subscription_type),
+          intervalType: this.getPayplusIntervalType(firstProduct.subscription_type),
           intervalCount: 1,
-          totalOccurrences: product.subscription_total_cycles || 0, // 0 = unlimited
-          trialDays: product.trial_days || 0
+          totalOccurrences: firstProduct.subscription_total_cycles || 0, // 0 = unlimited
+          trialDays: firstProduct.trial_days || 0
         };
       }
 
@@ -406,14 +490,49 @@ class PaymentService {
       }
 
       // Store PayPlus transaction reference
-      await purchase.update({
-        metadata: {
-          ...purchase.metadata,
-          payplus_page_request_uid: data.data.page_request_uid,
-          payplus_qr_code: data.data.qr_code_image,
-          environment: environment
+      if (purchases.length > 1 && purchases[0].transaction_id) {
+        // Multi-item: update Transaction record with PayPlus data
+        const transaction = await this.models.Transaction.findByPk(purchases[0].transaction_id);
+        if (transaction) {
+          await transaction.update({
+            payplus_page_uid: data.data.page_request_uid,
+            payplus_response: {
+              page_request_uid: data.data.page_request_uid,
+              qr_code_image: data.data.qr_code_image,
+              payment_page_link: data.data.payment_page_link,
+              created_at: new Date().toISOString(),
+              environment: environment
+            },
+            updated_at: new Date()
+          });
         }
-      });
+
+        // Also update purchases with basic PayPlus reference
+        await this.models.Purchase.update(
+          {
+            metadata: {
+              ...purchases[0].metadata,
+              payplus_page_request_uid: data.data.page_request_uid,
+              transaction_type: 'multi_item',
+              environment: environment
+            },
+            updated_at: new Date()
+          },
+          { where: { transaction_id: purchases[0].transaction_id } }
+        );
+      } else {
+        // Single item: update Purchase record directly (legacy behavior)
+        const purchase = purchases[0];
+        await purchase.update({
+          metadata: {
+            ...purchase.metadata,
+            payplus_page_request_uid: data.data.page_request_uid,
+            payplus_qr_code: data.data.qr_code_image,
+            transaction_type: 'single_item',
+            environment: environment
+          }
+        });
+      }
 
       return data.data.payment_page_link;
 
