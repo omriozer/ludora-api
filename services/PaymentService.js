@@ -211,11 +211,18 @@ class PaymentService {
         throw new Error('Product not found for payment');
       }
 
+      // Generate return URLs if not provided
+      const baseReturnUrl = returnUrl || `${frontendOrigin || 'https://ludora.app'}/payment-result`;
+      const successUrl = `${baseReturnUrl}?status=success&order=${purchase.order_number}`;
+      const failureUrl = `${baseReturnUrl}?status=failure&order=${purchase.order_number}`;
+
       // Integrate with actual PayPlus API
       const paymentPageUrl = await this.createPayplusPaymentLink({
         purchase,
         product,
         returnUrl,
+        successUrl,
+        failureUrl,
         callbackUrl,
         environment
       });
@@ -316,7 +323,7 @@ class PaymentService {
   }
 
   // Create PayPlus payment link using their API
-  async createPayplusPaymentLink({ purchase, product, returnUrl, callbackUrl, environment }) {
+  async createPayplusPaymentLink({ purchase, product, returnUrl, successUrl, failureUrl, callbackUrl, environment }) {
     try {
       // Get PayPlus configuration based on environment
       const config = this.getPayplusConfig(environment);
@@ -333,8 +340,8 @@ class PaymentService {
         currency_code: 'ILS',
         sendEmailApproval: true,
         sendEmailFailure: true,
-        refURL_success: returnUrl,
-        refURL_failure: returnUrl,
+        refURL_success: successUrl || returnUrl,
+        refURL_failure: failureUrl || returnUrl,
         refURL_callback: webhookCallbackUrl, // Always use webhook endpoint
         charge_method: 1, // 1 = immediate charge, 2 = authorization only
         // Removed custom_invoice_number - was causing PayPlus errors due to non-numeric format

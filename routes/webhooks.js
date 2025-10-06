@@ -107,7 +107,8 @@ router.post('/paypal',
 router.post('/payplus',
   asyncHandler(async (req, res) => {
     try {
-      console.log(`📨 PayPlus webhook received`);
+      console.log(`🎯 ===== PAYPLUS WEBHOOK RECEIVED =====`);
+      console.log(`📨 PayPlus webhook received at ${new Date().toISOString()}`);
       console.log('PayPlus headers:', JSON.stringify(req.headers, null, 2));
       console.log('PayPlus body:', JSON.stringify(req.body, null, 2));
 
@@ -187,6 +188,8 @@ router.post('/payplus',
         success: result.success
       });
 
+      console.log(`🎯 ===== PAYPLUS WEBHOOK COMPLETED SUCCESSFULLY =====`);
+
       res.status(200).json({
         message: 'PayPlus webhook processed successfully',
         purchaseId: purchase.id,
@@ -196,7 +199,10 @@ router.post('/payplus',
       });
 
     } catch (error) {
+      console.error('🚨 ===== PAYPLUS WEBHOOK FAILED =====');
       console.error('❌ PayPlus webhook processing failed:', error);
+      console.error('📥 Request body was:', JSON.stringify(req.body, null, 2));
+      console.error('📋 Request headers were:', JSON.stringify(req.headers, null, 2));
 
       // Log the error but still return 200 to avoid PayPlus retrying
       await models.WebhookLog?.create({
@@ -237,6 +243,17 @@ router.post('/generic/:provider',
     });
   })
 );
+
+// PayPlus webhook test endpoint
+router.get('/payplus/test', (req, res) => {
+  console.log('🧪 PayPlus webhook test endpoint called');
+  res.status(200).json({
+    message: 'PayPlus webhook endpoint is accessible',
+    timestamp: new Date().toISOString(),
+    url: `${req.protocol}://${req.get('host')}/api/webhooks/payplus`,
+    method: 'POST required for actual webhook'
+  });
+});
 
 // Webhook health check
 router.get('/health', (req, res) => {
