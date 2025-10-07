@@ -174,8 +174,18 @@ export const schemas = {
   applyCoupon: Joi.object({
     couponCode: Joi.string().min(1).max(50).required(),
     userId: Joi.string().optional(),
-    productId: Joi.string().optional(),
-    purchaseAmount: Joi.number().positive().required()
+    // Support both legacy single purchase and new multi-item cart
+    productId: Joi.string().optional(), // Legacy support
+    purchaseAmount: Joi.number().positive().required(),
+    purchaseIds: Joi.array().items(Joi.string()).optional(), // For multi-item carts
+    cartItems: Joi.array().items(
+      Joi.object({
+        id: Joi.string().required(),
+        purchasable_type: Joi.string().required(),
+        purchasable_id: Joi.string().required(),
+        payment_amount: Joi.number().positive().required()
+      })
+    ).optional() // Alternative to purchaseIds for direct cart data
   }),
 
   createPaymentPage: Joi.object({

@@ -70,8 +70,8 @@ class PaymentService {
     }
   }
 
-  // Apply coupon to purchase
-  async applyCoupon({ couponCode, userId, productId, purchaseAmount }) {
+  // Apply coupon to purchase(s) - enhanced with new targeting and validation
+  async applyCoupon({ couponCode, userId, purchaseIds, purchaseAmount, cartItems }) {
     try {
       // Find the coupon
       const coupon = await this.models.Coupon.findOne({
@@ -82,50 +82,38 @@ class PaymentService {
         throw new Error('Invalid or inactive coupon code');
       }
 
-      // Check usage limit
-      if (coupon.usage_limit && coupon.usage_count >= coupon.usage_limit) {
-        throw new Error('Coupon usage limit exceeded');
-      }
+      // Basic validations
+      await this.validateCouponBasics(coupon);
 
-      // Check expiry
-      if (coupon.valid_until) {
-        const expiryDate = new Date(coupon.valid_until);
-        if (expiryDate < new Date()) {
-          throw new Error('Coupon has expired');
-        }
-      }
+      // Get user information for targeting
+      const user = userId ? await this.models.User.findByPk(userId) : null;
 
-      // Check minimum amount
-      if (coupon.minimum_amount && purchaseAmount < coupon.minimum_amount) {
-        throw new Error(`Minimum purchase amount of $${coupon.minimum_amount} required`);
-      }
+      // Get cart details for validation
+      const cartDetails = await this.getCartDetailsForCoupon(purchaseIds, cartItems);
 
-      // Calculate discount
-      let discountAmount = 0;
-      if (coupon.discount_type === 'percentage') {
-        discountAmount = (purchaseAmount * coupon.discount_value) / 100;
-      } else if (coupon.discount_type === 'fixed') {
-        discountAmount = coupon.discount_value;
-      }
+      // Enhanced validations with new features
+      await this.validateCouponTargeting(coupon, user, cartDetails);
+      await this.validateCouponRequirements(coupon, cartDetails, purchaseAmount);
 
-      // Ensure discount doesn't exceed purchase amount
-      discountAmount = Math.min(discountAmount, purchaseAmount);
+      // Calculate discount with cap enforcement
+      const discountResult = this.calculateCouponDiscount(coupon, cartDetails, purchaseAmount);
 
-      // Update coupon usage
-      await coupon.update({
-        usage_count: (coupon.usage_count || 0) + 1,
-        updated_at: new Date()
-      });
+      // Update coupon usage (but don't commit yet - this will be done when payment completes)
+      // We're just validating and calculating for now
 
       return {
         success: true,
         message: 'Coupon applied successfully',
         data: {
           couponCode,
-          discountAmount,
+          couponId: coupon.id,
+          discountAmount: discountResult.discountAmount,
           discountType: coupon.discount_type,
           originalAmount: purchaseAmount,
-          finalAmount: purchaseAmount - discountAmount
+          finalAmount: discountResult.finalAmount,
+          appliedItems: discountResult.appliedItems,
+          priority: coupon.priority_level,
+          maxCapApplied: discountResult.maxCapApplied
         }
       };
     } catch (error) {
@@ -134,8 +122,183 @@ class PaymentService {
     }
   }
 
+  // Validate basic coupon conditions (usage limit, expiry, etc.)
+  async validateCouponBasics(coupon) {
+    // Check usage limit
+    if (coupon.usage_limit && coupon.usage_count >= coupon.usage_limit) {
+      throw new Error('Coupon usage limit exceeded');
+    }
+
+    // Check expiry
+    if (coupon.valid_until) {
+      const expiryDate = new Date(coupon.valid_until);
+      if (expiryDate < new Date()) {
+        throw new Error('Coupon has expired');
+      }
+    }
+  }
+
+  // Get cart details for coupon validation
+  async getCartDetailsForCoupon(purchaseIds, cartItems) {
+    if (cartItems) {
+      // Cart items provided directly
+      return {
+        items: cartItems,
+        totalQuantity: cartItems.length,
+        productTypes: [...new Set(cartItems.map(item => item.purchasable_type))],
+        productIds: cartItems.map(item => item.purchasable_id)
+      };
+    }
+
+    if (purchaseIds && purchaseIds.length > 0) {
+      // Get purchases from database
+      const purchases = await this.models.Purchase.findAll({
+        where: { id: purchaseIds }
+      });
+
+      return {
+        items: purchases,
+        totalQuantity: purchases.length,
+        productTypes: [...new Set(purchases.map(p => p.purchasable_type))],
+        productIds: purchases.map(p => p.purchasable_id)
+      };
+    }
+
+    throw new Error('No cart items or purchase IDs provided for coupon validation');
+  }
+
+  // Validate coupon targeting (product, user segments)
+  async validateCouponTargeting(coupon, user, cartDetails) {
+    // Product targeting validation
+    if (coupon.targeting_type === 'product_type' && coupon.target_product_types?.length > 0) {
+      const hasMatchingType = cartDetails.productTypes.some(type =>
+        coupon.target_product_types.includes(type)
+      );
+      if (!hasMatchingType) {
+        throw new Error(`This coupon only applies to: ${coupon.target_product_types.join(', ')}`);
+      }
+    }
+
+    if (coupon.targeting_type === 'product_id' && coupon.target_product_ids?.length > 0) {
+      const hasMatchingId = cartDetails.productIds.some(id =>
+        coupon.target_product_ids.includes(id)
+      );
+      if (!hasMatchingId) {
+        throw new Error('This coupon does not apply to any items in your cart');
+      }
+    }
+
+    // User segment targeting validation
+    if (coupon.targeting_type === 'user_segment' && coupon.user_segments?.length > 0) {
+      if (!user) {
+        throw new Error('User authentication required for this coupon');
+      }
+
+      const userSegments = this.getUserSegments(user);
+      const hasMatchingSegment = coupon.user_segments.some(segment =>
+        userSegments.includes(segment)
+      );
+
+      if (!hasMatchingSegment) {
+        throw new Error(`This coupon is only available for: ${coupon.user_segments.join(', ')}`);
+      }
+    }
+  }
+
+  // Validate coupon requirements (minimum amount, quantity)
+  async validateCouponRequirements(coupon, cartDetails, purchaseAmount) {
+    // Check minimum amount
+    if (coupon.minimum_amount && purchaseAmount < coupon.minimum_amount) {
+      throw new Error(`Minimum purchase amount of ₪${coupon.minimum_amount} required`);
+    }
+
+    // Check minimum quantity
+    if (coupon.minimum_quantity && cartDetails.totalQuantity < coupon.minimum_quantity) {
+      throw new Error(`Minimum ${coupon.minimum_quantity} items required in cart`);
+    }
+  }
+
+  // Calculate discount amount with cap enforcement
+  calculateCouponDiscount(coupon, cartDetails, purchaseAmount) {
+    let discountAmount = 0;
+    let maxCapApplied = false;
+
+    // Calculate base discount
+    if (coupon.discount_type === 'percentage') {
+      discountAmount = (purchaseAmount * coupon.discount_value) / 100;
+    } else if (coupon.discount_type === 'fixed') {
+      discountAmount = coupon.discount_value;
+    }
+
+    // Apply maximum discount cap if set
+    if (coupon.max_discount_cap && discountAmount > coupon.max_discount_cap) {
+      discountAmount = coupon.max_discount_cap;
+      maxCapApplied = true;
+    }
+
+    // Ensure discount doesn't exceed purchase amount
+    discountAmount = Math.min(discountAmount, purchaseAmount);
+
+    const finalAmount = Math.max(0, purchaseAmount - discountAmount);
+
+    return {
+      discountAmount,
+      finalAmount,
+      maxCapApplied,
+      appliedItems: cartDetails.items.length // For now, apply to all items
+    };
+  }
+
+  // Get user segments for targeting
+  getUserSegments(user) {
+    const segments = [];
+
+    // Check if new user (registered within last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    if (user.created_at > thirtyDaysAgo) {
+      segments.push('new_user');
+    }
+
+    // Check content creator status
+    if (user.content_creator_agreement_sign_date) {
+      segments.push('content_creator');
+    }
+
+    // Check admin/VIP status
+    if (user.role === 'admin' || user.role === 'sysadmin') {
+      segments.push('vip', 'admin');
+    }
+
+    // Add other segments based on user properties
+    if (user.role === 'student') {
+      segments.push('student');
+    }
+
+    return segments;
+  }
+
+  // Commit coupon usage (call this after successful payment)
+  async commitCouponUsage(couponCode) {
+    try {
+      const coupon = await this.models.Coupon.findOne({
+        where: { code: couponCode, is_active: true }
+      });
+
+      if (coupon) {
+        await coupon.update({
+          usage_count: (coupon.usage_count || 0) + 1,
+          updated_at: new Date()
+        });
+      }
+    } catch (error) {
+      console.error('Error committing coupon usage:', error);
+      // Don't throw here to avoid breaking payment flow
+    }
+  }
+
   // Create PayPlus payment page
-  async createPayplusPaymentPage({ purchaseId, purchaseIds, amount, productId, userId, returnUrl, callbackUrl, environment, frontendOrigin }) {
+  async createPayplusPaymentPage({ purchaseId, purchaseIds, amount, productId, userId, returnUrl, callbackUrl, environment, frontendOrigin, appliedCoupons, originalAmount, totalDiscount }) {
     try {
       let purchases = [];
       let products = [];
@@ -154,10 +317,21 @@ class PaymentService {
           throw new Error('Some purchases not found');
         }
 
-        // Calculate total amount from all purchases
-        totalAmount = purchases.reduce((sum, purchase) => {
+        // Calculate original amount from all purchases
+        const originalPurchaseAmount = purchases.reduce((sum, purchase) => {
           return sum + parseFloat(purchase.payment_amount || 0);
         }, 0);
+
+        // Use provided amount (with coupons applied) or fall back to original amount
+        totalAmount = amount || originalPurchaseAmount;
+
+        // Track coupon discount information
+        const couponInfo = {
+          applied_coupons: appliedCoupons || [],
+          original_amount: originalAmount || originalPurchaseAmount,
+          total_discount: totalDiscount || 0,
+          final_amount: totalAmount
+        };
 
         // Get product info for each purchase
         for (const purchase of purchases) {
@@ -200,6 +374,10 @@ class PaymentService {
           payment_status: 'pending',
           payment_method: 'payplus',
           environment: environment || 'production',
+          payplus_response: {
+            coupon_info: couponInfo,
+            payment_created_at: new Date().toISOString()
+          },
           created_at: new Date(),
           updated_at: new Date()
         });
@@ -497,6 +675,7 @@ class PaymentService {
           await transaction.update({
             payplus_page_uid: data.data.page_request_uid,
             payplus_response: {
+              ...transaction.payplus_response, // Preserve existing coupon_info
               page_request_uid: data.data.page_request_uid,
               qr_code_image: data.data.qr_code_image,
               payment_page_link: data.data.payment_page_link,

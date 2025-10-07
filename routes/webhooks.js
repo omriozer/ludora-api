@@ -256,6 +256,21 @@ router.post('/payplus',
           updated_at: new Date()
         });
 
+        // Commit coupon usage if payment successful and coupons were used
+        if (paymentStatus === 'completed' && transaction.payplus_response?.coupon_info?.applied_coupons?.length > 0) {
+          console.log(`🎫 Committing coupon usage for ${transaction.payplus_response.coupon_info.applied_coupons.length} coupons`);
+
+          for (const appliedCoupon of transaction.payplus_response.coupon_info.applied_coupons) {
+            try {
+              await PaymentService.commitCouponUsage(appliedCoupon.code);
+              console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
+            } catch (error) {
+              console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
+              // Don't throw - payment is successful, coupon tracking is secondary
+            }
+          }
+        }
+
         // Update all related purchases
         await models.Purchase.update(
           {
@@ -320,6 +335,21 @@ router.post('/payplus',
             status_code
           }
         });
+
+        // For single-item purchases, check if coupons were applied (stored in purchase metadata)
+        if (paymentStatus === 'completed' && purchase.metadata?.applied_coupons?.length > 0) {
+          console.log(`🎫 Committing coupon usage for ${purchase.metadata.applied_coupons.length} coupons (single-item purchase)`);
+
+          for (const appliedCoupon of purchase.metadata.applied_coupons) {
+            try {
+              await PaymentService.commitCouponUsage(appliedCoupon.code);
+              console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
+            } catch (error) {
+              console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
+              // Don't throw - payment is successful, coupon tracking is secondary
+            }
+          }
+        }
 
         console.log(`✅ PayPlus single payment processed:`, {
           purchaseId: purchase.id,

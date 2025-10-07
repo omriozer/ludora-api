@@ -4,6 +4,8 @@ import { validateBody, rateLimiters, schemas } from '../middleware/validation.js
 import PaymentService from '../services/PaymentService.js';
 import EmailService from '../services/EmailService.js';
 import SubscriptionService from '../services/SubscriptionService.js';
+import CouponValidationService from '../services/CouponValidationService.js';
+import CouponCodeGenerator from '../utils/couponCodeGenerator.js';
 import models from '../models/index.js';
 import EntityService from '../services/EntityService.js';
 
@@ -32,10 +34,248 @@ router.post('/testPayplusConnection', authenticateToken, async (req, res) => {
 
 router.post('/applyCoupon', authenticateToken, validateBody(schemas.applyCoupon), async (req, res) => {
   try {
-    const result = await PaymentService.applyCoupon(req.body);
+    // Support both legacy single purchase and new multi-item cart parameters
+    const { couponCode, userId, productId, purchaseAmount, purchaseIds, cartItems } = req.body;
+
+    // Build parameters for enhanced applyCoupon method
+    const applyCouponParams = {
+      couponCode,
+      userId,
+      purchaseAmount
+    };
+
+    // Handle legacy single purchase format
+    if (productId && !purchaseIds && !cartItems) {
+      // Legacy format - convert to new format
+      applyCouponParams.cartItems = [{
+        id: `legacy_${Date.now()}`,
+        purchasable_type: 'unknown', // Legacy calls don't specify type
+        purchasable_id: productId,
+        payment_amount: purchaseAmount
+      }];
+    }
+    // Handle new multi-item cart formats
+    else if (purchaseIds) {
+      applyCouponParams.purchaseIds = purchaseIds;
+    } else if (cartItems) {
+      applyCouponParams.cartItems = cartItems;
+    }
+    // No cart info provided - create minimal cart
+    else {
+      applyCouponParams.cartItems = [{
+        id: `minimal_${Date.now()}`,
+        purchasable_type: 'general',
+        purchasable_id: 'general',
+        payment_amount: purchaseAmount
+      }];
+    }
+
+    const result = await PaymentService.applyCoupon(applyCouponParams);
     res.json(result);
   } catch (error) {
     console.error('Error applying coupon:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get applicable public coupons for cart auto-suggestion
+router.post('/getApplicableCoupons', authenticateToken, async (req, res) => {
+  try {
+    const { userId, cartItems, cartTotal } = req.body;
+
+    if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+      return res.status(400).json({ error: 'Cart items are required' });
+    }
+
+    if (!cartTotal || cartTotal <= 0) {
+      return res.status(400).json({ error: 'Valid cart total is required' });
+    }
+
+    const result = await CouponValidationService.getApplicablePublicCoupons({
+      userId,
+      cartItems,
+      cartTotal
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting applicable coupons:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get the best single coupon for a cart
+router.post('/getBestCoupon', authenticateToken, async (req, res) => {
+  try {
+    const { userId, cartItems, cartTotal } = req.body;
+
+    if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+      return res.status(400).json({ error: 'Cart items are required' });
+    }
+
+    if (!cartTotal || cartTotal <= 0) {
+      return res.status(400).json({ error: 'Valid cart total is required' });
+    }
+
+    const result = await CouponValidationService.getBestCouponForCart({
+      userId,
+      cartItems,
+      cartTotal
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting best coupon:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Validate multiple coupons for stacking
+router.post('/validateCouponStacking', authenticateToken, async (req, res) => {
+  try {
+    const { couponCodes, userId, cartItems, cartTotal } = req.body;
+
+    if (!couponCodes || !Array.isArray(couponCodes) || couponCodes.length === 0) {
+      return res.status(400).json({ error: 'Coupon codes are required' });
+    }
+
+    if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+      return res.status(400).json({ error: 'Cart items are required' });
+    }
+
+    if (!cartTotal || cartTotal <= 0) {
+      return res.status(400).json({ error: 'Valid cart total is required' });
+    }
+
+    const result = await CouponValidationService.validateCouponStacking({
+      couponCodes,
+      userId,
+      cartItems,
+      cartTotal
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error validating coupon stacking:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Coupon Code Generation Endpoints
+// Generate coupon codes with custom patterns
+router.post('/generateCouponCodes', authenticateToken, async (req, res) => {
+  try {
+    const { pattern, count = 1, charSet = 'alphanumeric', couponData = {} } = req.body;
+
+    // Basic validation
+    if (!pattern) {
+      return res.status(400).json({ error: 'Pattern is required' });
+    }
+
+    if (count < 1 || count > 1000) {
+      return res.status(400).json({ error: 'Count must be between 1 and 1000' });
+    }
+
+    // Validate pattern first
+    const validation = CouponCodeGenerator.validatePattern(pattern);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    const result = await CouponCodeGenerator.generateAndCreateCoupons({
+      pattern,
+      count,
+      charSet,
+      couponData
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error generating coupon codes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Validate coupon code pattern
+router.post('/validateCouponPattern', authenticateToken, async (req, res) => {
+  try {
+    const { pattern } = req.body;
+
+    if (!pattern) {
+      return res.status(400).json({ error: 'Pattern is required' });
+    }
+
+    const validation = CouponCodeGenerator.validatePattern(pattern);
+    res.json(validation);
+  } catch (error) {
+    console.error('Error validating coupon pattern:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get preset patterns for common use cases
+router.get('/getCouponPresetPatterns', authenticateToken, async (req, res) => {
+  try {
+    const { type, suffix } = req.query;
+
+    const presets = {
+      student: CouponCodeGenerator.generatePresetPattern('student', suffix),
+      vip: CouponCodeGenerator.generatePresetPattern('vip', suffix),
+      holiday: CouponCodeGenerator.generatePresetPattern('holiday', suffix),
+      general: CouponCodeGenerator.generatePresetPattern('general', suffix),
+      referral: CouponCodeGenerator.generatePresetPattern('referral', suffix),
+      welcome: CouponCodeGenerator.generatePresetPattern('welcome', suffix),
+      flashsale: CouponCodeGenerator.generatePresetPattern('flashsale', suffix),
+      earlybird: CouponCodeGenerator.generatePresetPattern('earlybird', suffix),
+      loyalty: CouponCodeGenerator.generatePresetPattern('loyalty', suffix),
+      creator: CouponCodeGenerator.generatePresetPattern('creator', suffix)
+    };
+
+    if (type) {
+      const pattern = presets[type.toLowerCase()];
+      if (!pattern) {
+        return res.status(400).json({ error: 'Invalid preset type' });
+      }
+      return res.json({ pattern, validation: CouponCodeGenerator.validatePattern(pattern) });
+    }
+
+    res.json({ presets });
+  } catch (error) {
+    console.error('Error getting preset patterns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get statistics for a coupon pattern
+router.get('/getCouponPatternStats', authenticateToken, async (req, res) => {
+  try {
+    const { pattern } = req.query;
+
+    if (!pattern) {
+      return res.status(400).json({ error: 'Pattern is required' });
+    }
+
+    const stats = await CouponCodeGenerator.getPatternStatistics(pattern);
+    res.json(stats);
+  } catch (error) {
+    console.error('Error getting pattern statistics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk deactivate coupons by pattern
+router.post('/deactivateCouponsByPattern', authenticateToken, async (req, res) => {
+  try {
+    const { pattern } = req.body;
+
+    if (!pattern) {
+      return res.status(400).json({ error: 'Pattern is required' });
+    }
+
+    const result = await CouponCodeGenerator.deactivateCouponsByPattern(pattern);
+    res.json(result);
+  } catch (error) {
+    console.error('Error deactivating coupons by pattern:', error);
     res.status(500).json({ error: error.message });
   }
 });
