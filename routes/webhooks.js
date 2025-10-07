@@ -123,14 +123,14 @@ router.post('/payplus',
       }).catch(err => console.log('WebhookLog not available:', err.message));
 
       // Extract PayPlus callback data from transaction object
-      const transaction = req.body.transaction || req.body;
+      const transactionData = req.body.transaction || req.body;
       const {
         payment_page_request_uid: page_request_uid,
         uid: transaction_uid,
         status_code,
         amount,
         date: payment_date
-      } = transaction;
+      } = transactionData;
 
       // Extract customer data from customer object
       const customer = req.body.customer || {};
