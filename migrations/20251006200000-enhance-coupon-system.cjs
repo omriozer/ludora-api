@@ -40,25 +40,121 @@ module.exports = {
     }
 
     if (tableDescription.usage_limit) {
-      await queryInterface.changeColumn('coupon', 'usage_limit', {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-      });
+      // Check if already integer type
+      if (tableDescription.usage_limit.type === 'INTEGER') {
+        console.log('usage_limit column is already INTEGER type, skipping conversion');
+      } else {
+        // String type - clean up and convert
+        console.log('Converting usage_limit from string to INTEGER type');
+
+        // First, update any non-numeric usage_limit values to NULL
+        await queryInterface.sequelize.query(`
+          UPDATE coupon
+          SET usage_limit = NULL
+          WHERE usage_limit IS NOT NULL
+          AND (
+            usage_limit !~ '^[0-9]+$'
+            OR usage_limit = 'unlimited'
+            OR usage_limit = ''
+            OR trim(usage_limit) = ''
+          )
+        `);
+
+        // Convert empty strings to NULL
+        await queryInterface.sequelize.query(`
+          UPDATE coupon
+          SET usage_limit = NULL
+          WHERE usage_limit = '' OR trim(usage_limit) = ''
+        `);
+
+        // For remaining non-null values, ensure they're numeric
+        await queryInterface.sequelize.query(`
+          UPDATE coupon
+          SET usage_limit = CASE
+            WHEN usage_limit ~ '^[0-9]+$' THEN usage_limit
+            ELSE NULL
+          END
+          WHERE usage_limit IS NOT NULL
+        `);
+
+        // Now use explicit casting approach
+        await queryInterface.sequelize.query(`
+          ALTER TABLE coupon
+          ALTER COLUMN usage_limit TYPE INTEGER
+          USING CASE
+            WHEN usage_limit IS NULL THEN NULL
+            WHEN usage_limit ~ '^[0-9]+$' THEN usage_limit::INTEGER
+            ELSE NULL
+          END
+        `);
+      }
     }
 
     if (tableDescription.usage_count) {
-      await queryInterface.changeColumn('coupon', 'usage_count', {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        defaultValue: 0,
-      });
+      // Check if already numeric or integer type
+      if (tableDescription.usage_count.type === 'NUMERIC' || tableDescription.usage_count.type === 'INTEGER') {
+        // Already numeric - just convert to INTEGER if needed
+        if (tableDescription.usage_count.type === 'NUMERIC') {
+          await queryInterface.sequelize.query(`
+            ALTER TABLE coupon
+            ALTER COLUMN usage_count TYPE INTEGER
+            USING CASE
+              WHEN usage_count IS NULL THEN 0
+              ELSE usage_count::INTEGER
+            END
+          `);
+        }
+      } else {
+        // String type - clean up and convert
+        await queryInterface.sequelize.query(`
+          UPDATE coupon
+          SET usage_count = '0'
+          WHERE usage_count IS NULL
+          OR usage_count = ''
+          OR trim(usage_count) = ''
+          OR usage_count !~ '^[0-9]+$'
+        `);
+
+        // Convert to integer with explicit casting
+        await queryInterface.sequelize.query(`
+          ALTER TABLE coupon
+          ALTER COLUMN usage_count TYPE INTEGER
+          USING CASE
+            WHEN usage_count IS NULL THEN 0
+            WHEN usage_count ~ '^[0-9]+$' THEN usage_count::INTEGER
+            ELSE 0
+          END
+        `);
+      }
+
+      // Set default value regardless of original type
+      await queryInterface.sequelize.query(`
+        ALTER TABLE coupon ALTER COLUMN usage_count SET DEFAULT 0
+      `);
+
+      // Set NULL values to 0 if any exist
+      await queryInterface.sequelize.query(`
+        UPDATE coupon SET usage_count = 0 WHERE usage_count IS NULL
+      `);
     }
 
     if (tableDescription.valid_until) {
-      await queryInterface.changeColumn('coupon', 'valid_until', {
-        type: DataTypes.DATE,
-        allowNull: true,
-      });
+      // Check if already timestamp type
+      if (tableDescription.valid_until.type.includes('TIMESTAMP') || tableDescription.valid_until.type === 'DATE') {
+        console.log('valid_until column is already TIMESTAMP/DATE type, skipping conversion');
+      } else {
+        console.log('Converting valid_until to TIMESTAMP type');
+        // For string-based date columns, use explicit casting
+        await queryInterface.sequelize.query(`
+          ALTER TABLE coupon
+          ALTER COLUMN valid_until TYPE TIMESTAMP WITH TIME ZONE
+          USING CASE
+            WHEN valid_until IS NULL OR valid_until = '' THEN NULL
+            WHEN valid_until ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN valid_until::TIMESTAMP
+            ELSE NULL
+          END
+        `);
+      }
     }
 
     // Add default values to existing boolean columns
