@@ -16,6 +16,7 @@ import Registration from './Registration.js';
 import EmailTemplate from './EmailTemplate.js';
 import Category from './Category.js';
 import Coupon from './Coupon.js';
+import Transaction from './Transaction.js';
 import SupportMessage from './SupportMessage.js';
 import Notification from './Notification.js';
 import Purchase from './Purchase.js';
@@ -69,6 +70,7 @@ const models = {
   EmailTemplate: EmailTemplate(sequelize),
   Category: Category(sequelize),
   Coupon: Coupon(sequelize),
+  Transaction: Transaction(sequelize),
   SupportMessage: SupportMessage(sequelize),
   Notification: Notification(sequelize),
   Purchase: Purchase(sequelize),
