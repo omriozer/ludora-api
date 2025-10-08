@@ -99,7 +99,7 @@ async function getFullProduct(product, userId = null) {
         purchasable_type: product.product_type,
         payment_status: ['completed', 'pending'] // Include both completed and pending purchases
       },
-      attributes: ['id', 'payment_status', 'access_expires_at', 'created_at', 'purchased_lifetime_access', 'access_until'],
+      attributes: ['id', 'payment_status', 'access_expires_at', 'created_at'],
       order: [['created_at', 'DESC']] // Get the most recent purchase
     });
   }
