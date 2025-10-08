@@ -103,11 +103,24 @@ export default (sequelize) => {
 
   // Hook to auto-set is_published=false for File products without documents
   Product.addHook('beforeSave', async (product, options) => {
+    console.log('🔍 Product beforeSave hook triggered:', {
+      id: product.id,
+      product_type: product.product_type,
+      is_published: product.is_published,
+      changed: product.changed()
+    });
+
     // Only check File products that are being set to published
     if (product.product_type === 'file' && product.is_published === true) {
       // Get the File entity
       const models = sequelize.models;
       const fileEntity = await models.File.findByPk(product.entity_id);
+
+      console.log('🔍 File entity check:', {
+        entity_id: product.entity_id,
+        fileEntity: !!fileEntity,
+        file_name: fileEntity?.file_name
+      });
 
       // If File has no file_name, force is_published to false
       if (!fileEntity || !fileEntity.file_name) {

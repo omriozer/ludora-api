@@ -308,6 +308,14 @@ class EntityService {
         video_file_url: updateData.video_file_url
       });
 
+      // Debug logging for product update issues
+      if (entityType === 'product') {
+        console.log('🔍 EntityService Product update debug:');
+        console.log('   updateData.short_description:', updateData.short_description);
+        console.log('   updateData.is_published:', updateData.is_published);
+        console.log('   updateData.tags:', updateData.tags);
+      }
+
       await entity.update(updateData);
       return entity;
     } catch (error) {

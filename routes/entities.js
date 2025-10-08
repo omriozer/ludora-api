@@ -366,6 +366,14 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
       marketing_video_duration: req.body.marketing_video_duration,
       video_file_url: req.body.video_file_url
     });
+
+    // Debug logging for product update issues
+    if (entityType === 'product') {
+      console.log('🔍 Product update debug:');
+      console.log('   req.body.short_description:', req.body.short_description);
+      console.log('   req.body.is_published:', req.body.is_published);
+      console.log('   req.body.tags:', req.body.tags);
+    }
     const entity = await EntityService.update(entityType, id, req.body, req.user.uid);
     res.json(entity);
   } catch (error) {
