@@ -91,14 +91,16 @@ async function getFullProduct(product, userId = null) {
   // Get purchase information if user is authenticated
   let purchase = null;
   if (userId && product.id) {
+    // Check for any non-refunded purchase (completed OR pending)
     purchase = await models.Purchase.findOne({
       where: {
         buyer_user_id: userId,
         purchasable_id: product.entity_id || product.id,
         purchasable_type: product.product_type,
-        payment_status: 'completed'
+        payment_status: ['completed', 'pending'] // Include both completed and pending purchases
       },
-      attributes: ['id', 'payment_status', 'access_expires_at', 'created_at']
+      attributes: ['id', 'payment_status', 'access_expires_at', 'created_at', 'purchased_lifetime_access', 'access_until'],
+      order: [['created_at', 'DESC']] // Get the most recent purchase
     });
   }
 
