@@ -132,12 +132,13 @@ app.use('/api/webhooks', webhookRoutes);
 
 // Health check endpoints
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'Ludora API is running',
     environment: env,
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
-    status: 'healthy'
+    status: 'healthy',
+    deploymentTest: 'deploy-action-test-2025-10-09'
   });
 });
 
