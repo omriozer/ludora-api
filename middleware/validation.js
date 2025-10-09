@@ -189,25 +189,46 @@ export const schemas = {
   }),
 
   createPaymentPage: Joi.object({
-    // Support both new purchase-based flow and legacy product-based flow
+    // Support multi-cart flow, single purchase flow, and legacy product-based flow
     purchaseId: Joi.string().optional(),
+    purchaseIds: Joi.array().items(Joi.string()).optional(), // Multi-cart support
     amount: Joi.number().positive().optional(),
+    totalAmount: Joi.number().positive().optional(), // Multi-cart total amount
     productId: Joi.string().optional(),
     userId: Joi.string().optional(),
     returnUrl: Joi.string().uri().optional(),
     callbackUrl: Joi.string().uri().optional(),
     environment: Joi.string().valid('test', 'production').optional(),
-    frontendOrigin: Joi.string().uri().optional()
-  }).or('purchaseId', 'productId').custom((value, helpers) => {
-    if (value.purchaseId) {
-      // New purchase-based flow - purchaseId is required
+    frontendOrigin: Joi.string().uri().optional(),
+    // Coupon-related parameters for multi-cart checkout
+    appliedCoupons: Joi.array().items(
+      Joi.object({
+        code: Joi.string().required(),
+        id: Joi.string().required(),
+        discountAmount: Joi.number().positive().required(),
+        discountType: Joi.string().valid('percentage', 'fixed').required()
+      })
+    ).optional(),
+    originalAmount: Joi.number().positive().optional(), // Amount before discounts
+    totalDiscount: Joi.number().min(0).optional() // Total discount applied
+  }).custom((value, helpers) => {
+    if (value.purchaseIds && value.purchaseIds.length > 0) {
+      // Multi-cart flow - purchaseIds and totalAmount are required
+      if (!value.totalAmount) {
+        return helpers.error('any.custom', {
+          message: 'totalAmount is required when purchaseIds is provided'
+        });
+      }
       return value;
-    } else if (value.productId && value.amount) {
-      // Legacy product-based flow - productId and amount are required
+    } else if (value.purchaseId) {
+      // Single purchase flow - purchaseId is required
+      return value;
+    } else if (value.productId && (value.amount || value.totalAmount)) {
+      // Legacy product-based flow - productId and amount/totalAmount are required
       return value;
     } else {
       return helpers.error('any.custom', {
-        message: 'Either purchaseId or both productId and amount are required'
+        message: 'Either purchaseIds with totalAmount, purchaseId, or productId with amount/totalAmount are required'
       });
     }
   }),
