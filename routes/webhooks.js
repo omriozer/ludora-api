@@ -239,6 +239,7 @@ router.post('/payplus',
           purchases = [purchase];
           console.log(`✅ Found single purchase: ${purchase.id}`);
         }
+        }
       }
 
       if (!isSessionPayment && purchases.length === 0) {
