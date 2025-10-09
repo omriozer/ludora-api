@@ -604,11 +604,33 @@ class PaymentService {
         more_info: paymentDescription,
         charge_default: 1, // Default to credit card
         // Add item details for PayPlus (if supported)
-        items: products.map(item => ({
-          name: item.title,
-          amount: parseFloat(item.amount),
-          quantity: 1
-        }))
+        items: (() => {
+          if (products.length > 0) {
+            const validItems = products.map(item => ({
+              name: item.title || 'Product',
+              amount: parseFloat(item.amount) || 0,
+              quantity: 1
+            })).filter(item => item.amount > 0); // Only include items with valid amounts
+
+            // If all items were filtered out due to invalid amounts, create fallback
+            return validItems.length > 0 ? validItems : [
+              {
+                name: 'Payment',
+                amount: totalAmount,
+                quantity: 1
+              }
+            ];
+          } else {
+            // Fallback item if no products found
+            return [
+              {
+                name: 'Payment',
+                amount: totalAmount,
+                quantity: 1
+              }
+            ];
+          }
+        })()
       };
 
       // Add subscription settings if any product has recurring billing
