@@ -189,6 +189,16 @@ async function startServer() {
       console.log(`✅ Server successfully started with updated environment variables`);
     });
 
+    // Start background services
+    try {
+      // Import and start payment session cleanup service
+      const PaymentSessionCleanupService = await import('./services/PaymentSessionCleanupService.js');
+      PaymentSessionCleanupService.default.start();
+    } catch (error) {
+      console.error('⚠️  Failed to start background services:', error);
+      // Don't fail server startup if background services fail
+    }
+
     return server;
   } catch (error) {
     console.error('❌ Failed to start server:', error);
@@ -203,15 +213,33 @@ server.on('error', (err) => {
   console.error('Server error:', err);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
+
+  // Stop background services
+  try {
+    const PaymentSessionCleanupService = await import('./services/PaymentSessionCleanupService.js');
+    PaymentSessionCleanupService.default.stop();
+  } catch (error) {
+    console.error('⚠️  Error stopping background services:', error);
+  }
+
   server.close(() => {
     process.exit(0);
   });
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
+
+  // Stop background services
+  try {
+    const PaymentSessionCleanupService = await import('./services/PaymentSessionCleanupService.js');
+    PaymentSessionCleanupService.default.stop();
+  } catch (error) {
+    console.error('⚠️  Error stopping background services:', error);
+  }
+
   server.close(() => {
     process.exit(0);
   });

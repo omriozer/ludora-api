@@ -297,9 +297,13 @@ class PaymentService {
     }
   }
 
-  // Create PayPlus payment page
+  // Create PayPlus payment page with session management
   async createPayplusPaymentPage({ purchaseId, purchaseIds, amount, productId, userId, returnUrl, callbackUrl, environment, frontendOrigin, appliedCoupons, originalAmount, totalDiscount }) {
     try {
+      if (!userId) {
+        throw new Error('User ID is required for payment sessions');
+      }
+
       let purchases = [];
       let products = [];
       let totalAmount = 0;
@@ -317,6 +321,37 @@ class PaymentService {
           throw new Error('Some purchases not found');
         }
 
+        // Check for existing active payment sessions for this user + purchases combination
+        const existingSession = await this.models.PaymentSession.findOne({
+          where: {
+            user_id: userId,
+            session_status: ['created', 'pending'],
+            purchase_ids: idsToProcess
+          }
+        });
+
+        if (existingSession) {
+          // Check if session is expired
+          if (existingSession.isExpired()) {
+            await existingSession.markExpired();
+          } else if (existingSession.isActive()) {
+            // Return existing active session
+            return {
+              success: true,
+              message: 'Active payment session found',
+              data: {
+                payment_url: existingSession.payment_page_url,
+                paymentId: existingSession.id,
+                amount: parseFloat(existingSession.total_amount),
+                productTitle: `${purchases.length} items`,
+                environment: existingSession.environment,
+                itemCount: purchases.length,
+                session_id: existingSession.id
+              }
+            };
+          }
+        }
+
         // Calculate original amount from all purchases
         const originalPurchaseAmount = purchases.reduce((sum, purchase) => {
           return sum + parseFloat(purchase.payment_amount || 0);
@@ -324,14 +359,6 @@ class PaymentService {
 
         // Use provided amount (with coupons applied) or fall back to original amount
         totalAmount = amount || originalPurchaseAmount;
-
-        // Track coupon discount information
-        const couponInfo = {
-          applied_coupons: appliedCoupons || [],
-          original_amount: originalAmount || originalPurchaseAmount,
-          total_discount: totalDiscount || 0,
-          final_amount: totalAmount
-        };
 
         // Get product info for each purchase
         for (const purchase of purchases) {
@@ -366,41 +393,13 @@ class PaymentService {
           }
         }
 
-        // Create Transaction record for multi-item payment
-        const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-        const transaction = await this.models.Transaction.create({
-          id: transactionId,
-          total_amount: totalAmount,
-          payment_status: 'pending',
-          payment_method: 'payplus',
-          environment: environment || 'production',
-          payplus_response: {
-            coupon_info: couponInfo,
-            payment_created_at: new Date().toISOString()
-          },
-          created_at: new Date(),
-          updated_at: new Date()
-        });
-
-        // Update all purchases to reference this transaction and set to pending
-        await this.models.Purchase.update(
-          {
-            payment_status: 'pending',
-            transaction_id: transactionId,
-            updated_at: new Date()
-          },
-          { where: { id: idsToProcess } }
-        );
-
-        console.log(`🛒 Created transaction ${transactionId} for ${purchases.length} purchases, total: ₪${totalAmount}`);
-
       } else {
         // Legacy product-based flow
         if (!productId || !amount) {
           throw new Error('Product ID and amount are required for product-based payment');
         }
 
-        product = await this.models.Product.findByPk(productId);
+        const product = await this.models.Product.findByPk(productId);
         if (!product) {
           throw new Error('Product not found');
         }
@@ -414,21 +413,22 @@ class PaymentService {
           }
         });
 
-        // Check if user has any non-refunded purchases for this product
-        const nonRefundedPurchases = existingPurchases.filter(p => p.payment_status !== 'refunded');
-        if (nonRefundedPurchases.length > 0) {
-          throw new Error(`You already have an existing purchase for this product. Status: ${nonRefundedPurchases[0].payment_status}. Multiple purchases for the same product are not allowed unless the previous purchase was refunded.`);
+        // Check if user has any non-refunded/non-failed purchases for this product
+        const blockedStatuses = ['pending', 'completed'];
+        const blockingPurchases = existingPurchases.filter(p => blockedStatuses.includes(p.payment_status));
+        if (blockingPurchases.length > 0) {
+          throw new Error(`You already have an existing purchase for this product. Status: ${blockingPurchases[0].payment_status}. Multiple purchases for the same product are not allowed unless the previous purchase was refunded or failed.`);
         }
 
-        // Create purchase record with clean schema
-        purchase = await this.models.Purchase.create({
+        // Create purchase record with cart status (not pending yet)
+        const purchase = await this.models.Purchase.create({
           id: generateId(),
           buyer_user_id: userId,
           purchasable_type: product.product_type,
           purchasable_id: product.entity_id,
           payment_amount: amount,
           original_price: product.price,
-          payment_status: 'pending',
+          payment_status: 'cart', // Start as cart, not pending
           metadata: {
             environment: environment || process.env.ENVIRONMENT || 'development'
           }
@@ -449,41 +449,132 @@ class PaymentService {
         throw new Error('No products found for payment');
       }
 
-      // Generate return URLs - use transaction ID for multi-item, purchase ID for single item
-      const orderRef = purchases.length > 1
-        ? purchases[0].transaction_id
-        : purchases[0].order_number || purchases[0].id;
+      // Create payment session BEFORE calling PayPlus API
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes from now
 
       const baseReturnUrl = returnUrl || `${frontendOrigin || 'https://ludora.app'}/payment-result`;
-      const successUrl = `${baseReturnUrl}?status=success&order=${orderRef}`;
-      const failureUrl = `${baseReturnUrl}?status=failure&order=${orderRef}`;
+      const sessionReturnUrl = `${baseReturnUrl}?session=${sessionId}`;
+      const successUrl = `${sessionReturnUrl}&status=success`;
+      const failureUrl = `${sessionReturnUrl}&status=failure`;
 
-      // Integrate with actual PayPlus API
-      const paymentPageUrl = await this.createPayplusPaymentLink({
-        purchases,
-        products,
-        totalAmount,
-        returnUrl,
-        successUrl,
-        failureUrl,
-        callbackUrl,
-        environment
+      const paymentSession = await this.models.PaymentSession.create({
+        id: sessionId,
+        user_id: userId,
+        session_status: 'created', // Start as created, will become pending after PayPlus success
+        purchase_ids: idsToProcess,
+        total_amount: totalAmount,
+        original_amount: originalAmount || totalAmount,
+        coupon_discount: totalDiscount || 0,
+        applied_coupons: appliedCoupons || [],
+        return_url: baseReturnUrl,
+        callback_url: callbackUrl,
+        environment: environment || 'production',
+        expires_at: expiresAt,
+        metadata: {
+          product_count: products.length,
+          product_titles: products.map(p => p.title),
+          payment_created_at: new Date().toISOString()
+        },
+        created_at: new Date(),
+        updated_at: new Date()
       });
 
-      return {
-        success: true,
-        message: 'Payment page created',
-        data: {
-          payment_url: paymentPageUrl,
-          paymentId: purchases.length === 1 ? purchases[0].id : purchases[0].transaction_id,
-          amount: totalAmount,
-          productTitle: products.length === 1
-            ? products[0].title
-            : `${products.length} items`,
-          environment: environment || 'production',
-          itemCount: products.length
+      console.log(`💳 Created payment session ${sessionId} for user ${userId}, ${purchases.length} purchases, total: ₪${totalAmount}`);
+
+      try {
+        // Now call PayPlus API
+        const paymentPageUrl = await this.createPayplusPaymentLink({
+          purchases,
+          products,
+          totalAmount,
+          returnUrl: sessionReturnUrl,
+          successUrl,
+          failureUrl,
+          callbackUrl,
+          environment,
+          sessionId // Pass session ID for tracking
+        });
+
+        // PayPlus API succeeded - update session and purchases
+        await paymentSession.update({
+          session_status: 'pending',
+          payment_page_url: paymentPageUrl,
+          updated_at: new Date()
+        });
+
+        // Now mark purchases as pending (only after PayPlus success)
+        if (idsToProcess.length > 0) {
+          // Multi-item: Create Transaction record for backward compatibility
+          const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+          const transaction = await this.models.Transaction.create({
+            id: transactionId,
+            total_amount: totalAmount,
+            payment_status: 'pending',
+            payment_method: 'payplus',
+            environment: environment || 'production',
+            payplus_response: {
+              coupon_info: {
+                applied_coupons: appliedCoupons || [],
+                original_amount: originalAmount || totalAmount,
+                total_discount: totalDiscount || 0,
+                final_amount: totalAmount
+              },
+              payment_created_at: new Date().toISOString(),
+              session_id: sessionId
+            },
+            created_at: new Date(),
+            updated_at: new Date()
+          });
+
+          // Update purchases to reference transaction and mark as pending
+          await this.models.Purchase.update(
+            {
+              payment_status: 'pending',
+              transaction_id: transactionId,
+              updated_at: new Date()
+            },
+            { where: { id: idsToProcess } }
+          );
+
+          console.log(`✅ PayPlus API success - marked ${purchases.length} purchases as pending`);
+        } else {
+          // Legacy single purchase flow
+          await purchases[0].update({
+            payment_status: 'pending',
+            updated_at: new Date()
+          });
+
+          console.log(`✅ PayPlus API success - marked purchase ${purchases[0].id} as pending`);
         }
-      };
+
+        return {
+          success: true,
+          message: 'Payment page created successfully',
+          data: {
+            payment_url: paymentPageUrl,
+            paymentId: sessionId, // Return session ID as paymentId for tracking
+            amount: totalAmount,
+            productTitle: products.length === 1
+              ? products[0].title
+              : `${products.length} items`,
+            environment: environment || 'production',
+            itemCount: products.length,
+            session_id: sessionId,
+            expires_at: expiresAt.toISOString()
+          }
+        };
+
+      } catch (payplusError) {
+        // PayPlus API failed - mark session as failed, keep purchases in cart status
+        await paymentSession.markFailed(`PayPlus API error: ${payplusError.message}`);
+
+        console.error(`❌ PayPlus API failed for session ${sessionId}:`, payplusError.message);
+        console.log(`💡 Purchases remain in cart status, user can retry payment`);
+
+        throw payplusError; // Re-throw original error
+      }
+
     } catch (error) {
       console.error('Error creating PayPlus payment page:', error);
       throw error;
@@ -569,7 +660,7 @@ class PaymentService {
   }
 
   // Create PayPlus payment link using their API
-  async createPayplusPaymentLink({ purchases, products, totalAmount, returnUrl, successUrl, failureUrl, callbackUrl, environment }) {
+  async createPayplusPaymentLink({ purchases, products, totalAmount, returnUrl, successUrl, failureUrl, callbackUrl, environment, sessionId }) {
     try {
       // Get PayPlus configuration based on environment
       const config = this.getPayplusConfig(environment);

@@ -195,7 +195,10 @@ export const schemas = {
     amount: Joi.number().positive().optional(),
     totalAmount: Joi.number().positive().optional(), // Multi-cart total amount
     productId: Joi.string().optional(),
-    userId: Joi.string().optional(),
+    userId: Joi.string().required().messages({
+      'any.required': 'User ID is required for payment session management',
+      'string.empty': 'User ID cannot be empty'
+    }),
     returnUrl: Joi.string().uri().optional(),
     callbackUrl: Joi.string().uri().optional(),
     environment: Joi.string().valid('test', 'production').optional(),
