@@ -34,7 +34,7 @@ class CouponValidationService {
           ],
           [Op.or]: [
             { usage_limit: null },
-            { usage_count: { [Op.lt]: models.Sequelize.col('usage_limit') } }
+            { usage_count: { [Op.lt]: this.models.Sequelize.col('usage_limit') } }
           ]
         },
         order: [['priority_level', 'ASC'], ['discount_value', 'DESC']]
