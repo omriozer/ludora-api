@@ -64,10 +64,6 @@ export default function(sequelize) {
         isIn: [['cart', 'pending', 'completed', 'failed', 'refunded']]
       }
     },
-    transaction_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
     // Access control (simplified)
     access_expires_at: {
       type: DataTypes.DATE,

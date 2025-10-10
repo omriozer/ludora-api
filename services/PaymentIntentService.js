@@ -55,10 +55,20 @@ class PaymentIntentService {
 
       // 4. Link purchases to transaction
       const purchaseIds = purchases.map(p => p.id);
-      await this.models.Purchase.update(
+      console.log(`🔗 PaymentIntentService: Linking ${purchaseIds.length} purchases to transaction ${transactionId}:`, purchaseIds);
+
+      const updateResult = await this.models.Purchase.update(
         { transaction_id: transactionId },
         { where: { id: purchaseIds } }
       );
+
+      console.log(`🔗 PaymentIntentService: Purchase linking result - affected rows: ${updateResult[0]}`);
+
+      // Verify linking was successful
+      const linkedPurchases = await this.models.Purchase.findAll({
+        where: { transaction_id: transactionId }
+      });
+      console.log(`✅ PaymentIntentService: Verified ${linkedPurchases.length} purchases are linked to transaction ${transactionId}`);
 
       // 5. Call PayPlus API via existing PaymentService
       console.log('🔗 PaymentIntentService: Calling PayPlus API for transaction:', transactionId);
@@ -184,8 +194,12 @@ class PaymentIntentService {
       // Cascade status to purchases
       if (transaction.purchases && transaction.purchases.length > 0) {
         const purchaseStatus = this._mapTransactionStatusToPurchaseStatus(newStatus);
+        const purchaseIds = transaction.purchases.map(p => p.id);
 
-        await this.models.Purchase.update(
+        console.log(`🔄 PaymentIntentService: Updating ${transaction.purchases.length} purchases to status: ${purchaseStatus}`);
+        console.log(`🔄 PaymentIntentService: Purchase IDs to update:`, purchaseIds);
+
+        const updateResult = await this.models.Purchase.update(
           {
             payment_status: purchaseStatus,
             updated_at: new Date(),
@@ -199,7 +213,11 @@ class PaymentIntentService {
           { where: { transaction_id: transactionId } }
         );
 
-        console.log(`✅ Updated ${transaction.purchases.length} purchases to status: ${purchaseStatus}`);
+        console.log(`✅ Purchase update result - affected rows: ${updateResult[0]}, expected: ${transaction.purchases.length}`);
+
+        if (updateResult[0] !== transaction.purchases.length) {
+          console.warn(`⚠️ Purchase update mismatch - updated ${updateResult[0]} but expected ${transaction.purchases.length}`);
+        }
       }
 
       // Handle business logic for completed payments
@@ -237,11 +255,18 @@ class PaymentIntentService {
     if (Array.isArray(cartItems) && cartItems.length > 0) {
       // Get existing purchases by IDs
       const purchaseIds = cartItems.map(item => item.id);
+      console.log(`🛒 PaymentIntentService: Validating ${cartItems.length} cart items for user ${userId}:`, purchaseIds);
+
       purchases = await this.models.Purchase.findAll({
         where: { id: purchaseIds, buyer_user_id: userId }
       });
 
+      console.log(`🛒 PaymentIntentService: Found ${purchases.length} valid purchases owned by user`);
+
       if (purchases.length !== cartItems.length) {
+        console.error(`❌ PaymentIntentService: Cart validation failed - expected ${cartItems.length} purchases, found ${purchases.length}`);
+        console.error(`❌ PaymentIntentService: Requested purchase IDs:`, purchaseIds);
+        console.error(`❌ PaymentIntentService: Found purchase IDs:`, purchases.map(p => p.id));
         throw new Error('Some cart items are invalid or not owned by user');
       }
 
