@@ -6,10 +6,10 @@ import models from '../models/index.js';
 class PaymentCleanupService {
   /**
    * Clean up stale payment sessions that have been in progress for too long
-   * @param {number} maxMinutes - Maximum minutes to allow a payment to be in progress (default: 2)
+   * @param {number} maxMinutes - Maximum minutes to allow a payment to be in progress (default: 10)
    * @returns {Promise<object>} Cleanup results
    */
-  static async cleanupStalePaymentSessions(maxMinutes = 2) {
+  static async cleanupStalePaymentSessions(maxMinutes = 10) {
     try {
       console.log(`🧹 Starting cleanup of stale payment sessions older than ${maxMinutes} minutes...`);
 

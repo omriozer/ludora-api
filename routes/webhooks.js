@@ -235,6 +235,35 @@ router.post('/payplus',
           }
         }
 
+        // Final fallback: search for ANY purchase with this page_request_uid, even if cleaned up
+        if (!purchase) {
+          console.log(`🔍 PayPlus webhook: Final fallback - searching for any purchase with page_request_uid: ${page_request_uid}`);
+          purchase = await models.Purchase.findOne({
+            where: {
+              [models.Sequelize.Op.or]: [
+                {
+                  metadata: {
+                    payplus_page_request_uid: page_request_uid
+                  }
+                },
+                {
+                  metadata: {
+                    [models.Sequelize.Op.and]: [
+                      models.Sequelize.where(
+                        models.Sequelize.fn('jsonb_extract_path_text', models.Sequelize.col('metadata'), 'payplus_page_request_uid'),
+                        page_request_uid
+                      )
+                    ]
+                  }
+                }
+              ]
+            }
+          });
+          if (purchase) {
+            console.log(`✅ Found purchase using final fallback lookup - purchase may have been cleaned up but we can still process webhook`);
+          }
+        }
+
         if (purchase) {
           purchases = [purchase];
           console.log(`✅ Found single purchase: ${purchase.id}`);
