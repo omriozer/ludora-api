@@ -810,8 +810,8 @@ class PaymentService {
       }
 
       // Store PayPlus transaction reference
-      if (purchases.length > 1 && purchases[0].transaction_id) {
-        // Multi-item: update Transaction record with PayPlus data
+      if (purchases[0].transaction_id) {
+        // Transaction-based payment (PaymentIntent flow): update Transaction record with PayPlus data
         const transaction = await this.models.Transaction.findByPk(purchases[0].transaction_id);
         if (transaction) {
           await transaction.update({
@@ -834,7 +834,7 @@ class PaymentService {
             metadata: {
               ...purchases[0].metadata,
               payplus_page_request_uid: data.data.page_request_uid,
-              transaction_type: 'multi_item',
+              transaction_type: purchases.length > 1 ? 'multi_item' : 'single_item_with_transaction',
               environment: environment
             },
             updated_at: new Date()
@@ -842,7 +842,7 @@ class PaymentService {
           { where: { transaction_id: purchases[0].transaction_id } }
         );
       } else {
-        // Single item: update Purchase record directly (legacy behavior)
+        // Legacy single-item payment (no transaction_id): update Purchase record directly
         const purchase = purchases[0];
         await purchase.update({
           metadata: {
