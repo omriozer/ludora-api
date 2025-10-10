@@ -119,14 +119,20 @@ router.post('/payplus',
         transaction_uid,
         status_code,
         status_name,
+        payment_page_request_uid,
+        transactionUid,
         ...payplusData
       } = req.body || {};
+
+      // Resolve final UIDs for consistent logging (will be updated after extracting transaction data)
+      let finalPageRequestUid = page_request_uid || payment_page_request_uid;
+      let finalTransactionUid = transaction_uid || transactionUid;
 
       // Create comprehensive webhook log entry
       const webhookLog = await models.WebhookLog.create({
         id: webhookLogId,
         payplus_page_uid: finalPageRequestUid,
-        payplus_finalTransactionUid: finalTransactionUid,
+        payplus_transaction_uid: finalTransactionUid,
         http_method: req.method,
         request_headers: req.headers,
         request_body: req.body,
@@ -167,12 +173,16 @@ router.post('/payplus',
       // Extract PayPlus callback data from transaction object
       const transactionData = req.body.transaction || req.body;
       const {
-        payment_page_request_uid,
-        uid: transactionUid,
+        payment_page_request_uid: transaction_payment_page_request_uid,
+        uid: transaction_uid_from_data,
         status_code: transactionStatusCode,
         amount,
         date: payment_date
       } = transactionData;
+
+      // Update final UIDs with transaction data if available
+      finalPageRequestUid = finalPageRequestUid || transaction_payment_page_request_uid;
+      finalTransactionUid = finalTransactionUid || transaction_uid_from_data;
 
       // Extract customer data from customer object
       const customer = req.body.customer || {};
@@ -181,11 +191,7 @@ router.post('/payplus',
         email: customer_email
       } = customer;
 
-      // Use the page_request_uid from the main payload, fallback to payment_page_request_uid if needed
-      const finalPageRequestUid = page_request_uid || payment_page_request_uid;
-
-      // Use the transaction_uid from the main payload, fallback to uid from transaction object if needed
-      const finalTransactionUid = transaction_uid || transactionUid;
+      // finalPageRequestUid and finalTransactionUid are already declared earlier for webhook logging
 
       // Use the status_code from the main payload, fallback to status_code from transaction object if needed
       const finalStatusCode = status_code || transactionStatusCode;
