@@ -229,75 +229,61 @@ router.post('/payplus',
         paymentIntentService = new PaymentIntentService();
         console.log(`✅ Found PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
 
-        // If transaction exists but has no linked purchases, try to find and link them
+        // If transaction exists but has no linked purchases, debug why
         if (purchases.length === 0) {
-          console.log(`🔍 Transaction ${transaction.id} has no linked purchases, searching for unlinked purchases...`);
+          console.log(`🔍 Transaction ${transaction.id} has no linked purchases, debugging...`);
 
-          // Search for purchases that should be linked to this transaction
-          // Try by session_id first
-          let unlinkPurchases = [];
-          if (transaction.session_id) {
-            unlinkPurchases = await models.Purchase.findAll({
-              where: {
-                payment_status: ['cart', 'pending'],
-                transaction_id: null,
-                metadata: {
-                  session_id: transaction.session_id
-                }
-              }
-            });
-            console.log(`🔍 Found ${unlinkPurchases.length} purchases by session_id: ${transaction.session_id}`);
-          }
-
-          // If no purchases found by session_id, try by payplus_page_uid in metadata
-          if (unlinkPurchases.length === 0) {
-            unlinkPurchases = await models.Purchase.findAll({
-              where: {
-                payment_status: ['cart', 'pending'],
-                transaction_id: null,
-                metadata: {
-                  payplus_page_request_uid: finalPageRequestUid
-                }
-              }
-            });
-            console.log(`🔍 Found ${unlinkPurchases.length} purchases by payplus_page_request_uid: ${finalPageRequestUid}`);
-          }
-
-          // If still no purchases found, try by payment_in_progress flag and recent creation
-          if (unlinkPurchases.length === 0) {
-            const recentTime = new Date();
-            recentTime.setMinutes(recentTime.getMinutes() - 30); // Last 30 minutes
-
-            unlinkPurchases = await models.Purchase.findAll({
-              where: {
-                payment_status: ['cart', 'pending'],
-                transaction_id: null,
-                created_at: { [Op.gte]: recentTime },
-                metadata: {
-                  payment_in_progress: true
-                }
-              }
-            });
-            console.log(`🔍 Found ${unlinkPurchases.length} recent purchases with payment_in_progress flag`);
-          }
-
-          // Link found purchases to the transaction
-          if (unlinkPurchases.length > 0) {
-            console.log(`🔗 Linking ${unlinkPurchases.length} purchases to transaction ${transaction.id}`);
-
-            for (const purchase of unlinkPurchases) {
-              await purchase.update({
-                transaction_id: transaction.id,
-                updated_at: new Date()
-              });
-              console.log(`✅ Linked purchase ${purchase.id} to transaction ${transaction.id}`);
+          // Debug: Check if purchases exist with this transaction_id directly
+          const directPurchases = await models.Purchase.findAll({
+            where: {
+              transaction_id: transaction.id
             }
+          });
+          console.log(`🔍 Direct query found ${directPurchases.length} purchases with transaction_id: ${transaction.id}`);
 
-            // Update our purchases array and reload transaction with linked purchases
-            purchases = unlinkPurchases;
-            console.log(`🔗 Successfully linked ${purchases.length} purchases to transaction ${transaction.id}`);
+          if (directPurchases.length > 0) {
+            directPurchases.forEach(purchase => {
+              console.log(`📦 Purchase ${purchase.id}: status=${purchase.payment_status}, transaction_id=${purchase.transaction_id}`);
+            });
+            purchases = directPurchases;
           } else {
-            console.warn(`⚠️ No unlinked purchases found for transaction ${transaction.id}`);
+            // If no purchases found by transaction_id, check if purchases exist for this payment
+            const allRecentPurchases = await models.Purchase.findAll({
+              where: {
+                created_at: {
+                  [Op.gte]: new Date(Date.now() - 60 * 60 * 1000) // Last hour
+                }
+              },
+              order: [['created_at', 'DESC']],
+              limit: 10
+            });
+
+            console.log(`🔍 Recent purchases in last hour: ${allRecentPurchases.length}`);
+            allRecentPurchases.forEach(purchase => {
+              console.log(`📦 Recent purchase ${purchase.id}: user=${purchase.buyer_user_id}, status=${purchase.payment_status}, transaction_id=${purchase.transaction_id}, amount=${purchase.payment_amount}`);
+            });
+
+            // Try to find purchases that might belong to this transaction by amount matching
+            const amountMatches = allRecentPurchases.filter(purchase =>
+              purchase.payment_amount == amount && purchase.payment_status === 'cart'
+            );
+
+            if (amountMatches.length > 0) {
+              console.log(`🎯 Found ${amountMatches.length} purchases with matching amount (${amount}) in cart status`);
+
+              // Link these purchases to the transaction
+              for (const purchase of amountMatches) {
+                await purchase.update({
+                  transaction_id: transaction.id,
+                  updated_at: new Date()
+                });
+                console.log(`🔗 Linked purchase ${purchase.id} to transaction ${transaction.id}`);
+              }
+
+              purchases = amountMatches;
+            } else {
+              console.warn(`⚠️ No purchases found that match transaction ${transaction.id} (amount: ${amount})`);
+            }
           }
         }
       } else {
