@@ -1,5 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import { Op } from 'sequelize';
 import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import PaymentService from '../services/PaymentService.js';
@@ -237,7 +238,7 @@ router.post('/payplus',
           console.log(`🔍 PayPlus webhook: Final fallback - searching for any purchase with page_request_uid: ${page_request_uid}`);
           purchase = await models.Purchase.findOne({
             where: {
-              [models.Sequelize.Op.or]: [
+              [Op.or]: [
                 {
                   metadata: {
                     payplus_page_request_uid: page_request_uid
@@ -245,9 +246,9 @@ router.post('/payplus',
                 },
                 {
                   metadata: {
-                    [models.Sequelize.Op.and]: [
-                      models.Sequelize.where(
-                        models.Sequelize.fn('jsonb_extract_path_text', models.Sequelize.col('metadata'), 'payplus_page_request_uid'),
+                    [Op.and]: [
+                      models.sequelize.where(
+                        models.sequelize.fn('jsonb_extract_path_text', models.sequelize.col('metadata'), 'payplus_page_request_uid'),
                         page_request_uid
                       )
                     ]
