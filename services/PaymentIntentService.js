@@ -14,7 +14,7 @@ import PaymentService from './PaymentService.js';
 class PaymentIntentService {
   constructor() {
     this.models = models;
-    this.paymentService = new PaymentService();
+    this.paymentService = PaymentService; // Use the existing instance instead of creating new one
   }
 
   /**

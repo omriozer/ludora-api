@@ -1,5 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import Joi from 'joi';
 import { authenticateToken } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validation.js';
 import PaymentIntentService from '../services/PaymentIntentService.js';
@@ -22,45 +23,30 @@ const paymentRateLimit = rateLimit({
 // Apply rate limiting to all payment routes
 router.use(paymentRateLimit);
 
-// Payment request validation schema
-const paymentStartSchema = {
-  type: 'object',
-  properties: {
-    cartItems: {
-      type: 'array',
-      minItems: 1,
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          payment_amount: { type: 'number', minimum: 0 }
-        },
-        required: ['id']
-      }
-    },
-    userId: { type: 'string' },
-    appliedCoupons: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          code: { type: 'string' },
-          discount_amount: { type: 'number' }
-        },
-        required: ['code']
-      },
-      default: []
-    },
-    environment: {
-      type: 'string',
-      enum: ['production', 'test'],
-      default: 'production'
-    },
-    frontendOrigin: { type: 'string' }
-  },
-  required: ['cartItems', 'userId'],
-  additionalProperties: false
-};
+// Payment request validation schema (converted to Joi format) - updated
+const paymentStartSchema = Joi.object({
+  cartItems: Joi.array().min(1).items(
+    Joi.object({
+      id: Joi.string().required(),
+      payment_amount: Joi.number().min(0).optional()
+    }).required()
+  ).required().messages({
+    'array.min': 'At least one cart item is required',
+    'any.required': 'Cart items are required'
+  }),
+  userId: Joi.string().required().messages({
+    'any.required': 'User ID is required',
+    'string.empty': 'User ID cannot be empty'
+  }),
+  appliedCoupons: Joi.array().items(
+    Joi.object({
+      code: Joi.string().required(),
+      discount_amount: Joi.number().optional()
+    })
+  ).default([]),
+  environment: Joi.string().valid('production', 'test').default('production'),
+  frontendOrigin: Joi.string().optional()
+});
 
 /**
  * POST /api/payments/start
