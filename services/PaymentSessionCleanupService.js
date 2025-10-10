@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { Op } from 'sequelize';
+import { Op, fn, col, literal } from 'sequelize';
 
 /**
  * PaymentSessionCleanupService - Background service for cleaning up expired payment sessions and transactions
@@ -275,10 +275,10 @@ class PaymentSessionCleanupService {
             {
               payment_status: 'cart',
               updated_at: new Date(),
-              metadata: this.models.Sequelize.fn('jsonb_set',
-                this.models.Sequelize.col('metadata'),
-                this.models.Sequelize.literal(`'{payment_in_progress}'`),
-                this.models.Sequelize.literal('false'),
+              metadata: fn('jsonb_set',
+                col('metadata'),
+                literal(`'{payment_in_progress}'`),
+                literal('false'),
                 false
               )
             },
@@ -331,7 +331,7 @@ class PaymentSessionCleanupService {
       const sessionStats = await this.models.PaymentSession.findAll({
         attributes: [
           'session_status',
-          [this.models.sequelize.fn('COUNT', '*'), 'count']
+          [fn('COUNT', '*'), 'count']
         ],
         group: ['session_status'],
         raw: true
@@ -366,7 +366,7 @@ class PaymentSessionCleanupService {
       const transactionStats = await this.models.Transaction.findAll({
         attributes: [
           'payment_status',
-          [this.models.sequelize.fn('COUNT', '*'), 'count']
+          [fn('COUNT', '*'), 'count']
         ],
         group: ['payment_status'],
         raw: true

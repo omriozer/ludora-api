@@ -1,5 +1,6 @@
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
+import { Op, fn, col, literal } from 'sequelize';
 
 class PaymentService {
   constructor() {
@@ -947,7 +948,7 @@ class PaymentService {
       // Find stuck payment sessions
       const whereClause = {
         session_status: ['created', 'pending'],
-        created_at: { [this.models.sequelize.Op.lt]: cutoffTime }
+        created_at: { [Op.lt]: cutoffTime }
       };
 
       if (userId) {
@@ -982,9 +983,9 @@ class PaymentService {
               {
                 payment_status: 'cart',
                 transaction_id: null, // Clear transaction reference
-                metadata: this.models.sequelize.fn(
+                metadata: fn(
                   'jsonb_set',
-                  this.models.sequelize.col('metadata'),
+                  col('metadata'),
                   '{"reset_from_stuck_session"}',
                   JSON.stringify({
                     reset_at: new Date().toISOString(),
