@@ -190,7 +190,7 @@ async function startServer() {
       console.log(`🚀 Ludora API Server running on port ${PORT}`);
       console.log(`📁 Environment: ${env}`);
       console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
-      console.log(`✅ Server successfully started with updated environment variables`);
+      console.log(`✅ Server successfully started with updated environment variables ${new Date().toISOString()}`);
     });
 
     // Start background services
