@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { Op } from 'sequelize';
+import { Op, col } from 'sequelize';
 
 /**
  * CouponValidationService - Advanced coupon validation and recommendation engine
@@ -34,7 +34,7 @@ class CouponValidationService {
           ],
           [Op.or]: [
             { usage_limit: null },
-            { usage_count: { [Op.lt]: this.models.Sequelize.col('usage_limit') } }
+            { usage_count: { [Op.lt]: col('usage_limit') } }
           ]
         },
         order: [['priority_level', 'ASC'], ['discount_value', 'DESC']]

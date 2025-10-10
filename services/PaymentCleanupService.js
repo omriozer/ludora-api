@@ -1,4 +1,5 @@
 import models from '../models/index.js';
+import { Op } from 'sequelize';
 
 /**
  * PaymentCleanupService - Handles cleanup of stale payment sessions and cart items
@@ -19,7 +20,7 @@ class PaymentCleanupService {
       // Find purchases with payment_in_progress flag that are older than cutoff time
       const stalePurchases = await models.Purchase.findAll({
         where: {
-          [models.Sequelize.Op.and]: [
+          [Op.and]: [
             {
               metadata: {
                 payment_in_progress: true
@@ -28,7 +29,7 @@ class PaymentCleanupService {
             {
               metadata: {
                 payment_page_created_at: {
-                  [models.Sequelize.Op.lt]: cutoffTime.toISOString()
+                  [Op.lt]: cutoffTime.toISOString()
                 }
               }
             }
@@ -110,20 +111,20 @@ class PaymentCleanupService {
         where: {
           payment_status: 'cart',
           created_at: {
-            [models.Sequelize.Op.lt]: cutoffTime
+            [Op.lt]: cutoffTime
           },
-          [models.Sequelize.Op.or]: [
+          [Op.or]: [
             {
               metadata: {
                 payment_in_progress: {
-                  [models.Sequelize.Op.ne]: true
+                  [Op.ne]: true
                 }
               }
             },
             {
               metadata: {
                 payment_in_progress: {
-                  [models.Sequelize.Op.is]: null
+                  [Op.is]: null
                 }
               }
             }
