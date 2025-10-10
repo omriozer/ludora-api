@@ -125,8 +125,8 @@ router.post('/payplus',
       // Create comprehensive webhook log entry
       const webhookLog = await models.WebhookLog.create({
         id: webhookLogId,
-        payplus_page_uid: page_request_uid,
-        payplus_transaction_uid: transaction_uid,
+        payplus_page_uid: finalPageRequestUid,
+        payplus_finalTransactionUid: finalTransactionUid,
         http_method: req.method,
         request_headers: req.headers,
         request_body: req.body,
@@ -167,9 +167,9 @@ router.post('/payplus',
       // Extract PayPlus callback data from transaction object
       const transactionData = req.body.transaction || req.body;
       const {
-        payment_page_request_uid: page_request_uid,
-        uid: transaction_uid,
-        status_code,
+        payment_page_request_uid,
+        uid: transactionUid,
+        status_code: transactionStatusCode,
         amount,
         date: payment_date
       } = transactionData;
@@ -181,7 +181,16 @@ router.post('/payplus',
         email: customer_email
       } = customer;
 
-      if (!page_request_uid) {
+      // Use the page_request_uid from the main payload, fallback to payment_page_request_uid if needed
+      const finalPageRequestUid = page_request_uid || payment_page_request_uid;
+
+      // Use the transaction_uid from the main payload, fallback to uid from transaction object if needed
+      const finalTransactionUid = transaction_uid || transactionUid;
+
+      // Use the status_code from the main payload, fallback to status_code from transaction object if needed
+      const finalStatusCode = status_code || transactionStatusCode;
+
+      if (!finalPageRequestUid) {
         console.warn('PayPlus webhook missing page_request_uid');
         return res.status(400).json({ error: 'Missing page_request_uid' });
       }
@@ -190,7 +199,7 @@ router.post('/payplus',
       // 1. First, try to find a Transaction record (primary PaymentIntent flow)
       let transaction = await models.Transaction.findOne({
         where: {
-          payplus_page_uid: page_request_uid
+          payplus_page_uid: finalPageRequestUid
         },
         include: [{
           model: models.Purchase,
@@ -214,7 +223,7 @@ router.post('/payplus',
         // 2. Fallback to PaymentSession lookup (legacy)
         paymentSession = await models.PaymentSession.findOne({
           where: {
-            payplus_page_uid: page_request_uid
+            payplus_page_uid: finalPageRequestUid
           },
           include: [{
             model: models.User,
@@ -239,20 +248,20 @@ router.post('/payplus',
         let purchase = await models.Purchase.findOne({
           where: {
             metadata: {
-              payplus_page_request_uid: page_request_uid
+              payplus_page_request_uid: finalPageRequestUid
             }
           }
         });
 
         // If not found, try alternative field names that PayPlus might use
         if (!purchase) {
-          console.log(`🔍 PayPlus webhook: Trying alternative lookup for page_request_uid: ${page_request_uid}`);
+          console.log(`🔍 PayPlus webhook: Trying alternative lookup for finalPageRequestUid: ${finalPageRequestUid}`);
 
           // Try with different metadata field names
           const alternatives = [
-            { payplus_payment_page_request_uid: page_request_uid },
-            { page_request_uid: page_request_uid },
-            { payment_page_request_uid: page_request_uid }
+            { payplus_payment_page_request_uid: finalPageRequestUid },
+            { page_request_uid: finalPageRequestUid },
+            { payment_page_request_uid: finalPageRequestUid }
           ];
 
           for (const whereClause of alternatives) {
@@ -266,28 +275,28 @@ router.post('/payplus',
           }
         }
 
-        // If still not found, try finding by transaction_uid as a last resort
-        if (!purchase && transaction_uid) {
-          console.log(`🔍 PayPlus webhook: Trying lookup by transaction_uid: ${transaction_uid}`);
+        // If still not found, try finding by finalTransactionUid as a last resort
+        if (!purchase && finalTransactionUid) {
+          console.log(`🔍 PayPlus webhook: Trying lookup by finalTransactionUid: ${finalTransactionUid}`);
           purchase = await models.Purchase.findOne({
             where: {
-              transaction_id: transaction_uid
+              transaction_id: finalTransactionUid
             }
           });
           if (purchase) {
-            console.log(`✅ Found purchase using transaction_uid`);
+            console.log(`✅ Found purchase using finalTransactionUid`);
           }
         }
 
         // Final fallback: search for ANY purchase with this page_request_uid, even if cleaned up
         if (!purchase) {
-          console.log(`🔍 PayPlus webhook: Final fallback - searching for any purchase with page_request_uid: ${page_request_uid}`);
+          console.log(`🔍 PayPlus webhook: Final fallback - searching for any purchase with finalPageRequestUid: ${finalPageRequestUid}`);
           purchase = await models.Purchase.findOne({
             where: {
               [Op.or]: [
                 {
                   metadata: {
-                    payplus_page_request_uid: page_request_uid
+                    payplus_page_request_uid: finalPageRequestUid
                   }
                 },
                 {
@@ -295,7 +304,7 @@ router.post('/payplus',
                     [Op.and]: [
                       where(
                         fn('jsonb_extract_path_text', col('metadata'), 'payplus_page_request_uid'),
-                        page_request_uid
+                        finalPageRequestUid
                       )
                     ]
                   }
@@ -316,7 +325,7 @@ router.post('/payplus',
       }
 
       if (!isTransactionPayment && !isSessionPayment && purchases.length === 0) {
-        console.warn(`❌ PayPlus webhook: No PaymentIntent transaction, payment session, or purchase found for page_request_uid: ${page_request_uid} or transaction_uid: ${transaction_uid}`);
+        console.warn(`❌ PayPlus webhook: No PaymentIntent transaction, payment session, or purchase found for finalPageRequestUid: ${finalPageRequestUid} or finalTransactionUid: ${finalTransactionUid}`);
         return res.status(404).json({ error: 'No PaymentIntent transaction, payment session, or purchase found for this payment' });
       }
 
@@ -343,19 +352,19 @@ router.post('/payplus',
           // Use PaymentIntentService for centralized status update
           const result = await paymentIntentService.updatePaymentStatus(transaction.id, paymentStatus, {
             webhook_received_at: new Date().toISOString(),
-            transaction_uid,
+            finalTransactionUid,
             status_code,
             amount: parseFloat(amount) || 0,
             customer_email,
             customer_name,
             payment_date,
-            payplus_page_request_uid: page_request_uid
+            payplus_page_request_uid: finalPageRequestUid
           });
 
           console.log(`✅ PaymentIntent processed successfully:`, {
             transactionId: transaction.id,
             purchaseCount: purchases.length,
-            pageRequestUid: page_request_uid,
+            pageRequestUid: finalPageRequestUid,
             status: paymentStatus,
             amount,
             totalAmount: transaction.total_amount
@@ -374,7 +383,7 @@ router.post('/payplus',
             message: 'PayPlus PaymentIntent webhook processed successfully',
             transactionId: transaction.id,
             purchaseCount: purchases.length,
-            pageRequestUid: page_request_uid,
+            pageRequestUid: finalPageRequestUid,
             status: paymentStatus,
             processed: true
           });
@@ -392,7 +401,7 @@ router.post('/payplus',
         if (paymentStatus === 'completed') {
           await paymentSession.markCompleted({
             webhook_received_at: new Date().toISOString(),
-            transaction_uid,
+            finalTransactionUid,
             status_code,
             amount,
             customer_email,
@@ -402,7 +411,7 @@ router.post('/payplus',
         } else if (paymentStatus === 'failed' || paymentStatus === 'cancelled') {
           await paymentSession.markFailed(`Payment ${paymentStatus}: ${status_code}`, {
             webhook_received_at: new Date().toISOString(),
-            transaction_uid,
+            finalTransactionUid,
             status_code,
             amount,
             customer_email,
@@ -487,7 +496,7 @@ router.post('/payplus',
         console.log(`✅ PayPlus session payment processed:`, {
           sessionId: paymentSession.id,
           purchaseCount: purchases.length,
-          pageRequestUid: page_request_uid,
+          pageRequestUid: finalPageRequestUid,
           status: paymentStatus,
           amount,
           totalAmount: paymentSession.total_amount
@@ -497,7 +506,7 @@ router.post('/payplus',
           message: 'PayPlus session webhook processed successfully',
           sessionId: paymentSession.id,
           purchaseCount: purchases.length,
-          pageRequestUid: page_request_uid,
+          pageRequestUid: finalPageRequestUid,
           status: paymentStatus,
           processed: true
         });
@@ -513,7 +522,7 @@ router.post('/payplus',
           payplus_response: {
             ...transaction.payplus_response,
             webhook_received_at: new Date().toISOString(),
-            transaction_uid,
+            finalTransactionUid,
             status_code,
             amount,
             customer_email,
@@ -597,7 +606,7 @@ router.post('/payplus',
         console.log(`✅ PayPlus transaction processed:`, {
           transactionId: transaction.id,
           purchaseCount: purchases.length,
-          pageRequestUid: page_request_uid,
+          pageRequestUid: finalPageRequestUid,
           status: paymentStatus,
           amount,
           totalAmount: transaction.total_amount
@@ -607,7 +616,7 @@ router.post('/payplus',
           message: 'PayPlus transaction webhook processed successfully',
           transactionId: transaction.id,
           purchaseCount: purchases.length,
-          pageRequestUid: page_request_uid,
+          pageRequestUid: finalPageRequestUid,
           status: paymentStatus,
           processed: true
         });
@@ -631,7 +640,7 @@ router.post('/payplus',
                 ...purchase.metadata,
                 payment_in_progress: false,
                 webhook_received_at: new Date().toISOString(),
-                payplus_transaction_uid: transaction_uid,
+                payplus_finalTransactionUid: finalTransactionUid,
                 payplus_status_code: status_code
               }
             },
@@ -648,13 +657,13 @@ router.post('/payplus',
           paymentId: purchase.id,
           status: paymentStatus,
           amount: parseFloat(amount) || 0,
-          transactionId: transaction_uid,
+          transactionId: finalTransactionUid,
           payerEmail: customer_email,
           payerName: customer_name,
           paymentDate: payment_date,
           payplusData: {
-            page_request_uid,
-            transaction_uid,
+            page_request_uid: finalPageRequestUid,
+            finalTransactionUid,
             status_code
           }
         });
@@ -676,7 +685,7 @@ router.post('/payplus',
 
         console.log(`✅ PayPlus single payment processed:`, {
           purchaseId: purchase.id,
-          pageRequestUid: page_request_uid,
+          pageRequestUid: finalPageRequestUid,
           status: paymentStatus,
           amount,
           success: result.success
@@ -685,7 +694,7 @@ router.post('/payplus',
         res.status(200).json({
           message: 'PayPlus webhook processed successfully',
           purchaseId: purchase.id,
-          pageRequestUid: page_request_uid,
+          pageRequestUid: finalPageRequestUid,
           status: paymentStatus,
           processed: true
         });
