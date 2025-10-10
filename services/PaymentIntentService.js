@@ -1,3 +1,4 @@
+import { fn, col, literal } from 'sequelize';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
 import PaymentService from './PaymentService.js';
@@ -203,10 +204,10 @@ class PaymentIntentService {
           {
             payment_status: purchaseStatus,
             updated_at: new Date(),
-            metadata: this.models.Sequelize.fn('jsonb_set',
-              this.models.Sequelize.col('metadata'),
-              this.models.Sequelize.literal(`'{payment_in_progress}'`),
-              this.models.Sequelize.literal('false'),
+            metadata: fn('jsonb_set',
+              col('metadata'),
+              literal(`'{payment_in_progress}'`),
+              literal('false'),
               false
             )
           },
