@@ -680,7 +680,9 @@ router.post('/payplus',
           for (const appliedCoupon of purchase.metadata.applied_coupons) {
             try {
               await PaymentService.commitCouponUsage(appliedCoupon.code);
-              console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
+              console.log(
+                `✅ Committed usage for coupon: ${appliedCoupon.code}`
+              );
             } catch (error) {
               console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
               // Don't throw - payment is successful, coupon tracking is secondary
