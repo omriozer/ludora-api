@@ -1,6 +1,6 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { Op } from 'sequelize';
+import { Op, fn, col, literal } from 'sequelize';
 import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import PaymentService from '../services/PaymentService.js';
@@ -377,7 +377,7 @@ router.post('/payplus',
           const purchasesToUpdate = await models.Purchase.findAll({
             where: {
               id: paymentSession.purchase_ids,
-              [models.Sequelize.Op.or]: [
+              [Op.or]: [
                 { payment_status: 'cart' },
                 { payment_status: 'pending' },
                 {
@@ -395,10 +395,10 @@ router.post('/payplus',
               {
                 payment_status: paymentStatus,
                 updated_at: new Date(),
-                metadata: models.Sequelize.fn('jsonb_set',
-                  models.Sequelize.col('metadata'),
-                  models.Sequelize.literal(`'{payment_in_progress}'`),
-                  models.Sequelize.literal('false'),
+                metadata: fn('jsonb_set',
+                  col('metadata'),
+                  literal(`'{payment_in_progress}'`),
+                  literal('false'),
                   false
                 )
               },
@@ -488,7 +488,7 @@ router.post('/payplus',
         const purchasesToUpdate = await models.Purchase.findAll({
           where: {
             transaction_id: transaction.id,
-            [models.Sequelize.Op.or]: [
+            [Op.or]: [
               { payment_status: 'cart' },
               { payment_status: 'pending' },
               {
@@ -506,10 +506,10 @@ router.post('/payplus',
             {
               payment_status: paymentStatus,
               updated_at: new Date(),
-              metadata: models.Sequelize.fn('jsonb_set',
-                models.Sequelize.col('metadata'),
-                models.Sequelize.literal(`'{payment_in_progress}'`),
-                models.Sequelize.literal('false'),
+              metadata: fn('jsonb_set',
+                col('metadata'),
+                literal(`'{payment_in_progress}'`),
+                literal('false'),
                 false
               )
             },
