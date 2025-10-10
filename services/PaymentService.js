@@ -553,25 +553,33 @@ class PaymentService {
             updated_at: new Date()
           });
 
-          // Update purchases to reference transaction and mark as pending
+          // Update purchases to reference transaction but keep cart status until modal confirms payment
           await this.models.Purchase.update(
             {
-              payment_status: 'pending',
               transaction_id: transactionId,
-              updated_at: new Date()
+              updated_at: new Date(),
+              metadata: {
+                ...purchases[0].metadata,
+                payment_page_created_at: new Date().toISOString(),
+                payment_in_progress: true
+              }
             },
             { where: { id: idsToProcess } }
           );
 
-          console.log(`✅ PayPlus API success - marked ${purchases.length} purchases as pending`);
+          console.log(`✅ PayPlus API success - created payment page for ${purchases.length} purchases (keeping cart status)`);
         } else {
-          // Legacy single purchase flow
+          // Legacy single purchase flow - keep cart status until modal confirms payment
           await purchases[0].update({
-            payment_status: 'pending',
-            updated_at: new Date()
+            updated_at: new Date(),
+            metadata: {
+              ...purchases[0].metadata,
+              payment_page_created_at: new Date().toISOString(),
+              payment_in_progress: true
+            }
           });
 
-          console.log(`✅ PayPlus API success - marked purchase ${purchases[0].id} as pending`);
+          console.log(`✅ PayPlus API success - created payment page for purchase ${purchases[0].id} (keeping cart status)`);
         }
 
         return {

@@ -304,17 +304,44 @@ router.post('/payplus',
           }
         }
 
-        // Update all related purchases
+        // Update all related purchases (handle cart→completed/failed transitions)
         if (purchases.length > 0) {
-          await models.Purchase.update(
-            {
-              payment_status: paymentStatus,
-              updated_at: new Date()
-            },
-            { where: { id: paymentSession.purchase_ids } }
-          );
+          // Find purchases that need to be updated (cart or pending status with payment_in_progress flag)
+          const purchasesToUpdate = await models.Purchase.findAll({
+            where: {
+              id: paymentSession.purchase_ids,
+              [models.Sequelize.Op.or]: [
+                { payment_status: 'cart' },
+                { payment_status: 'pending' },
+                {
+                  metadata: {
+                    payment_in_progress: true
+                  }
+                }
+              ]
+            }
+          });
 
-          console.log(`✅ Updated ${purchases.length} purchases to status: ${paymentStatus}`);
+          if (purchasesToUpdate.length > 0) {
+            // Update purchase status and clear payment_in_progress flag
+            await models.Purchase.update(
+              {
+                payment_status: paymentStatus,
+                updated_at: new Date(),
+                metadata: models.Sequelize.fn('jsonb_set',
+                  models.Sequelize.col('metadata'),
+                  models.Sequelize.literal(`'{payment_in_progress}'`),
+                  models.Sequelize.literal('false'),
+                  false
+                )
+              },
+              { where: { id: purchasesToUpdate.map(p => p.id) } }
+            );
+
+            console.log(`✅ Updated ${purchasesToUpdate.length} purchases from cart/pending to status: ${paymentStatus}`);
+          } else {
+            console.log(`⚠️ No purchases found in cart/pending status for session ${paymentSession.id}`);
+          }
         }
 
         // Handle post-payment logic for each purchase
@@ -389,14 +416,43 @@ router.post('/payplus',
           }
         }
 
-        // Update all related purchases
-        await models.Purchase.update(
-          {
-            payment_status: paymentStatus,
-            updated_at: new Date()
-          },
-          { where: { transaction_id: transaction.id } }
-        );
+        // Update all related purchases (handle cart→completed/failed transitions)
+        // Find purchases that need to be updated (cart or pending status with payment_in_progress flag)
+        const purchasesToUpdate = await models.Purchase.findAll({
+          where: {
+            transaction_id: transaction.id,
+            [models.Sequelize.Op.or]: [
+              { payment_status: 'cart' },
+              { payment_status: 'pending' },
+              {
+                metadata: {
+                  payment_in_progress: true
+                }
+              }
+            ]
+          }
+        });
+
+        if (purchasesToUpdate.length > 0) {
+          // Update purchase status and clear payment_in_progress flag
+          await models.Purchase.update(
+            {
+              payment_status: paymentStatus,
+              updated_at: new Date(),
+              metadata: models.Sequelize.fn('jsonb_set',
+                models.Sequelize.col('metadata'),
+                models.Sequelize.literal(`'{payment_in_progress}'`),
+                models.Sequelize.literal('false'),
+                false
+              )
+            },
+            { where: { id: purchasesToUpdate.map(p => p.id) } }
+          );
+
+          console.log(`✅ Updated ${purchasesToUpdate.length} purchases from cart/pending to status: ${paymentStatus}`);
+        } else {
+          console.log(`⚠️ No purchases found in cart/pending status for transaction ${transaction.id}`);
+        }
 
         // Handle post-payment logic for each purchase
         for (const purchase of purchases) {
@@ -439,6 +495,33 @@ router.post('/payplus',
         const purchase = purchases[0];
         console.log(`💳 Processing single-item purchase payment for purchase ${purchase.id}`);
 
+        // Check if purchase is in valid status for update (cart, pending, or has payment_in_progress flag)
+        const validStates = ['cart', 'pending'];
+        const hasPaymentFlag = purchase.metadata?.payment_in_progress === true;
+
+        if (validStates.includes(purchase.payment_status) || hasPaymentFlag) {
+          // Update purchase directly for cart→completed/failed transitions
+          await models.Purchase.update(
+            {
+              payment_status: paymentStatus,
+              updated_at: new Date(),
+              metadata: {
+                ...purchase.metadata,
+                payment_in_progress: false,
+                webhook_received_at: new Date().toISOString(),
+                payplus_transaction_uid: transaction_uid,
+                payplus_status_code: status_code
+              }
+            },
+            { where: { id: purchase.id } }
+          );
+
+          console.log(`✅ Updated purchase ${purchase.id} from ${purchase.payment_status} to ${paymentStatus}`);
+        } else {
+          console.log(`⚠️ Purchase ${purchase.id} is in status ${purchase.payment_status}, skipping update`);
+        }
+
+        // Legacy PaymentService callback for additional processing
         const result = await PaymentService.handlePayplusCallback({
           paymentId: purchase.id,
           status: paymentStatus,

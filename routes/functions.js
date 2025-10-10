@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
 import PaymentService from '../services/PaymentService.js';
+import PaymentCleanupService from '../services/PaymentCleanupService.js';
 import EmailService from '../services/EmailService.js';
 import SubscriptionService from '../services/SubscriptionService.js';
 import CouponValidationService from '../services/CouponValidationService.js';
@@ -778,6 +779,43 @@ router.post('/handlePayplusProductCallback', authenticateToken, async (req, res)
     });
   } catch (error) {
     console.error('Error handling product callback:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Payment Cleanup Functions
+router.post('/cleanupStalePaymentSessions', authenticateToken, async (req, res) => {
+  try {
+    const { maxMinutes = 2 } = req.body;
+    const result = await PaymentCleanupService.cleanupStalePaymentSessions(maxMinutes);
+    res.json(result);
+  } catch (error) {
+    console.error('Error cleaning up stale payment sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/cleanupAbandonedCartItems', authenticateToken, async (req, res) => {
+  try {
+    const { maxHours = 24 } = req.body;
+    const result = await PaymentCleanupService.cleanupAbandonedCartItems(maxHours);
+    res.json(result);
+  } catch (error) {
+    console.error('Error cleaning up abandoned cart items:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/runFullPaymentCleanup', authenticateToken, async (req, res) => {
+  try {
+    const { stalePaymentMinutes = 2, abandonedCartHours = 24 } = req.body;
+    const result = await PaymentCleanupService.runFullCleanup({
+      stalePaymentMinutes,
+      abandonedCartHours
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error running full payment cleanup:', error);
     res.status(500).json({ error: error.message });
   }
 });
