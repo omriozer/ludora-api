@@ -327,7 +327,6 @@ router.post('/payplus',
           purchases = [purchase];
           console.log(`✅ Found single purchase: ${purchase.id}`);
         }
-        }
       }
 
       if (!isTransactionPayment && !isSessionPayment && purchases.length === 0) {
