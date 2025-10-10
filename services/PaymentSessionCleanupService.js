@@ -2,8 +2,8 @@ import models from '../models/index.js';
 import { Op } from 'sequelize';
 
 /**
- * PaymentSessionCleanupService - Background service for cleaning up expired payment sessions
- * Automatically expires abandoned sessions and maintains database hygiene
+ * PaymentSessionCleanupService - Background service for cleaning up expired payment sessions and transactions
+ * Automatically expires abandoned sessions, PaymentIntent transactions, and maintains database hygiene
  */
 class PaymentSessionCleanupService {
   constructor() {
@@ -64,13 +64,46 @@ class PaymentSessionCleanupService {
   }
 
   /**
-   * Run the cleanup process
+   * Run the cleanup process for both PaymentSessions and Transactions
    */
   async runCleanup() {
     try {
       const startTime = Date.now();
-      console.log(`🧹 Starting payment session cleanup at ${new Date().toISOString()}`);
+      console.log(`🧹 Starting payment cleanup (sessions & transactions) at ${new Date().toISOString()}`);
 
+      // 1. Clean up expired PaymentSessions (legacy)
+      const sessionResult = await this.cleanupExpiredSessions();
+
+      // 2. Clean up expired PaymentIntent Transactions (primary)
+      const transactionResult = await this.cleanupExpiredTransactions();
+
+      const totalSuccessCount = sessionResult.successCount + transactionResult.successCount;
+      const totalErrorCount = sessionResult.errorCount + transactionResult.errorCount;
+      const cleanupTime = Date.now() - startTime;
+
+      const summary = {
+        sessions: sessionResult,
+        transactions: transactionResult,
+        totalExpiredCount: totalSuccessCount,
+        totalErrorCount,
+        cleanupTime
+      };
+
+      console.log(`✅ Payment cleanup completed: ${totalSuccessCount} total expired (${sessionResult.successCount} sessions, ${transactionResult.successCount} transactions), ${totalErrorCount} errors, ${cleanupTime}ms`);
+
+      return summary;
+
+    } catch (error) {
+      console.error('❌ Payment cleanup failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up expired PaymentSessions (legacy)
+   */
+  async cleanupExpiredSessions() {
+    try {
       // Find expired sessions that are still active
       const expiredSessions = await this.models.PaymentSession.findAll({
         where: {
@@ -95,7 +128,7 @@ class PaymentSessionCleanupService {
 
       if (expiredSessions.length === 0) {
         console.log('✅ No expired payment sessions found');
-        return { expiredCount: 0, cleanupTime: Date.now() - startTime };
+        return { successCount: 0, errorCount: 0, foundCount: 0 };
       }
 
       console.log(`🔍 Found ${expiredSessions.length} expired payment sessions to clean up`);
@@ -114,19 +147,58 @@ class PaymentSessionCleanupService {
         }
       }
 
-      const cleanupTime = Date.now() - startTime;
-      const summary = {
-        expiredCount: successCount,
-        errorCount,
-        cleanupTime
-      };
-
-      console.log(`✅ Session cleanup completed: ${successCount} expired, ${errorCount} errors, ${cleanupTime}ms`);
-
-      return summary;
+      return { successCount, errorCount, foundCount: expiredSessions.length };
 
     } catch (error) {
-      console.error('❌ Payment session cleanup failed:', error);
+      console.error('❌ PaymentSession cleanup failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up expired PaymentIntent Transactions (primary flow)
+   */
+  async cleanupExpiredTransactions() {
+    try {
+      // Find expired transactions that need cleanup
+      const expiredTransactions = await this.models.Transaction.findAll({
+        where: {
+          payment_status: ['pending', 'in_progress'],
+          expires_at: {
+            [Op.lt]: new Date()
+          }
+        },
+        include: [{
+          model: this.models.Purchase,
+          as: 'purchases'
+        }]
+      });
+
+      if (expiredTransactions.length === 0) {
+        console.log('✅ No expired PaymentIntent transactions found');
+        return { successCount: 0, errorCount: 0, foundCount: 0 };
+      }
+
+      console.log(`🔍 Found ${expiredTransactions.length} expired PaymentIntent transactions to clean up`);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Process each expired transaction
+      for (const transaction of expiredTransactions) {
+        try {
+          await this.expireTransaction(transaction);
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          console.error(`❌ Failed to expire transaction ${transaction.id}:`, error.message);
+        }
+      }
+
+      return { successCount, errorCount, foundCount: expiredTransactions.length };
+
+    } catch (error) {
+      console.error('❌ PaymentIntent transaction cleanup failed:', error);
       throw error;
     }
   }
@@ -178,6 +250,59 @@ class PaymentSessionCleanupService {
   }
 
   /**
+   * Expire a specific PaymentIntent transaction
+   */
+  async expireTransaction(transaction) {
+    try {
+      console.log(`⏰ Expiring PaymentIntent transaction ${transaction.id} (status: ${transaction.payment_status})`);
+
+      // Use Transaction model's updateStatus method for proper state machine handling
+      await transaction.updateStatus('expired', {
+        expired_by_cleanup_service: true,
+        expired_at: new Date().toISOString()
+      });
+
+      // Reset associated purchases from 'pending' back to 'cart' status
+      // This allows users to retry payment for the same items
+      if (transaction.purchases && transaction.purchases.length > 0) {
+        const purchasesToReset = transaction.purchases.filter(p =>
+          p.payment_status === 'pending' ||
+          p.metadata?.payment_in_progress === true
+        );
+
+        if (purchasesToReset.length > 0) {
+          await this.models.Purchase.update(
+            {
+              payment_status: 'cart',
+              updated_at: new Date(),
+              metadata: this.models.Sequelize.fn('jsonb_set',
+                this.models.Sequelize.col('metadata'),
+                this.models.Sequelize.literal(`'{payment_in_progress}'`),
+                this.models.Sequelize.literal('false'),
+                false
+              )
+            },
+            {
+              where: {
+                transaction_id: transaction.id,
+                payment_status: 'pending'
+              }
+            }
+          );
+
+          console.log(`🛒 Reset ${purchasesToReset.length} purchases from pending to cart status for transaction ${transaction.id}`);
+        }
+      }
+
+      console.log(`✅ Successfully expired PaymentIntent transaction ${transaction.id}`);
+
+    } catch (error) {
+      console.error(`❌ Failed to expire transaction ${transaction.id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Get cleanup service status
    */
   getStatus() {
@@ -198,11 +323,12 @@ class PaymentSessionCleanupService {
   }
 
   /**
-   * Get statistics about payment sessions
+   * Get statistics about payment sessions and transactions
    */
-  async getSessionStats() {
+  async getPaymentStats() {
     try {
-      const stats = await this.models.PaymentSession.findAll({
+      // 1. Get PaymentSession statistics (legacy)
+      const sessionStats = await this.models.PaymentSession.findAll({
         attributes: [
           'session_status',
           [this.models.sequelize.fn('COUNT', '*'), 'count']
@@ -211,13 +337,13 @@ class PaymentSessionCleanupService {
         raw: true
       });
 
-      const sessionCounts = stats.reduce((acc, stat) => {
+      const sessionCounts = sessionStats.reduce((acc, stat) => {
         acc[stat.session_status] = parseInt(stat.count);
         return acc;
       }, {});
 
       // Count expired sessions that need cleanup
-      const expiredCount = await this.models.PaymentSession.count({
+      const expiredSessionCount = await this.models.PaymentSession.count({
         where: {
           session_status: ['created', 'pending'],
           [Op.or]: [
@@ -236,14 +362,51 @@ class PaymentSessionCleanupService {
         }
       });
 
+      // 2. Get Transaction statistics (PaymentIntent)
+      const transactionStats = await this.models.Transaction.findAll({
+        attributes: [
+          'payment_status',
+          [this.models.sequelize.fn('COUNT', '*'), 'count']
+        ],
+        group: ['payment_status'],
+        raw: true
+      });
+
+      const transactionCounts = transactionStats.reduce((acc, stat) => {
+        acc[stat.payment_status] = parseInt(stat.count);
+        return acc;
+      }, {});
+
+      // Count expired transactions that need cleanup
+      const expiredTransactionCount = await this.models.Transaction.count({
+        where: {
+          payment_status: ['pending', 'in_progress'],
+          expires_at: {
+            [Op.lt]: new Date()
+          }
+        }
+      });
+
       return {
-        sessionCounts,
-        expiredAwaitingCleanup: expiredCount,
-        totalSessions: Object.values(sessionCounts).reduce((sum, count) => sum + count, 0)
+        paymentSessions: {
+          counts: sessionCounts,
+          expiredAwaitingCleanup: expiredSessionCount,
+          total: Object.values(sessionCounts).reduce((sum, count) => sum + count, 0)
+        },
+        paymentIntentTransactions: {
+          counts: transactionCounts,
+          expiredAwaitingCleanup: expiredTransactionCount,
+          total: Object.values(transactionCounts).reduce((sum, count) => sum + count, 0)
+        },
+        summary: {
+          totalPayments: Object.values(sessionCounts).reduce((sum, count) => sum + count, 0) +
+                         Object.values(transactionCounts).reduce((sum, count) => sum + count, 0),
+          totalExpiredAwaitingCleanup: expiredSessionCount + expiredTransactionCount
+        }
       };
 
     } catch (error) {
-      console.error('❌ Failed to get session stats:', error);
+      console.error('❌ Failed to get payment stats:', error);
       throw error;
     }
   }

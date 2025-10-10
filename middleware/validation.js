@@ -440,16 +440,8 @@ export const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    // Log rate limit violations
-    onLimitReached: (req, res, options) => {
-      console.warn('🚨 RATE LIMIT VIOLATION:', {
-        ip: req.ip,
-        userAgent: req.get('User-Agent'),
-        url: req.originalUrl,
-        timestamp: new Date().toISOString(),
-        environment: process.env.ENVIRONMENT
-      });
-    }
+    // Note: onLimitReached was deprecated in express-rate-limit v7
+    // Rate limit violations are now logged via middleware instead
   }),
 
   // LLM endpoints (more restrictive)

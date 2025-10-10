@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import PaymentService from '../services/PaymentService.js';
+import PaymentIntentService from '../services/PaymentIntentService.js';
 import models from '../models/index.js';
 
 const router = express.Router();
@@ -19,14 +20,8 @@ router.use(rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  onLimitReached: (req, res, options) => {
-    console.warn('🚨 WEBHOOK RATE LIMIT VIOLATION:', {
-      ip: req.ip,
-      userAgent: req.get('User-Agent'),
-      url: req.originalUrl,
-      timestamp: new Date().toISOString()
-    });
-  }
+  // Note: onLimitReached was deprecated in express-rate-limit v7
+  // Rate limit violations are now logged via middleware instead
 }));
 
 // Webhook signature verification middleware (example for common providers)
@@ -144,52 +139,54 @@ router.post('/payplus',
         return res.status(400).json({ error: 'Missing page_request_uid' });
       }
 
-      // Find payment session, transaction, or purchase by page_request_uid
-      // First, try to find a PaymentSession record (new session-based payments)
-      let paymentSession = await models.PaymentSession.findOne({
+      // Transaction-centric lookup (PaymentIntent architecture)
+      // 1. First, try to find a Transaction record (primary PaymentIntent flow)
+      let transaction = await models.Transaction.findOne({
         where: {
           payplus_page_uid: page_request_uid
         },
         include: [{
-          model: models.User,
-          as: 'user'
+          model: models.Purchase,
+          as: 'purchases'
         }]
       });
 
       let purchases = [];
-      let transaction = null;
-      let isSessionPayment = false;
+      let paymentSession = null;
       let isTransactionPayment = false;
+      let isSessionPayment = false;
+      let paymentIntentService = null;
 
-      if (paymentSession) {
-        // Session-based payment found
-        isSessionPayment = true;
-        console.log(`✅ Found payment session ${paymentSession.id} for user ${paymentSession.user_id}`);
-
-        // Get purchases associated with this session
-        if (paymentSession.purchase_ids && paymentSession.purchase_ids.length > 0) {
-          purchases = await models.Purchase.findAll({
-            where: { id: paymentSession.purchase_ids }
-          });
-          console.log(`✅ Found ${purchases.length} purchases for session ${paymentSession.id}`);
-        }
+      if (transaction) {
+        // Transaction-based PaymentIntent found (preferred flow)
+        isTransactionPayment = true;
+        purchases = transaction.purchases || [];
+        paymentIntentService = new PaymentIntentService();
+        console.log(`✅ Found PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
       } else {
-        // Fallback to legacy Transaction lookup (multi-item cart payments)
-        transaction = await models.Transaction.findOne({
+        // 2. Fallback to PaymentSession lookup (legacy)
+        paymentSession = await models.PaymentSession.findOne({
           where: {
             payplus_page_uid: page_request_uid
           },
           include: [{
-            model: models.Purchase,
-            as: 'purchases'
+            model: models.User,
+            as: 'user'
           }]
         });
 
-        if (transaction) {
-          // Multi-item cart payment found
-          purchases = transaction.purchases || [];
-          isTransactionPayment = true;
-          console.log(`✅ Found transaction ${transaction.id} with ${purchases.length} purchases`);
+        if (paymentSession) {
+          // Session-based payment found (legacy)
+          isSessionPayment = true;
+          console.log(`✅ Found legacy payment session ${paymentSession.id} for user ${paymentSession.user_id}`);
+
+          // Get purchases associated with this session
+          if (paymentSession.purchase_ids && paymentSession.purchase_ids.length > 0) {
+            purchases = await models.Purchase.findAll({
+              where: { id: paymentSession.purchase_ids }
+            });
+            console.log(`✅ Found ${purchases.length} purchases for session ${paymentSession.id}`);
+          }
         } else {
         // Single-item payment: find individual purchase by page_request_uid stored in metadata
         let purchase = await models.Purchase.findOne({
@@ -271,9 +268,9 @@ router.post('/payplus',
         }
       }
 
-      if (!isSessionPayment && purchases.length === 0) {
-        console.warn(`❌ PayPlus webhook: No payment session, transaction, or purchase found for page_request_uid: ${page_request_uid} or transaction_uid: ${transaction_uid}`);
-        return res.status(404).json({ error: 'No payment session, transaction, or purchase found for this payment' });
+      if (!isTransactionPayment && !isSessionPayment && purchases.length === 0) {
+        console.warn(`❌ PayPlus webhook: No PaymentIntent transaction, payment session, or purchase found for page_request_uid: ${page_request_uid} or transaction_uid: ${transaction_uid}`);
+        return res.status(404).json({ error: 'No PaymentIntent transaction, payment session, or purchase found for this payment' });
       }
 
       // Map PayPlus status to our internal status
@@ -290,8 +287,48 @@ router.post('/payplus',
 
       const paymentStatus = statusMap[status_code] || statusMap[status_name?.toLowerCase()] || 'pending';
 
-      // Process payment for all purchases (session-based, transaction-based, or single item)
-      if (isSessionPayment && paymentSession) {
+      // Process payment using new Transaction-centric PaymentIntent architecture
+      if (isTransactionPayment && transaction && paymentIntentService) {
+        // Transaction-based PaymentIntent processing (preferred flow)
+        console.log(`🎯 Processing PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
+
+        try {
+          // Use PaymentIntentService for centralized status update
+          const result = await paymentIntentService.updatePaymentStatus(transaction.id, paymentStatus, {
+            webhook_received_at: new Date().toISOString(),
+            transaction_uid,
+            status_code,
+            amount: parseFloat(amount) || 0,
+            customer_email,
+            customer_name,
+            payment_date,
+            payplus_page_request_uid: page_request_uid
+          });
+
+          console.log(`✅ PaymentIntent processed successfully:`, {
+            transactionId: transaction.id,
+            purchaseCount: purchases.length,
+            pageRequestUid: page_request_uid,
+            status: paymentStatus,
+            amount,
+            totalAmount: transaction.total_amount
+          });
+
+          res.status(200).json({
+            message: 'PayPlus PaymentIntent webhook processed successfully',
+            transactionId: transaction.id,
+            purchaseCount: purchases.length,
+            pageRequestUid: page_request_uid,
+            status: paymentStatus,
+            processed: true
+          });
+
+        } catch (error) {
+          console.error(`❌ PaymentIntentService failed for transaction ${transaction.id}:`, error);
+          throw error; // Re-throw to be caught by outer catch block
+        }
+
+      } else if (isSessionPayment && paymentSession) {
         // Session-based payment processing
         console.log(`🎯 Processing session-based payment for session ${paymentSession.id} with ${purchases.length} purchases`);
 
