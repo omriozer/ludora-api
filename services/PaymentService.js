@@ -703,7 +703,7 @@ class PaymentService {
       // Force correct callback URL to our webhook endpoint
       const webhookCallbackUrl = process.env.ENVIRONMENT === 'production'
         ? 'https://api.ludora.app/api/webhooks/payplus'
-        : 'https://api.ludora.app/api/webhooks/payplus';
+        : 'https://api.ludora.app/api/webhooks/payplus'; // Still use production for development testing since PayPlus can't reach localhost
 
       // Create payment description for multi-item purchases
       const paymentDescription = products.length === 1
