@@ -228,6 +228,78 @@ router.post('/payplus',
         purchases = transaction.purchases || [];
         paymentIntentService = new PaymentIntentService();
         console.log(`✅ Found PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
+
+        // If transaction exists but has no linked purchases, try to find and link them
+        if (purchases.length === 0) {
+          console.log(`🔍 Transaction ${transaction.id} has no linked purchases, searching for unlinked purchases...`);
+
+          // Search for purchases that should be linked to this transaction
+          // Try by session_id first
+          let unlinkPurchases = [];
+          if (transaction.session_id) {
+            unlinkPurchases = await models.Purchase.findAll({
+              where: {
+                payment_status: ['cart', 'pending'],
+                transaction_id: null,
+                metadata: {
+                  session_id: transaction.session_id
+                }
+              }
+            });
+            console.log(`🔍 Found ${unlinkPurchases.length} purchases by session_id: ${transaction.session_id}`);
+          }
+
+          // If no purchases found by session_id, try by payplus_page_uid in metadata
+          if (unlinkPurchases.length === 0) {
+            unlinkPurchases = await models.Purchase.findAll({
+              where: {
+                payment_status: ['cart', 'pending'],
+                transaction_id: null,
+                metadata: {
+                  payplus_page_request_uid: finalPageRequestUid
+                }
+              }
+            });
+            console.log(`🔍 Found ${unlinkPurchases.length} purchases by payplus_page_request_uid: ${finalPageRequestUid}`);
+          }
+
+          // If still no purchases found, try by payment_in_progress flag and recent creation
+          if (unlinkPurchases.length === 0) {
+            const recentTime = new Date();
+            recentTime.setMinutes(recentTime.getMinutes() - 30); // Last 30 minutes
+
+            unlinkPurchases = await models.Purchase.findAll({
+              where: {
+                payment_status: ['cart', 'pending'],
+                transaction_id: null,
+                created_at: { [Op.gte]: recentTime },
+                metadata: {
+                  payment_in_progress: true
+                }
+              }
+            });
+            console.log(`🔍 Found ${unlinkPurchases.length} recent purchases with payment_in_progress flag`);
+          }
+
+          // Link found purchases to the transaction
+          if (unlinkPurchases.length > 0) {
+            console.log(`🔗 Linking ${unlinkPurchases.length} purchases to transaction ${transaction.id}`);
+
+            for (const purchase of unlinkPurchases) {
+              await purchase.update({
+                transaction_id: transaction.id,
+                updated_at: new Date()
+              });
+              console.log(`✅ Linked purchase ${purchase.id} to transaction ${transaction.id}`);
+            }
+
+            // Update our purchases array and reload transaction with linked purchases
+            purchases = unlinkPurchases;
+            console.log(`🔗 Successfully linked ${purchases.length} purchases to transaction ${transaction.id}`);
+          } else {
+            console.warn(`⚠️ No unlinked purchases found for transaction ${transaction.id}`);
+          }
+        }
       } else {
         // 2. Fallback to PaymentSession lookup (legacy)
         paymentSession = await models.PaymentSession.findOne({
