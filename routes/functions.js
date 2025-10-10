@@ -310,6 +310,31 @@ router.post('/checkPaymentStatus', authenticateToken, async (req, res) => {
   }
 });
 
+router.post('/cleanupStuckPaymentSessions', authenticateToken, async (req, res) => {
+  try {
+    const { userId, olderThanMinutes } = req.body;
+    const result = await PaymentService.cleanupStuckPaymentSessions(userId, olderThanMinutes);
+    res.json(result);
+  } catch (error) {
+    console.error('Error cleaning up stuck payment sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/cleanupUserStuckSessions', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+    const result = await PaymentService.cleanupUserStuckSessions(userId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error cleaning up user stuck sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Registration Functions
 router.post('/updateExistingRegistrations', authenticateToken, async (req, res) => {
   try {

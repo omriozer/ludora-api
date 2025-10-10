@@ -352,8 +352,8 @@ class PaymentService {
           }
         }
 
-        // Calculate original amount from all purchases
-        const originalPurchaseAmount = purchases.reduce((sum, purchase) => {
+        // Calculate original amount from all purchases (will be updated after product lookup)
+        let originalPurchaseAmount = purchases.reduce((sum, purchase) => {
           return sum + parseFloat(purchase.payment_amount || 0);
         }, 0);
 
@@ -384,13 +384,27 @@ class PaymentService {
           }
 
           if (product) {
+            // Use purchase payment_amount if valid, otherwise fall back to product price
+            const itemAmount = (purchase.payment_amount && purchase.payment_amount > 0)
+              ? purchase.payment_amount
+              : (product.price || 0);
+
             products.push({
               purchase,
               product,
               title: purchase.metadata?.product_title || product.title || product.name,
-              amount: purchase.payment_amount
+              amount: itemAmount
             });
           }
+        }
+
+        // Recalculate totalAmount if original was 0 (using product prices as fallback)
+        if (!amount && originalPurchaseAmount === 0 && products.length > 0) {
+          const calculatedAmount = products.reduce((sum, product) => {
+            return sum + parseFloat(product.amount || 0);
+          }, 0);
+          totalAmount = calculatedAmount;
+          console.log(`🔄 Recalculated totalAmount from product prices: ₪${totalAmount}`);
         }
 
       } else {
@@ -481,6 +495,18 @@ class PaymentService {
       });
 
       console.log(`💳 Created payment session ${sessionId} for user ${userId}, ${purchases.length} purchases, total: ₪${totalAmount}`);
+
+      // Debug: Log purchase amounts to diagnose pricing issue
+      console.log('🔍 Purchase amounts debug:', {
+        totalAmount,
+        providedAmount: amount,
+        originalPurchaseAmount: purchases.reduce((sum, p) => sum + parseFloat(p.payment_amount || 0), 0),
+        purchaseDetails: purchases.map(p => ({
+          id: p.id,
+          payment_amount: p.payment_amount,
+          original_price: p.original_price
+        }))
+      });
 
       try {
         // Now call PayPlus API
@@ -661,6 +687,7 @@ class PaymentService {
 
   // Create PayPlus payment link using their API
   async createPayplusPaymentLink({ purchases, products, totalAmount, returnUrl, successUrl, failureUrl, callbackUrl, environment, sessionId }) {
+    console.log('🎯 STARTING PayPlus createPayplusPaymentLink function');
     try {
       // Get PayPlus configuration based on environment
       const config = this.getPayplusConfig(environment);
@@ -680,48 +707,38 @@ class PaymentService {
         ? products[0].title
         : `Cart (${products.length} items)`;
 
-      // Prepare PayPlus API payload
+      // Get customer information from the first purchase
+      let customerName = 'Customer';
+      let customerEmail = '';
+
+      if (purchases && purchases.length > 0) {
+        try {
+          const user = await this.models.User.findByPk(purchases[0].buyer_user_id);
+          if (user) {
+            customerName = user.full_name || user.display_name || 'Customer';
+            customerEmail = user.email || '';
+          }
+        } catch (error) {
+          console.warn('Could not fetch customer info:', error.message);
+        }
+      }
+
+      // Try PayPlus API with just amount (no items array) first
       const payload = {
         payment_page_uid: config.paymentPageUid,
-        amount: totalAmount,
+        amount: totalAmount.toFixed(2),
         currency_code: 'ILS',
         sendEmailApproval: true,
         sendEmailFailure: true,
         refURL_success: successUrl || returnUrl,
         refURL_failure: failureUrl || returnUrl,
-        refURL_callback: webhookCallbackUrl, // Always use webhook endpoint
-        charge_method: 1, // 1 = immediate charge, 2 = authorization only
+        refURL_callback: webhookCallbackUrl,
+        charge_method: 1,
         custom_invoice_name: invoiceName,
         more_info: paymentDescription,
-        charge_default: 1, // Default to credit card
-        // Add item details for PayPlus (if supported)
-        items: (() => {
-          if (products.length > 0) {
-            const validItems = products.map(item => ({
-              name: item.title || 'Product',
-              amount: parseFloat(item.amount) || 0,
-              quantity: 1
-            })).filter(item => item.amount > 0); // Only include items with valid amounts
-
-            // If all items were filtered out due to invalid amounts, create fallback
-            return validItems.length > 0 ? validItems : [
-              {
-                name: 'Payment',
-                amount: totalAmount,
-                quantity: 1
-              }
-            ];
-          } else {
-            // Fallback item if no products found
-            return [
-              {
-                name: 'Payment',
-                amount: totalAmount,
-                quantity: 1
-              }
-            ];
-          }
-        })()
+        charge_default: 1,
+        customer_name: customerName,
+        customer_email: customerEmail
       };
 
       // Add subscription settings if any product has recurring billing
@@ -736,14 +753,18 @@ class PaymentService {
         };
       }
 
-      console.log('🚀 PayPlus API Request:', {
+      console.log('🚀 PayPlus API Request (FULL DEBUG):', {
         url: `${config.apiBaseUrl}/PaymentPages/generateLink`,
         headers: {
           'Content-Type': 'application/json',
           'api-key': config.apiKey ? `${config.apiKey.substring(0, 8)}...` : 'MISSING',
           'secret-key': config.secretKey ? `${config.secretKey.substring(0, 8)}...` : 'MISSING'
         },
-        payload: JSON.stringify(payload, null, 2)
+        payload: payload,
+        payloadString: JSON.stringify(payload, null, 2),
+        totalAmount: totalAmount,
+        products: products.map(p => ({ title: p.title, amount: p.amount, originalPrice: p.product?.price })),
+        purchases: purchases?.map(p => ({ id: p.id, buyer_user_id: p.buyer_user_id }))
       });
 
       // Make API call to PayPlus
@@ -906,6 +927,106 @@ class PaymentService {
     };
 
     return intervalMap[subscriptionType] || 2; // Default to monthly
+  }
+
+  // Clean up stuck payment sessions and reset purchases to cart status
+  async cleanupStuckPaymentSessions(userId = null, olderThanMinutes = 30) {
+    try {
+      const cutoffTime = new Date(Date.now() - olderThanMinutes * 60 * 1000);
+
+      console.log(`🧹 Starting cleanup of stuck payment sessions older than ${olderThanMinutes} minutes...`);
+
+      // Find stuck payment sessions
+      const whereClause = {
+        session_status: ['created', 'pending'],
+        created_at: { [this.models.sequelize.Op.lt]: cutoffTime }
+      };
+
+      if (userId) {
+        whereClause.user_id = userId;
+      }
+
+      const stuckSessions = await this.models.PaymentSession.findAll({
+        where: whereClause,
+        include: [{
+          model: this.models.User,
+          as: 'user'
+        }]
+      });
+
+      console.log(`🔍 Found ${stuckSessions.length} stuck payment sessions`);
+
+      let cleanedSessionsCount = 0;
+      let resetPurchasesCount = 0;
+
+      for (const session of stuckSessions) {
+        try {
+          // Mark session as failed
+          await session.markFailed('Cleaned up due to timeout', {
+            cleanup_reason: 'automatic_timeout_cleanup',
+            cleanup_at: new Date().toISOString(),
+            original_status: session.session_status
+          });
+
+          // Reset associated purchases back to cart status if they're pending
+          if (session.purchase_ids && session.purchase_ids.length > 0) {
+            const affectedRows = await this.models.Purchase.update(
+              {
+                payment_status: 'cart',
+                transaction_id: null, // Clear transaction reference
+                metadata: this.models.sequelize.fn(
+                  'jsonb_set',
+                  this.models.sequelize.col('metadata'),
+                  '{"reset_from_stuck_session"}',
+                  JSON.stringify({
+                    reset_at: new Date().toISOString(),
+                    original_session_id: session.id,
+                    reset_reason: 'payment_session_cleanup'
+                  })
+                ),
+                updated_at: new Date()
+              },
+              {
+                where: {
+                  id: session.purchase_ids,
+                  payment_status: 'pending' // Only reset if still pending
+                }
+              }
+            );
+
+            resetPurchasesCount += affectedRows[0] || 0;
+          }
+
+          cleanedSessionsCount++;
+
+          console.log(`✅ Cleaned up session ${session.id} for user ${session.user_id}, reset ${session.purchase_ids?.length || 0} purchases`);
+
+        } catch (error) {
+          console.error(`❌ Failed to cleanup session ${session.id}:`, error);
+        }
+      }
+
+      console.log(`🧹 Cleanup completed: ${cleanedSessionsCount} sessions cleaned, ${resetPurchasesCount} purchases reset to cart status`);
+
+      return {
+        success: true,
+        message: 'Payment session cleanup completed',
+        data: {
+          cleanedSessionsCount,
+          resetPurchasesCount,
+          cutoffTime: cutoffTime.toISOString()
+        }
+      };
+
+    } catch (error) {
+      console.error('Error during payment session cleanup:', error);
+      throw error;
+    }
+  }
+
+  // Clean up user's stuck payment sessions (for immediate user relief)
+  async cleanupUserStuckSessions(userId) {
+    return this.cleanupStuckPaymentSessions(userId, 1); // Clean sessions older than 1 minute for immediate relief
   }
 }
 
