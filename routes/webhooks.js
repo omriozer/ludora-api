@@ -103,6 +103,27 @@ router.post('/paypal',
 // PayPlus webhooks (Israeli payment gateway)
 router.post('/payplus',
   asyncHandler(async (req, res) => {
+    // Helper function to update webhook log status - defined outside try-catch for proper scoping
+    let webhookLog = null;
+    let webhookStartTime = null;
+
+    const updateWebhookLog = async (status, data = {}, error = null) => {
+      if (!webhookLog) return;
+      try {
+        await webhookLog.update({
+          processing_status: status,
+          response_data: data,
+          error_message: error?.message,
+          error_stack: error?.stack,
+          processing_time_ms: webhookStartTime ? Date.now() - webhookStartTime : null,
+          processed_at: status === 'processed' ? new Date() : null,
+          updated_at: new Date()
+        });
+      } catch (updateErr) {
+        console.error('❌ Failed to update WebhookLog:', updateErr.message);
+      }
+    };
+
     try {
       console.log(`🎯 ===== PAYPLUS WEBHOOK RECEIVED =====`);
       console.log(`📨 PayPlus webhook received at ${new Date().toISOString()}`);
@@ -110,7 +131,7 @@ router.post('/payplus',
       console.log('PayPlus body:', JSON.stringify(req.body, null, 2));
 
       // ===== COMPREHENSIVE WEBHOOK LOGGING =====
-      const webhookStartTime = Date.now();
+      webhookStartTime = Date.now();
       const webhookLogId = generateId();
 
       // Extract PayPlus webhook data
@@ -129,7 +150,7 @@ router.post('/payplus',
       let finalTransactionUid = transaction_uid || transactionUid;
 
       // Create comprehensive webhook log entry
-      const webhookLog = await models.WebhookLog.create({
+      webhookLog = await models.WebhookLog.create({
         id: webhookLogId,
         payplus_page_uid: finalPageRequestUid,
         payplus_transaction_uid: finalTransactionUid,
@@ -151,24 +172,6 @@ router.post('/payplus',
       });
 
       console.log(`📊 WebhookLog created with ID: ${webhookLogId}`);
-
-      // Helper function to update webhook log status
-      const updateWebhookLog = async (status, data = {}, error = null) => {
-        if (!webhookLog) return;
-        try {
-          await webhookLog.update({
-            processing_status: status,
-            response_data: data,
-            error_message: error?.message,
-            error_stack: error?.stack,
-            processing_time_ms: Date.now() - webhookStartTime,
-            processed_at: status === 'processed' ? new Date() : null,
-            updated_at: new Date()
-          });
-        } catch (updateErr) {
-          console.error('❌ Failed to update WebhookLog:', updateErr.message);
-        }
-      };
 
       // Extract PayPlus callback data from transaction object
       const transactionData = req.body.transaction || req.body;
@@ -250,202 +253,312 @@ router.post('/payplus',
             console.log(`✅ Found ${purchases.length} purchases for session ${paymentSession.id}`);
           }
         } else {
-        // Single-item payment: find individual purchase by page_request_uid stored in metadata
-        let purchase = await models.Purchase.findOne({
-          where: {
-            metadata: {
-              payplus_page_request_uid: finalPageRequestUid
+          // Single-item payment: find individual purchase by page_request_uid stored in metadata
+          let purchase = await models.Purchase.findOne({
+            where: {
+              metadata: {
+                payplus_page_request_uid: finalPageRequestUid
+              }
+            }
+          });
+
+          // If not found, try alternative field names that PayPlus might use
+          if (!purchase) {
+            console.log(`🔍 PayPlus webhook: Trying alternative lookup for finalPageRequestUid: ${finalPageRequestUid}`);
+
+            // Try with different metadata field names
+            const alternatives = [
+              { payplus_payment_page_request_uid: finalPageRequestUid },
+              { page_request_uid: finalPageRequestUid },
+              { payment_page_request_uid: finalPageRequestUid }
+            ];
+
+            for (const whereClause of alternatives) {
+              purchase = await models.Purchase.findOne({
+                where: { metadata: whereClause }
+              });
+              if (purchase) {
+                console.log(`✅ Found purchase using alternative metadata field:`, whereClause);
+                break;
+              }
             }
           }
-        });
 
-        // If not found, try alternative field names that PayPlus might use
-        if (!purchase) {
-          console.log(`🔍 PayPlus webhook: Trying alternative lookup for finalPageRequestUid: ${finalPageRequestUid}`);
-
-          // Try with different metadata field names
-          const alternatives = [
-            { payplus_payment_page_request_uid: finalPageRequestUid },
-            { page_request_uid: finalPageRequestUid },
-            { payment_page_request_uid: finalPageRequestUid }
-          ];
-
-          for (const whereClause of alternatives) {
+          // If still not found, try finding by finalTransactionUid as a last resort
+          if (!purchase && finalTransactionUid) {
+            console.log(`🔍 PayPlus webhook: Trying lookup by finalTransactionUid: ${finalTransactionUid}`);
             purchase = await models.Purchase.findOne({
-              where: { metadata: whereClause }
+              where: {
+                transaction_id: finalTransactionUid
+              }
             });
             if (purchase) {
-              console.log(`✅ Found purchase using alternative metadata field:`, whereClause);
-              break;
+              console.log(`✅ Found purchase using finalTransactionUid`);
             }
           }
-        }
 
-        // If still not found, try finding by finalTransactionUid as a last resort
-        if (!purchase && finalTransactionUid) {
-          console.log(`🔍 PayPlus webhook: Trying lookup by finalTransactionUid: ${finalTransactionUid}`);
-          purchase = await models.Purchase.findOne({
-            where: {
-              transaction_id: finalTransactionUid
-            }
-          });
-          if (purchase) {
-            console.log(`✅ Found purchase using finalTransactionUid`);
-          }
-        }
-
-        // Final fallback: search for ANY purchase with this page_request_uid, even if cleaned up
-        if (!purchase) {
-          console.log(`🔍 PayPlus webhook: Final fallback - searching for any purchase with finalPageRequestUid: ${finalPageRequestUid}`);
-          purchase = await models.Purchase.findOne({
-            where: {
-              [Op.or]: [
-                {
-                  metadata: {
-                    payplus_page_request_uid: finalPageRequestUid
+          // Final fallback: search for ANY purchase with this page_request_uid, even if cleaned up
+          if (!purchase) {
+            console.log(`🔍 PayPlus webhook: Final fallback - searching for any purchase with finalPageRequestUid: ${finalPageRequestUid}`);
+            purchase = await models.Purchase.findOne({
+              where: {
+                [Op.or]: [
+                  {
+                    metadata: {
+                      payplus_page_request_uid: finalPageRequestUid
+                    }
+                  },
+                  {
+                    metadata: {
+                      [Op.and]: [
+                        where(
+                          fn('jsonb_extract_path_text', col('metadata'), 'payplus_page_request_uid'),
+                          finalPageRequestUid
+                        )
+                      ]
+                    }
                   }
-                },
+                ]
+              }
+            });
+            if (purchase) {
+              console.log(`✅ Found purchase using final fallback lookup - purchase may have been cleaned up but we can still process webhook`);
+            }
+          }
+
+          if (purchase) {
+            purchases = [purchase];
+            console.log(`✅ Found single purchase: ${purchase.id}`);
+          }
+        }
+
+        if (!isTransactionPayment && !isSessionPayment && purchases.length === 0) {
+          console.warn(`❌ PayPlus webhook: No PaymentIntent transaction, payment session, or purchase found for finalPageRequestUid: ${finalPageRequestUid} or finalTransactionUid: ${finalTransactionUid}`);
+          return res.status(404).json({ error: 'No PaymentIntent transaction, payment session, or purchase found for this payment' });
+        }
+
+        // Map PayPlus status to our internal status
+        // PayPlus sends status_code: "000" for successful payments
+        const statusMap = {
+          '000': 'completed',  // PayPlus success code
+          'success': 'completed',
+          'approved': 'completed',
+          'failed': 'failed',
+          'error': 'failed',
+          'cancelled': 'cancelled',
+          'refunded': 'refunded'
+        };
+
+        const paymentStatus = statusMap[status_code] || statusMap[status_name?.toLowerCase()] || 'pending';
+
+        // Process payment using new Transaction-centric PaymentIntent architecture
+        if (isTransactionPayment && transaction && paymentIntentService) {
+          // Transaction-based PaymentIntent processing (preferred flow)
+          console.log(`🎯 Processing PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
+
+          try {
+            // Use PaymentIntentService for centralized status update
+            const result = await paymentIntentService.updatePaymentStatus(transaction.id, paymentStatus, {
+              webhook_received_at: new Date().toISOString(),
+              finalTransactionUid,
+              status_code,
+              amount: parseFloat(amount) || 0,
+              customer_email,
+              customer_name,
+              payment_date,
+              payplus_page_request_uid: finalPageRequestUid
+            });
+
+            console.log(`✅ PaymentIntent processed successfully:`, {
+              transactionId: transaction.id,
+              purchaseCount: purchases.length,
+              pageRequestUid: finalPageRequestUid,
+              status: paymentStatus,
+              amount,
+              totalAmount: transaction.total_amount
+            });
+
+            // Log successful PaymentIntent processing
+            await updateWebhookLog('processed', {
+              transaction_id: transaction.id,
+              purchase_count: purchases.length,
+              purchase_ids: purchases.map(p => p.id),
+              payment_status: paymentStatus,
+              processing_flow: 'PaymentIntent'
+            });
+
+            res.status(200).json({
+              message: 'PayPlus PaymentIntent webhook processed successfully',
+              transactionId: transaction.id,
+              purchaseCount: purchases.length,
+              pageRequestUid: finalPageRequestUid,
+              status: paymentStatus,
+              processed: true
+            });
+
+          } catch (error) {
+            console.error(`❌ PaymentIntentService failed for transaction ${transaction.id}:`, error);
+            throw error; // Re-throw to be caught by outer catch block
+          }
+        } else if (isSessionPayment && paymentSession) {
+          // Session-based payment processing
+          console.log(`🎯 Processing session-based payment for session ${paymentSession.id} with ${purchases.length} purchases`);
+
+          // Update PaymentSession record
+          if (paymentStatus === 'completed') {
+            await paymentSession.markCompleted({
+              webhook_received_at: new Date().toISOString(),
+              finalTransactionUid,
+              status_code,
+              amount,
+              customer_email,
+              customer_name,
+              payment_date
+            });
+          } else if (paymentStatus === 'failed' || paymentStatus === 'cancelled') {
+            await paymentSession.markFailed(`Payment ${paymentStatus}: ${status_code}`, {
+              webhook_received_at: new Date().toISOString(),
+              finalTransactionUid,
+              status_code,
+              amount,
+              customer_email,
+              customer_name,
+              payment_date
+            });
+          }
+
+          // Commit coupon usage if payment successful and coupons were used
+          if (paymentStatus === 'completed' && paymentSession.applied_coupons?.length > 0) {
+            console.log(`🎫 Committing coupon usage for ${paymentSession.applied_coupons.length} coupons (session payment)`);
+
+            for (const appliedCoupon of paymentSession.applied_coupons) {
+              try {
+                await PaymentService.commitCouponUsage(appliedCoupon.code);
+                console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
+              } catch (error) {
+                console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
+                // Don't throw - payment is successful, coupon tracking is secondary
+              }
+            }
+          }
+
+          // Update all related purchases (handle cart→completed/failed transitions)
+          if (purchases.length > 0) {
+            // Find purchases that need to be updated (cart or pending status with payment_in_progress flag)
+            const purchasesToUpdate = await models.Purchase.findAll({
+              where: {
+                id: paymentSession.purchase_ids,
+                [Op.or]: [
+                  { payment_status: 'cart' },
+                  { payment_status: 'pending' },
+                  {
+                    metadata: {
+                      payment_in_progress: true
+                    }
+                  }
+                ]
+              }
+            });
+
+            if (purchasesToUpdate.length > 0) {
+              // Update purchase status and clear payment_in_progress flag
+              await models.Purchase.update(
                 {
-                  metadata: {
-                    [Op.and]: [
-                      where(
-                        fn('jsonb_extract_path_text', col('metadata'), 'payplus_page_request_uid'),
-                        finalPageRequestUid
-                      )
-                    ]
+                  payment_status: paymentStatus,
+                  updated_at: new Date(),
+                  metadata: fn('jsonb_set',
+                    col('metadata'),
+                    literal(`'{payment_in_progress}'`),
+                    literal('false'),
+                    false
+                  )
+                },
+                { where: { id: purchasesToUpdate.map(p => p.id) } }
+              );
+
+              console.log(`✅ Updated ${purchasesToUpdate.length} purchases from cart/pending to status: ${paymentStatus}`);
+            } else {
+              console.log(`⚠️ No purchases found in cart/pending status for session ${paymentSession.id}`);
+            }
+          }
+
+          // Handle post-payment logic for each purchase
+          for (const purchase of purchases) {
+            if (paymentStatus === 'completed') {
+              // Update download count for file products
+              if (purchase.product_id) {
+                const product = await models.Product.findByPk(purchase.product_id);
+                if (product && product.product_type === 'file') {
+                  const fileEntity = await models.File.findByPk(product.entity_id);
+                  if (fileEntity) {
+                    await fileEntity.update({
+                      downloads_count: (fileEntity.downloads_count || 0) + 1
+                    });
                   }
                 }
-              ]
+              }
             }
-          });
-          if (purchase) {
-            console.log(`✅ Found purchase using final fallback lookup - purchase may have been cleaned up but we can still process webhook`);
           }
-        }
 
-        if (purchase) {
-          purchases = [purchase];
-          console.log(`✅ Found single purchase: ${purchase.id}`);
-        }
-      }
-
-      if (!isTransactionPayment && !isSessionPayment && purchases.length === 0) {
-        console.warn(`❌ PayPlus webhook: No PaymentIntent transaction, payment session, or purchase found for finalPageRequestUid: ${finalPageRequestUid} or finalTransactionUid: ${finalTransactionUid}`);
-        return res.status(404).json({ error: 'No PaymentIntent transaction, payment session, or purchase found for this payment' });
-      }
-
-      // Map PayPlus status to our internal status
-      // PayPlus sends status_code: "000" for successful payments
-      const statusMap = {
-        '000': 'completed',  // PayPlus success code
-        'success': 'completed',
-        'approved': 'completed',
-        'failed': 'failed',
-        'error': 'failed',
-        'cancelled': 'cancelled',
-        'refunded': 'refunded'
-      };
-
-      const paymentStatus = statusMap[status_code] || statusMap[status_name?.toLowerCase()] || 'pending';
-
-      // Process payment using new Transaction-centric PaymentIntent architecture
-      if (isTransactionPayment && transaction && paymentIntentService) {
-        // Transaction-based PaymentIntent processing (preferred flow)
-        console.log(`🎯 Processing PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
-
-        try {
-          // Use PaymentIntentService for centralized status update
-          const result = await paymentIntentService.updatePaymentStatus(transaction.id, paymentStatus, {
-            webhook_received_at: new Date().toISOString(),
-            finalTransactionUid,
-            status_code,
-            amount: parseFloat(amount) || 0,
-            customer_email,
-            customer_name,
-            payment_date,
-            payplus_page_request_uid: finalPageRequestUid
-          });
-
-          console.log(`✅ PaymentIntent processed successfully:`, {
-            transactionId: transaction.id,
+          console.log(`✅ PayPlus session payment processed:`, {
+            sessionId: paymentSession.id,
             purchaseCount: purchases.length,
             pageRequestUid: finalPageRequestUid,
             status: paymentStatus,
             amount,
-            totalAmount: transaction.total_amount
-          });
-
-          // Log successful PaymentIntent processing
-          await updateWebhookLog('processed', {
-            transaction_id: transaction.id,
-            purchase_count: purchases.length,
-            purchase_ids: purchases.map(p => p.id),
-            payment_status: paymentStatus,
-            processing_flow: 'PaymentIntent'
+            totalAmount: paymentSession.total_amount
           });
 
           res.status(200).json({
-            message: 'PayPlus PaymentIntent webhook processed successfully',
-            transactionId: transaction.id,
+            message: 'PayPlus session webhook processed successfully',
+            sessionId: paymentSession.id,
             purchaseCount: purchases.length,
             pageRequestUid: finalPageRequestUid,
             status: paymentStatus,
             processed: true
           });
 
-        } catch (error) {
-          console.error(`❌ PaymentIntentService failed for transaction ${transaction.id}:`, error);
-          throw error; // Re-throw to be caught by outer catch block
-        }
+        } else if (isTransactionPayment && transaction) {
+          // Multi-item transaction payment
+          console.log(`🛒 Processing multi-item transaction payment for ${purchases.length} purchases`);
 
-      } else if (isSessionPayment && paymentSession) {
-        // Session-based payment processing
-        console.log(`🎯 Processing session-based payment for session ${paymentSession.id} with ${purchases.length} purchases`);
-
-        // Update PaymentSession record
-        if (paymentStatus === 'completed') {
-          await paymentSession.markCompleted({
-            webhook_received_at: new Date().toISOString(),
-            finalTransactionUid,
-            status_code,
-            amount,
-            customer_email,
-            customer_name,
-            payment_date
+          // Update Transaction record
+          await transaction.update({
+            payment_status: paymentStatus,
+            completed_at: paymentStatus === 'completed' ? new Date() : null,
+            payplus_response: {
+              ...transaction.payplus_response,
+              webhook_received_at: new Date().toISOString(),
+              finalTransactionUid,
+              status_code,
+              amount,
+              customer_email,
+              customer_name,
+              payment_date
+            },
+            updated_at: new Date()
           });
-        } else if (paymentStatus === 'failed' || paymentStatus === 'cancelled') {
-          await paymentSession.markFailed(`Payment ${paymentStatus}: ${status_code}`, {
-            webhook_received_at: new Date().toISOString(),
-            finalTransactionUid,
-            status_code,
-            amount,
-            customer_email,
-            customer_name,
-            payment_date
-          });
-        }
 
-        // Commit coupon usage if payment successful and coupons were used
-        if (paymentStatus === 'completed' && paymentSession.applied_coupons?.length > 0) {
-          console.log(`🎫 Committing coupon usage for ${paymentSession.applied_coupons.length} coupons (session payment)`);
+          // Commit coupon usage if payment successful and coupons were used
+          if (paymentStatus === 'completed' && transaction.payplus_response?.coupon_info?.applied_coupons?.length > 0) {
+            console.log(`🎫 Committing coupon usage for ${transaction.payplus_response.coupon_info.applied_coupons.length} coupons`);
 
-          for (const appliedCoupon of paymentSession.applied_coupons) {
-            try {
-              await PaymentService.commitCouponUsage(appliedCoupon.code);
-              console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
-            } catch (error) {
-              console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
-              // Don't throw - payment is successful, coupon tracking is secondary
+            for (const appliedCoupon of transaction.payplus_response.coupon_info.applied_coupons) {
+              try {
+                await PaymentService.commitCouponUsage(appliedCoupon.code);
+                console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
+              } catch (error) {
+                console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
+                // Don't throw - payment is successful, coupon tracking is secondary
+              }
             }
           }
-        }
 
-        // Update all related purchases (handle cart→completed/failed transitions)
-        if (purchases.length > 0) {
+          // Update all related purchases (handle cart→completed/failed transitions)
           // Find purchases that need to be updated (cart or pending status with payment_in_progress flag)
           const purchasesToUpdate = await models.Purchase.findAll({
             where: {
-              id: paymentSession.purchase_ids,
+              transaction_id: transaction.id,
               [Op.or]: [
                 { payment_status: 'cart' },
                 { payment_status: 'pending' },
@@ -476,239 +589,127 @@ router.post('/payplus',
 
             console.log(`✅ Updated ${purchasesToUpdate.length} purchases from cart/pending to status: ${paymentStatus}`);
           } else {
-            console.log(`⚠️ No purchases found in cart/pending status for session ${paymentSession.id}`);
+            console.log(`⚠️ No purchases found in cart/pending status for transaction ${transaction.id}`);
           }
-        }
 
-        // Handle post-payment logic for each purchase
-        for (const purchase of purchases) {
-          if (paymentStatus === 'completed') {
-            // Update download count for file products
-            if (purchase.product_id) {
-              const product = await models.Product.findByPk(purchase.product_id);
-              if (product && product.product_type === 'file') {
-                const fileEntity = await models.File.findByPk(product.entity_id);
-                if (fileEntity) {
-                  await fileEntity.update({
-                    downloads_count: (fileEntity.downloads_count || 0) + 1
-                  });
+          // Handle post-payment logic for each purchase
+          for (const purchase of purchases) {
+            if (paymentStatus === 'completed') {
+              // Update download count for file products
+              if (purchase.product_id) {
+                const product = await models.Product.findByPk(purchase.product_id);
+                if (product && product.product_type === 'file') {
+                  const fileEntity = await models.File.findByPk(product.entity_id);
+                  if (fileEntity) {
+                    await fileEntity.update({
+                      downloads_count: (fileEntity.downloads_count || 0) + 1
+                    });
+                  }
                 }
               }
             }
           }
-        }
 
-        console.log(`✅ PayPlus session payment processed:`, {
-          sessionId: paymentSession.id,
-          purchaseCount: purchases.length,
-          pageRequestUid: finalPageRequestUid,
-          status: paymentStatus,
-          amount,
-          totalAmount: paymentSession.total_amount
-        });
-
-        res.status(200).json({
-          message: 'PayPlus session webhook processed successfully',
-          sessionId: paymentSession.id,
-          purchaseCount: purchases.length,
-          pageRequestUid: finalPageRequestUid,
-          status: paymentStatus,
-          processed: true
-        });
-
-      } else if (isTransactionPayment && transaction) {
-        // Multi-item transaction payment
-        console.log(`🛒 Processing multi-item transaction payment for ${purchases.length} purchases`);
-
-        // Update Transaction record
-        await transaction.update({
-          payment_status: paymentStatus,
-          completed_at: paymentStatus === 'completed' ? new Date() : null,
-          payplus_response: {
-            ...transaction.payplus_response,
-            webhook_received_at: new Date().toISOString(),
-            finalTransactionUid,
-            status_code,
+          console.log(`✅ PayPlus transaction processed:`, {
+            transactionId: transaction.id,
+            purchaseCount: purchases.length,
+            pageRequestUid: finalPageRequestUid,
+            status: paymentStatus,
             amount,
-            customer_email,
-            customer_name,
-            payment_date
-          },
-          updated_at: new Date()
-        });
+            totalAmount: transaction.total_amount
+          });
 
-        // Commit coupon usage if payment successful and coupons were used
-        if (paymentStatus === 'completed' && transaction.payplus_response?.coupon_info?.applied_coupons?.length > 0) {
-          console.log(`🎫 Committing coupon usage for ${transaction.payplus_response.coupon_info.applied_coupons.length} coupons`);
+          res.status(200).json({
+            message: 'PayPlus transaction webhook processed successfully',
+            transactionId: transaction.id,
+            purchaseCount: purchases.length,
+            pageRequestUid: finalPageRequestUid,
+            status: paymentStatus,
+            processed: true
+          });
 
-          for (const appliedCoupon of transaction.payplus_response.coupon_info.applied_coupons) {
-            try {
-              await PaymentService.commitCouponUsage(appliedCoupon.code);
-              console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
-            } catch (error) {
-              console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
-              // Don't throw - payment is successful, coupon tracking is secondary
-            }
-          }
-        }
+        } else {
+          // Single-item purchase payment (legacy behavior)
+          const purchase = purchases[0];
+          console.log(`💳 Processing single-item purchase payment for purchase ${purchase.id}`);
 
-        // Update all related purchases (handle cart→completed/failed transitions)
-        // Find purchases that need to be updated (cart or pending status with payment_in_progress flag)
-        const purchasesToUpdate = await models.Purchase.findAll({
-          where: {
-            transaction_id: transaction.id,
-            [Op.or]: [
-              { payment_status: 'cart' },
-              { payment_status: 'pending' },
+          // Check if purchase is in valid status for update (cart, pending, or has payment_in_progress flag)
+          const validStates = ['cart', 'pending'];
+          const hasPaymentFlag = purchase.metadata?.payment_in_progress === true;
+
+          if (validStates.includes(purchase.payment_status) || hasPaymentFlag) {
+            // Update purchase directly for cart→completed/failed transitions
+            await models.Purchase.update(
               {
+                payment_status: paymentStatus,
+                updated_at: new Date(),
                 metadata: {
-                  payment_in_progress: true
+                  ...purchase.metadata,
+                  payment_in_progress: false,
+                  webhook_received_at: new Date().toISOString(),
+                  payplus_finalTransactionUid: finalTransactionUid,
+                  payplus_status_code: status_code
                 }
-              }
-            ]
+              },
+              { where: { id: purchase.id } }
+            );
+
+            console.log(`✅ Updated purchase ${purchase.id} from ${purchase.payment_status} to ${paymentStatus}`);
+          } else {
+            console.log(`⚠️ Purchase ${purchase.id} is in status ${purchase.payment_status}, skipping update`);
           }
-        });
 
-        if (purchasesToUpdate.length > 0) {
-          // Update purchase status and clear payment_in_progress flag
-          await models.Purchase.update(
-            {
-              payment_status: paymentStatus,
-              updated_at: new Date(),
-              metadata: fn('jsonb_set',
-                col('metadata'),
-                literal(`'{payment_in_progress}'`),
-                literal('false'),
-                false
-              )
-            },
-            { where: { id: purchasesToUpdate.map(p => p.id) } }
-          );
+          // Legacy PaymentService callback for additional processing
+          const result = await PaymentService.handlePayplusCallback({
+            paymentId: purchase.id,
+            status: paymentStatus,
+            amount: parseFloat(amount) || 0,
+            transactionId: finalTransactionUid,
+            payerEmail: customer_email,
+            payerName: customer_name,
+            paymentDate: payment_date,
+            payplusData: {
+              page_request_uid: finalPageRequestUid,
+              finalTransactionUid,
+              status_code
+            }
+          });
 
-          console.log(`✅ Updated ${purchasesToUpdate.length} purchases from cart/pending to status: ${paymentStatus}`);
-        } else {
-          console.log(`⚠️ No purchases found in cart/pending status for transaction ${transaction.id}`);
-        }
+          // For single-item purchases, check if coupons were applied (stored in purchase metadata)
+          if (paymentStatus === 'completed' && purchase.metadata?.applied_coupons?.length > 0) {
+            console.log(`🎫 Committing coupon usage for ${purchase.metadata.applied_coupons.length} coupons (single-item purchase)`);
 
-        // Handle post-payment logic for each purchase
-        for (const purchase of purchases) {
-          if (paymentStatus === 'completed') {
-            // Update download count for file products
-            if (purchase.product_id) {
-              const product = await models.Product.findByPk(purchase.product_id);
-              if (product && product.product_type === 'file') {
-                const fileEntity = await models.File.findByPk(product.entity_id);
-                if (fileEntity) {
-                  await fileEntity.update({
-                    downloads_count: (fileEntity.downloads_count || 0) + 1
-                  });
-                }
+            for (const appliedCoupon of purchase.metadata.applied_coupons) {
+              try {
+                await PaymentService.commitCouponUsage(appliedCoupon.code);
+                console.log(`✅ Committed usage for coupon: ${appliedCoupon.code}`);
+              } catch (error) {
+                console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
+                // Don't throw - payment is successful, coupon tracking is secondary
               }
             }
           }
+
+          console.log(`✅ PayPlus single payment processed:`, {
+            purchaseId: purchase.id,
+            pageRequestUid: finalPageRequestUid,
+            status: paymentStatus,
+            amount,
+            success: result.success
+          });
+
+          res.status(200).json({
+            message: 'PayPlus webhook processed successfully',
+            purchaseId: purchase.id,
+            pageRequestUid: finalPageRequestUid,
+            status: paymentStatus,
+            processed: true
+          });
         }
 
-        console.log(`✅ PayPlus transaction processed:`, {
-          transactionId: transaction.id,
-          purchaseCount: purchases.length,
-          pageRequestUid: finalPageRequestUid,
-          status: paymentStatus,
-          amount,
-          totalAmount: transaction.total_amount
-        });
+        console.log(`🎯 ===== PAYPLUS WEBHOOK COMPLETED SUCCESSFULLY =====`);
 
-        res.status(200).json({
-          message: 'PayPlus transaction webhook processed successfully',
-          transactionId: transaction.id,
-          purchaseCount: purchases.length,
-          pageRequestUid: finalPageRequestUid,
-          status: paymentStatus,
-          processed: true
-        });
-
-      } else {
-        // Single-item purchase payment (legacy behavior)
-        const purchase = purchases[0];
-        console.log(`💳 Processing single-item purchase payment for purchase ${purchase.id}`);
-
-        // Check if purchase is in valid status for update (cart, pending, or has payment_in_progress flag)
-        const validStates = ['cart', 'pending'];
-        const hasPaymentFlag = purchase.metadata?.payment_in_progress === true;
-
-        if (validStates.includes(purchase.payment_status) || hasPaymentFlag) {
-          // Update purchase directly for cart→completed/failed transitions
-          await models.Purchase.update(
-            {
-              payment_status: paymentStatus,
-              updated_at: new Date(),
-              metadata: {
-                ...purchase.metadata,
-                payment_in_progress: false,
-                webhook_received_at: new Date().toISOString(),
-                payplus_finalTransactionUid: finalTransactionUid,
-                payplus_status_code: status_code
-              }
-            },
-            { where: { id: purchase.id } }
-          );
-
-          console.log(`✅ Updated purchase ${purchase.id} from ${purchase.payment_status} to ${paymentStatus}`);
-        } else {
-          console.log(`⚠️ Purchase ${purchase.id} is in status ${purchase.payment_status}, skipping update`);
-        }
-
-        // Legacy PaymentService callback for additional processing
-        const result = await PaymentService.handlePayplusCallback({
-          paymentId: purchase.id,
-          status: paymentStatus,
-          amount: parseFloat(amount) || 0,
-          transactionId: finalTransactionUid,
-          payerEmail: customer_email,
-          payerName: customer_name,
-          paymentDate: payment_date,
-          payplusData: {
-            page_request_uid: finalPageRequestUid,
-            finalTransactionUid,
-            status_code
-          }
-        });
-
-        // For single-item purchases, check if coupons were applied (stored in purchase metadata)
-        if (paymentStatus === 'completed' && purchase.metadata?.applied_coupons?.length > 0) {
-          console.log(`🎫 Committing coupon usage for ${purchase.metadata.applied_coupons.length} coupons (single-item purchase)`);
-
-          for (const appliedCoupon of purchase.metadata.applied_coupons) {
-            try {
-              await PaymentService.commitCouponUsage(appliedCoupon.code);
-              console.log(
-                `✅ Committed usage for coupon: ${appliedCoupon.code}`
-              );
-            } catch (error) {
-              console.error(`❌ Failed to commit usage for coupon ${appliedCoupon.code}:`, error);
-              // Don't throw - payment is successful, coupon tracking is secondary
-            }
-          }
-        }
-
-        console.log(`✅ PayPlus single payment processed:`, {
-          purchaseId: purchase.id,
-          pageRequestUid: finalPageRequestUid,
-          status: paymentStatus,
-          amount,
-          success: result.success
-        });
-
-        res.status(200).json({
-          message: 'PayPlus webhook processed successfully',
-          purchaseId: purchase.id,
-          pageRequestUid: finalPageRequestUid,
-          status: paymentStatus,
-          processed: true
-        });
       }
-
-      console.log(`🎯 ===== PAYPLUS WEBHOOK COMPLETED SUCCESSFULLY =====`);
-
     } catch (error) {
       console.error('🚨 ===== PAYPLUS WEBHOOK FAILED =====');
       console.error('❌ PayPlus webhook processing failed:', error);
