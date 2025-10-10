@@ -1,11 +1,12 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { Op, fn, col, literal } from 'sequelize';
+import { Op, fn, col, literal, where } from 'sequelize';
 import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import PaymentService from '../services/PaymentService.js';
 import PaymentIntentService from '../services/PaymentIntentService.js';
 import models from '../models/index.js';
+import { generateId } from '../models/baseModel.js';
 
 const router = express.Router();
 
@@ -108,15 +109,60 @@ router.post('/payplus',
       console.log('PayPlus headers:', JSON.stringify(req.headers, null, 2));
       console.log('PayPlus body:', JSON.stringify(req.body, null, 2));
 
-      // Log webhook for debugging
-      await models.WebhookLog?.create({
-        webhook_type: 'payplus_payment',
-        payload: JSON.stringify(req.body),
-        status: 'received',
-        source_ip: req.ip,
+      // ===== COMPREHENSIVE WEBHOOK LOGGING =====
+      const webhookStartTime = Date.now();
+      const webhookLogId = generateId();
+
+      // Extract PayPlus webhook data
+      const {
+        page_request_uid,
+        transaction_uid,
+        status_code,
+        status_name,
+        ...payplusData
+      } = req.body || {};
+
+      // Create comprehensive webhook log entry
+      const webhookLog = await models.WebhookLog.create({
+        id: webhookLogId,
+        payplus_page_uid: page_request_uid,
+        payplus_transaction_uid: transaction_uid,
+        http_method: req.method,
+        request_headers: req.headers,
+        request_body: req.body,
+        user_agent: req.get('User-Agent'),
+        ip_address: req.ip || req.connection.remoteAddress,
+        payplus_data: payplusData,
+        status_code: status_code,
+        status_name: status_name,
+        processing_status: 'pending',
+        webhook_source: 'payplus',
         created_at: new Date(),
         updated_at: new Date()
-      }).catch(err => console.log('WebhookLog not available:', err.message));
+      }).catch(err => {
+        console.error('❌ Failed to create WebhookLog entry:', err.message);
+        return null;
+      });
+
+      console.log(`📊 WebhookLog created with ID: ${webhookLogId}`);
+
+      // Helper function to update webhook log status
+      const updateWebhookLog = async (status, data = {}, error = null) => {
+        if (!webhookLog) return;
+        try {
+          await webhookLog.update({
+            processing_status: status,
+            response_data: data,
+            error_message: error?.message,
+            error_stack: error?.stack,
+            processing_time_ms: Date.now() - webhookStartTime,
+            processed_at: status === 'processed' ? new Date() : null,
+            updated_at: new Date()
+          });
+        } catch (updateErr) {
+          console.error('❌ Failed to update WebhookLog:', updateErr.message);
+        }
+      };
 
       // Extract PayPlus callback data from transaction object
       const transactionData = req.body.transaction || req.body;
@@ -247,8 +293,8 @@ router.post('/payplus',
                 {
                   metadata: {
                     [Op.and]: [
-                      models.sequelize.where(
-                        models.sequelize.fn('jsonb_extract_path_text', models.sequelize.col('metadata'), 'payplus_page_request_uid'),
+                      where(
+                        fn('jsonb_extract_path_text', col('metadata'), 'payplus_page_request_uid'),
                         page_request_uid
                       )
                     ]
@@ -313,6 +359,15 @@ router.post('/payplus',
             status: paymentStatus,
             amount,
             totalAmount: transaction.total_amount
+          });
+
+          // Log successful PaymentIntent processing
+          await updateWebhookLog('processed', {
+            transaction_id: transaction.id,
+            purchase_count: purchases.length,
+            purchase_ids: purchases.map(p => p.id),
+            payment_status: paymentStatus,
+            processing_flow: 'PaymentIntent'
           });
 
           res.status(200).json({
@@ -644,16 +699,16 @@ router.post('/payplus',
       console.error('📥 Request body was:', JSON.stringify(req.body, null, 2));
       console.error('📋 Request headers were:', JSON.stringify(req.headers, null, 2));
 
-      // Log the error but still return 200 to avoid PayPlus retrying
-      await models.WebhookLog?.create({
-        webhook_type: 'payplus_payment',
-        payload: JSON.stringify(req.body),
-        status: 'failed',
-        error_message: error.message,
-        source_ip: req.ip,
-        created_at: new Date(),
-        updated_at: new Date()
-      }).catch(err => console.log('WebhookLog not available:', err.message));
+      // Log comprehensive error details
+      await updateWebhookLog('failed', {
+        error_details: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+          request_body: req.body,
+          request_headers: req.headers
+        }
+      }, error);
 
       res.status(200).json({
         message: 'PayPlus webhook received but processing failed',
