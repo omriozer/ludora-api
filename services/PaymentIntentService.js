@@ -26,11 +26,138 @@ class PaymentIntentService {
     try {
       console.log('🎯 PaymentIntentService: Creating payment intent for user:', userId);
 
-      // 1. Validate cart items and get product details
+      // 1. Check for recent pending transactions to prevent race condition
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+
+      // First, check for any recent pending transactions (without requiring linked purchases)
+      const existingTransaction = await this.models.Transaction.findOne({
+        where: {
+          payment_status: ['pending', 'in_progress'],
+          created_at: {
+            [this.models.Sequelize.Op.gt]: twoMinutesAgo
+          }
+        },
+        include: [{
+          model: this.models.Purchase,
+          as: 'purchases',
+          required: false // LEFT JOIN instead of INNER JOIN
+        }],
+        order: [['created_at', 'DESC']]
+      });
+
+      // Also check for cart purchases that might belong to this user
+      const cartPurchases = await this.models.Purchase.findAll({
+        where: {
+          buyer_user_id: userId,
+          payment_status: 'cart',
+          created_at: {
+            [this.models.Sequelize.Op.gt]: twoMinutesAgo
+          }
+        },
+        order: [['created_at', 'DESC']]
+      });
+
+      console.log(`🔍 PaymentIntentService: Race condition check - found ${existingTransaction ? 1 : 0} recent transactions, ${cartPurchases.length} cart purchases for user ${userId}`);
+
+      if (existingTransaction) {
+        console.log(`⚠️ PaymentIntentService: Found existing recent transaction ${existingTransaction.id}, status: ${existingTransaction.payment_status}, has payment_url: ${!!existingTransaction.payment_url}, linked purchases: ${existingTransaction.purchases?.length || 0}`);
+
+        // If existing transaction has a payment URL, reuse it
+        if (existingTransaction.payment_url) {
+          // Check if we need to link cart purchases to this transaction
+          const unlinkedCartPurchases = cartPurchases.filter(p => !p.transaction_id);
+          if (unlinkedCartPurchases.length > 0) {
+            console.log(`🔗 PaymentIntentService: Linking ${unlinkedCartPurchases.length} unlinked cart purchases to existing transaction ${existingTransaction.id}`);
+            await this.models.Purchase.update(
+              { transaction_id: existingTransaction.id },
+              { where: { id: unlinkedCartPurchases.map(p => p.id) } }
+            );
+          }
+
+          return {
+            success: true,
+            transactionId: existingTransaction.id,
+            paymentUrl: existingTransaction.payment_url,
+            totalAmount: existingTransaction.total_amount,
+            status: existingTransaction.payment_status,
+            purchaseCount: (existingTransaction.purchases?.length || 0) + unlinkedCartPurchases.length,
+            expiresAt: existingTransaction.expires_at,
+            reused: true
+          };
+        }
+
+        // If existing transaction exists but no payment URL, we'll complete the process for it
+        // Check if cart items match what we expect
+        const cartItemIds = cartItems.map(item => item.id);
+        const matchingCartPurchases = cartPurchases.filter(p => cartItemIds.includes(p.id));
+
+        if (matchingCartPurchases.length === cartItems.length) {
+          console.log(`🔄 PaymentIntentService: Reusing existing transaction ${existingTransaction.id} and completing payment creation process`);
+
+          // Link cart purchases to existing transaction if not already linked
+          const unlinkedPurchases = matchingCartPurchases.filter(p => !p.transaction_id);
+          if (unlinkedPurchases.length > 0) {
+            await this.models.Purchase.update(
+              { transaction_id: existingTransaction.id },
+              { where: { id: unlinkedPurchases.map(p => p.id) } }
+            );
+          }
+
+          // Continue with payment URL creation using existing transaction
+          const { products, totalAmount } = await this._validateCartAndCreatePurchases(cartItems, userId, appliedCoupons);
+
+          const baseReturnUrl = `${frontendOrigin || 'https://ludora.app'}/payment-result`;
+          const returnUrl = `${baseReturnUrl}?transactionId=${existingTransaction.id}`;
+          const successUrl = `${returnUrl}&status=success`;
+          const failureUrl = `${returnUrl}&status=failure`;
+          const callbackUrl = process.env.ENVIRONMENT === 'production'
+            ? 'https://api.ludora.app/api/webhooks/payplus'
+            : 'https://api.ludora.app/api/webhooks/payplus';
+
+          const paymentPageUrl = await this.paymentService.createPayplusPaymentLink({
+            purchases: matchingCartPurchases,
+            products,
+            totalAmount,
+            returnUrl,
+            successUrl,
+            failureUrl,
+            callbackUrl,
+            environment,
+            sessionId: existingTransaction.id
+          });
+
+          // Update existing transaction with payment URL
+          await existingTransaction.updateStatus('in_progress', {
+            payment_page_url: paymentPageUrl,
+            payplus_integration_success: true
+          });
+
+          await existingTransaction.update({
+            payment_url: paymentPageUrl,
+            total_amount: totalAmount,
+            updated_at: new Date()
+          });
+
+          console.log('✅ PaymentIntentService: Completed payment creation for existing transaction:', existingTransaction.id);
+
+          return {
+            success: true,
+            transactionId: existingTransaction.id,
+            paymentUrl: paymentPageUrl,
+            totalAmount,
+            status: 'in_progress',
+            purchaseCount: matchingCartPurchases.length,
+            expiresAt: existingTransaction.expires_at,
+            reused: true
+          };
+        }
+      }
+
+      // 2. Validate cart items and get product details
       const { purchases, products, totalAmount, originalAmount, totalDiscount } =
         await this._validateCartAndCreatePurchases(cartItems, userId, appliedCoupons);
 
-      // 2. Create Transaction (PaymentIntent) - starts in 'pending' state
+      // 3. Create Transaction (PaymentIntent) - starts in 'pending' state
       const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       const transaction = await this.models.Transaction.create({
         id: transactionId,
