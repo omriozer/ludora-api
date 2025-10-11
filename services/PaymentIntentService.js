@@ -1,4 +1,4 @@
-import { fn, col, literal } from 'sequelize';
+import { Op, fn, col, literal } from 'sequelize';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
 import PaymentService from './PaymentService.js';
@@ -34,7 +34,7 @@ class PaymentIntentService {
         where: {
           payment_status: ['pending', 'in_progress'],
           created_at: {
-            [this.models.Sequelize.Op.gt]: twoMinutesAgo
+            [Op.gt]: twoMinutesAgo
           }
         },
         include: [{
@@ -51,7 +51,7 @@ class PaymentIntentService {
           buyer_user_id: userId,
           payment_status: 'cart',
           created_at: {
-            [this.models.Sequelize.Op.gt]: twoMinutesAgo
+            [Op.gt]: twoMinutesAgo
           }
         },
         order: [['created_at', 'DESC']]
