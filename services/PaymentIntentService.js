@@ -225,10 +225,10 @@ class PaymentIntentService {
       console.log(`🔗 PaymentIntentService: Purchase linking result - affected rows: ${updateResult[0]}`);
 
       // Verify linking was successful
-      const linkedPurchases = await this.models.Purchase.findAll({
+      const verifiedLinkedPurchases = await this.models.Purchase.findAll({
         where: { transaction_id: transactionId }
       });
-      console.log(`✅ PaymentIntentService: Verified ${linkedPurchases.length} purchases are linked to transaction ${transactionId}`);
+      console.log(`✅ PaymentIntentService: Verified ${verifiedLinkedPurchases.length} purchases are linked to transaction ${transactionId}`);
 
       // 5. Call PayPlus API via existing PaymentService
       console.log('🔗 PaymentIntentService: Calling PayPlus API for transaction:', transactionId);
