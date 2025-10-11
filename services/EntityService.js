@@ -835,25 +835,32 @@ class EntityService {
     }
   }
 
-  // Create Purchase with duplicate prevention
+  // Create Purchase with intelligent duplicate prevention
   async createPurchaseWithDuplicateCheck(data) {
     try {
       const PurchaseModel = this.getModel('purchase');
 
-      // Check if user already has a pending purchase for the same product
-      if (data.buyer_user_id && data.purchasable_type && data.purchasable_id && data.payment_status === 'pending') {
-        const existingPurchase = await PurchaseModel.findOne({
+      // Only prevent rapid duplicate clicks (within last 30 seconds) for cart status
+      // Allow multiple legitimate purchases of the same product
+      if (data.buyer_user_id && data.purchasable_type && data.purchasable_id && data.payment_status === 'cart') {
+        const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+
+        const recentDuplicate = await PurchaseModel.findOne({
           where: {
             buyer_user_id: data.buyer_user_id,
             purchasable_type: data.purchasable_type,
             purchasable_id: data.purchasable_id,
-            payment_status: 'pending'
-          }
+            payment_status: 'cart',
+            created_at: {
+              [Op.gt]: thirtySecondsAgo
+            }
+          },
+          order: [['created_at', 'DESC']]
         });
 
-        if (existingPurchase) {
-          console.log('Found existing pending purchase for same product:', existingPurchase.id);
-          return existingPurchase;
+        if (recentDuplicate) {
+          console.log('🚫 Prevented rapid duplicate purchase (within 30s):', recentDuplicate.id);
+          return recentDuplicate;
         }
       }
 
@@ -870,7 +877,7 @@ class EntityService {
       };
 
       const purchase = await PurchaseModel.create(purchaseData);
-      console.log('Created new purchase:', purchase.id);
+      console.log('✅ Created new purchase:', purchase.id);
       return purchase;
 
     } catch (error) {
