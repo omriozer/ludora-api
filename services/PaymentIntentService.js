@@ -26,84 +26,87 @@ class PaymentIntentService {
     try {
       console.log('🎯 PaymentIntentService: Creating payment intent for user:', userId);
 
-      // 1. Check for recent pending transactions to prevent race condition
+      // 1. ROBUST race condition prevention - check for user's cart purchases that might be in payment
       const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+      const cartItemIds = cartItems.map(item => item.id);
 
-      // First, check for any recent pending transactions (without requiring linked purchases)
-      const existingTransaction = await this.models.Transaction.findOne({
-        where: {
-          payment_status: ['pending', 'in_progress'],
-          created_at: {
-            [Op.gt]: twoMinutesAgo
-          }
-        },
-        include: [{
-          model: this.models.Purchase,
-          as: 'purchases',
-          required: false // LEFT JOIN instead of INNER JOIN
-        }],
-        order: [['created_at', 'DESC']]
-      });
+      console.log(`🔍 PaymentIntentService: Race condition check for user ${userId} with cart items: ${cartItemIds.join(', ')}`);
 
-      // Also check for cart purchases that might belong to this user
+      // Get the actual cart purchases for this user that match the cart items being paid for
       const cartPurchases = await this.models.Purchase.findAll({
         where: {
+          id: cartItemIds,
           buyer_user_id: userId,
-          payment_status: 'cart',
-          created_at: {
-            [Op.gt]: twoMinutesAgo
-          }
+          payment_status: 'cart'
         },
         order: [['created_at', 'DESC']]
       });
 
-      console.log(`🔍 PaymentIntentService: Race condition check - found ${existingTransaction ? 1 : 0} recent transactions, ${cartPurchases.length} cart purchases for user ${userId}`);
+      console.log(`🛒 PaymentIntentService: Found ${cartPurchases.length} cart purchases for the requested items`);
 
-      if (existingTransaction) {
-        console.log(`⚠️ PaymentIntentService: Found existing recent transaction ${existingTransaction.id}, status: ${existingTransaction.payment_status}, has payment_url: ${!!existingTransaction.payment_url}, linked purchases: ${existingTransaction.purchases?.length || 0}`);
+      if (cartPurchases.length !== cartItems.length) {
+        console.error(`❌ PaymentIntentService: Cart validation failed - expected ${cartItems.length} purchases, found ${cartPurchases.length}`);
+        throw new Error('Some cart items are invalid or not owned by user');
+      }
 
-        // If existing transaction has a payment URL, reuse it
-        if (existingTransaction.payment_url) {
-          // Check if we need to link cart purchases to this transaction
-          const unlinkedCartPurchases = cartPurchases.filter(p => !p.transaction_id);
-          if (unlinkedCartPurchases.length > 0) {
-            console.log(`🔗 PaymentIntentService: Linking ${unlinkedCartPurchases.length} unlinked cart purchases to existing transaction ${existingTransaction.id}`);
-            await this.models.Purchase.update(
-              { transaction_id: existingTransaction.id },
-              { where: { id: unlinkedCartPurchases.map(p => p.id) } }
-            );
-          }
+      // Check if any of these purchases are already linked to a transaction
+      const linkedPurchases = cartPurchases.filter(p => p.transaction_id);
+      if (linkedPurchases.length > 0) {
+        console.log(`🔗 PaymentIntentService: Found ${linkedPurchases.length} purchases already linked to transactions`);
 
-          return {
-            success: true,
-            transactionId: existingTransaction.id,
-            paymentUrl: existingTransaction.payment_url,
-            totalAmount: existingTransaction.total_amount,
-            status: existingTransaction.payment_status,
-            purchaseCount: (existingTransaction.purchases?.length || 0) + unlinkedCartPurchases.length,
-            expiresAt: existingTransaction.expires_at,
-            reused: true
-          };
+        // Check if all linked purchases point to the same transaction
+        const transactionIds = [...new Set(linkedPurchases.map(p => p.transaction_id))];
+        if (transactionIds.length > 1) {
+          console.error(`❌ PaymentIntentService: Cart purchases linked to multiple transactions: ${transactionIds.join(', ')}`);
+          throw new Error('Cart purchases are linked to multiple different transactions - data inconsistency');
         }
 
-        // If existing transaction exists but no payment URL, we'll complete the process for it
-        // Check if cart items match what we expect
-        const cartItemIds = cartItems.map(item => item.id);
-        const matchingCartPurchases = cartPurchases.filter(p => cartItemIds.includes(p.id));
+        // Check if there's an existing transaction with these purchases
+        const existingTransactionId = transactionIds[0];
+        const existingTransaction = await this.models.Transaction.findByPk(existingTransactionId);
 
-        if (matchingCartPurchases.length === cartItems.length) {
-          console.log(`🔄 PaymentIntentService: Reusing existing transaction ${existingTransaction.id} and completing payment creation process`);
+        if (existingTransaction && ['pending', 'in_progress'].includes(existingTransaction.payment_status)) {
+          console.log(`⚠️ PaymentIntentService: Found existing transaction ${existingTransaction.id} with ${linkedPurchases.length}/${cartPurchases.length} linked purchases, reusing it`);
 
-          // Link cart purchases to existing transaction if not already linked
-          const unlinkedPurchases = matchingCartPurchases.filter(p => !p.transaction_id);
+          // Ensure ALL cart purchases are linked to this transaction (fix partial linking)
+          const unlinkedPurchases = cartPurchases.filter(p => !p.transaction_id);
           if (unlinkedPurchases.length > 0) {
+            console.log(`🔗 PaymentIntentService: Linking ${unlinkedPurchases.length} additional purchases to existing transaction ${existingTransaction.id}`);
             await this.models.Purchase.update(
               { transaction_id: existingTransaction.id },
               { where: { id: unlinkedPurchases.map(p => p.id) } }
             );
           }
 
-          // Continue with payment URL creation using existing transaction
+          // If transaction has payment URL, return it immediately
+          if (existingTransaction.payment_url) {
+            console.log(`🔄 PaymentIntentService: Existing transaction ${existingTransaction.id} already has payment URL, returning it`);
+            return {
+              success: true,
+              transactionId: existingTransaction.id,
+              paymentUrl: existingTransaction.payment_url,
+              totalAmount: existingTransaction.total_amount,
+              status: existingTransaction.payment_status,
+              purchaseCount: cartPurchases.length, // Use full cart count, not just linked
+              expiresAt: existingTransaction.expires_at,
+              reused: true
+            };
+          }
+
+          // Transaction exists but no payment URL - complete the payment creation
+          console.log(`🔄 PaymentIntentService: Completing payment creation for existing transaction ${existingTransaction.id}`);
+
+          // Ensure ALL cart purchases are linked to this transaction
+          const unlinkedPurchases = cartPurchases.filter(p => !p.transaction_id);
+          if (unlinkedPurchases.length > 0) {
+            console.log(`🔗 PaymentIntentService: Linking ${unlinkedPurchases.length} additional purchases to transaction ${existingTransaction.id}`);
+            await this.models.Purchase.update(
+              { transaction_id: existingTransaction.id },
+              { where: { id: unlinkedPurchases.map(p => p.id) } }
+            );
+          }
+
+          // Calculate total amount and create payment URL
           const { products, totalAmount } = await this._validateCartAndCreatePurchases(cartItems, userId, appliedCoupons);
 
           const baseReturnUrl = `${frontendOrigin || 'https://ludora.app'}/payment-result`;
@@ -115,7 +118,7 @@ class PaymentIntentService {
             : 'https://api.ludora.app/api/webhooks/payplus';
 
           const paymentPageUrl = await this.paymentService.createPayplusPaymentLink({
-            purchases: matchingCartPurchases,
+            purchases: cartPurchases,
             products,
             totalAmount,
             returnUrl,
@@ -126,7 +129,7 @@ class PaymentIntentService {
             sessionId: existingTransaction.id
           });
 
-          // Update existing transaction with payment URL
+          // Update transaction with payment URL
           await existingTransaction.updateStatus('in_progress', {
             payment_page_url: paymentPageUrl,
             payplus_integration_success: true
@@ -146,12 +149,41 @@ class PaymentIntentService {
             paymentUrl: paymentPageUrl,
             totalAmount,
             status: 'in_progress',
-            purchaseCount: matchingCartPurchases.length,
+            purchaseCount: cartPurchases.length,
             expiresAt: existingTransaction.expires_at,
             reused: true
           };
+        } else if (existingTransaction && ['failed', 'cancelled', 'expired'].includes(existingTransaction.payment_status)) {
+          console.log(`🔄 PaymentIntentService: Found failed/expired transaction ${existingTransaction.id}, resetting purchases to cart status`);
+
+          // Reset all linked purchases back to cart status for retry
+          await this.models.Purchase.update(
+            {
+              payment_status: 'cart',
+              transaction_id: null,
+              updated_at: new Date()
+            },
+            { where: { id: cartPurchases.map(p => p.id) } }
+          );
+
+          console.log(`✅ PaymentIntentService: Reset ${cartPurchases.length} purchases to cart status, proceeding to create new transaction`);
+        } else if (existingTransaction) {
+          console.log(`⚠️ PaymentIntentService: Found transaction ${existingTransaction.id} in unexpected status: ${existingTransaction.payment_status}`);
+        } else {
+          console.log(`❌ PaymentIntentService: Transaction ${existingTransactionId} not found, resetting purchase links`);
+
+          // Reset purchase links if transaction doesn't exist
+          await this.models.Purchase.update(
+            {
+              transaction_id: null,
+              updated_at: new Date()
+            },
+            { where: { id: cartPurchases.map(p => p.id) } }
+          );
         }
       }
+
+      console.log(`✅ PaymentIntentService: No existing valid transaction found, proceeding to create new one`);
 
       // 2. Validate cart items and get product details
       const { purchases, products, totalAmount, originalAmount, totalDiscount } =
@@ -381,21 +413,25 @@ class PaymentIntentService {
     let originalAmount = 0;
 
     if (Array.isArray(cartItems) && cartItems.length > 0) {
-      // Get existing purchases by IDs
+      // Get existing purchases by IDs - CONSISTENT with race condition check
       const purchaseIds = cartItems.map(item => item.id);
       console.log(`🛒 PaymentIntentService: Validating ${cartItems.length} cart items for user ${userId}:`, purchaseIds);
 
       purchases = await this.models.Purchase.findAll({
-        where: { id: purchaseIds, buyer_user_id: userId }
+        where: {
+          id: purchaseIds,
+          buyer_user_id: userId,
+          payment_status: 'cart' // MUST be cart status - consistent with race condition check
+        }
       });
 
-      console.log(`🛒 PaymentIntentService: Found ${purchases.length} valid purchases owned by user`);
+      console.log(`🛒 PaymentIntentService: Found ${purchases.length} valid cart purchases owned by user`);
 
       if (purchases.length !== cartItems.length) {
-        console.error(`❌ PaymentIntentService: Cart validation failed - expected ${cartItems.length} purchases, found ${purchases.length}`);
+        console.error(`❌ PaymentIntentService: Cart validation failed - expected ${cartItems.length} cart purchases, found ${purchases.length}`);
         console.error(`❌ PaymentIntentService: Requested purchase IDs:`, purchaseIds);
-        console.error(`❌ PaymentIntentService: Found purchase IDs:`, purchases.map(p => p.id));
-        throw new Error('Some cart items are invalid or not owned by user');
+        console.error(`❌ PaymentIntentService: Found cart purchase IDs:`, purchases.map(p => p.id));
+        throw new Error('Some cart items are invalid, not owned by user, or not in cart status');
       }
 
       // Calculate amounts

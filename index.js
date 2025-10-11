@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 // Load environment-specific .env file FIRST before any other imports
 const env = process.env.ENVIRONMENT || 'production';
 const envFile = env === 'production' ? '.env' : `.env.${env}`;
+console.log(`===starting api===`);
 console.log(`🔧 Loading environment from: ${envFile}`);
 const result = dotenv.config({ path: envFile });
 if (result.error) {
@@ -64,8 +65,6 @@ import adminRoutes from './routes/admin.js';
 import paymentRoutes from './routes/payments.js';
 
 const app = express();
-
-console.log(`🚀 Starting Ludora API Server in ${env} mode...`);
 
 // 1. HTTPS Enforcement (must be first in production)
 if (process.env.ENVIRONMENT === 'production') {
