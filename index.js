@@ -2,7 +2,7 @@
 import dotenv from 'dotenv';
 
 // Load environment-specific .env file FIRST before any other imports
-const env = process.env.ENVIRONMENT || 'development';
+const env = process.env.ENVIRONMENT || 'production';
 const envFile = env === 'production' ? '.env' : `.env.${env}`;
 console.log(`🔧 Loading environment from: ${envFile}`);
 const result = dotenv.config({ path: envFile });
