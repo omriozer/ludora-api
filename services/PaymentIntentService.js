@@ -96,13 +96,13 @@ class PaymentIntentService {
           // Transaction exists but no payment URL - complete the payment creation
           console.log(`🔄 PaymentIntentService: Completing payment creation for existing transaction ${existingTransaction.id}`);
 
-          // Ensure ALL cart purchases are linked to this transaction
-          const unlinkedPurchases = cartPurchases.filter(p => !p.transaction_id);
-          if (unlinkedPurchases.length > 0) {
-            console.log(`🔗 PaymentIntentService: Linking ${unlinkedPurchases.length} additional purchases to transaction ${existingTransaction.id}`);
+          // Ensure ALL cart purchases are linked to this transaction (completion phase)
+          const additionalUnlinkedPurchases = cartPurchases.filter(p => !p.transaction_id);
+          if (additionalUnlinkedPurchases.length > 0) {
+            console.log(`🔗 PaymentIntentService: Linking ${additionalUnlinkedPurchases.length} additional purchases to transaction ${existingTransaction.id}`);
             await this.models.Purchase.update(
               { transaction_id: existingTransaction.id },
-              { where: { id: unlinkedPurchases.map(p => p.id) } }
+              { where: { id: additionalUnlinkedPurchases.map(p => p.id) } }
             );
           }
 
