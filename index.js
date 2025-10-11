@@ -195,9 +195,9 @@ async function startServer() {
 
     // Start background services
     try {
-      // Import and start payment session cleanup service
-      const PaymentSessionCleanupService = await import('./services/PaymentSessionCleanupService.js');
-      PaymentSessionCleanupService.default.start();
+      // Import and start transaction cleanup service
+      const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
+      TransactionCleanupService.default.start();
     } catch (error) {
       console.error('⚠️  Failed to start background services:', error);
       // Don't fail server startup if background services fail
@@ -222,8 +222,8 @@ process.on('SIGTERM', async () => {
 
   // Stop background services
   try {
-    const PaymentSessionCleanupService = await import('./services/PaymentSessionCleanupService.js');
-    PaymentSessionCleanupService.default.stop();
+    const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
+    TransactionCleanupService.default.stop();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }
@@ -238,8 +238,8 @@ process.on('SIGINT', async () => {
 
   // Stop background services
   try {
-    const PaymentSessionCleanupService = await import('./services/PaymentSessionCleanupService.js');
-    PaymentSessionCleanupService.default.stop();
+    const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
+    TransactionCleanupService.default.stop();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }

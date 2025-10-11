@@ -990,7 +990,7 @@ class PaymentService {
                   JSON.stringify({
                     reset_at: new Date().toISOString(),
                     original_session_id: session.id,
-                    reset_reason: 'payment_session_cleanup'
+                    reset_reason: 'transaction_cleanup'
                   })
                 ),
                 updated_at: new Date()
