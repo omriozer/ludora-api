@@ -6,6 +6,7 @@ import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 import { extractCopyrightText, updateFooterTextContent } from '../utils/footerSettingsHelper.js';
+import { STUDY_SUBJECTS, AUDIANCE_TARGETS } from '../constants/info.js';
 
 const router = express.Router();
 
@@ -227,7 +228,9 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
         return {
           ...settingData,
           copyright_footer_text, // Backwards compatibility
-          file_types_config: getFileTypesForFrontend()
+          file_types_config: getFileTypesForFrontend(),
+          study_subjects: STUDY_SUBJECTS,
+          audiance_targets: AUDIANCE_TARGETS
         };
       });
       return res.json(enhancedResults);

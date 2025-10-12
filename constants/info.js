@@ -47,3 +47,27 @@ export const FILES_AUDIANCE_TARGETS = [
     ...AUDIANCE_TARGETS_GROUPS.school_staff,
     ...AUDIANCE_TARGETS_GROUPS.parents,
 ];
+
+export const WORKSHOPS_AUDIANCE_TARGETS = [
+    ...AUDIANCE_TARGETS_GROUPS.teachers,
+    ...AUDIANCE_TARGETS_GROUPS.school_staff,
+    ...AUDIANCE_TARGETS_GROUPS.parents,
+];
+
+export const COURSES_AUDIANCE_TARGETS = [
+    ...AUDIANCE_TARGETS_GROUPS.student_ages,
+    ...AUDIANCE_TARGETS_GROUPS.teachers,
+    ...AUDIANCE_TARGETS_GROUPS.school_staff,
+];
+
+export const TOOLS_AUDIANCE_TARGETS = [
+    ...AUDIANCE_TARGETS_GROUPS.teachers,
+    ...AUDIANCE_TARGETS_GROUPS.school_staff,
+];
+
+export const AUDIANCE_TARGETS = {
+    file: FILES_AUDIANCE_TARGETS,
+    workshop: WORKSHOPS_AUDIANCE_TARGETS,
+    course: COURSES_AUDIANCE_TARGETS,
+    tool: TOOLS_AUDIANCE_TARGETS
+};
