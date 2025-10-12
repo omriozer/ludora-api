@@ -499,6 +499,12 @@ class PaymentService {
       }
 
       // Store PayPlus transaction reference
+      console.log(`🔍 PAYPLUS DEBUG: Checking transaction storage. purchases[0]:`, {
+        id: purchases[0]?.id,
+        transaction_id: purchases[0]?.transaction_id,
+        has_transaction_id: !!purchases[0]?.transaction_id
+      });
+
       if (purchases[0].transaction_id) {
         // Transaction-based payment (PaymentIntent flow): update Transaction record with PayPlus data
         const transaction = await this.models.Transaction.findByPk(purchases[0].transaction_id);

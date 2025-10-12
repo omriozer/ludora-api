@@ -117,6 +117,17 @@ class PaymentIntentService {
             ? 'https://api.ludora.app/api/webhooks/payplus'
             : 'https://api.ludora.app/api/webhooks/payplus';
 
+          // Debug: Check cartPurchases before calling PaymentService
+          console.log(`🔍 EXISTING TRANSACTION DEBUG: Calling PaymentService with cartPurchases:`, {
+            purchaseCount: cartPurchases.length,
+            purchases: cartPurchases.map(p => ({
+              id: p.id,
+              transaction_id: p.transaction_id,
+              payment_status: p.payment_status,
+              buyer_user_id: p.buyer_user_id
+            }))
+          });
+
           const paymentPageUrl = await this.paymentService.createPayplusPaymentLink({
             purchases: cartPurchases,
             products,
@@ -225,7 +236,7 @@ class PaymentIntentService {
 
       console.log(`🔗 PaymentIntentService: Purchase linking result - affected rows: ${updateResult[0]}`);
 
-      // Verify linking was successful
+      // Verify linking was successful and REFRESH purchases array with transaction_id
       const verifiedLinkedPurchases = await this.models.Purchase.findAll({
         where: { transaction_id: transactionId }
       });
@@ -237,6 +248,10 @@ class PaymentIntentService {
         verifiedLinkedPurchases.forEach((purchase, index) => {
           console.log(`  ${index + 1}. ID: ${purchase.id}, Status: ${purchase.payment_status}, User: ${purchase.buyer_user_id}, Amount: ${purchase.payment_amount}, Type: ${purchase.purchasable_type}`);
         });
+
+        // CRITICAL FIX: Update purchases array with linked purchases (includes transaction_id)
+        purchases = verifiedLinkedPurchases;
+        console.log(`🔧 CREATION DEBUG: Updated purchases array with linked purchases (transaction_id populated)`);
       } else {
         console.error(`❌ CREATION DEBUG: No purchases were successfully linked to transaction ${transactionId}`);
       }
@@ -251,6 +266,17 @@ class PaymentIntentService {
       const callbackUrl = process.env.ENVIRONMENT === 'production'
         ? 'https://api.ludora.app/api/webhooks/payplus'
         : 'https://api.ludora.app/api/webhooks/payplus';
+
+      // Debug: Check purchases before calling PaymentService
+      console.log(`🔍 PAYMENTINTENT DEBUG: Calling PaymentService with purchases:`, {
+        purchaseCount: purchases.length,
+        purchases: purchases.map(p => ({
+          id: p.id,
+          transaction_id: p.transaction_id,
+          payment_status: p.payment_status,
+          buyer_user_id: p.buyer_user_id
+        }))
+      });
 
       const paymentPageUrl = await this.paymentService.createPayplusPaymentLink({
         purchases,
