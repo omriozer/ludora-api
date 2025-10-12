@@ -191,6 +191,7 @@ class PaymentIntentService {
 
       // 3. Create Transaction (PaymentIntent) - starts in 'pending' state
       const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      console.log(`🔧 CREATION DEBUG: Creating transaction with ID: ${transactionId}`);
       const transaction = await this.models.Transaction.create({
         id: transactionId,
         total_amount: totalAmount,

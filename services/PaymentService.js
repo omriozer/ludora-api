@@ -504,7 +504,13 @@ class PaymentService {
         const transaction = await this.models.Transaction.findByPk(purchases[0].transaction_id);
         if (transaction) {
           console.log(`🔗 PAYPLUS DEBUG: Storing payplus_page_uid in transaction ${transaction.id}: ${data.data.page_request_uid}`);
-          await transaction.update({
+          console.log(`🔗 PAYPLUS DEBUG: Transaction before update:`, {
+            id: transaction.id,
+            current_payplus_page_uid: transaction.payplus_page_uid,
+            payment_status: transaction.payment_status
+          });
+
+          const updateResult = await transaction.update({
             payplus_page_uid: data.data.page_request_uid,
             payplus_response: {
               ...transaction.payplus_response, // Preserve existing coupon_info
@@ -516,10 +522,21 @@ class PaymentService {
             },
             updated_at: new Date()
           });
+
+          console.log(`✅ PAYPLUS DEBUG: Transaction updated successfully:`, {
+            id: transaction.id,
+            new_payplus_page_uid: updateResult.payplus_page_uid,
+            update_affected_rows: updateResult ? 1 : 0
+          });
+        } else {
+          console.error(`❌ PAYPLUS DEBUG: Transaction not found for ID: ${purchases[0].transaction_id}`);
         }
 
         // Also update purchases with basic PayPlus reference
-        await this.models.Purchase.update(
+        console.log(`🔗 PAYPLUS DEBUG: Updating ${purchases.length} purchases with PayPlus UID: ${data.data.page_request_uid}`);
+        console.log(`🔗 PAYPLUS DEBUG: Purchase transaction_ids:`, purchases.map(p => p.transaction_id));
+
+        const purchaseUpdateResult = await this.models.Purchase.update(
           {
             metadata: {
               ...purchases[0].metadata,
@@ -531,6 +548,17 @@ class PaymentService {
           },
           { where: { transaction_id: purchases[0].transaction_id } }
         );
+
+        console.log(`✅ PAYPLUS DEBUG: Updated ${purchaseUpdateResult[0]} purchases with PayPlus metadata`);
+
+        // Verify purchases were updated
+        const verifyPurchases = await this.models.Purchase.findAll({
+          where: { transaction_id: purchases[0].transaction_id }
+        });
+        console.log(`🔍 PAYPLUS DEBUG: Verified ${verifyPurchases.length} purchases have PayPlus UID in metadata`);
+        verifyPurchases.forEach((purchase, index) => {
+          console.log(`  ${index + 1}. Purchase ${purchase.id}: metadata.payplus_page_request_uid = ${purchase.metadata?.payplus_page_request_uid}`);
+        });
       } else {
         // Legacy single-item payment (no transaction_id): update Purchase record directly
         const purchase = purchases[0];
