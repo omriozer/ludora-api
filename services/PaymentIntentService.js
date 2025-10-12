@@ -414,8 +414,8 @@ class PaymentIntentService {
             metadata: fn('jsonb_set',
               col('metadata'),
               literal(`'{payment_in_progress}'`),
-              literal('false'),
-              false
+              literal(`'false'`),
+              literal('true')
             )
           },
           { where: { transaction_id: transactionId } }
@@ -506,8 +506,8 @@ class PaymentIntentService {
             metadata: fn('jsonb_set',
               col('metadata'),
               literal(`'{payment_in_progress}'`),
-              literal('true'),
-              true
+              literal(`'true'`),
+              literal('true')
             )
           },
           {
