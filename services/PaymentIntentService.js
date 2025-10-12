@@ -109,7 +109,7 @@ class PaymentIntentService {
           // Calculate total amount and create payment URL
           const { products, totalAmount } = await this._validateCartAndCreatePurchases(cartItems, userId, appliedCoupons);
 
-          const baseReturnUrl = `${frontendOrigin || 'https://ludora.app'}/payment-result`;
+          const baseReturnUrl = `${frontendOrigin || 'https://ludora.app'}/payment-result-iframe`;
           const returnUrl = `${baseReturnUrl}?transactionId=${existingTransaction.id}`;
           const successUrl = `${returnUrl}&status=success`;
           const failureUrl = `${returnUrl}&status=failure`;
@@ -233,7 +233,7 @@ class PaymentIntentService {
       // 5. Call PayPlus API via existing PaymentService
       console.log('🔗 PaymentIntentService: Calling PayPlus API for transaction:', transactionId);
 
-      const baseReturnUrl = `${frontendOrigin || 'https://ludora.app'}/payment-result`;
+      const baseReturnUrl = `${frontendOrigin || 'https://ludora.app'}/payment-result-iframe`;
       const returnUrl = `${baseReturnUrl}?transactionId=${transactionId}`;
       const successUrl = `${returnUrl}&status=success`;
       const failureUrl = `${returnUrl}&status=failure`;
