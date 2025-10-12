@@ -197,8 +197,9 @@ class PaymentIntentService {
       console.log(`✅ PaymentIntentService: No existing valid transaction found, proceeding to create new one`);
 
       // 2. Validate cart items and get product details
-      const { purchases, products, totalAmount, originalAmount, totalDiscount } =
-        await this._validateCartAndCreatePurchases(cartItems, userId, appliedCoupons);
+      const validationResult = await this._validateCartAndCreatePurchases(cartItems, userId, appliedCoupons);
+      const { products, totalAmount, originalAmount, totalDiscount } = validationResult;
+      let { purchases } = validationResult;
 
       // 3. Create Transaction (PaymentIntent) - starts in 'pending' state
       const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
