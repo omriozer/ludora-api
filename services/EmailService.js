@@ -273,14 +273,14 @@ class EmailService {
         {
           id: generateId(),
           name: 'Payment Confirmation',
-          subject: 'Payment Confirmation - Order #{{order_number}}',
+          subject: 'Payment Confirmation - Transaction #{{transaction_uid}}',
           html_content: `
             <h2>Payment Confirmed</h2>
             <p>Hi {{buyer_name}},</p>
             <p>Your payment of ${{amount}} has been successfully processed.</p>
             <p>Order Details:</p>
             <ul>
-              <li>Order Number: {{order_number}}</li>
+              <li>Transaction ID: {{transaction_uid}}</li>
               <li>Product: {{product_title}}</li>
               <li>Amount: ${{amount}}</li>
             </ul>

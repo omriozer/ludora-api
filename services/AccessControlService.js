@@ -122,8 +122,7 @@ class AccessControlService {
       const {
         accessDays = null,
         isLifetimeAccess = false,
-        price = 0,
-        orderId = null
+        price = 0
       } = options;
 
       // Calculate access expiration
@@ -143,7 +142,6 @@ class AccessControlService {
         payment_amount: price,
         original_price: price,
         access_expires_at: accessExpiresAt,
-        order_number: orderId,
         metadata: options.metadata || {}
       };
 

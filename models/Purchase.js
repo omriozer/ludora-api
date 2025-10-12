@@ -18,10 +18,6 @@ export default function(sequelize) {
         onUpdate: 'CASCADE'
       }
     },
-    order_number: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-    },
     // Polymorphic product reference (clean)
     purchasable_type: {
       type: DataTypes.STRING(50),
@@ -130,10 +126,6 @@ export default function(sequelize) {
       {
         fields: ['access_expires_at'],
         name: 'idx_purchase_access_expires'
-      },
-      {
-        fields: ['order_number'],
-        name: 'idx_purchase_order_number'
       },
       {
         fields: ['created_at'],
