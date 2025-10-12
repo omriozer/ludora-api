@@ -228,7 +228,17 @@ class PaymentIntentService {
       const verifiedLinkedPurchases = await this.models.Purchase.findAll({
         where: { transaction_id: transactionId }
       });
-      console.log(`✅ PaymentIntentService: Verified ${verifiedLinkedPurchases.length} purchases are linked to transaction ${transactionId}`);
+      console.log(`✅ CREATION DEBUG: Verified ${verifiedLinkedPurchases.length} purchases are linked to transaction ${transactionId}`);
+
+      // Debug: Log details of linked purchases
+      if (verifiedLinkedPurchases.length > 0) {
+        console.log(`🔍 CREATION DEBUG: Linked purchase details:`);
+        verifiedLinkedPurchases.forEach((purchase, index) => {
+          console.log(`  ${index + 1}. ID: ${purchase.id}, Status: ${purchase.payment_status}, User: ${purchase.buyer_user_id}, Amount: ${purchase.payment_amount}, Type: ${purchase.purchasable_type}`);
+        });
+      } else {
+        console.error(`❌ CREATION DEBUG: No purchases were successfully linked to transaction ${transactionId}`);
+      }
 
       // 5. Call PayPlus API via existing PaymentService
       console.log('🔗 PaymentIntentService: Calling PayPlus API for transaction:', transactionId);
@@ -356,8 +366,18 @@ class PaymentIntentService {
         const purchaseStatus = this._mapTransactionStatusToPurchaseStatus(newStatus);
         const purchaseIds = transaction.purchases.map(p => p.id);
 
-        console.log(`🔄 PaymentIntentService: Updating ${transaction.purchases.length} purchases to status: ${purchaseStatus}`);
-        console.log(`🔄 PaymentIntentService: Purchase IDs to update:`, purchaseIds);
+        console.log(`🔄 WEBHOOK DEBUG: PaymentIntentService updating ${transaction.purchases.length} purchases to status: ${purchaseStatus}`);
+        console.log(`🔄 WEBHOOK DEBUG: Purchase IDs to update:`, purchaseIds);
+        console.log(`🔄 WEBHOOK DEBUG: Transaction ID for WHERE clause: ${transactionId}`);
+
+        // Debug: Check current status of purchases before update
+        const currentPurchases = await this.models.Purchase.findAll({
+          where: { transaction_id: transactionId }
+        });
+        console.log(`🔍 WEBHOOK DEBUG: Found ${currentPurchases.length} purchases currently linked to transaction ${transactionId}`);
+        currentPurchases.forEach((purchase, index) => {
+          console.log(`  ${index + 1}. ID: ${purchase.id}, Current Status: ${purchase.payment_status}, Transaction ID: ${purchase.transaction_id}`);
+        });
 
         const updateResult = await this.models.Purchase.update(
           {
@@ -373,11 +393,20 @@ class PaymentIntentService {
           { where: { transaction_id: transactionId } }
         );
 
-        console.log(`✅ Purchase update result - affected rows: ${updateResult[0]}, expected: ${transaction.purchases.length}`);
+        console.log(`✅ WEBHOOK DEBUG: Purchase update result - affected rows: ${updateResult[0]}, expected: ${transaction.purchases.length}`);
 
         if (updateResult[0] !== transaction.purchases.length) {
-          console.warn(`⚠️ Purchase update mismatch - updated ${updateResult[0]} but expected ${transaction.purchases.length}`);
+          console.warn(`⚠️ WEBHOOK DEBUG: Purchase update mismatch - updated ${updateResult[0]} but expected ${transaction.purchases.length}`);
         }
+
+        // Debug: Verify the actual status after update
+        const updatedPurchases = await this.models.Purchase.findAll({
+          where: { transaction_id: transactionId }
+        });
+        console.log(`🔍 WEBHOOK DEBUG: After update, found ${updatedPurchases.length} purchases with status:`);
+        updatedPurchases.forEach((purchase, index) => {
+          console.log(`  ${index + 1}. ID: ${purchase.id}, New Status: ${purchase.payment_status}, Transaction ID: ${purchase.transaction_id}`);
+        });
       }
 
       // Handle business logic for completed payments

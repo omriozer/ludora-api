@@ -503,6 +503,7 @@ class PaymentService {
         // Transaction-based payment (PaymentIntent flow): update Transaction record with PayPlus data
         const transaction = await this.models.Transaction.findByPk(purchases[0].transaction_id);
         if (transaction) {
+          console.log(`🔗 PAYPLUS DEBUG: Storing payplus_page_uid in transaction ${transaction.id}: ${data.data.page_request_uid}`);
           await transaction.update({
             payplus_page_uid: data.data.page_request_uid,
             payplus_response: {

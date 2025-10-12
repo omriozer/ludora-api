@@ -228,6 +228,8 @@ router.post('/payplus',
 
       // Transaction-centric lookup (PaymentIntent architecture)
       // 1. First, try to find a Transaction record (primary PaymentIntent flow)
+      console.log(`🔍 WEBHOOK DEBUG: Looking for transaction with payplus_page_uid: ${finalPageRequestUid}`);
+
       let transaction = await models.Transaction.findOne({
         where: {
           payplus_page_uid: finalPageRequestUid
@@ -238,6 +240,13 @@ router.post('/payplus',
         }]
       });
 
+      console.log(`🔍 WEBHOOK DEBUG: Transaction found:`, transaction ? {
+        id: transaction.id,
+        status: transaction.payment_status,
+        payplus_page_uid: transaction.payplus_page_uid,
+        includedPurchasesCount: transaction.purchases ? transaction.purchases.length : 0
+      } : 'null');
+
       let purchases = [];
       let isTransactionPayment = false;
       let paymentIntentService = null;
@@ -247,7 +256,17 @@ router.post('/payplus',
         isTransactionPayment = true;
         purchases = transaction.purchases || [];
         paymentIntentService = new PaymentIntentService();
-        console.log(`✅ Found PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
+        console.log(`✅ WEBHOOK DEBUG: Found PaymentIntent transaction ${transaction.id} with ${purchases.length} purchases`);
+
+        // Debug: Log all purchase details
+        if (purchases.length > 0) {
+          console.log(`🔍 WEBHOOK DEBUG: Purchase details:`);
+          purchases.forEach((purchase, index) => {
+            console.log(`  ${index + 1}. Purchase ID: ${purchase.id}, Status: ${purchase.payment_status}, User: ${purchase.buyer_user_id}, Amount: ${purchase.payment_amount}, Type: ${purchase.purchasable_type}, EntityID: ${purchase.purchasable_id}`);
+          });
+        } else {
+          console.log(`⚠️ WEBHOOK DEBUG: No purchases found in transaction.purchases array`);
+        }
 
         // If transaction exists but has no linked purchases, debug why
         if (purchases.length === 0) {
