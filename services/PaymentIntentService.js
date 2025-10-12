@@ -401,6 +401,91 @@ class PaymentIntentService {
   }
 
   /**
+   * Mark payment as in progress when frontend confirms payment submission
+   * Moves purchases from 'cart' to 'pending' status for immediate user feedback
+   */
+  async markPaymentInProgress(transactionId) {
+    try {
+      console.log(`✋ PaymentIntentService: Marking payment in progress for transaction: ${transactionId}`);
+
+      const transaction = await this.models.Transaction.findByPk(transactionId, {
+        include: [{
+          model: this.models.Purchase,
+          as: 'purchases'
+        }]
+      });
+
+      if (!transaction) {
+        throw new Error(`Transaction ${transactionId} not found`);
+      }
+
+      // Only allow this operation for transactions in 'pending' or 'in_progress' status
+      if (!['pending', 'in_progress'].includes(transaction.payment_status)) {
+        throw new Error(`Cannot mark transaction ${transactionId} as in progress - current status: ${transaction.payment_status}`);
+      }
+
+      // Update transaction metadata to indicate frontend confirmation received
+      await transaction.update({
+        payplus_response: {
+          ...transaction.payplus_response,
+          frontend_confirmation_received: true,
+          frontend_confirmation_at: new Date().toISOString()
+        },
+        updated_at: new Date()
+      });
+
+      // Move purchases from 'cart' to 'pending' status for immediate user feedback
+      const cartPurchaseIds = transaction.purchases
+        ?.filter(p => p.payment_status === 'cart')
+        .map(p => p.id) || [];
+
+      if (cartPurchaseIds.length > 0) {
+        console.log(`🔄 PaymentIntentService: Moving ${cartPurchaseIds.length} purchases from 'cart' to 'pending' status`);
+
+        const updateResult = await this.models.Purchase.update(
+          {
+            payment_status: 'pending',
+            updated_at: new Date(),
+            metadata: fn('jsonb_set',
+              col('metadata'),
+              literal(`'{payment_in_progress}'`),
+              literal('true'),
+              true
+            )
+          },
+          {
+            where: {
+              id: cartPurchaseIds,
+              transaction_id: transactionId
+            }
+          }
+        );
+
+        console.log(`✅ PaymentIntentService: Updated ${updateResult[0]} purchases to 'pending' status`);
+
+        if (updateResult[0] !== cartPurchaseIds.length) {
+          console.warn(`⚠️ Purchase update mismatch - updated ${updateResult[0]} but expected ${cartPurchaseIds.length}`);
+        }
+      } else {
+        console.log(`📋 PaymentIntentService: No cart purchases found to update for transaction ${transactionId}`);
+      }
+
+      console.log(`✅ PaymentIntentService: Payment marked as in progress for transaction ${transactionId}`);
+
+      return {
+        success: true,
+        transactionId,
+        updatedPurchases: cartPurchaseIds.length,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error(`❌ PaymentIntentService: Error marking payment in progress for ${transactionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Private helper methods
    */
 

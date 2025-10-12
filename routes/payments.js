@@ -193,6 +193,52 @@ router.post('/retry/:transactionId',
 );
 
 /**
+ * POST /api/payments/confirm/:transactionId
+ * Frontend confirms payment was submitted to PayPlus
+ */
+router.post('/confirm/:transactionId',
+  authenticateToken,
+  asyncHandler(async (req, res) => {
+    try {
+      const { transactionId } = req.params;
+
+      console.log('✋ Payment confirmation received for transaction:', transactionId);
+
+      const paymentIntentService = new PaymentIntentService();
+
+      // Mark payment as in progress (moves purchases from 'cart' to 'pending')
+      await paymentIntentService.markPaymentInProgress(transactionId);
+
+      console.log('✅ Payment marked as in progress for transaction:', transactionId);
+
+      res.json({
+        success: true,
+        message: 'Payment confirmation received',
+        transactionId,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('❌ Payment confirmation failed:', error);
+
+      if (error.message.includes('not found')) {
+        return res.status(404).json({
+          success: false,
+          error: 'Transaction not found',
+          code: 'TRANSACTION_NOT_FOUND'
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        code: 'PAYMENT_CONFIRMATION_FAILED'
+      });
+    }
+  })
+);
+
+/**
  * GET /api/payments/health
  * Health check endpoint for payment system
  */
@@ -204,7 +250,8 @@ router.get('/health', (req, res) => {
     endpoints: {
       start: 'POST /api/payments/start',
       status: 'GET /api/payments/status/:transactionId',
-      retry: 'POST /api/payments/retry/:transactionId'
+      retry: 'POST /api/payments/retry/:transactionId',
+      confirm: 'POST /api/payments/confirm/:transactionId'
     }
   });
 });

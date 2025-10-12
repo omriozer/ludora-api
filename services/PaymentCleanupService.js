@@ -6,95 +6,6 @@ import { Op } from 'sequelize';
  */
 class PaymentCleanupService {
   /**
-   * Clean up stale payment sessions that have been in progress for too long
-   * @param {number} maxMinutes - Maximum minutes to allow a payment to be in progress (default: 10)
-   * @returns {Promise<object>} Cleanup results
-   */
-  static async cleanupStalePaymentSessions(maxMinutes = 10) {
-    try {
-      console.log(`🧹 Starting cleanup of stale payment sessions older than ${maxMinutes} minutes...`);
-
-      const cutoffTime = new Date();
-      cutoffTime.setMinutes(cutoffTime.getMinutes() - maxMinutes);
-
-      // Find purchases with payment_in_progress flag that are older than cutoff time
-      const stalePurchases = await models.Purchase.findAll({
-        where: {
-          [Op.and]: [
-            {
-              metadata: {
-                payment_in_progress: true
-              }
-            },
-            {
-              metadata: {
-                payment_page_created_at: {
-                  [Op.lt]: cutoffTime.toISOString()
-                }
-              }
-            }
-          ]
-        }
-      });
-
-      let cleanedCount = 0;
-      const cleanedPurchases = [];
-
-      for (const purchase of stalePurchases) {
-        try {
-          // Reset payment_in_progress flag and add cleanup metadata
-          await models.Purchase.update(
-            {
-              metadata: {
-                ...purchase.metadata,
-                payment_in_progress: false,
-                payment_cleaned_up_at: new Date().toISOString(),
-                cleanup_reason: 'stale_payment_session'
-              },
-              updated_at: new Date()
-            },
-            { where: { id: purchase.id } }
-          );
-
-          cleanedCount++;
-          cleanedPurchases.push({
-            id: purchase.id,
-            userId: purchase.buyer_user_id,
-            productType: purchase.purchasable_type,
-            productId: purchase.purchasable_id,
-            paymentPageCreatedAt: purchase.metadata?.payment_page_created_at,
-            ageMinutes: Math.round((new Date() - new Date(purchase.metadata?.payment_page_created_at)) / (1000 * 60))
-          });
-
-          console.log(`✅ Cleaned up stale purchase ${purchase.id} (age: ${Math.round((new Date() - new Date(purchase.metadata?.payment_page_created_at)) / (1000 * 60))} minutes)`);
-        } catch (error) {
-          console.error(`❌ Failed to clean up purchase ${purchase.id}:`, error);
-        }
-      }
-
-      const result = {
-        success: true,
-        cleanedCount,
-        totalStaleFound: stalePurchases.length,
-        cutoffTime: cutoffTime.toISOString(),
-        maxMinutes,
-        cleanedPurchases
-      };
-
-      console.log(`🧹 Cleanup completed: ${cleanedCount}/${stalePurchases.length} stale payment sessions cleaned`);
-      return result;
-
-    } catch (error) {
-      console.error('❌ Error during payment cleanup:', error);
-      return {
-        success: false,
-        error: error.message,
-        cleanedCount: 0
-      };
-    }
-  }
-
-  /**
    * Clean up old cart items that have been abandoned for a long time
    * @param {number} maxHours - Maximum hours to keep cart items (default: 24)
    * @returns {Promise<object>} Cleanup results
@@ -194,12 +105,10 @@ class PaymentCleanupService {
 
     console.log('🧹 Starting full payment and cart cleanup...');
 
-    const stalePaymentResult = await this.cleanupStalePaymentSessions(stalePaymentMinutes);
     const abandonedCartResult = await this.cleanupAbandonedCartItems(abandonedCartHours);
 
     const result = {
-      success: stalePaymentResult.success && abandonedCartResult.success,
-      stalePayments: stalePaymentResult,
+      success: abandonedCartResult.success,
       abandonedCarts: abandonedCartResult,
       totalCleaned: (stalePaymentResult.cleanedCount || 0) + (abandonedCartResult.deletedCount || 0),
       timestamp: new Date().toISOString()
