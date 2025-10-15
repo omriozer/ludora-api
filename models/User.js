@@ -77,6 +77,12 @@ export default function(sequelize) {
       allowNull: false,
       defaultValue: true,
     },
+    dashboard_settings: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+      comment: 'User dashboard configuration with widgets and their settings'
+    },
   }, {
     tableName: 'user', // Match Base44 table name
     timestamps: false, // We handle timestamps manually

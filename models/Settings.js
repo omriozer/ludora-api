@@ -59,6 +59,7 @@ export default function(sequelize) {
     allow_content_creator_games: { type: DataTypes.BOOLEAN, allowNull: true },
     copyright_footer_text: { type: DataTypes.TEXT, allowNull: true },
     footer_settings: { type: DataTypes.JSONB, allowNull: true },
+    available_dashboard_widgets: { type: DataTypes.JSONB, allowNull: true, comment: 'Available widgets for user dashboards' },
   }, {
     ...baseOptions,
     tableName: 'settings',
