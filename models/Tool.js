@@ -1,115 +1,64 @@
 import { DataTypes } from 'sequelize';
-import { baseFields, baseOptions } from './baseModel.js';
+import { generateId } from './baseModel.js';
 
-export default function(sequelize) {
+export default (sequelize) => {
   const Tool = sequelize.define('Tool', {
-    ...baseFields,
-    title: {
+    id: {
+      type: DataTypes.STRING,
+      primaryKey: true,
+      defaultValue: () => generateId()
+    },
+    tool_key: {
       type: DataTypes.STRING,
       allowNull: false,
-    },
-    description: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-    },
-    short_description: {
-      type: DataTypes.TEXT,
-      allowNull: true,
+      unique: true,
+      comment: 'Unique identifier for the tool (e.g., CONTACT_PAGE_GENERATOR)'
     },
     category: {
       type: DataTypes.STRING,
-      allowNull: true,
-    },
-    price: {
-      type: DataTypes.DECIMAL,
       allowNull: false,
-      defaultValue: 0,
+      defaultValue: 'generators',
+      comment: 'Category of the tool (e.g., generators, utilities)'
     },
-    is_published: {
-      type: DataTypes.BOOLEAN,
-      allowNull: false,
-      defaultValue: false,
-    },
-    image_url: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    image_is_private: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: false,
-    },
-    tags: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-    },
-    target_audience: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    access_days: {
+    default_access_days: {
       type: DataTypes.INTEGER,
-      allowNull: true,
-    },
-    is_lifetime_access: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: false,
-    },
-    // Tool-specific fields
-    tool_url: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    tool_config: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-      defaultValue: {},
-    },
-    access_type: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      defaultValue: 'direct',
-      validate: {
-        isIn: [['direct', 'embedded', 'api']]
-      }
-    },
-    creator_user_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      references: {
-        model: 'user',
-        key: 'id'
-      }
-    },
+      allowNull: false,
+      defaultValue: 365,
+      comment: 'Default access duration when purchased'
+    }
   }, {
-    ...baseOptions,
     tableName: 'tool',
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
     indexes: [
       {
+        unique: true,
+        fields: ['tool_key'],
+        name: 'tool_tool_key_unique'
+      },
+      {
         fields: ['category'],
-      },
-      {
-        fields: ['is_published'],
-      },
-      {
-        fields: ['access_type'],
-      },
-      {
-        fields: ['creator_user_id'],
-      },
-    ],
+        name: 'tool_category_idx'
+      }
+    ]
   });
 
   Tool.associate = function(models) {
-    Tool.belongsTo(models.User, {
-      foreignKey: 'creator_user_id',
-      as: 'creator',
-      targetKey: 'id'
+    // Tool has one Product that represents it in the marketplace
+    Tool.hasOne(models.Product, {
+      foreignKey: 'entity_id',
+      constraints: false,
+      scope: { product_type: 'tool' },
+      as: 'product'
     });
-    // Note: Purchases will reference this via polymorphic relation
-    // Product references this via polymorphic association (product_type + entity_id)
   };
 
+  // Instance methods
+  Tool.prototype.getAccessDuration = function() {
+    return this.default_access_days === null ? 'lifetime' : `${this.default_access_days} days`;
+  };
+
+
   return Tool;
-}
+};

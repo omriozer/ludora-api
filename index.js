@@ -64,6 +64,7 @@ import webhookRoutes from './routes/webhooks.js';
 import adminRoutes from './routes/admin.js';
 import paymentRoutes from './routes/payments.js';
 import dashboardRoutes from './routes/dashboard.js';
+import toolRoutes from './routes/tools.js';
 
 const app = express();
 
@@ -129,6 +130,7 @@ app.use('/api/logs', logsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/tools', toolRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
@@ -163,6 +165,7 @@ app.get('/api', (req, res) => {
       access: '/api/access',
       payments: '/api/payments',
       dashboard: '/api/dashboard',
+      tools: '/api/tools',
       'game-content-templates': '/api/game-content-templates',
       'game-content-usage': '/api/games'
     },

@@ -155,6 +155,7 @@ export default (sequelize) => {
 
   // Polymorphic association methods
   Product.prototype.getEntity = async function() {
+    // Regular polymorphic association for all product types
     const models = this.constructor.models;
     const ModelClass = models[this.product_type.charAt(0).toUpperCase() + this.product_type.slice(1)];
     if (!ModelClass) {

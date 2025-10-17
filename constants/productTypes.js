@@ -129,23 +129,12 @@ export const TYPE_ATTRIBUTE_SCHEMAS = {
     }
   },
   tool: {
-    complexity: {
-      type: 'string',
-      label: 'רמת מורכבות',
-      description: 'רמת המורכבות של הכלי',
-      options: ['simple', 'medium', 'complex']
-    },
-    requires_setup: {
-      type: 'boolean',
-      label: 'דורש הגדרה',
-      description: 'האם הכלי דורש הגדרה מוקדמת'
-    },
-    platform: {
-      type: 'string',
-      label: 'פלטפורמה',
-      description: 'הפלטפורמה הנדרשת להפעלת הכלי',
-      options: ['web', 'windows', 'mac', 'mobile', 'cross-platform']
-    }
+    // complexity: {
+    //   type: 'string',
+    //   label: 'רמת מורכבות',
+    //   description: 'רמת המורכבות של הכלי',
+    //   options: ['simple', 'medium', 'complex']
+    // },
   }
 };
 

@@ -185,6 +185,7 @@ class EntityService {
       return await this.findGameById(id);
     }
 
+
     try {
       const Model = this.getModel(entityType);
 
@@ -631,17 +632,6 @@ class EntityService {
       } else if (entityType === 'course') {
         // Course doesn't have title in the same way
         delete entityFields.title;
-      } else if (entityType === 'tool') {
-        // Tool model is now minimal - remove ALL Product fields, only keep tool_config
-        const toolOnlyFields = ['tool_config'];
-        const fieldsToKeep = ['id', 'creator_user_id', 'created_at', 'updated_at', ...toolOnlyFields];
-
-        // Remove all fields except the ones Tool model actually has
-        Object.keys(entityFields).forEach(field => {
-          if (!fieldsToKeep.includes(field)) {
-            delete entityFields[field];
-          }
-        });
       } else if (entityType === 'game') {
         // Game doesn't have title field
         delete entityFields.title;

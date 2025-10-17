@@ -67,6 +67,7 @@ async function getFullProduct(product, userId = null) {
   // Get the entity based on product_type and entity_id
   let entity = null;
   if (product.entity_id && product.product_type) {
+    // Regular polymorphic association for all product types
     const entityModel = EntityService.getModel(product.product_type);
     entity = await entityModel.findByPk(product.entity_id);
   }
