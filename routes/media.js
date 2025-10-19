@@ -54,8 +54,25 @@ async function checkVideoAccess(user, entityType, entityId) {
     return true;
   }
 
-  // If content is free, grant access
-  if (parseFloat(entity.price || 0) === 0) {
+  // Check if content is free by looking up the Product
+  let isFree = false;
+  try {
+    // Get the Product associated with this entity
+    const product = await db.Product.findOne({
+      where: {
+        product_type: entityType,
+        entity_id: entityId
+      }
+    });
+
+    isFree = product ? parseFloat(product.price || 0) === 0 : false;
+  } catch (error) {
+    console.error('Error checking product price:', error);
+    // Default to not free if we can't determine price
+    isFree = false;
+  }
+
+  if (isFree) {
     // Auto-create purchase record for free content
     try {
       const orderNumber = `FREE-AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

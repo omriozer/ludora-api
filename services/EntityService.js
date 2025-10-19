@@ -633,8 +633,16 @@ class EntityService {
         // Course doesn't have title in the same way
         delete entityFields.title;
       } else if (entityType === 'game') {
-        // Game doesn't have title field
+        // Game doesn't have these Product-level fields
         delete entityFields.title;
+        delete entityFields.description;
+        delete entityFields.short_description;
+        delete entityFields.image_is_private;
+        delete entityFields.subject;
+        delete entityFields.skills;
+        delete entityFields.age_range;
+        delete entityFields.grade_range;
+        delete entityFields.estimated_duration;
       }
       // File keeps title, description, and other shared fields since File model has them
 

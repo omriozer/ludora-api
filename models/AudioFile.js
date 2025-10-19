@@ -17,13 +17,7 @@ export default function(sequelize) {
   });
 
   AudioFile.associate = function(models) {
-    // AudioFiles can be referenced by GameAudioSettings
-    AudioFile.hasMany(models.GameAudioSettings, { foreignKey: 'opening_music', sourceKey: 'id' });
-    AudioFile.hasMany(models.GameAudioSettings, { foreignKey: 'ending_music', sourceKey: 'id' });
-    AudioFile.hasMany(models.GameAudioSettings, { foreignKey: 'correct_answer_sound', sourceKey: 'id' });
-    AudioFile.hasMany(models.GameAudioSettings, { foreignKey: 'wrong_answer_sound', sourceKey: 'id' });
-    AudioFile.hasMany(models.GameAudioSettings, { foreignKey: 'action_sound', sourceKey: 'id' });
-    AudioFile.hasMany(models.GameAudioSettings, { foreignKey: 'background_music', sourceKey: 'id' });
+    // No associations currently defined
   };
 
   return AudioFile;

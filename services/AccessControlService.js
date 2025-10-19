@@ -231,7 +231,7 @@ class AccessControlService {
       {
         model: this.models.Game,
         as: 'game',
-        attributes: ['id', 'title', 'description', 'price'],
+        attributes: ['id', 'game_type', 'device_compatibility', 'game_settings'],
         required: false
       }
     ];

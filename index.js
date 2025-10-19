@@ -57,8 +57,6 @@ import videoRoutes from './routes/videos.js';
 import assetsRoutes from './routes/assets.js';
 import accessRoutes from './routes/access.js';
 import mediaRoutes from './routes/media.js';
-import gameContentTemplatesRoutes from './routes/gameContentTemplates.js';
-import gameContentUsageRoutes from './routes/gameContentUsage.js';
 import logsRoutes from './routes/logs.js';
 import webhookRoutes from './routes/webhooks.js';
 import adminRoutes from './routes/admin.js';
@@ -124,8 +122,6 @@ app.use('/api/videos', videoRoutes);
 app.use('/api/assets', assetsRoutes);
 app.use('/api/access', accessRoutes);
 app.use('/api/media', mediaRoutes);
-app.use('/api/game-content-templates', gameContentTemplatesRoutes);
-app.use('/api/games', gameContentUsageRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -165,9 +161,7 @@ app.get('/api', (req, res) => {
       access: '/api/access',
       payments: '/api/payments',
       dashboard: '/api/dashboard',
-      tools: '/api/tools',
-      'game-content-templates': '/api/game-content-templates',
-      'game-content-usage': '/api/games'
+      tools: '/api/tools'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
   });

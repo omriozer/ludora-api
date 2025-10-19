@@ -14,11 +14,9 @@ export const GAME_TYPES = {
 		defaultPrice: 0,
 		deviceCompatibility: ['both', 'mobile_only', 'desktop_only'],
 		isDevelopment: true,
-		requiredFields: ['title', 'short_description', 'game_settings'],
+		requiredFields: ['game_settings'],
 		validationRules: {
-			price: { min: 0, max: 1000 },
-			title: { minLength: 3, maxLength: 100 },
-			short_description: { minLength: 10, maxLength: 500 },
+			// Note: title, short_description, price validation moved to Product level
 		},
 	},
 	wisdom_maze: {
@@ -28,11 +26,9 @@ export const GAME_TYPES = {
 		defaultPrice: 0,
 		deviceCompatibility: ['both', 'mobile_only', 'desktop_only'],
 		isPublished: false,
-		requiredFields: ['title', 'short_description', 'game_settings'],
+		requiredFields: ['game_settings'],
 		validationRules: {
-			price: { min: 0, max: 1000 },
-			title: { minLength: 3, maxLength: 100 },
-			short_description: { minLength: 10, maxLength: 500 },
+			// Note: title, short_description, price validation moved to Product level
 		},
 	},
 	sharp_and_smooth: {
@@ -42,11 +38,9 @@ export const GAME_TYPES = {
 		defaultPrice: 0,
 		deviceCompatibility: ['both', 'mobile_only', 'desktop_only'],
 		allowContentCreator: false,
-		requiredFields: ['title', 'short_description', 'game_settings'],
+		requiredFields: ['game_settings'],
 		validationRules: {
-			price: { min: 0, max: 1000 },
-			title: { minLength: 3, maxLength: 100 },
-			short_description: { minLength: 10, maxLength: 500 },
+			// Note: title, short_description, price validation moved to Product level
 		},
 	},
 	memory_game: {
@@ -56,11 +50,9 @@ export const GAME_TYPES = {
 		defaultPrice: 0,
 		deviceCompatibility: ['both', 'mobile_only', 'desktop_only'],
 		showInCatalog: false,
-		requiredFields: ['title', 'short_description', 'game_settings'],
+		requiredFields: ['game_settings'],
 		validationRules: {
-			price: { min: 0, max: 1000 },
-			title: { minLength: 3, maxLength: 100 },
-			short_description: { minLength: 10, maxLength: 500 },
+			// Note: title, short_description, price validation moved to Product level
 		},
 	},
 };
@@ -125,28 +117,7 @@ export const validateGameTypeData = (gameTypeKey, gameData) => {
 	// Validate against rules
 	const rules = gameType.validationRules;
 
-	if (rules.price && gameData.price !== undefined) {
-		if (gameData.price < rules.price.min || gameData.price > rules.price.max) {
-			errors.push(`Price must be between ${rules.price.min} and ${rules.price.max}`);
-		}
-	}
-
-	if (rules.title && gameData.title) {
-		if (gameData.title.length < rules.title.minLength || gameData.title.length > rules.title.maxLength) {
-			errors.push(`Title must be between ${rules.title.minLength} and ${rules.title.maxLength} characters`);
-		}
-	}
-
-	if (rules.short_description && gameData.short_description) {
-		if (
-			gameData.short_description.length < rules.short_description.minLength ||
-			gameData.short_description.length > rules.short_description.maxLength
-		) {
-			errors.push(
-				`Short description must be between ${rules.short_description.minLength} and ${rules.short_description.maxLength} characters`
-			);
-		}
-	}
+	// Note: title, short_description, price validation is now handled at Product level
 
 	// Validate device compatibility
 	if (gameData.device_compatibility && !gameType.deviceCompatibility.includes(gameData.device_compatibility)) {
