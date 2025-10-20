@@ -69,15 +69,18 @@ router.get('/me', authenticateToken, async (req, res) => {
       full_name: user.full_name,
       phone: user.phone,
       education_level: user.education_level,
+      specializations: user.specializations, // Add specializations for teacher onboarding
       content_creator_agreement_sign_date: user.content_creator_agreement_sign_date,
       role: user.role,
       user_type: user.user_type,
       is_verified: user.is_verified,
       is_active: user.is_active,
+      onboarding_completed: user.onboarding_completed,
+      birth_date: user.birth_date, // Add birth_date for onboarding
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login,
-      
+
       // Keep some fields for compatibility but mark deprecated
       displayName: user.full_name, // @deprecated - use full_name
       emailVerified: user.is_verified, // @deprecated - use is_verified
@@ -93,13 +96,14 @@ router.get('/me', authenticateToken, async (req, res) => {
 router.put('/update-profile', authenticateToken, async (req, res) => {
   try {
     const user = await authService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
-    const { full_name, phone, education_level, content_creator_agreement_sign_date } = req.body;
-    
+    const { full_name, phone, education_level, specializations, content_creator_agreement_sign_date } = req.body;
+
     // Only allow updating specific fields
     const updateData = {};
     if (full_name !== undefined) updateData.full_name = full_name;
     if (phone !== undefined) updateData.phone = phone;
     if (education_level !== undefined) updateData.education_level = education_level;
+    if (specializations !== undefined) updateData.specializations = specializations;
     if (content_creator_agreement_sign_date !== undefined) {
       updateData.content_creator_agreement_sign_date = new Date(content_creator_agreement_sign_date);
     }
@@ -118,15 +122,18 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       full_name: user.full_name,
       phone: user.phone,
       education_level: user.education_level,
+      specializations: user.specializations, // Add specializations for teacher onboarding
       content_creator_agreement_sign_date: user.content_creator_agreement_sign_date,
       role: user.role,
       user_type: user.user_type,
       is_verified: user.is_verified,
       is_active: user.is_active,
+      onboarding_completed: user.onboarding_completed,
+      birth_date: user.birth_date, // Add birth_date for onboarding
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login,
-      
+
       // Keep some fields for compatibility
       displayName: user.full_name,
       emailVerified: user.is_verified,

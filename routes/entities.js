@@ -6,7 +6,7 @@ import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 import { extractCopyrightText, updateFooterTextContent } from '../utils/footerSettingsHelper.js';
-import { STUDY_SUBJECTS, AUDIANCE_TARGETS } from '../constants/info.js';
+import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
 
 const router = express.Router();
 
@@ -216,6 +216,32 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
     if (limit) options.limit = parseInt(limit);
     if (offset) options.offset = parseInt(offset);
 
+    // For curriculum entity, filter based on user role and handle type conversions
+    if (entityType === 'curriculum') {
+      // Non-admin users should only see active curricula
+      const user = req.user ? await models.User.findOne({ where: { id: req.user.uid } }) : null;
+      const isAdmin = user && (user.role === 'admin' || user.role === 'sysadmin');
+
+      if (!isAdmin) {
+        // Add is_active=true filter for non-admin users
+        query.is_active = true;
+      }
+
+      // Handle type conversions for curriculum query parameters
+      if (query.grade !== undefined) {
+        query.grade = parseInt(query.grade);
+      }
+      if (query.is_active !== undefined) {
+        query.is_active = query.is_active === 'true' || query.is_active === true;
+      }
+      if (query.teacher_user_id === 'null') {
+        query.teacher_user_id = null;
+      }
+      if (query.class_id === 'null') {
+        query.class_id = null;
+      }
+    }
+
     const results = await EntityService.find(entityType, query, options);
 
     // For Settings entity, add file_types_config and backwards compatibility for copyright_footer_text
@@ -231,7 +257,8 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
           copyright_footer_text, // Backwards compatibility
           file_types_config: getFileTypesForFrontend(),
           study_subjects: STUDY_SUBJECTS,
-          audiance_targets: AUDIANCE_TARGETS
+          audiance_targets: AUDIANCE_TARGETS,
+          school_grades: SCHOOL_GRADES
         };
       });
       return res.json(enhancedResults);
@@ -292,10 +319,13 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
       return res.status(401).json({ error: 'User not found' });
     }
 
-    // Check content creator permissions
-    const permissionCheck = await checkContentCreatorPermissions(user, entityType);
-    if (!permissionCheck.allowed) {
-      return res.status(403).json({ error: permissionCheck.message });
+    // Check content creator permissions (except for curriculum-related entities which are admin-only)
+    const curriculumEntities = ['curriculum', 'curriculumitem', 'curriculumproduct'];
+    if (!curriculumEntities.includes(entityType)) {
+      const permissionCheck = await checkContentCreatorPermissions(user, entityType);
+      if (!permissionCheck.allowed) {
+        return res.status(403).json({ error: permissionCheck.message });
+      }
     }
 
     // Determine creator_user_id based on is_ludora_creator flag (admin-only)
@@ -487,6 +517,339 @@ router.get('/purchase/check-product-purchases/:productId', authenticateToken, as
     });
   } catch (error) {
     console.error('Error checking product purchases:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /entities/curriculum/copy-to-class - Copy system curriculum to a specific class
+router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas.copyCurriculumToClass || {
+  type: 'object',
+  required: ['systemCurriculumId', 'classId'],
+  properties: {
+    systemCurriculumId: { type: 'string' },
+    classId: { type: 'string' }
+  }
+}), async (req, res) => {
+  try {
+    const { systemCurriculumId, classId } = req.body;
+    const userId = req.user.uid;
+
+    // Get user information and verify they're a teacher
+    const user = await models.User.findOne({ where: { id: userId } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Get the classroom and verify ownership
+    const classroom = await models.Classroom.findByPk(classId);
+    if (!classroom) {
+      return res.status(404).json({ error: 'Classroom not found' });
+    }
+
+    // Verify the user owns this classroom (unless admin)
+    if (user.role !== 'admin' && user.role !== 'sysadmin' && classroom.teacher_id !== userId) {
+      return res.status(403).json({ error: 'You can only copy curricula to your own classrooms' });
+    }
+
+    // Get the system curriculum
+    const systemCurriculum = await models.Curriculum.findByPk(systemCurriculumId);
+    if (!systemCurriculum) {
+      return res.status(404).json({ error: 'System curriculum not found' });
+    }
+
+    // Verify it's actually a system curriculum (not already assigned to a class)
+    if (systemCurriculum.teacher_user_id !== null || systemCurriculum.class_id !== null) {
+      return res.status(400).json({ error: 'Can only copy system curricula (not class-specific ones)' });
+    }
+
+    // Check if a curriculum already exists for this class/subject/grade combination
+    const existingCurriculum = await models.Curriculum.findOne({
+      where: {
+        class_id: classId,
+        subject: systemCurriculum.subject,
+        grade: systemCurriculum.grade
+      }
+    });
+
+    if (existingCurriculum) {
+      return res.status(409).json({ error: 'A curriculum already exists for this class and subject/grade combination' });
+    }
+
+    // Generate new ID for the class curriculum
+    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
+
+    // Copy the curriculum
+    const classCurriculumData = {
+      id: generateId(),
+      subject: systemCurriculum.subject,
+      grade: systemCurriculum.grade,
+      teacher_user_id: userId,
+      class_id: classId,
+      original_curriculum_id: systemCurriculumId, // Track which system curriculum this was copied from
+      is_active: true,
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+
+    const classCurriculum = await models.Curriculum.create(classCurriculumData);
+
+    // Get all curriculum items from the system curriculum
+    const systemItems = await models.CurriculumItem.findAll({
+      where: { curriculum_id: systemCurriculumId },
+      order: [['mandatory_order', 'ASC'], ['custom_order', 'ASC']]
+    });
+
+    // Copy all curriculum items
+    const copiedItems = [];
+    for (const item of systemItems) {
+      const itemData = {
+        id: generateId(),
+        curriculum_id: classCurriculum.id,
+        study_topic: item.study_topic,
+        content_topic: item.content_topic,
+        is_mandatory: item.is_mandatory,
+        mandatory_order: item.mandatory_order,
+        custom_order: item.custom_order,
+        description: item.description,
+        is_completed: false, // Start as not completed for class tracking
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      const copiedItem = await models.CurriculumItem.create(itemData);
+      copiedItems.push(copiedItem);
+    }
+
+    res.status(201).json({
+      message: 'Curriculum copied successfully to class',
+      curriculum: classCurriculum,
+      items: copiedItems,
+      copiedItemsCount: copiedItems.length
+    });
+
+  } catch (error) {
+    console.error('Error copying curriculum to class:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /entities/curriculum/:id/cascade-update - Update curriculum and all its copies
+router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody({
+  type: 'object',
+  required: ['is_active'],
+  properties: {
+    is_active: { type: 'boolean' }
+  }
+}), async (req, res) => {
+  try {
+    const curriculumId = req.params.id;
+    const { is_active } = req.body;
+    const userId = req.user.uid;
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: userId } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Only admins can perform cascade updates
+    if (user.role !== 'admin' && user.role !== 'sysadmin') {
+      return res.status(403).json({ error: 'Only admins can perform cascade updates' });
+    }
+
+    // Get the curriculum
+    const curriculum = await models.Curriculum.findByPk(curriculumId);
+    if (!curriculum) {
+      return res.status(404).json({ error: 'Curriculum not found' });
+    }
+
+    // Only system curricula can have cascade updates
+    if (curriculum.teacher_user_id !== null || curriculum.class_id !== null) {
+      return res.status(400).json({ error: 'Can only perform cascade updates on system curricula' });
+    }
+
+    // Update the main curriculum
+    const updatedCurriculum = await curriculum.update({ is_active });
+
+    // Find all copies and update them
+    const copies = await models.Curriculum.findAll({
+      where: {
+        original_curriculum_id: curriculumId
+      },
+      include: [
+        {
+          model: models.Classroom,
+          as: 'classroom',
+          attributes: ['id', 'name', 'grade_level', 'year']
+        }
+      ]
+    });
+
+    // Update all copies
+    const updatedCopies = [];
+    for (const copy of copies) {
+      await copy.update({ is_active });
+      updatedCopies.push({
+        id: copy.id,
+        classroomId: copy.class_id,
+        classroomName: copy.classroom?.name || `כיתה ${copy.classroom?.grade_level}`,
+        updated: true
+      });
+    }
+
+    res.json({
+      message: 'Curriculum and all copies updated successfully',
+      curriculum: updatedCurriculum,
+      copiesUpdated: updatedCopies.length,
+      affectedClasses: updatedCopies
+    });
+
+  } catch (error) {
+    console.error('Error performing cascade update:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /entities/curriculum/:id/copy-status - Check if a curriculum has been copied to classes
+router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) => {
+  try {
+    const curriculumId = req.params.id;
+    const userId = req.user.uid;
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: userId } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Get the curriculum to verify it's a system curriculum
+    const curriculum = await models.Curriculum.findByPk(curriculumId);
+    if (!curriculum) {
+      return res.status(404).json({ error: 'Curriculum not found' });
+    }
+
+    // Only check for system curricula (not class-specific ones)
+    if (curriculum.teacher_user_id !== null || curriculum.class_id !== null) {
+      return res.status(400).json({ error: 'Can only check copy status for system curricula' });
+    }
+
+    // Check if this curriculum has been copied by any user (for admin) or by this user (for teachers)
+    let whereClause = {
+      original_curriculum_id: curriculumId,
+      is_active: true
+    };
+
+    // If not admin, only show copies for this user's classes
+    if (user.role !== 'admin' && user.role !== 'sysadmin') {
+      whereClause.teacher_user_id = userId;
+    }
+
+    const copiedCurricula = await models.Curriculum.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: models.Classroom,
+          as: 'classroom',
+          attributes: ['id', 'name', 'grade_level', 'year']
+        }
+      ]
+    });
+
+    // Get user's classrooms to check if they have any classes for association
+    const userClassrooms = await models.Classroom.findAll({
+      where: {
+        teacher_id: userId,
+        is_active: true
+      }
+    });
+
+    res.json({
+      curriculumId,
+      hasCopies: copiedCurricula.length > 0,
+      copiedCount: copiedCurricula.length,
+      copiedToClasses: copiedCurricula.map(c => ({
+        classroomId: c.class_id,
+        classroomName: c.classroom?.name || `כיתה ${c.classroom?.grade_level}`,
+        copiedAt: c.created_at
+      })),
+      userHasClassrooms: userClassrooms.length > 0,
+      availableClassrooms: userClassrooms.map(c => ({
+        id: c.id,
+        name: c.name || `כיתה ${c.grade_level}`,
+        gradeLevel: c.grade_level,
+        year: c.year
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error checking curriculum copy status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /entities/user/:id/reset-onboarding - Reset user's onboarding completion status (admin only)
+router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const requestingUserId = req.user.uid;
+
+    // Get requesting user information
+    const requestingUser = await models.User.findOne({ where: { id: requestingUserId } });
+    if (!requestingUser) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Only admins can reset onboarding
+    if (requestingUser.role !== 'admin' && requestingUser.role !== 'sysadmin') {
+      return res.status(403).json({ error: 'Only admins can reset user onboarding' });
+    }
+
+    // Prevent non-admins from resetting their own onboarding
+    // Admins can reset their own onboarding for testing purposes
+    if (userId === requestingUserId && requestingUser.role !== 'admin' && requestingUser.role !== 'sysadmin') {
+      return res.status(400).json({ error: 'Cannot reset your own onboarding status' });
+    }
+
+    // Get the target user
+    const targetUser = await models.User.findByPk(userId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Target user not found' });
+    }
+
+    // Reset only the completion flag to allow re-testing onboarding while preserving data
+    const updatedUser = await targetUser.update({
+      onboarding_completed: false
+      // Keep all existing user data: birth_date, user_type, education_level, phone, etc.
+    });
+
+    // Also clear any test subscription history to ensure clean testing
+    try {
+      await models.SubscriptionHistory.destroy({
+        where: {
+          user_id: userId,
+          action_type: 'onboarding_selection'  // Only remove onboarding test selections
+        }
+      });
+      console.log(`✅ Cleared test subscription history for user ${targetUser.email}`);
+    } catch (subscriptionError) {
+      console.warn('Could not clear subscription history:', subscriptionError);
+      // Don't fail the reset if subscription cleanup fails
+    }
+
+    console.log(`✅ Admin ${requestingUser.email} reset onboarding for user ${targetUser.email}`);
+
+    res.json({
+      message: 'User onboarding status reset successfully',
+      user: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        full_name: updatedUser.full_name,
+        onboarding_completed: updatedUser.onboarding_completed
+      }
+    });
+
+  } catch (error) {
+    console.error('Error resetting user onboarding:', error);
     res.status(500).json({ error: error.message });
   }
 });

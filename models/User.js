@@ -83,6 +83,23 @@ export default function(sequelize) {
       defaultValue: null,
       comment: 'User dashboard configuration with widgets and their settings'
     },
+    onboarding_completed: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Flag indicating whether user has completed the onboarding process'
+    },
+    birth_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment: 'User birth date for age verification and onboarding'
+    },
+    specializations: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: [],
+      comment: 'Teacher specializations and teaching subjects as JSON array'
+    },
   }, {
     tableName: 'user', // Match Base44 table name
     timestamps: false, // We handle timestamps manually
@@ -104,6 +121,12 @@ export default function(sequelize) {
       },
       {
         fields: ['role', 'user_type'],
+      },
+      {
+        fields: ['onboarding_completed'],
+      },
+      {
+        fields: ['birth_date'],
       },
     ],
   });

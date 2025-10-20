@@ -37,6 +37,8 @@ import Classroom from './Classroom.js';
 import StudentInvitation from './StudentInvitation.js';
 import ParentConsent from './ParentConsent.js';
 import ClassroomMembership from './ClassroomMembership.js';
+import Curriculum from './Curriculum.js';
+import CurriculumItem from './CurriculumItem.js';
 import Logs from './Logs.js';
 
 // Initialize models
@@ -69,6 +71,8 @@ const models = {
   StudentInvitation: StudentInvitation(sequelize),
   ParentConsent: ParentConsent(sequelize),
   ClassroomMembership: ClassroomMembership(sequelize),
+  Curriculum: Curriculum(sequelize),
+  CurriculumItem: CurriculumItem(sequelize),
   Logs: Logs(sequelize),
 };
 

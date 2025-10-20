@@ -83,7 +83,8 @@ class EntityService {
       'contenttag': 'ContentTag',
       'studentinvitation': 'StudentInvitation',
       'parentconsent': 'ParentConsent',
-      'classroommembership': 'ClassroomMembership'
+      'classroommembership': 'ClassroomMembership',
+      'curriculumitem': 'CurriculumItem'
     };
 
     // Check for special mappings first
@@ -125,7 +126,8 @@ class EntityService {
       
       // Include creator information for entities that have creator relationships
       const entitiesWithCreators = PRODUCT_TYPES_WITH_CREATORS;
-      if (entitiesWithCreators.includes(entityType)) {
+      // Exclude curriculum entities as they use teacher_user_id instead of creator_user_id
+      if (entitiesWithCreators.includes(entityType) && !['curriculum', 'curriculumitem'].includes(entityType)) {
         queryOptions.include = [{
           model: this.models.User,
           as: 'creator',
@@ -157,7 +159,7 @@ class EntityService {
       const results = await Model.findAll(queryOptions);
 
       // Post-process results to add default creator name when creator is null
-      if (entitiesWithCreators.includes(entityType)) {
+      if (entitiesWithCreators.includes(entityType) && !['curriculum', 'curriculumitem'].includes(entityType)) {
         results.forEach(entity => {
           // Show 'Ludora' as creator when:
           // 1. creator_user_id exists but user lookup failed
@@ -193,7 +195,8 @@ class EntityService {
       const queryOptions = { where: { id } };
       const entitiesWithCreators = PRODUCT_TYPES_WITH_CREATORS;
 
-      if (entitiesWithCreators.includes(entityType)) {
+      // Exclude curriculum entities as they use teacher_user_id instead of creator_user_id
+      if (entitiesWithCreators.includes(entityType) && !['curriculum', 'curriculumitem'].includes(entityType)) {
         queryOptions.include = [{
           model: this.models.User,
           as: 'creator',
@@ -209,7 +212,7 @@ class EntityService {
       }
 
       // Post-process to add default creator name when creator is null
-      if (entitiesWithCreators.includes(entityType)) {
+      if (entitiesWithCreators.includes(entityType) && !['curriculum', 'curriculumitem'].includes(entityType)) {
         // Show 'Ludora' as creator when:
         // 1. creator_user_id exists but user lookup failed
         // 2. creator_user_id is NULL (system/Ludora product)
@@ -259,8 +262,8 @@ class EntityService {
         ...data,
         created_at: new Date(),
         updated_at: new Date(),
-        // All entities now use creator_user_id standardized field
-        ...(createdBy && { creator_user_id: createdBy })
+        // All entities now use creator_user_id standardized field, except curriculum entities
+        ...(createdBy && !['curriculum', 'curriculumitem'].includes(entityType) && { creator_user_id: createdBy })
       };
 
       const entity = await Model.create(entityData);
@@ -336,8 +339,8 @@ class EntityService {
         id: data.id || generateId(),
         created_at: new Date(),
         updated_at: new Date(),
-        // All entities now use creator_user_id standardized field
-        ...(createdBy && { creator_user_id: createdBy })
+        // All entities now use creator_user_id standardized field, except curriculum entities
+        ...(createdBy && !['curriculum', 'curriculumitem'].includes(entityType) && { creator_user_id: createdBy })
       }));
 
       const results = await Model.bulkCreate(entities);

@@ -28,6 +28,7 @@ export default function(sequelize) {
     Classroom.belongsTo(models.User, { foreignKey: 'teacher_id', as: 'Teacher' });
     Classroom.hasMany(models.StudentInvitation, { foreignKey: 'classroom_id' });
     Classroom.hasMany(models.ClassroomMembership, { foreignKey: 'classroom_id' });
+    Classroom.hasMany(models.Curriculum, { foreignKey: 'class_id', as: 'curricula' });
   };
 
   return Classroom;

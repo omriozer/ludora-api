@@ -485,13 +485,13 @@ export const customValidators = {
     const validEntityTypes = [
       'user', 'settings', 'registration', 'emailtemplate', 'category',
       'coupon', 'supportmessage', 'notification', 'sitetext', 'product',
-      'purchase', 'workshop', 'course', 'file', 'tool', 'emaillog', 
-      'game', 'audiofile', 'gameaudiosettings', 'word', 'worden', 'image', 
-      'qa', 'grammar', 'contentlist', 'contentrelationship', 'subscriptionplan', 
+      'purchase', 'workshop', 'course', 'file', 'tool', 'emaillog',
+      'game', 'audiofile', 'gameaudiosettings', 'word', 'worden', 'image',
+      'qa', 'grammar', 'contentlist', 'contentrelationship', 'subscriptionplan',
       'webhooklog', 'pendingsubscription', 'subscriptionhistory', 'gamesession',
       'attribute', 'gamecontenttag', 'contenttag',
       'school', 'classroom', 'studentinvitation', 'parentconsent',
-      'classroommembership'
+      'classroommembership', 'curriculum', 'curriculumitem'
     ];
 
     const entityType = req.params.type?.toLowerCase();
