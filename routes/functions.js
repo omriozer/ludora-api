@@ -662,6 +662,12 @@ router.post('/handlePayplusSubscriptionCallback', authenticateToken, async (req,
 
 router.post('/checkSubscriptionStatus', authenticateToken, async (req, res) => {
   try {
+    // 1. Check and update subscription status via PayPlus API before returning data
+    const { subscriptionId, userId } = req.body;
+    if (userId) {
+      await checkAndUpdateSubscriptionStatus(userId);
+    }
+
     const result = await SubscriptionService.checkSubscriptionStatus(req.body);
     res.json(result);
   } catch (error) {
@@ -682,6 +688,20 @@ router.post('/processSubscriptionCallbacks', authenticateToken, async (req, res)
 
 router.post('/getPayplusRecurringStatus', authenticateToken, async (req, res) => {
   try {
+    // 1. Check and update subscription status via PayPlus API before returning data
+    const { recurringId, userId } = req.body;
+    if (userId) {
+      await checkAndUpdateSubscriptionStatus(userId);
+    } else if (recurringId) {
+      // If we have recurringId but no userId, try to find user from subscription records
+      const subscription = await models.Subscription?.findOne({
+        where: { payplus_subscription_uid: recurringId }
+      });
+      if (subscription?.user_id) {
+        await checkAndUpdateSubscriptionStatus(subscription.user_id);
+      }
+    }
+
     const result = await SubscriptionService.getPayplusRecurringStatus(req.body);
     res.json(result);
   } catch (error) {
@@ -783,5 +803,159 @@ router.post('/runFullPaymentCleanup', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * Check and update subscription status for a user by querying PayPlus API
+ * This is called before returning subscription data to ensure up-to-date status
+ */
+async function checkAndUpdateSubscriptionStatus(userId) {
+  try {
+    console.log('🔍 Checking subscription status for user:', userId);
+
+    // Find all active subscriptions for this user that have PayPlus UIDs
+    const userSubscriptions = await models.Subscription?.findAll({
+      where: {
+        user_id: userId,
+        status: ['active', 'trial', 'pending'],
+        payplus_subscription_uid: {
+          [models.Sequelize.Op.ne]: null
+        }
+      }
+    }) || [];
+
+    if (userSubscriptions.length === 0) {
+      console.log('✅ No active PayPlus subscriptions found for user:', userId);
+      return;
+    }
+
+    console.log(`🔍 Found ${userSubscriptions.length} active subscriptions for user ${userId}, checking status...`);
+
+    // Check each subscription's status via PayPlus API
+    for (const subscription of userSubscriptions) {
+      try {
+        if (!subscription.payplus_subscription_uid) {
+          console.log(`⚠️ Subscription ${subscription.id} has no PayPlus UID, skipping status check`);
+          continue;
+        }
+
+        console.log(`🔍 Checking PayPlus status for subscription ${subscription.id} (UID: ${subscription.payplus_subscription_uid?.substring(0, 8)}...)`);
+
+        // Use PaymentService to check subscription status
+        const statusResult = await PaymentService.checkSubscriptionStatus(subscription.payplus_subscription_uid);
+
+        if (!statusResult.success) {
+          console.warn(`⚠️ Could not check status for subscription ${subscription.id}:`, statusResult);
+          continue;
+        }
+
+        const payplusStatus = statusResult.status;
+        console.log(`📊 PayPlus status for subscription ${subscription.id}: ${payplusStatus} (current: ${subscription.status})`);
+
+        // Map PayPlus status to our subscription status
+        let newStatus = null;
+        let shouldUpdateBilling = false;
+        let newBillingDate = null;
+
+        switch (payplusStatus) {
+          case 'active':
+          case 'approved':
+            newStatus = 'active';
+            shouldUpdateBilling = true;
+            newBillingDate = statusResult.nextBillingDate;
+            break;
+          case 'cancelled':
+          case 'canceled':
+            newStatus = 'cancelled';
+            break;
+          case 'expired':
+            newStatus = 'expired';
+            break;
+          case 'failed':
+          case 'declined':
+            newStatus = 'payment_failed';
+            break;
+          case 'trial':
+            newStatus = 'trial';
+            shouldUpdateBilling = true;
+            newBillingDate = statusResult.nextBillingDate;
+            break;
+          case 'pending':
+            newStatus = 'pending';
+            break;
+          default:
+            console.log(`⚠️ Unknown PayPlus subscription status '${payplusStatus}' for subscription ${subscription.id}`);
+        }
+
+        // Update subscription status if it changed
+        if (newStatus && newStatus !== subscription.status) {
+          console.log(`🔄 Updating subscription ${subscription.id} status from '${subscription.status}' to '${newStatus}'`);
+
+          const updateData = {
+            status: newStatus,
+            updated_at: new Date(),
+            metadata: {
+              ...subscription.metadata,
+              api_status_check: true,
+              payplus_status: payplusStatus,
+              status_checked_at: new Date().toISOString(),
+              last_payplus_amount: statusResult.amount,
+              total_payments: statusResult.totalPayments
+            }
+          };
+
+          // Update billing information if available
+          if (shouldUpdateBilling && newBillingDate) {
+            updateData.next_billing_date = new Date(newBillingDate);
+            updateData.billing_cycle_end = new Date(newBillingDate);
+          }
+
+          await subscription.update(updateData);
+
+          // Create subscription history entry
+          await models.SubscriptionHistory?.create({
+            subscription_id: subscription.id,
+            event_type: 'status_updated',
+            status: newStatus,
+            amount: statusResult.amount || subscription.amount,
+            payment_method: 'payplus',
+            metadata: {
+              api_status_check: true,
+              payplus_status: payplusStatus,
+              previous_status: subscription.status,
+              updated_via: 'api_check'
+            },
+            created_at: new Date()
+          });
+
+          console.log(`✅ Subscription ${subscription.id} status updated successfully`);
+        } else {
+          console.log(`📋 Subscription ${subscription.id} status unchanged (${subscription.status})`);
+
+          // Still update billing information if available, even if status didn't change
+          if (shouldUpdateBilling && newBillingDate &&
+              subscription.next_billing_date?.getTime() !== new Date(newBillingDate).getTime()) {
+
+            console.log(`📅 Updating billing date for subscription ${subscription.id}`);
+            await subscription.update({
+              next_billing_date: new Date(newBillingDate),
+              billing_cycle_end: new Date(newBillingDate),
+              updated_at: new Date()
+            });
+          }
+        }
+
+      } catch (subscriptionError) {
+        console.error(`❌ Error checking subscription ${subscription.id}:`, subscriptionError.message);
+        // Continue with other subscriptions instead of failing completely
+      }
+    }
+
+    console.log(`✅ Completed status check for ${userSubscriptions.length} subscriptions for user ${userId}`);
+
+  } catch (error) {
+    console.error('❌ Error checking subscription status:', error);
+    // Don't throw error - we still want to return subscription data even if status check fails
+  }
+}
 
 export default router;

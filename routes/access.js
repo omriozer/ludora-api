@@ -2,6 +2,9 @@ import express from 'express';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
 import AccessControlService from '../services/AccessControlService.js';
+import models from '../models/index.js';
+import PaymentService from '../services/PaymentService.js';
+import PaymentIntentService from '../services/PaymentIntentService.js';
 
 const router = express.Router();
 
@@ -25,6 +28,9 @@ router.get('/my-purchases', authenticateToken, async (req, res) => {
   const { entityType, activeOnly } = req.query;
 
   try {
+    // 1. Check and update pending transactions before returning purchases
+    await checkAndUpdatePendingTransactions(userId);
+
     const options = {
       entityType: entityType || undefined,
       activeOnly: activeOnly === 'true'
@@ -157,5 +163,112 @@ router.delete('/revoke', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * Check and update pending transactions for a user by querying PayPlus API
+ * This is called before returning user purchases to ensure up-to-date status
+ */
+async function checkAndUpdatePendingTransactions(userId) {
+  try {
+    console.log('🔍 Checking pending transactions for user:', userId);
+
+    // Find all pending/in_progress transactions for this user
+    const pendingTransactions = await models.Transaction.findAll({
+      where: {
+        payment_status: ['pending', 'in_progress']
+      },
+      include: [{
+        model: models.Purchase,
+        as: 'purchases',
+        where: {
+          buyer_user_id: userId
+        },
+        required: true
+      }]
+    });
+
+    if (pendingTransactions.length === 0) {
+      console.log('✅ No pending transactions found for user:', userId);
+      return;
+    }
+
+    console.log(`🔍 Found ${pendingTransactions.length} pending transactions for user ${userId}, checking status...`);
+
+    const paymentIntentService = new PaymentIntentService();
+
+    // Check each transaction's status via PayPlus API
+    for (const transaction of pendingTransactions) {
+      try {
+        if (!transaction.payplus_page_uid) {
+          console.log(`⚠️ Transaction ${transaction.id} has no PayPlus UID, skipping status check`);
+          continue;
+        }
+
+        console.log(`🔍 Checking PayPlus status for transaction ${transaction.id} (UID: ${transaction.payplus_page_uid?.substring(0, 8)}...)`);
+
+        // Use PaymentService to check transaction status
+        const statusResult = await PaymentService.checkTransactionStatus(transaction.payplus_page_uid);
+
+        if (!statusResult.success) {
+          console.warn(`⚠️ Could not check status for transaction ${transaction.id}:`, statusResult);
+          continue;
+        }
+
+        const payplusStatus = statusResult.status;
+        console.log(`📊 PayPlus status for transaction ${transaction.id}: ${payplusStatus} (current: ${transaction.payment_status})`);
+
+        // Map PayPlus status to our transaction status
+        let newStatus = null;
+        switch (payplusStatus) {
+          case 'approved':
+          case 'completed':
+            newStatus = 'completed';
+            break;
+          case 'failed':
+          case 'declined':
+          case 'cancelled':
+            newStatus = 'failed';
+            break;
+          case 'expired':
+            newStatus = 'expired';
+            break;
+          case 'pending':
+          case 'in_progress':
+            // Status hasn't changed, no update needed
+            break;
+          default:
+            console.log(`⚠️ Unknown PayPlus status '${payplusStatus}' for transaction ${transaction.id}`);
+        }
+
+        // Update transaction status if it changed
+        if (newStatus && newStatus !== transaction.payment_status) {
+          console.log(`🔄 Updating transaction ${transaction.id} status from '${transaction.payment_status}' to '${newStatus}'`);
+
+          await paymentIntentService.updatePaymentStatus(transaction.id, newStatus, {
+            api_status_check: true,
+            payplus_status: payplusStatus,
+            status_checked_at: new Date().toISOString(),
+            last_payplus_amount: statusResult.amount,
+            approval_number: statusResult.approvalNumber
+          });
+
+          console.log(`✅ Transaction ${transaction.id} status updated successfully`);
+        } else {
+          console.log(`📋 Transaction ${transaction.id} status unchanged (${transaction.payment_status})`);
+        }
+
+      } catch (transactionError) {
+        console.error(`❌ Error checking transaction ${transaction.id}:`, transactionError.message);
+        // Continue with other transactions instead of failing completely
+      }
+    }
+
+    console.log(`✅ Completed status check for ${pendingTransactions.length} transactions for user ${userId}`);
+
+  } catch (error) {
+    console.error('❌ Error checking pending transactions:', error);
+    // Don't throw error - we still want to return purchases even if status check fails
+  }
+}
 
 export default router;

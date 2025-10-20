@@ -77,6 +77,15 @@ router.get('/me', authenticateToken, async (req, res) => {
       is_active: user.is_active,
       onboarding_completed: user.onboarding_completed,
       birth_date: user.birth_date, // Add birth_date for onboarding
+
+      // Subscription fields
+      current_subscription_plan_id: user.current_subscription_plan_id,
+      subscription_status: user.subscription_status,
+      subscription_start_date: user.subscription_start_date,
+      subscription_end_date: user.subscription_end_date,
+      subscription_status_updated_at: user.subscription_status_updated_at,
+      payplus_subscription_uid: user.payplus_subscription_uid,
+
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login,
@@ -96,7 +105,22 @@ router.get('/me', authenticateToken, async (req, res) => {
 router.put('/update-profile', authenticateToken, async (req, res) => {
   try {
     const user = await authService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
-    const { full_name, phone, education_level, specializations, content_creator_agreement_sign_date } = req.body;
+    const {
+      full_name,
+      phone,
+      education_level,
+      specializations,
+      content_creator_agreement_sign_date,
+      onboarding_completed,
+      birth_date,
+      user_type,
+      current_subscription_plan_id,
+      subscription_status,
+      subscription_start_date,
+      subscription_end_date,
+      subscription_status_updated_at,
+      payplus_subscription_uid
+    } = req.body;
 
     // Only allow updating specific fields
     const updateData = {};
@@ -107,6 +131,19 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
     if (content_creator_agreement_sign_date !== undefined) {
       updateData.content_creator_agreement_sign_date = new Date(content_creator_agreement_sign_date);
     }
+
+    // Onboarding fields
+    if (onboarding_completed !== undefined) updateData.onboarding_completed = onboarding_completed;
+    if (birth_date !== undefined) updateData.birth_date = birth_date;
+    if (user_type !== undefined) updateData.user_type = user_type;
+
+    // Subscription fields
+    if (current_subscription_plan_id !== undefined) updateData.current_subscription_plan_id = current_subscription_plan_id;
+    if (subscription_status !== undefined) updateData.subscription_status = subscription_status;
+    if (subscription_start_date !== undefined) updateData.subscription_start_date = subscription_start_date;
+    if (subscription_end_date !== undefined) updateData.subscription_end_date = subscription_end_date;
+    if (subscription_status_updated_at !== undefined) updateData.subscription_status_updated_at = subscription_status_updated_at;
+    if (payplus_subscription_uid !== undefined) updateData.payplus_subscription_uid = payplus_subscription_uid;
     
     // Add updated timestamp
     updateData.updated_at = new Date();
@@ -122,14 +159,23 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       full_name: user.full_name,
       phone: user.phone,
       education_level: user.education_level,
-      specializations: user.specializations, // Add specializations for teacher onboarding
+      specializations: user.specializations,
       content_creator_agreement_sign_date: user.content_creator_agreement_sign_date,
       role: user.role,
       user_type: user.user_type,
       is_verified: user.is_verified,
       is_active: user.is_active,
       onboarding_completed: user.onboarding_completed,
-      birth_date: user.birth_date, // Add birth_date for onboarding
+      birth_date: user.birth_date,
+
+      // Subscription fields
+      current_subscription_plan_id: user.current_subscription_plan_id,
+      subscription_status: user.subscription_status,
+      subscription_start_date: user.subscription_start_date,
+      subscription_end_date: user.subscription_end_date,
+      subscription_status_updated_at: user.subscription_status_updated_at,
+      payplus_subscription_uid: user.payplus_subscription_uid,
+
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login,

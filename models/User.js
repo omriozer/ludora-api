@@ -100,6 +100,38 @@ export default function(sequelize) {
       defaultValue: [],
       comment: 'Teacher specializations and teaching subjects as JSON array'
     },
+    // Subscription fields
+    current_subscription_plan_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Reference to the user\'s current subscription plan'
+    },
+    subscription_status: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: 'free_plan',
+      comment: 'Current subscription status: free_plan, pending, active, cancelled, expired'
+    },
+    subscription_start_date: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'When the current subscription started'
+    },
+    subscription_end_date: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'When the current subscription ends/expires'
+    },
+    subscription_status_updated_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'When the subscription status was last updated'
+    },
+    payplus_subscription_uid: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'PayPlus recurring subscription UID for automatic renewals'
+    },
   }, {
     tableName: 'user', // Match Base44 table name
     timestamps: false, // We handle timestamps manually
@@ -138,6 +170,7 @@ export default function(sequelize) {
     User.hasMany(models.Classroom, { foreignKey: 'teacher_id' });
     User.hasMany(models.StudentInvitation, { foreignKey: 'teacher_id' });
     User.hasMany(models.ClassroomMembership, { foreignKey: 'student_user_id' });
+    User.hasMany(models.CustomerToken, { foreignKey: 'user_id', as: 'customer_tokens' });
   };
 
   // Instance methods

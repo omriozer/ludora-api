@@ -40,6 +40,7 @@ import ClassroomMembership from './ClassroomMembership.js';
 import Curriculum from './Curriculum.js';
 import CurriculumItem from './CurriculumItem.js';
 import Logs from './Logs.js';
+import CustomerToken from './CustomerToken.js';
 
 // Initialize models
 const models = {
@@ -74,6 +75,7 @@ const models = {
   Curriculum: Curriculum(sequelize),
   CurriculumItem: CurriculumItem(sequelize),
   Logs: Logs(sequelize),
+  CustomerToken: CustomerToken(sequelize),
 };
 
 // Define associations

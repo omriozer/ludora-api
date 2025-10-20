@@ -201,6 +201,51 @@ class PaymentIntentService {
       const { products, totalAmount, originalAmount, totalDiscount } = validationResult;
       let { purchases } = validationResult;
 
+      // 2.5. Check if this is a free transaction (totalAmount is 0)
+      if (totalAmount === 0) {
+        console.log('🆓 PaymentIntentService: Processing free transaction, skipping PayPlus integration');
+        return await this.processFreeTransaction({
+          purchases,
+          products,
+          totalAmount,
+          originalAmount,
+          totalDiscount,
+          appliedCoupons,
+          userId
+        });
+      }
+
+      // 2.6. Smart Payment Routing - Check for stored customer tokens
+      console.log('🧠 PaymentIntentService: Checking smart payment routing options for user:', userId);
+
+      // Get stored customer tokens for this user
+      const customerTokens = await this.paymentService.getCustomerTokens(userId).catch(() => []);
+
+      if (customerTokens.length > 0) {
+        console.log(`💳 PaymentIntentService: Found ${customerTokens.length} stored tokens for user, attempting token payment`);
+
+        try {
+          // Use the most recent token
+          const latestToken = customerTokens[0];
+
+          return await this.processTokenPayment({
+            purchases,
+            products,
+            totalAmount,
+            originalAmount,
+            totalDiscount,
+            appliedCoupons,
+            userId,
+            tokenUid: latestToken.tokenUid
+          });
+        } catch (tokenError) {
+          console.warn(`⚠️ PaymentIntentService: Token payment failed, falling back to payment page:`, tokenError.message);
+          // Continue to payment page flow below
+        }
+      } else {
+        console.log('💳 PaymentIntentService: No stored tokens found, proceeding with payment page flow');
+      }
+
       // 3. Create Transaction (PaymentIntent) - starts in 'pending' state
       const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       console.log(`🔧 CREATION DEBUG: Creating transaction with ID: ${transactionId}`);
@@ -538,6 +583,297 @@ class PaymentIntentService {
 
     } catch (error) {
       console.error(`❌ PaymentIntentService: Error marking payment in progress for ${transactionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process free transaction without PayPlus integration
+   * Directly creates and completes the transaction for zero-amount items
+   */
+  async processFreeTransaction({ purchases, products, totalAmount, originalAmount, totalDiscount, appliedCoupons, userId }) {
+    try {
+      console.log('🆓 PaymentIntentService: Processing free transaction for user:', userId);
+
+      // Create Transaction (PaymentIntent) - starts in 'pending' state initially
+      const transactionId = `txn_free_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      console.log(`🔧 FREE TRANSACTION: Creating free transaction with ID: ${transactionId}`);
+
+      const transaction = await this.models.Transaction.create({
+        id: transactionId,
+        total_amount: totalAmount, // 0
+        payment_status: 'pending', // Will be moved to completed immediately
+        payment_method: 'free',
+        environment: 'none', // No external payment processing
+        payplus_response: {
+          coupon_info: {
+            applied_coupons: appliedCoupons,
+            original_amount: originalAmount,
+            total_discount: totalDiscount,
+            final_amount: totalAmount
+          },
+          payment_created_at: new Date().toISOString(),
+          free_transaction: true,
+          payment_skipped_reason: 'zero_amount'
+        },
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+
+      // Link purchases to transaction
+      const purchaseIds = purchases.map(p => p.id);
+      console.log(`🔗 FREE TRANSACTION: Linking ${purchaseIds.length} purchases to free transaction ${transactionId}:`, purchaseIds);
+
+      await this.models.Purchase.update(
+        { transaction_id: transactionId },
+        { where: { id: purchaseIds } }
+      );
+
+      // Verify linking was successful
+      const verifiedLinkedPurchases = await this.models.Purchase.findAll({
+        where: { transaction_id: transactionId }
+      });
+      console.log(`✅ FREE TRANSACTION: Verified ${verifiedLinkedPurchases.length} purchases are linked to transaction ${transactionId}`);
+
+      // Immediately complete the free transaction
+      await transaction.updateStatus('completed', {
+        payment_page_url: null,
+        free_transaction_completed: true,
+        completed_at: new Date().toISOString()
+      });
+
+      // Update purchases to completed status
+      const purchaseStatus = 'completed';
+      const updateResult = await this.models.Purchase.update(
+        {
+          payment_status: purchaseStatus,
+          updated_at: new Date(),
+          metadata: fn('jsonb_set',
+            col('metadata'),
+            literal(`'{payment_in_progress}'`),
+            literal(`'false'`),
+            literal('true')
+          )
+        },
+        { where: { transaction_id: transactionId } }
+      );
+
+      console.log(`✅ FREE TRANSACTION: Updated ${updateResult[0]} purchases to '${purchaseStatus}' status`);
+
+      // Handle completed payment business logic (coupons, download counts, etc.)
+      await this._handleCompletedPayment(transaction);
+
+      console.log('✅ FREE TRANSACTION: Free transaction processed successfully:', {
+        transactionId,
+        totalAmount,
+        purchaseCount: purchases.length,
+        status: 'completed'
+      });
+
+      return {
+        success: true,
+        transactionId,
+        paymentUrl: null, // No payment page needed for free transactions
+        totalAmount,
+        status: 'completed',
+        purchaseCount: purchases.length,
+        expiresAt: null, // Free transactions don't expire
+        isFree: true
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentIntentService: Error processing free transaction:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process free subscription without PayPlus integration
+   * Directly creates and activates the subscription for zero-amount plans
+   */
+  async processFreeSubscription({ subscriptionData, userId }) {
+    try {
+      console.log('🆓 PaymentIntentService: Processing free subscription for user:', userId);
+
+      // Create subscription record directly
+      const subscriptionId = `sub_free_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      const subscription = await this.models.Subscription.create({
+        id: subscriptionId,
+        user_id: userId,
+        plan_type: subscriptionData.planType, // 'monthly' or 'yearly'
+        amount: 0,
+        status: 'active',
+        payment_method: 'free',
+        payplus_subscription_uid: null, // No PayPlus integration
+        metadata: {
+          free_subscription: true,
+          created_via: 'free_processing',
+          original_amount: subscriptionData.originalAmount || 0,
+          discount_applied: subscriptionData.totalDiscount || 0
+        },
+        created_at: new Date(),
+        updated_at: new Date(),
+        // Free subscriptions don't have specific billing cycles, but we set reasonable defaults
+        next_billing_date: subscriptionData.planType === 'yearly'
+          ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)  // 1 year from now
+          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),   // 1 month from now
+        billing_cycle_start: new Date(),
+        billing_cycle_end: subscriptionData.planType === 'yearly'
+          ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+          : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      });
+
+      // Create subscription history entry
+      await this.models.SubscriptionHistory.create({
+        subscription_id: subscriptionId,
+        event_type: 'created',
+        status: 'active',
+        amount: 0,
+        payment_method: 'free',
+        metadata: {
+          free_subscription: true,
+          auto_activated: true
+        },
+        created_at: new Date()
+      });
+
+      console.log('✅ FREE SUBSCRIPTION: Free subscription created successfully:', {
+        subscriptionId,
+        planType: subscriptionData.planType,
+        status: 'active'
+      });
+
+      return {
+        success: true,
+        subscriptionId,
+        status: 'active',
+        planType: subscriptionData.planType,
+        amount: 0,
+        nextBillingDate: subscription.next_billing_date,
+        isFree: true
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentIntentService: Error processing free subscription:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process token-based payment for purchases using stored customer tokens
+   * Directly charges the token without requiring a payment page
+   */
+  async processTokenPayment({ purchases, products, totalAmount, originalAmount, totalDiscount, appliedCoupons, userId, tokenUid }) {
+    try {
+      console.log('💳 PaymentIntentService: Processing token payment for user:', userId);
+
+      // Create Transaction (PaymentIntent) - starts in 'pending' state initially
+      const transactionId = `txn_token_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      console.log(`🔧 TOKEN PAYMENT: Creating token transaction with ID: ${transactionId}`);
+
+      const transaction = await this.models.Transaction.create({
+        id: transactionId,
+        total_amount: totalAmount,
+        payment_status: 'pending', // Will be updated based on token charge result
+        payment_method: 'payplus_token',
+        environment: 'production',
+        payplus_response: {
+          coupon_info: {
+            applied_coupons: appliedCoupons,
+            original_amount: originalAmount,
+            total_discount: totalDiscount,
+            final_amount: totalAmount
+          },
+          payment_created_at: new Date().toISOString(),
+          token_payment: true,
+          token_uid: tokenUid?.substring(0, 8) + '...' // Store partial token for debugging
+        },
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+
+      // Link purchases to transaction
+      const purchaseIds = purchases.map(p => p.id);
+      console.log(`🔗 TOKEN PAYMENT: Linking ${purchaseIds.length} purchases to token transaction ${transactionId}:`, purchaseIds);
+
+      await this.models.Purchase.update(
+        { transaction_id: transactionId },
+        { where: { id: purchaseIds } }
+      );
+
+      // Verify linking was successful
+      const verifiedLinkedPurchases = await this.models.Purchase.findAll({
+        where: { transaction_id: transactionId }
+      });
+      console.log(`✅ TOKEN PAYMENT: Verified ${verifiedLinkedPurchases.length} purchases are linked to transaction ${transactionId}`);
+
+      // Process the token payment via PaymentService
+      const tokenResult = await this.paymentService.processTokenPayment({
+        purchases: verifiedLinkedPurchases,
+        tokenUid,
+        userId,
+        appliedCoupons
+      });
+
+      if (!tokenResult.success) {
+        throw new Error('Token payment processing failed');
+      }
+
+      // Update transaction status based on token payment result
+      const finalStatus = tokenResult.status === 'approved' ? 'completed' : 'pending';
+      await transaction.updateStatus(finalStatus, {
+        payment_page_url: null,
+        token_payment_completed: tokenResult.status === 'approved',
+        payplus_transaction_uid: tokenResult.transactionId,
+        token_charge_method: 'direct',
+        completed_at: tokenResult.status === 'approved' ? new Date().toISOString() : null
+      });
+
+      // Update purchases to match transaction status
+      const purchaseStatus = tokenResult.status === 'approved' ? 'completed' : 'pending';
+      const updateResult = await this.models.Purchase.update(
+        {
+          payment_status: purchaseStatus,
+          updated_at: new Date(),
+          metadata: fn('jsonb_set',
+            col('metadata'),
+            literal(`'{payment_in_progress}'`),
+            literal(`'false'`),
+            literal('true')
+          )
+        },
+        { where: { transaction_id: transactionId } }
+      );
+
+      console.log(`✅ TOKEN PAYMENT: Updated ${updateResult[0]} purchases to '${purchaseStatus}' status`);
+
+      // Handle completed payment business logic if successful
+      if (finalStatus === 'completed') {
+        await this._handleCompletedPayment(transaction);
+      }
+
+      console.log('✅ TOKEN PAYMENT: Token payment processed successfully:', {
+        transactionId,
+        status: finalStatus,
+        amount: totalAmount,
+        purchaseCount: purchases.length
+      });
+
+      return {
+        success: true,
+        transactionId,
+        paymentUrl: null, // No payment page needed for token payments
+        totalAmount,
+        status: finalStatus,
+        purchaseCount: purchases.length,
+        expiresAt: null, // Token payments don't expire
+        isTokenPayment: true,
+        chargeMethod: 'token'
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentIntentService: Error processing token payment:', error);
       throw error;
     }
   }

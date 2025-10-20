@@ -593,6 +593,379 @@ class PaymentService {
     }
   }
 
+  // Save customer token for future payments
+  async saveCustomerToken({ userId, tokenData, paymentSource = 'card' }) {
+    try {
+      console.log('💳 PaymentService: Saving customer token for user:', userId);
+
+      // Store token in our database for future use
+      const customerToken = await this.models.CustomerToken.create({
+        id: generateId(),
+        user_id: userId,
+        payment_provider: 'payplus',
+        token_uid: tokenData.token_uid,
+        payment_method: paymentSource,
+        last_four_digits: tokenData.last_four_digits,
+        card_brand: tokenData.card_brand,
+        expiry_month: tokenData.expiry_month,
+        expiry_year: tokenData.expiry_year,
+        is_active: true,
+        metadata: {
+          created_via: 'payment_completion',
+          payplus_data: tokenData
+        },
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+
+      console.log('✅ PaymentService: Customer token saved successfully:', customerToken.id);
+
+      return {
+        success: true,
+        tokenId: customerToken.id,
+        tokenUid: tokenData.token_uid
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentService: Error saving customer token:', error);
+      throw error;
+    }
+  }
+
+  // Get stored customer tokens
+  async getCustomerTokens(userId) {
+    try {
+      const tokens = await this.models.CustomerToken.findAll({
+        where: {
+          user_id: userId,
+          payment_provider: 'payplus',
+          is_active: true
+        },
+        order: [['created_at', 'DESC']]
+      });
+
+      return tokens.map(token => ({
+        id: token.id,
+        tokenUid: token.token_uid,
+        paymentMethod: token.payment_method,
+        lastFourDigits: token.last_four_digits,
+        cardBrand: token.card_brand,
+        expiryMonth: token.expiry_month,
+        expiryYear: token.expiry_year,
+        createdAt: token.created_at
+      }));
+
+    } catch (error) {
+      console.error('❌ PaymentService: Error getting customer tokens:', error);
+      throw error;
+    }
+  }
+
+  // Charge stored customer token using PayPlus J4 API
+  async chargeCustomerToken({ tokenUid, amount, description, userId, transactionId }) {
+    try {
+      console.log('💳 PaymentService: Charging customer token:', { tokenUid: tokenUid?.substring(0, 8) + '...', amount });
+
+      const config = this.getPayplusConfig('production'); // Token charging typically uses production
+
+      const payload = {
+        token_uid: tokenUid,
+        amount: amount.toFixed(2),
+        currency_code: 'ILS',
+        transaction_uid: transactionId,
+        description: description || 'Token-based payment',
+        send_email_approval: true
+      };
+
+      console.log('🚀 PayPlus Token Charge Request:', {
+        url: `${config.apiBaseUrl}/Transactions/ChargeToken`,
+        payload: { ...payload, token_uid: payload.token_uid?.substring(0, 8) + '...' }
+      });
+
+      const response = await fetch(`${config.apiBaseUrl}/Transactions/ChargeToken`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': config.apiKey,
+          'secret-key': config.secretKey
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`PayPlus token charge failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+
+      console.log('✅ PayPlus Token Charge Response:', {
+        success: data.success,
+        transactionId: data.data?.transaction_uid,
+        status: data.data?.status
+      });
+
+      return {
+        success: data.success,
+        transactionUid: data.data?.transaction_uid,
+        status: data.data?.status,
+        approvalNumber: data.data?.approval_number,
+        chargeMethod: 'token'
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentService: Error charging customer token:', error);
+      throw error;
+    }
+  }
+
+  // Check transaction status via PayPlus API
+  async checkTransactionStatus(payplusPageUid) {
+    try {
+      console.log('🔍 PaymentService: Checking transaction status for PayPlus UID:', payplusPageUid?.substring(0, 8) + '...');
+
+      const config = this.getPayplusConfig('production');
+
+      const response = await fetch(`${config.apiBaseUrl}/PaymentPages/getStatus`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': config.apiKey,
+          'secret-key': config.secretKey
+        },
+        body: JSON.stringify({
+          page_request_uid: payplusPageUid
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`PayPlus status check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+
+      console.log('✅ PayPlus Transaction Status:', {
+        pageUid: payplusPageUid?.substring(0, 8) + '...',
+        status: data.data?.status,
+        amount: data.data?.amount
+      });
+
+      return {
+        success: true,
+        status: data.data?.status,
+        amount: data.data?.amount,
+        transactionUid: data.data?.transaction_uid,
+        approvalNumber: data.data?.approval_number,
+        lastUpdated: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentService: Error checking transaction status:', error);
+      throw error;
+    }
+  }
+
+  // Check subscription status via PayPlus API
+  async checkSubscriptionStatus(subscriptionUid) {
+    try {
+      console.log('🔍 PaymentService: Checking subscription status for PayPlus UID:', subscriptionUid?.substring(0, 8) + '...');
+
+      const config = this.getPayplusConfig('production');
+
+      const response = await fetch(`${config.apiBaseUrl}/Subscriptions/getStatus`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': config.apiKey,
+          'secret-key': config.secretKey
+        },
+        body: JSON.stringify({
+          subscription_uid: subscriptionUid
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`PayPlus subscription status check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+
+      console.log('✅ PayPlus Subscription Status:', {
+        subscriptionUid: subscriptionUid?.substring(0, 8) + '...',
+        status: data.data?.status,
+        nextBilling: data.data?.next_billing_date
+      });
+
+      return {
+        success: true,
+        status: data.data?.status,
+        nextBillingDate: data.data?.next_billing_date,
+        amount: data.data?.amount,
+        lastPayment: data.data?.last_payment_date,
+        totalPayments: data.data?.total_payments,
+        lastUpdated: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentService: Error checking subscription status:', error);
+      throw error;
+    }
+  }
+
+  // Create recurring subscription using PayPlus API
+  async createRecurringSubscription({ tokenUid, amount, planType, userId, description }) {
+    try {
+      console.log('🔄 PaymentService: Creating recurring subscription:', { planType, amount });
+
+      const config = this.getPayplusConfig('production');
+
+      const payload = {
+        token_uid: tokenUid,
+        amount: amount.toFixed(2),
+        currency_code: 'ILS',
+        interval_type: planType === 'yearly' ? 4 : 2, // 2 = monthly, 4 = yearly
+        interval_count: 1,
+        total_occurrences: 0, // 0 = unlimited
+        description: description || `${planType} subscription`,
+        send_email_approval: true,
+        start_date: new Date().toISOString().split('T')[0] // Today
+      };
+
+      console.log('🚀 PayPlus Subscription Request:', {
+        url: `${config.apiBaseUrl}/Subscriptions/Create`,
+        payload: { ...payload, token_uid: payload.token_uid?.substring(0, 8) + '...' }
+      });
+
+      const response = await fetch(`${config.apiBaseUrl}/Subscriptions/Create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': config.apiKey,
+          'secret-key': config.secretKey
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`PayPlus subscription creation failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+
+      console.log('✅ PayPlus Subscription Created:', {
+        subscriptionUid: data.data?.subscription_uid,
+        status: data.data?.status,
+        nextBilling: data.data?.next_billing_date
+      });
+
+      return {
+        success: data.success,
+        subscriptionUid: data.data?.subscription_uid,
+        status: data.data?.status,
+        nextBillingDate: data.data?.next_billing_date,
+        chargeMethod: 'recurring'
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentService: Error creating recurring subscription:', error);
+      throw error;
+    }
+  }
+
+  // Process token-based payment for purchases
+  async processTokenPayment({ purchases, tokenUid, userId, appliedCoupons = [] }) {
+    try {
+      console.log('💳 PaymentService: Processing token payment for', purchases.length, 'purchases');
+
+      // Calculate total amount
+      const totalAmount = purchases.reduce((sum, purchase) => sum + parseFloat(purchase.payment_amount), 0);
+
+      // Create transaction description
+      const description = purchases.length === 1
+        ? `Purchase: ${purchases[0].purchasable_type}`
+        : `Cart purchase: ${purchases.length} items`;
+
+      // Create transaction ID for PayPlus reference
+      const transactionId = `txn_token_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      // Charge the token
+      const chargeResult = await this.chargeCustomerToken({
+        tokenUid,
+        amount: totalAmount,
+        description,
+        userId,
+        transactionId
+      });
+
+      if (!chargeResult.success) {
+        throw new Error('Token charge failed');
+      }
+
+      // Create transaction record
+      const transaction = await this.models.Transaction.create({
+        id: transactionId,
+        total_amount: totalAmount,
+        payment_status: chargeResult.status === 'approved' ? 'completed' : 'pending',
+        payment_method: 'payplus_token',
+        environment: 'production',
+        payplus_page_uid: chargeResult.transactionUid,
+        payplus_response: {
+          coupon_info: {
+            applied_coupons: appliedCoupons,
+            original_amount: totalAmount,
+            total_discount: 0,
+            final_amount: totalAmount
+          },
+          token_charge: true,
+          approval_number: chargeResult.approvalNumber,
+          charge_method: 'token',
+          payment_created_at: new Date().toISOString()
+        },
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+
+      // Link purchases to transaction
+      const purchaseIds = purchases.map(p => p.id);
+      await this.models.Purchase.update(
+        { transaction_id: transactionId },
+        { where: { id: purchaseIds } }
+      );
+
+      // Update purchase status based on charge result
+      const purchaseStatus = chargeResult.status === 'approved' ? 'completed' : 'pending';
+      await this.models.Purchase.update(
+        {
+          payment_status: purchaseStatus,
+          updated_at: new Date()
+        },
+        { where: { transaction_id: transactionId } }
+      );
+
+      console.log('✅ PaymentService: Token payment processed successfully:', {
+        transactionId,
+        status: chargeResult.status,
+        amount: totalAmount
+      });
+
+      return {
+        success: true,
+        transactionId,
+        status: chargeResult.status,
+        amount: totalAmount,
+        chargeMethod: 'token',
+        paymentUrl: null // No payment page needed for token payments
+      };
+
+    } catch (error) {
+      console.error('❌ PaymentService: Error processing token payment:', error);
+      throw error;
+    }
+  }
+
   // Get PayPlus configuration based on environment
   getPayplusConfig(environment) {
     // Determine PayPlus environment:
