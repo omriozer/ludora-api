@@ -62,7 +62,8 @@
     "maintenance:cleanup": "npm run logs:backup && npm run logs:clean && pm2 flush && echo 'Maintenance cleanup completed'",
     "schema:check": "echo 'Use db:test to verify database schema'",
     "db:create": "npx sequelize-cli db:create",
-    "db:drop": "npx sequelize-cli db:drop"
+    "db:drop": "npx sequelize-cli db:drop",
+    "db:fix-migration-meta": "node scripts/fix-migration-meta.js"
   },
   "dependencies": {
     "aws-sdk": "^2.1692.0",
