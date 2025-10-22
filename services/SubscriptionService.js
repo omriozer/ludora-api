@@ -900,7 +900,7 @@ class SubscriptionService {
       try {
         console.log(`🛑 Cancelling PayPlus subscription: ${recurringId}`);
 
-        const config = PaymentService.getPayplusConfig();
+        const config = PaymentService.getPayplusConfig(environment);
 
         const cancelPayload = {
           subscription_uid: recurringId,
