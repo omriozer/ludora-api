@@ -32,49 +32,10 @@ class SubscriptionService {
         updated_at: new Date()
       });
 
-      // Create Transaction record for polling system monitoring
+      // Initialize transaction variables (will be created AFTER successful PayPlus page creation)
       let transactionId = null;
       let transaction = null;
       let purchase = null;
-
-      try {
-        transactionId = generateId();
-        transaction = await this.models.Transaction.create({
-          id: transactionId,
-          total_amount: plan.price,
-          payment_status: 'pending',
-          payment_method: 'payplus',
-          environment: process.env.ENVIRONMENT || 'development',
-          created_at: new Date(),
-          updated_at: new Date()
-        });
-
-        // Create Purchase record to link user to subscription via transaction
-        purchase = await this.models.Purchase.create({
-          id: generateId(),
-          transaction_id: transactionId,
-          buyer_user_id: userId,
-          payment_amount: plan.price,
-          original_price: plan.price,
-          payment_status: 'pending',
-          purchasable_type: 'subscription',
-          purchasable_id: planId,
-          metadata: {
-            subscription_type: 'payplus_subscription',
-            billing_period: plan.billing_period,
-            plan_name: plan.name,
-            pending_subscription_id: pendingSubscription.id
-          },
-          created_at: new Date(),
-          updated_at: new Date()
-        });
-
-        console.log(`✅ Created transaction ${transactionId} and purchase for subscription`);
-      } catch (transactionError) {
-        console.error('⚠️ Failed to create transaction/purchase records for subscription:', transactionError);
-        // Continue with subscription creation even if transaction creation fails
-        console.log('🔄 Continuing with subscription creation without transaction tracking');
-      }
 
       // Integrate with actual PayPlus subscription API
       try {
@@ -249,12 +210,11 @@ class SubscriptionService {
           instant_first_payment: true,
           recurring_type: this.getPayplusIntervalType(plan.billing_period),
           recurring_range: 1, // number of changes per billing period
-          number_of_charges: 0, // 0 = unlimited
+          number_of_charges: 0, // 0 = unlimited charges
           start_date_on_payment_date: false,
           start_date: 1,
           successful_invoice: true,
-          customer_failure_email: true,
-          number_of_charges: 0 // 0 = unlimited charges
+          customer_failure_email: true
         };
 
         console.log('🔍 RECURRING SETTINGS DEBUG:', JSON.stringify(recurringSettings, null, 2));
@@ -308,6 +268,14 @@ class SubscriptionService {
             errorData: errorData,
             sentPayload: payload
           });
+
+          // Provide detailed error for 422 validation errors
+          if (response.status === 422) {
+            const validationDetails = errorData.errors || errorData.message || JSON.stringify(errorData);
+            console.error('❌ PayPlus 422 Validation Error Details:', validationDetails);
+            throw new Error(`PayPlus subscription validation failed (422): ${validationDetails}`);
+          }
+
           throw new Error(`PayPlus subscription page creation failed: ${response.status} - ${errorData.message || JSON.stringify(errorData) || 'Unknown error'}`);
         }
 
@@ -326,17 +294,55 @@ class SubscriptionService {
           payment_page_url: subscriptionPageUrl
         });
 
-        // Update transaction with PayPlus UID for polling system
-        if (transaction) {
-          await transaction.update({
+        // NOW create Transaction and Purchase records after successful PayPlus page creation
+        try {
+          transactionId = generateId();
+          transaction = await this.models.Transaction.create({
+            id: transactionId,
+            total_amount: plan.price,
+            payment_status: 'pending',
+            payment_method: 'payplus',
+            environment: process.env.ENVIRONMENT || 'development',
             payplus_page_uid: payplus_subscription_uid,
             payment_url: subscriptionPageUrl,
             payplus_response: {
               payment_page_link: subscriptionPageUrl,
               page_request_uid: payplus_subscription_uid,
               created_via: 'subscription_payment_page'
-            }
+            },
+            created_at: new Date(),
+            updated_at: new Date()
           });
+
+          // Create Purchase record to link user to subscription via transaction
+          purchase = await this.models.Purchase.create({
+            id: generateId(),
+            transaction_id: transactionId,
+            buyer_user_id: userId,
+            payment_amount: plan.price,
+            original_price: plan.price,
+            payment_status: 'pending',
+            purchasable_type: 'subscription',
+            purchasable_id: planId,
+            metadata: {
+              subscription_type: 'payplus_subscription',
+              billing_period: plan.billing_period,
+              plan_name: plan.name,
+              pending_subscription_id: pendingSubscription.id,
+              payplus_page_request_uid: payplus_subscription_uid,
+              transaction_type: 'subscription',
+              environment: process.env.ENVIRONMENT || 'development'
+            },
+            created_at: new Date(),
+            updated_at: new Date()
+          });
+
+          console.log(`✅ Created transaction ${transactionId} and purchase after successful PayPlus page creation`);
+
+        } catch (transactionError) {
+          console.error('⚠️ Failed to create transaction/purchase records for subscription:', transactionError);
+          // Don't fail the whole flow - payment page was created successfully
+          console.log('🔄 Continuing with subscription creation - payment page created but without transaction tracking');
         }
 
         return {
