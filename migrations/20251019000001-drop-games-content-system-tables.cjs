@@ -5,9 +5,8 @@ module.exports = {
 	async up(queryInterface, Sequelize) {
 		console.log('🗑️  Starting to drop game content system tables...');
 
-		// Define all tables to drop in correct order (considering foreign key dependencies)
+		// Define all tables to drop - order doesn't matter as no interdependencies exist
 		const tablesToDrop = [
-			// Drop tables with foreign key dependencies first
 			'contentlist',
 			'attribute',
 			'contentrelationship',
@@ -22,6 +21,10 @@ module.exports = {
 			'worden'
 		];
 
+		let droppedCount = 0;
+		let skippedCount = 0;
+		let errorCount = 0;
+
 		// Drop each table if it exists
 		for (const tableName of tablesToDrop) {
 			try {
@@ -33,18 +36,32 @@ module.exports = {
 
 				if (tableExists) {
 					console.log(`🗑️  Dropping table: ${tableName}`);
-					await queryInterface.dropTable(tableName);
+
+					// Use CASCADE to handle any remaining dependencies
+					await queryInterface.sequelize.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE;`);
+
 					console.log(`✅ Successfully dropped table: ${tableName}`);
+					droppedCount++;
 				} else {
 					console.log(`⏭️  Table ${tableName} does not exist, skipping`);
+					skippedCount++;
 				}
 			} catch (error) {
 				console.error(`❌ Error dropping table ${tableName}:`, error.message);
+				console.error(`❌ Full error:`, error);
+				errorCount++;
 				// Continue with other tables even if one fails
 			}
 		}
 
-		console.log('✅ Completed dropping game content system tables');
+		console.log(`✅ Migration completed:`);
+		console.log(`   - Tables dropped: ${droppedCount}`);
+		console.log(`   - Tables skipped: ${skippedCount}`);
+		console.log(`   - Errors encountered: ${errorCount}`);
+
+		if (errorCount > 0) {
+			throw new Error(`Migration completed with ${errorCount} errors. Check logs above for details.`);
+		}
 	},
 
 	async down(queryInterface, Sequelize) {
