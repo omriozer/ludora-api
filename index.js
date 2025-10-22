@@ -4,14 +4,9 @@ import dotenv from 'dotenv';
 // Load environment-specific .env file FIRST before any other imports
 const env = process.env.ENVIRONMENT || 'production';
 const envFile = env === 'production' ? '.env' : `.env.${env}`;
-console.log(`===starting api===`);
-console.log(`🔧 Loading environment from: ${envFile}`);
 const result = dotenv.config({ path: envFile });
 if (result.error) {
   console.error(`❌ Failed to load ${envFile}:`, result.error);
-} else {
-  console.log(`✅ Successfully loaded ${envFile}`);
-  console.log(`🔑 JWT_SECRET found: ${process.env.JWT_SECRET ? 'YES' : 'NO'}`);
 }
 
 // Now import other modules after environment is loaded
@@ -61,6 +56,7 @@ import logsRoutes from './routes/logs.js';
 import webhookRoutes from './routes/webhooks.js';
 import adminRoutes from './routes/admin.js';
 import paymentRoutes from './routes/payments.js';
+import paymentPollingRoutes from './routes/payment-polling.js';
 import dashboardRoutes from './routes/dashboard.js';
 import toolRoutes from './routes/tools.js';
 
@@ -125,6 +121,7 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/payment-polling', paymentPollingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/tools', toolRoutes);
 
@@ -160,6 +157,7 @@ app.get('/api', (req, res) => {
       videos: '/api/videos',
       access: '/api/access',
       payments: '/api/payments',
+      'payment-polling': '/api/payment-polling',
       dashboard: '/api/dashboard',
       tools: '/api/tools'
     },
@@ -186,10 +184,7 @@ async function startServer() {
     await DatabaseInitService.default.initialize();
 
     const server = app.listen(PORT, () => {
-      console.log(`🚀 Ludora API Server running on port ${PORT}`);
-      console.log(`📁 Environment: ${env}`);
-      console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
-      console.log(`✅ Server successfully started with updated environment variables ${new Date().toISOString()}`);
+      console.log(`Ludora API Server running on port ${PORT} (${env})`);
     });
 
     // Start background services
@@ -202,6 +197,11 @@ async function startServer() {
       const SubscriptionMonitoringService = await import('./services/SubscriptionMonitoringService.js');
       SubscriptionMonitoringService.default.startHourlyMonitoring();
       console.log('✅ Subscription monitoring service started');
+
+      // Import and start payment polling service
+      const PaymentPollingService = await import('./services/PaymentPollingService.js');
+      PaymentPollingService.default.startBackgroundPolling();
+      console.log('✅ Payment polling service started');
     } catch (error) {
       console.error('⚠️  Failed to start background services:', error);
       // Don't fail server startup if background services fail
@@ -228,6 +228,9 @@ process.on('SIGTERM', async () => {
   try {
     const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
     TransactionCleanupService.default.stop();
+
+    const PaymentPollingService = await import('./services/PaymentPollingService.js');
+    PaymentPollingService.default.stopBackgroundPolling();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }
@@ -244,6 +247,9 @@ process.on('SIGINT', async () => {
   try {
     const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
     TransactionCleanupService.default.stop();
+
+    const PaymentPollingService = await import('./services/PaymentPollingService.js');
+    PaymentPollingService.default.stopBackgroundPolling();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }

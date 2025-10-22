@@ -91,6 +91,15 @@ export default function(sequelize) {
       defaultValue: {},
       comment: 'Full PayPlus response when token was created'
     },
+    payment_provider: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      defaultValue: 'payplus',
+      validate: {
+        isIn: [['payplus', 'stripe', 'square', 'other']]
+      },
+      comment: 'Payment provider identifier (payplus, stripe, etc.)'
+    },
     environment: {
       type: DataTypes.STRING(20),
       allowNull: false,
@@ -131,6 +140,10 @@ export default function(sequelize) {
       {
         fields: ['environment'],
         name: 'idx_customer_token_environment'
+      },
+      {
+        fields: ['payment_provider'],
+        name: 'idx_customer_token_payment_provider'
       },
     ],
   });

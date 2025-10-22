@@ -20,11 +20,8 @@ class TransactionCleanupService {
    */
   start() {
     if (this.isRunning) {
-      console.log('⚠️  TransactionCleanupService is already running');
       return;
     }
-
-    console.log(`🧹 Starting TransactionCleanupService - cleanup every ${this.intervalMs / 1000 / 60} minutes`);
 
     // Run initial cleanup
     this.runCleanup().catch(error => {
@@ -39,7 +36,6 @@ class TransactionCleanupService {
     }, this.intervalMs);
 
     this.isRunning = true;
-    console.log('✅ TransactionCleanupService started successfully');
   }
 
   /**
@@ -47,7 +43,6 @@ class TransactionCleanupService {
    */
   stop() {
     if (!this.isRunning) {
-      console.log('⚠️  TransactionCleanupService is not running');
       return;
     }
 
@@ -57,7 +52,6 @@ class TransactionCleanupService {
     }
 
     this.isRunning = false;
-    console.log('🛑 TransactionCleanupService stopped');
   }
 
   /**
@@ -66,7 +60,6 @@ class TransactionCleanupService {
   async runCleanup() {
     try {
       const startTime = Date.now();
-      console.log(`🧹 Starting transaction cleanup at ${new Date().toISOString()}`);
 
       // Clean up expired PaymentIntent Transactions
       const transactionResult = await this.cleanupExpiredTransactions();
@@ -79,8 +72,6 @@ class TransactionCleanupService {
         totalErrorCount: transactionResult.errorCount,
         cleanupTime
       };
-
-      console.log(`✅ Transaction cleanup completed: ${transactionResult.successCount} expired transactions, ${transactionResult.errorCount} errors, ${cleanupTime}ms`);
 
       return summary;
 
@@ -110,11 +101,8 @@ class TransactionCleanupService {
       });
 
       if (expiredTransactions.length === 0) {
-        console.log('✅ No expired PaymentIntent transactions found');
         return { successCount: 0, errorCount: 0, foundCount: 0 };
       }
-
-      console.log(`🔍 Found ${expiredTransactions.length} expired PaymentIntent transactions to clean up`);
 
       let successCount = 0;
       let errorCount = 0;
@@ -143,8 +131,6 @@ class TransactionCleanupService {
    */
   async expireTransaction(transaction) {
     try {
-      console.log(`⏰ Expiring PaymentIntent transaction ${transaction.id} (status: ${transaction.payment_status})`);
-
       // Use Transaction model's updateStatus method for proper state machine handling
       await transaction.updateStatus('expired', {
         expired_by_cleanup_service: true,
@@ -178,12 +164,8 @@ class TransactionCleanupService {
               }
             }
           );
-
-          console.log(`🛒 Reset ${purchasesToReset.length} purchases from pending to cart status for transaction ${transaction.id}`);
         }
       }
-
-      console.log(`✅ Successfully expired PaymentIntent transaction ${transaction.id}`);
 
     } catch (error) {
       console.error(`❌ Failed to expire transaction ${transaction.id}:`, error);
@@ -206,7 +188,6 @@ class TransactionCleanupService {
    * Run cleanup immediately (for manual triggers)
    */
   async runImmediateCleanup() {
-    console.log('🧹 Running immediate transaction cleanup...');
     return await this.runCleanup();
   }
 

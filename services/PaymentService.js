@@ -594,25 +594,29 @@ class PaymentService {
   }
 
   // Save customer token for future payments
-  async saveCustomerToken({ userId, tokenData, paymentSource = 'card' }) {
+  async saveCustomerToken({ userId, tokenData, paymentSource = 'card', environment = 'production' }) {
     try {
       console.log('💳 PaymentService: Saving customer token for user:', userId);
 
-      // Store token in our database for future use
+      // Store token in our database for future use - fixed to match CustomerToken model
       const customerToken = await this.models.CustomerToken.create({
         id: generateId(),
         user_id: userId,
-        payment_provider: 'payplus',
-        token_uid: tokenData.token_uid,
-        payment_method: paymentSource,
-        last_four_digits: tokenData.last_four_digits,
+        payplus_customer_uid: tokenData.customer_uid || tokenData.payplus_customer_uid || 'unknown',
+        token_value: tokenData.token_uid || tokenData.token_value,
+        card_mask: tokenData.last_four_digits || tokenData.card_mask,
         card_brand: tokenData.card_brand,
         expiry_month: tokenData.expiry_month,
         expiry_year: tokenData.expiry_year,
         is_active: true,
-        metadata: {
+        is_default: false,
+        payment_provider: 'payplus',
+        environment: environment,
+        payplus_response: {
           created_via: 'payment_completion',
-          payplus_data: tokenData
+          payment_source: paymentSource,
+          original_token_data: tokenData,
+          created_at: new Date().toISOString()
         },
         created_at: new Date(),
         updated_at: new Date()
@@ -623,7 +627,7 @@ class PaymentService {
       return {
         success: true,
         tokenId: customerToken.id,
-        tokenUid: tokenData.token_uid
+        tokenUid: tokenData.token_uid || tokenData.token_value
       };
 
     } catch (error) {
@@ -646,13 +650,15 @@ class PaymentService {
 
       return tokens.map(token => ({
         id: token.id,
-        tokenUid: token.token_uid,
-        paymentMethod: token.payment_method,
-        lastFourDigits: token.last_four_digits,
+        tokenUid: token.token_value,
+        paymentMethod: 'card', // Default since model doesn't have payment_method field
+        lastFourDigits: token.card_mask,
         cardBrand: token.card_brand,
         expiryMonth: token.expiry_month,
         expiryYear: token.expiry_year,
-        createdAt: token.created_at
+        createdAt: token.created_at,
+        isDefault: token.is_default,
+        environment: token.environment
       }));
 
     } catch (error) {
@@ -666,7 +672,8 @@ class PaymentService {
     try {
       console.log('💳 PaymentService: Charging customer token:', { tokenUid: tokenUid?.substring(0, 8) + '...', amount });
 
-      const config = this.getPayplusConfig('production'); // Token charging typically uses production
+      // Auto-detect environment instead of hardcoding production
+      const config = this.getPayplusConfig();
 
       const payload = {
         token_uid: tokenUid,
@@ -724,7 +731,8 @@ class PaymentService {
     try {
       console.log('🔍 PaymentService: Checking transaction status for PayPlus UID:', payplusPageUid?.substring(0, 8) + '...');
 
-      const config = this.getPayplusConfig('production');
+      // Auto-detect environment instead of hardcoding production
+      const config = this.getPayplusConfig();
 
       const response = await fetch(`${config.apiBaseUrl}/PaymentPages/getStatus`, {
         method: 'POST',
@@ -771,7 +779,8 @@ class PaymentService {
     try {
       console.log('🔍 PaymentService: Checking subscription status for PayPlus UID:', subscriptionUid?.substring(0, 8) + '...');
 
-      const config = this.getPayplusConfig('production');
+      // Auto-detect environment instead of hardcoding production
+      const config = this.getPayplusConfig();
 
       const response = await fetch(`${config.apiBaseUrl}/Subscriptions/getStatus`, {
         method: 'POST',
@@ -819,7 +828,8 @@ class PaymentService {
     try {
       console.log('🔄 PaymentService: Creating recurring subscription:', { planType, amount });
 
-      const config = this.getPayplusConfig('production');
+      // Auto-detect environment instead of hardcoding production
+      const config = this.getPayplusConfig();
 
       const payload = {
         token_uid: tokenUid,
@@ -910,7 +920,7 @@ class PaymentService {
         total_amount: totalAmount,
         payment_status: chargeResult.status === 'approved' ? 'completed' : 'pending',
         payment_method: 'payplus_token',
-        environment: 'production',
+        environment: process.env.ENVIRONMENT || process.env.NODE_ENV || 'development',
         payplus_page_uid: chargeResult.transactionUid,
         payplus_response: {
           coupon_info: {

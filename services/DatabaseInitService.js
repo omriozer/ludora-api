@@ -9,36 +9,26 @@ class DatabaseInitService {
 
   async initialize() {
     if (this.initialized) {
-      console.log('✅ Database already initialized');
       return;
     }
 
     try {
-      console.log('🔧 Checking database initialization...');
-
       // Test database connection
       await models.sequelize.authenticate();
-      console.log('✅ Database connection successful');
 
       // Check if database has tables
       const tableCount = await this.getTableCount();
-      console.log(`📊 Found ${tableCount} tables in database`);
 
       if (tableCount === 0) {
-        console.log('🏗️  Database appears empty, initializing schema...');
         await this.initializeSchema();
       } else if (tableCount < 10) {
-        console.log('⚠️  Database has some tables but seems incomplete, checking schema...');
         await this.validateAndFixSchema();
-      } else {
-        console.log('✅ Database schema appears complete');
       }
 
       // Run seeders if needed
       await this.runSeedersIfNeeded();
 
       this.initialized = true;
-      console.log('✅ Database initialization complete');
 
     } catch (error) {
       console.error('❌ Database initialization failed:', error);
@@ -148,8 +138,6 @@ class DatabaseInitService {
             // Don't fail the entire initialization for seeder errors
           }
         }
-      } else {
-        console.log('✅ Settings exist, skipping seeders');
       }
     } catch (error) {
       console.error('❌ Seeder check failed:', error);

@@ -13,7 +13,7 @@ export default {
     host: process.env.DB_HOST || 'localhost',
     port: process.env.DB_PORT || 5432,
     dialect: 'postgres',
-    logging: console.log,
+    logging: false, // Disabled SQL logging for cleaner console output
     pool: {
       max: 5,
       min: 0,

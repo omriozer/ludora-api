@@ -4,6 +4,8 @@ import { Op } from 'sequelize';
 import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import PaymentIntentService from '../services/PaymentIntentService.js';
+import PaymentService from '../services/PaymentService.js';
+import PaymentCompletionService from '../services/PaymentCompletionService.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
 
@@ -30,6 +32,114 @@ function mapPayPlusStatusToSystem(payplusStatusCode) {
   console.log(`📊 PayPlus "${payplusStatusCode}" → System "${systemStatus}"`);
 
   return systemStatus;
+}
+
+// Helper function to extract and save customer tokens from PayPlus webhooks
+async function extractAndSaveCustomerToken(payplusResponse, transaction, purchases, paymentSource, explicitUserId = null) {
+  try {
+    console.log(`🔑 TOKEN EXTRACTION: Starting token extraction for ${paymentSource} payment`);
+
+    // Extract token data from PayPlus response
+    const tokenData = payplusResponse.customer_token || payplusResponse.token || payplusResponse.customer?.token;
+    const customerData = payplusResponse.customer || {};
+    const transactionData = payplusResponse.transaction || payplusResponse;
+
+    // Check if token data exists in the response
+    if (!tokenData && !customerData.customer_uid && !transactionData.customer_uid) {
+      console.log(`⚠️ TOKEN EXTRACTION: No token data found in PayPlus ${paymentSource} response`);
+      return null;
+    }
+
+    // Determine user ID from multiple sources
+    let userId = explicitUserId;
+
+    if (!userId && transaction) {
+      // Get userId from transaction's linked purchases
+      const transactionPurchases = transaction.purchases || purchases || [];
+      if (transactionPurchases.length > 0) {
+        userId = transactionPurchases[0].buyer_user_id;
+      }
+    }
+
+    if (!userId && purchases && purchases.length > 0) {
+      // Get userId from purchases array
+      userId = purchases[0].buyer_user_id;
+    }
+
+    if (!userId) {
+      console.warn(`⚠️ TOKEN EXTRACTION: No user ID found for ${paymentSource} payment - cannot save token`);
+      return null;
+    }
+
+    console.log(`🔑 TOKEN EXTRACTION: Processing token for user ${userId} from ${paymentSource} payment`);
+
+    // Extract token information with multiple fallback patterns
+    const extractedTokenData = {
+      // Token value (required)
+      token_uid: tokenData?.token_uid || tokenData?.uid || tokenData?.value || customerData.customer_uid || transactionData.customer_uid,
+
+      // Customer identification
+      customer_uid: customerData.customer_uid || customerData.uid || transactionData.customer_uid,
+
+      // Card information
+      last_four_digits: tokenData?.card_mask || tokenData?.last_four || customerData.card_mask,
+      card_brand: tokenData?.card_brand || tokenData?.brand || customerData.card_brand,
+
+      // Expiry information
+      expiry_month: tokenData?.expiry_month || tokenData?.exp_month,
+      expiry_year: tokenData?.expiry_year || tokenData?.exp_year,
+
+      // Customer details
+      customer_name: customerData.name || payplusResponse.customer_name,
+      customer_email: customerData.email || payplusResponse.customer_email,
+
+      // Metadata
+      payment_source: paymentSource,
+      original_response: payplusResponse
+    };
+
+    // Only proceed if we have at least a token identifier
+    if (!extractedTokenData.token_uid && !extractedTokenData.customer_uid) {
+      console.log(`⚠️ TOKEN EXTRACTION: No valid token identifier found in ${paymentSource} response`);
+      console.log(`🔍 TOKEN EXTRACTION: Available data:`, JSON.stringify({
+        tokenData,
+        customerData: Object.keys(customerData),
+        transactionData: Object.keys(transactionData)
+      }, null, 2));
+      return null;
+    }
+
+    console.log(`🔑 TOKEN EXTRACTION: Extracted token data:`, {
+      token_uid: extractedTokenData.token_uid,
+      customer_uid: extractedTokenData.customer_uid,
+      user_id: userId,
+      payment_source: paymentSource,
+      has_card_info: !!(extractedTokenData.last_four_digits || extractedTokenData.card_brand)
+    });
+
+    // Call PaymentService to save the token
+    const paymentService = new PaymentService();
+    const savedToken = await paymentService.saveCustomerToken(
+      userId,
+      extractedTokenData,
+      paymentSource
+    );
+
+    if (savedToken) {
+      console.log(`✅ TOKEN EXTRACTION: Successfully saved customer token ${savedToken.id} for user ${userId}`);
+      return savedToken;
+    } else {
+      console.warn(`⚠️ TOKEN EXTRACTION: PaymentService.saveCustomerToken returned null for user ${userId}`);
+      return null;
+    }
+
+  } catch (error) {
+    console.error(`❌ TOKEN EXTRACTION: Failed to extract/save customer token for ${paymentSource}:`, error.message);
+    console.error(`🔍 TOKEN EXTRACTION: PayPlus response was:`, JSON.stringify(payplusResponse, null, 2));
+
+    // Don't throw - token extraction failure shouldn't break payment processing
+    return null;
+  }
 }
 
 // Apply webhook-specific CORS
@@ -354,9 +464,52 @@ router.post('/payplus',
         const systemStatus = mapPayPlusStatusToSystem(finalStatusCode);
         console.log(`📊 Mapped PayPlus status ${finalStatusCode} to system status: ${systemStatus}`);
 
-        if (isTransactionPayment && paymentIntentService && transaction) {
-          // Transaction-based PaymentIntent flow (preferred)
-          console.log(`🔄 Using PaymentIntentService to update transaction ${transaction.id} to status: ${systemStatus}`);
+        if (isTransactionPayment && transaction && systemStatus === 'completed') {
+          // Transaction-based payment completion using shared completion service
+          console.log(`🔄 Using PaymentCompletionService for transaction ${transaction.id} completion`);
+
+          try {
+            const completionService = new PaymentCompletionService();
+            const completionResult = await completionService.processCompletion(
+              transaction.id,
+              req.body,
+              'webhook'
+            );
+
+            if (completionResult.alreadyProcessed) {
+              console.log(`⏩ WEBHOOK: Transaction ${transaction.id} already processed by polling`);
+
+              // Log that we arrived second
+              await updateWebhookLog('processed', {
+                transaction_id: transaction.id,
+                purchase_count: purchases.length,
+                final_status: systemStatus,
+                payplus_status_code: finalStatusCode,
+                processing_method: 'PaymentCompletionService',
+                race_condition_result: 'already_processed_by_polling'
+              });
+            } else {
+              console.log(`🎉 WEBHOOK: Successfully processed completion for transaction ${transaction.id}`);
+
+              // Log successful processing
+              await updateWebhookLog('processed', {
+                transaction_id: transaction.id,
+                purchase_count: purchases.length,
+                final_status: systemStatus,
+                payplus_status_code: finalStatusCode,
+                processing_method: 'PaymentCompletionService',
+                race_condition_result: 'webhook_won_race',
+                completion_details: completionResult.details
+              });
+            }
+
+          } catch (paymentUpdateError) {
+            console.error(`❌ PaymentCompletionService failed for transaction ${transaction.id}:`, paymentUpdateError);
+            throw paymentUpdateError;
+          }
+        } else if (isTransactionPayment && transaction && systemStatus !== 'completed') {
+          // Non-completed transaction status update (pending, failed, etc.)
+          console.log(`🔄 Using PaymentIntentService for non-completed status update: ${systemStatus}`);
 
           try {
             await paymentIntentService.updatePaymentStatus(
@@ -373,9 +526,9 @@ router.post('/payplus',
               }
             );
 
-            console.log(`✅ PaymentIntentService successfully updated transaction ${transaction.id}`);
+            console.log(`✅ PaymentIntentService updated transaction ${transaction.id} to status: ${systemStatus}`);
 
-            // Log successful processing
+            // Log successful non-completion processing
             await updateWebhookLog('processed', {
               transaction_id: transaction.id,
               purchase_count: purchases.length,
@@ -420,6 +573,11 @@ router.post('/payplus',
 
           await Promise.all(purchaseUpdatePromises);
           console.log(`✅ Successfully updated all ${purchases.length} purchases`);
+
+          // ===== TOKEN EXTRACTION FOR SUCCESSFUL PAYMENTS =====
+          if (systemStatus === 'completed') {
+            await extractAndSaveCustomerToken(req.body, transaction, purchases, 'legacy_purchase');
+          }
 
           // Log successful processing
           await updateWebhookLog('processed', {
@@ -482,6 +640,179 @@ router.post('/payplus',
         message: 'PayPlus webhook received but processing failed',
         error: error.message,
         processed: false
+      });
+    }
+  })
+);
+
+// PayPlus subscription webhooks (separate from regular payments)
+router.post('/payplus-subscription',
+  asyncHandler(async (req, res) => {
+    // Helper function to update webhook log status - defined outside try-catch for proper scoping
+    let webhookLog = null;
+    let webhookStartTime = null;
+
+    const updateWebhookLog = async (status, data = {}, error = null) => {
+      if (!webhookLog) return;
+      try {
+        await webhookLog.update({
+          processing_status: status,
+          response_data: data,
+          error_message: error?.message,
+          error_stack: error?.stack,
+          processing_time_ms: webhookStartTime ? Date.now() - webhookStartTime : null,
+          processed_at: status === 'processed' ? new Date() : null,
+          updated_at: new Date()
+        });
+      } catch (updateErr) {
+        console.error('❌ Failed to update subscription WebhookLog:', updateErr.message);
+      }
+    };
+
+    try {
+      console.log(`🔔 ===== PAYPLUS SUBSCRIPTION WEBHOOK RECEIVED =====`);
+      console.log(`📨 PayPlus subscription webhook received at ${new Date().toISOString()}`);
+      console.log('PayPlus subscription headers:', JSON.stringify(req.headers, null, 2));
+      console.log('PayPlus subscription body:', JSON.stringify(req.body, null, 2));
+
+      // ===== COMPREHENSIVE WEBHOOK LOGGING FOR SUBSCRIPTIONS =====
+      webhookStartTime = Date.now();
+      const webhookLogId = generateId();
+
+      // Extract subscription callback data with fallbacks for field variations
+      const {
+        subscription_uid,
+        subscriptionUid,
+        page_request_uid,
+        status,
+        status_code,
+        statusCode,
+        plan_id,
+        planId,
+        user_id,
+        userId,
+        amount,
+        next_payment_date,
+        customer_email,
+        customer_name,
+        ...subscriptionData
+      } = req.body || {};
+
+      // Resolve final values with fallbacks (similar to transactional webhook)
+      const finalSubscriptionUid = subscription_uid || subscriptionUid || page_request_uid;
+      const finalUserId = user_id || userId;
+      const finalPlanId = plan_id || planId;
+      const finalStatusCode = status_code || statusCode;
+      const finalStatus = status || 'unknown';
+
+      console.log(`🔍 SUBSCRIPTION WEBHOOK DEBUG: Resolved values:`, {
+        finalSubscriptionUid,
+        finalUserId,
+        finalPlanId,
+        finalStatus,
+        finalStatusCode
+      });
+
+      // Create comprehensive webhook log entry for subscription
+      webhookLog = await models.WebhookLog.create({
+        id: webhookLogId,
+        payplus_page_uid: finalSubscriptionUid, // Using subscription UID in the page UID field
+        payplus_transaction_uid: finalSubscriptionUid, // Store subscription UID here too
+        http_method: req.method,
+        request_headers: req.headers,
+        request_body: req.body,
+        user_agent: req.get('User-Agent'),
+        ip_address: req.ip || req.connection.remoteAddress,
+        payplus_data: subscriptionData,
+        status_code: finalStatusCode,
+        status_name: finalStatus,
+        processing_status: 'pending',
+        webhook_source: 'payplus-subscription',
+        created_at: new Date(),
+        updated_at: new Date()
+      }).catch(err => {
+        console.error('❌ Failed to create subscription WebhookLog entry:', err.message);
+        return null;
+      });
+
+      console.log(`📊 Subscription WebhookLog created with ID: ${webhookLogId}`);
+
+      if (!finalSubscriptionUid) {
+        console.warn('PayPlus subscription webhook missing subscription_uid');
+        await updateWebhookLog('failed', {
+          error_type: 'missing_subscription_uid',
+          received_fields: Object.keys(req.body || {})
+        }, new Error('Missing subscription_uid'));
+
+        return res.status(400).json({ error: 'Missing subscription_uid' });
+      }
+
+      console.log(`🔍 Processing subscription callback for UID: ${finalSubscriptionUid}, Status: ${finalStatus}`);
+
+      // Import SubscriptionService dynamically to avoid circular imports
+      const SubscriptionService = (await import('../services/SubscriptionService.js')).default;
+
+      // Process the subscription callback
+      const result = await SubscriptionService.handlePayplusSubscriptionCallback({
+        subscriptionId: finalSubscriptionUid,
+        status: finalStatus,
+        planId: finalPlanId,
+        userId: finalUserId,
+        payerEmail: customer_email,
+        customerName: customer_name,
+        amount: parseFloat(amount) || 0,
+        nextPaymentDate: next_payment_date,
+        callbackData: req.body
+      });
+
+      console.log('✅ PayPlus subscription webhook processed successfully:', result);
+
+      // ===== TOKEN EXTRACTION FOR SUCCESSFUL SUBSCRIPTIONS =====
+      if (finalStatus === 'completed' || finalStatus === 'active' || finalStatusCode === '000') {
+        await extractAndSaveCustomerToken(req.body, null, [], 'subscription', finalUserId);
+      }
+
+      // Log successful processing
+      await updateWebhookLog('processed', {
+        subscription_uid: finalSubscriptionUid,
+        user_id: finalUserId,
+        plan_id: finalPlanId,
+        final_status: finalStatus,
+        result_data: result.data,
+        processing_method: 'SubscriptionService'
+      });
+
+      res.status(200).json({
+        message: 'PayPlus subscription webhook processed successfully',
+        subscription_uid: finalSubscriptionUid,
+        status: finalStatus,
+        processed: true,
+        result: result.data,
+        webhook_log_id: webhookLog?.id
+      });
+
+    } catch (error) {
+      console.error('🚨 ===== PAYPLUS SUBSCRIPTION WEBHOOK FAILED =====');
+      console.error('❌ PayPlus subscription webhook processing failed:', error);
+      console.error('📥 Request body was:', JSON.stringify(req.body, null, 2));
+      console.error('📋 Request headers were:', JSON.stringify(req.headers, null, 2));
+
+      // Log comprehensive error details
+      await updateWebhookLog('failed', {
+        error_details: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+          request_body: req.body,
+          request_headers: req.headers
+        }
+      }, error);
+
+      res.status(200).json({
+        message: 'PayPlus subscription webhook received but processing failed',
+        error: error.message,
+        processed: false,
+        webhook_log_id: webhookLog?.id
       });
     }
   })
