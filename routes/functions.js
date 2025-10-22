@@ -643,7 +643,7 @@ router.post('/updateSystemEmailTemplates', authenticateToken, async (req, res) =
 router.post('/createPayplusSubscriptionPage', authenticateToken, validateBody(schemas.createSubscriptionPage), async (req, res) => {
   try {
     console.log('🔍 SUBSCRIPTION DEBUG: Request body:', req.body);
-    console.log('🔍 SUBSCRIPTION DEBUG: PayPlus config check:', PaymentService.getPayplusConfig());
+    console.log('🔍 SUBSCRIPTION DEBUG: PayPlus config check:', PaymentService.getPayplusConfig(req.body.environment));
     const result = await SubscriptionService.createPayplusSubscriptionPage(req.body);
     res.json(result);
   } catch (error) {

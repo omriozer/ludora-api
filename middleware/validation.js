@@ -240,7 +240,8 @@ export const schemas = {
   createSubscriptionPage: Joi.object({
     planId: Joi.string().required(),
     userId: Joi.string().optional(),
-    userEmail: Joi.string().email().optional()
+    userEmail: Joi.string().email().optional(),
+    environment: Joi.string().valid('test', 'production').optional()
   }),
 
   // Image generation

@@ -10,7 +10,7 @@ class SubscriptionService {
   }
 
   // Create PayPlus subscription page
-  async createPayplusSubscriptionPage({ planId, userId, userEmail }) {
+  async createPayplusSubscriptionPage({ planId, userId, userEmail, environment }) {
     try {
       // Find subscription plan
       const plan = await this.models.SubscriptionPlan.findByPk(planId);
@@ -56,7 +56,7 @@ class SubscriptionService {
           console.log('🔄 Creating token-based subscription for user:', userId, 'using PayPlus /RecurringPayments/Add');
 
           try {
-            const config = PaymentService.getPayplusConfig(process.env.ENVIRONMENT || 'development');
+            const config = PaymentService.getPayplusConfig(environment);
             const selectedToken = customerTokens[0]; // Use first available token
 
             // Build RecurringPayments/Add payload according to PayPlus API
@@ -204,7 +204,7 @@ class SubscriptionService {
         // Create PayPlus subscription payment page for new customers or token failure
         console.log('🔗 Creating PayPlus subscription payment page for user:', userId);
 
-        const config = PaymentService.getPayplusConfig(process.env.ENVIRONMENT || 'development');
+        const config = PaymentService.getPayplusConfig(environment);
 
         const recurringSettings = {
           instant_first_payment: true,
@@ -900,7 +900,7 @@ class SubscriptionService {
       try {
         console.log(`🛑 Cancelling PayPlus subscription: ${recurringId}`);
 
-        const config = PaymentService.getPayplusConfig(process.env.ENVIRONMENT || 'development');
+        const config = PaymentService.getPayplusConfig();
 
         const cancelPayload = {
           subscription_uid: recurringId,
