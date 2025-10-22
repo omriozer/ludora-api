@@ -25,7 +25,7 @@ module.exports = {
       course_lifetime_access: true,
       default_file_access_days: 365,
       file_lifetime_access: true,
-      contact_email: 'contact@ludora.com',
+      contact_email: 'support@ludora.app',
       contact_phone: '',
       site_description: 'פלטפורמת למידה מתקדמת',
       logo_url: '',

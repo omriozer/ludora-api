@@ -642,8 +642,21 @@ router.post('/updateSystemEmailTemplates', authenticateToken, async (req, res) =
 // Subscription Functions
 router.post('/createPayplusSubscriptionPage', authenticateToken, validateBody(schemas.createSubscriptionPage), async (req, res) => {
   try {
-    console.log('🔍 SUBSCRIPTION DEBUG: Request body:', req.body);
-    console.log('🔍 SUBSCRIPTION DEBUG: PayPlus config check:', PaymentService.getPayplusConfig(req.body.environment));
+    console.log('🚨🚨🚨 SUBSCRIPTION DEBUG START 🚨🚨🚨');
+    console.log('🔍 SUBSCRIPTION DEBUG: Request body:', JSON.stringify(req.body, null, 2));
+
+    const config = PaymentService.getPayplusConfig(req.body.environment);
+    console.log('🔍 SUBSCRIPTION DEBUG: PayPlus config check:', {
+      requestedEnvironment: req.body.environment,
+      configEnvironment: config.environment,
+      apiUrl: config.apiBaseUrl,
+      hasApiKey: !!config.apiKey,
+      hasSecretKey: !!config.secretKey,
+      hasPaymentPageUid: !!config.paymentPageUid,
+      paymentPageUidPreview: config.paymentPageUid?.substring(0, 12) + '...'
+    });
+    console.log('🚨🚨🚨 SUBSCRIPTION DEBUG END 🚨🚨🚨');
+
     const result = await SubscriptionService.createPayplusSubscriptionPage(req.body);
     res.json(result);
   } catch (error) {
