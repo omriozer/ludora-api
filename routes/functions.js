@@ -642,10 +642,40 @@ router.post('/updateSystemEmailTemplates', authenticateToken, async (req, res) =
 // Subscription Functions
 router.post('/createPayplusSubscriptionPage', authenticateToken, validateBody(schemas.createSubscriptionPage), async (req, res) => {
   try {
+    console.log('🔍 SUBSCRIPTION DEBUG: Request body:', req.body);
+    console.log('🔍 SUBSCRIPTION DEBUG: PayPlus config check:', PaymentService.getPayplusConfig());
     const result = await SubscriptionService.createPayplusSubscriptionPage(req.body);
     res.json(result);
   } catch (error) {
     console.error('Error creating subscription page:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Diagnostic route to check PayPlus configuration
+router.post('/debugPayplusConfig', authenticateToken, async (req, res) => {
+  try {
+    const { environment } = req.body;
+    const config = PaymentService.getPayplusConfig(environment);
+
+    res.json({
+      success: true,
+      data: {
+        requestedEnvironment: environment,
+        detectedEnvironment: process.env.ENVIRONMENT || process.env.NODE_ENV || 'development',
+        config: {
+          environment: config.environment || 'unknown',
+          apiUrl: config.apiBaseUrl,
+          hasApiKey: !!config.apiKey,
+          hasSecretKey: !!config.secretKey,
+          hasPaymentPageUid: !!config.paymentPageUid,
+          paymentPageUid: config.paymentPageUid?.substring(0, 8) + '...',
+          credentialSource: config.credentialSource || 'unknown'
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error checking PayPlus config:', error);
     res.status(500).json({ error: error.message });
   }
 });
