@@ -196,12 +196,10 @@ async function startServer() {
       // Import and start subscription monitoring service
       const SubscriptionMonitoringService = await import('./services/SubscriptionMonitoringService.js');
       SubscriptionMonitoringService.default.startHourlyMonitoring();
-      console.log('✅ Subscription monitoring service started');
 
       // Import and start payment polling service
       const PaymentPollingService = await import('./services/PaymentPollingService.js');
       PaymentPollingService.default.startBackgroundPolling();
-      console.log('✅ Payment polling service started');
     } catch (error) {
       console.error('⚠️  Failed to start background services:', error);
       // Don't fail server startup if background services fail

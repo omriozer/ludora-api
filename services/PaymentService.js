@@ -1,5 +1,7 @@
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
+import { PAYPLUS_PRODUCT_TYPE_NAMES } from '../constants/productTypes.js';
+import { PAYPLUS_VAT_TYPE } from '../constants/info.js';
 
 class PaymentService {
   constructor() {
@@ -394,15 +396,10 @@ class PaymentService {
         ? 'https://api.ludora.app/api/webhooks/payplus'
         : 'https://api.ludora.app/api/webhooks/payplus'; // Still use production for development testing since PayPlus can't reach localhost
 
-      // Create payment description for multi-item purchases
-      const paymentDescription = products.length === 1
-        ? `Purchase: ${products[0].title}`
-        : `Cart purchase: ${products.length} items`;
-
       // Create invoice name for PayPlus
-      const invoiceName = products.length === 1
-        ? products[0].title
-        : `Cart (${products.length} items)`;
+      // const invoiceName = products.length === 1
+      //   ? products[0].title
+      //   : `רכישת ${products.length} פריטים`;
 
       // Get customer information from the first purchase
       let customerName = 'Customer';
@@ -431,11 +428,19 @@ class PaymentService {
         refURL_failure: failureUrl || returnUrl,
         refURL_callback: webhookCallbackUrl,
         charge_method: 1,
-        custom_invoice_name: invoiceName,
-        more_info: paymentDescription,
+        custom_invoice_name: customerName,
+        items: products.map(p => ({
+          name: p.title + `${PAYPLUS_PRODUCT_TYPE_NAMES[p.product_type] ? ' - ' + PAYPLUS_PRODUCT_TYPE_NAMES[p.product_type] : ''}`,
+          quantity: 1,
+          price: Number(p.price).toFixed(2),
+          vat_type: PAYPLUS_VAT_TYPE
+        })),
         charge_default: 1,
-        customer_name: customerName,
-        customer_email: customerEmail
+        customer: {
+          customer_name: user.full_name || '',
+          email: userEmail || user.email || '',
+          phone: user.phone || '',
+        },
       };
 
       // Add subscription settings if any product has recurring billing
@@ -994,7 +999,7 @@ class PaymentService {
 
     const config = {
       apiBaseUrl: payplusEnv === 'production'
-        ? 'https://restapi.payplus.co.il/api/v1.0'
+        ? 'https://restapidev.payplus.co.il/api/v1.0'
         : 'https://restapidev.payplus.co.il/api/v1.0',
       apiKey: payplusEnv === 'production'
         ? process.env.PAYPLUS_API_KEY

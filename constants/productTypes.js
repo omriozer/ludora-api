@@ -10,6 +10,14 @@ export const PRODUCT_TYPES = {
   GAME: 'game'
 };
 
+export const PAYPLUS_PRODUCT_TYPE_NAMES = {
+  [PRODUCT_TYPES.WORKSHOP]: 'הדרכה',
+  [PRODUCT_TYPES.COURSE]: 'קורס',
+  [PRODUCT_TYPES.FILE]: 'קובץ',
+  [PRODUCT_TYPES.TOOL]: 'כלי',
+  [PRODUCT_TYPES.GAME]: 'משחק'
+};
+
 // Arrays for different use cases
 export const ALL_PRODUCT_TYPES = Object.values(PRODUCT_TYPES);
 

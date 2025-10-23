@@ -483,6 +483,7 @@ class PaymentPollingService {
    * Manual trigger for immediate polling (for testing/debugging)
    */
   async triggerImmediatePoll(options = {}) {
+    return // todo omri remove
     console.log('🚀 POLLING: Manual poll trigger requested');
 
     return await this.pollAllPendingTransactions({
@@ -546,6 +547,7 @@ class PaymentPollingService {
    * Start background polling service
    */
   startBackgroundPolling(intervalMs = null) {
+    return // todo omri remove
     if (this.isBackgroundPollingActive) {
       console.log('🔄 POLLING: Background polling already active');
       return;

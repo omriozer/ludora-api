@@ -29,6 +29,7 @@ class SubscriptionMonitoringService {
    * Start the hourly subscription monitoring cron job
    */
   startHourlyMonitoring() {
+    return // todo omri remove
     console.log('🕐 Starting hourly subscription monitoring service...');
 
     // Run every hour at minute 0 (e.g., 1:00, 2:00, 3:00, etc.)
