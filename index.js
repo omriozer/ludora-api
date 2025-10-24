@@ -46,6 +46,7 @@ import { rateLimiters } from './middleware/validation.js';
 // Import route modules
 import entityRoutes from './routes/entities.js';
 import functionRoutes from './routes/functions.js';
+import paymentsRoutes from './routes/payments.js';
 import integrationRoutes from './routes/integrations.js';
 import authRoutes from './routes/auth.js';
 import videoRoutes from './routes/videos.js';
@@ -55,8 +56,6 @@ import mediaRoutes from './routes/media.js';
 import logsRoutes from './routes/logs.js';
 import webhookRoutes from './routes/webhooks.js';
 import adminRoutes from './routes/admin.js';
-import paymentRoutes from './routes/payments.js';
-import paymentPollingRoutes from './routes/payment-polling.js';
 import dashboardRoutes from './routes/dashboard.js';
 import toolRoutes from './routes/tools.js';
 
@@ -113,6 +112,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/entities', entityRoutes);
 app.use('/api/functions', functionRoutes);
+app.use('/api/payments', paymentsRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/assets', assetsRoutes);
@@ -120,8 +120,6 @@ app.use('/api/access', accessRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/payment-polling', paymentPollingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/tools', toolRoutes);
 
@@ -153,11 +151,10 @@ app.get('/api', (req, res) => {
       auth: '/api/auth',
       entities: '/api/entities',
       functions: '/api/functions',
+      payments: '/api/payments',
       integrations: '/api/integrations',
       videos: '/api/videos',
       access: '/api/access',
-      payments: '/api/payments',
-      'payment-polling': '/api/payment-polling',
       dashboard: '/api/dashboard',
       tools: '/api/tools'
     },
@@ -189,17 +186,7 @@ async function startServer() {
 
     // Start background services
     try {
-      // Import and start transaction cleanup service
-      const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
-      TransactionCleanupService.default.start();
 
-      // Import and start subscription monitoring service
-      const SubscriptionMonitoringService = await import('./services/SubscriptionMonitoringService.js');
-      SubscriptionMonitoringService.default.startHourlyMonitoring();
-
-      // Import and start payment polling service
-      const PaymentPollingService = await import('./services/PaymentPollingService.js');
-      PaymentPollingService.default.startBackgroundPolling();
     } catch (error) {
       console.error('⚠️  Failed to start background services:', error);
       // Don't fail server startup if background services fail
@@ -224,11 +211,7 @@ process.on('SIGTERM', async () => {
 
   // Stop background services
   try {
-    const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
-    TransactionCleanupService.default.stop();
 
-    const PaymentPollingService = await import('./services/PaymentPollingService.js');
-    PaymentPollingService.default.stopBackgroundPolling();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }
@@ -243,11 +226,7 @@ process.on('SIGINT', async () => {
 
   // Stop background services
   try {
-    const TransactionCleanupService = await import('./services/TransactionCleanupService.js');
-    TransactionCleanupService.default.stop();
 
-    const PaymentPollingService = await import('./services/PaymentPollingService.js');
-    PaymentPollingService.default.stopBackgroundPolling();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }

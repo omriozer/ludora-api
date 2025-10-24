@@ -1,1053 +1,437 @@
 import models from '../models/index.js';
-import { generateId } from '../models/baseModel.js';
-import { PAYPLUS_PRODUCT_TYPE_NAMES } from '../constants/productTypes.js';
-import { PAYPLUS_VAT_TYPE } from '../constants/info.js';
+import { clog, cerror } from '../lib/utils.js';
 
+/**
+ * PaymentService - Handles payment completion and transaction management
+ */
 class PaymentService {
-  constructor() {
-    this.models = models;
-  }
+  /**
+   * Complete a purchase (for free products or successful payments)
+   * @param {string} purchaseId - The purchase ID to complete
+   * @param {Object} options - Additional options
+   * @param {string} options.paymentMethod - Payment method used ('free', 'payplus', etc.)
+   * @param {Object} options.transactionData - Additional transaction data
+   * @returns {Promise<Object>} Updated purchase object
+   */
+  static async completePurchase(purchaseId, options = {}) {
+    const { paymentMethod = 'free', transactionData = {} } = options;
 
-  // Send payment confirmation
-  async sendPaymentConfirmation({ paymentId, userId, amount, email }) {
     try {
+      clog(`PaymentService: Completing purchase ${purchaseId} with method ${paymentMethod}`);
+
       // Find the purchase
-      const purchase = await this.models.Purchase.findByPk(paymentId);
+      const purchase = await models.Purchase.findByPk(purchaseId);
       if (!purchase) {
-        throw new Error('Purchase not found');
+        throw new Error(`Purchase ${purchaseId} not found`);
       }
 
-      // Update purchase status
-      await purchase.update({
-        payment_status: 'confirmed',
-        updated_at: new Date()
-      });
-
-      // Log the confirmation
-      await this.models.EmailLog.create({
-        id: generateId(),
-        recipient_email: email,
-        subject: 'Payment Confirmation',
-        content: `Your payment of $${amount} has been confirmed.`,
-        trigger_type: 'payment_confirmation',
-        related_purchase_id: paymentId,
-        status: 'sent',
-        created_at: new Date(),
-        updated_at: new Date()
-      });
-
-      return {
-        success: true,
-        message: 'Payment confirmation sent',
-        data: { paymentId, status: 'confirmed' }
-      };
-    } catch (error) {
-      console.error('Error sending payment confirmation:', error);
-      throw error;
-    }
-  }
-
-  // Test PayPlus connection
-  async testPayplusConnection() {
-    try {
-      // TODO: Implement actual PayPlus API connection test
-      // For now, return mock success
-      // Auto-detect PayPlus environment
-      const deploymentEnv = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
-      const payplusEnv = deploymentEnv === 'production' ? 'production' : 'sandbox';
-
-      return {
-        success: true,
-        message: 'PayPlus connection test successful',
-        data: {
-          connected: true,
-          timestamp: new Date().toISOString(),
-          environment: payplusEnv,
-          deploymentEnvironment: deploymentEnv
-        }
-      };
-    } catch (error) {
-      console.error('PayPlus connection test failed:', error);
-      throw error;
-    }
-  }
-
-  // Apply coupon to purchase(s) - enhanced with new targeting and validation
-  async applyCoupon({ couponCode, userId, purchaseIds, purchaseAmount, cartItems }) {
-    try {
-      // Find the coupon
-      const coupon = await this.models.Coupon.findOne({
-        where: { code: couponCode, is_active: true }
-      });
-
-      if (!coupon) {
-        throw new Error('Invalid or inactive coupon code');
+      // Validate that the purchase can be completed
+      if (purchase.payment_status === 'completed') {
+        clog(`PaymentService: Purchase ${purchaseId} already completed`);
+        return purchase;
       }
 
-      // Basic validations
-      await this.validateCouponBasics(coupon);
-
-      // Get user information for targeting
-      const user = userId ? await this.models.User.findByPk(userId) : null;
-
-      // Get cart details for validation
-      const cartDetails = await this.getCartDetailsForCoupon(purchaseIds, cartItems);
-
-      // Enhanced validations with new features
-      await this.validateCouponTargeting(coupon, user, cartDetails);
-      await this.validateCouponRequirements(coupon, cartDetails, purchaseAmount);
-
-      // Calculate discount with cap enforcement
-      const discountResult = this.calculateCouponDiscount(coupon, cartDetails, purchaseAmount);
-
-      // Update coupon usage (but don't commit yet - this will be done when payment completes)
-      // We're just validating and calculating for now
-
-      return {
-        success: true,
-        message: 'Coupon applied successfully',
-        data: {
-          couponCode,
-          couponId: coupon.id,
-          discountAmount: discountResult.discountAmount,
-          discountType: coupon.discount_type,
-          originalAmount: purchaseAmount,
-          finalAmount: discountResult.finalAmount,
-          appliedItems: discountResult.appliedItems,
-          priority: coupon.priority_level,
-          maxCapApplied: discountResult.maxCapApplied
-        }
-      };
-    } catch (error) {
-      console.error('Error applying coupon:', error);
-      throw error;
-    }
-  }
-
-  // Validate basic coupon conditions (usage limit, expiry, etc.)
-  async validateCouponBasics(coupon) {
-    // Check usage limit
-    if (coupon.usage_limit && coupon.usage_count >= coupon.usage_limit) {
-      throw new Error('Coupon usage limit exceeded');
-    }
-
-    // Check expiry
-    if (coupon.valid_until) {
-      const expiryDate = new Date(coupon.valid_until);
-      if (expiryDate < new Date()) {
-        throw new Error('Coupon has expired');
-      }
-    }
-  }
-
-  // Get cart details for coupon validation
-  async getCartDetailsForCoupon(purchaseIds, cartItems) {
-    if (cartItems) {
-      // Cart items provided directly
-      return {
-        items: cartItems,
-        totalQuantity: cartItems.length,
-        productTypes: [...new Set(cartItems.map(item => item.purchasable_type))],
-        productIds: cartItems.map(item => item.purchasable_id)
-      };
-    }
-
-    if (purchaseIds && purchaseIds.length > 0) {
-      // Get purchases from database
-      const purchases = await this.models.Purchase.findAll({
-        where: { id: purchaseIds }
-      });
-
-      return {
-        items: purchases,
-        totalQuantity: purchases.length,
-        productTypes: [...new Set(purchases.map(p => p.purchasable_type))],
-        productIds: purchases.map(p => p.purchasable_id)
-      };
-    }
-
-    throw new Error('No cart items or purchase IDs provided for coupon validation');
-  }
-
-  // Validate coupon targeting (product, user segments)
-  async validateCouponTargeting(coupon, user, cartDetails) {
-    // Product targeting validation
-    if (coupon.targeting_type === 'product_type' && coupon.target_product_types?.length > 0) {
-      const hasMatchingType = cartDetails.productTypes.some(type =>
-        coupon.target_product_types.includes(type)
-      );
-      if (!hasMatchingType) {
-        throw new Error(`This coupon only applies to: ${coupon.target_product_types.join(', ')}`);
-      }
-    }
-
-    if (coupon.targeting_type === 'product_id' && coupon.target_product_ids?.length > 0) {
-      const hasMatchingId = cartDetails.productIds.some(id =>
-        coupon.target_product_ids.includes(id)
-      );
-      if (!hasMatchingId) {
-        throw new Error('This coupon does not apply to any items in your cart');
-      }
-    }
-
-    // User segment targeting validation
-    if (coupon.targeting_type === 'user_segment' && coupon.user_segments?.length > 0) {
-      if (!user) {
-        throw new Error('User authentication required for this coupon');
+      if (!['cart', 'pending'].includes(purchase.payment_status)) {
+        throw new Error(`Cannot complete purchase with status: ${purchase.payment_status}`);
       }
 
-      const userSegments = this.getUserSegments(user);
-      const hasMatchingSegment = coupon.user_segments.some(segment =>
-        userSegments.includes(segment)
-      );
-
-      if (!hasMatchingSegment) {
-        throw new Error(`This coupon is only available for: ${coupon.user_segments.join(', ')}`);
-      }
-    }
-  }
-
-  // Validate coupon requirements (minimum amount, quantity)
-  async validateCouponRequirements(coupon, cartDetails, purchaseAmount) {
-    // Check minimum amount
-    if (coupon.minimum_amount && purchaseAmount < coupon.minimum_amount) {
-      throw new Error(`Minimum purchase amount of ₪${coupon.minimum_amount} required`);
-    }
-
-    // Check minimum quantity
-    if (coupon.minimum_quantity && cartDetails.totalQuantity < coupon.minimum_quantity) {
-      throw new Error(`Minimum ${coupon.minimum_quantity} items required in cart`);
-    }
-  }
-
-  // Calculate discount amount with cap enforcement
-  calculateCouponDiscount(coupon, cartDetails, purchaseAmount) {
-    let discountAmount = 0;
-    let maxCapApplied = false;
-
-    // Calculate base discount
-    if (coupon.discount_type === 'percentage') {
-      discountAmount = (purchaseAmount * coupon.discount_value) / 100;
-    } else if (coupon.discount_type === 'fixed') {
-      discountAmount = coupon.discount_value;
-    }
-
-    // Apply maximum discount cap if set
-    if (coupon.max_discount_cap && discountAmount > coupon.max_discount_cap) {
-      discountAmount = coupon.max_discount_cap;
-      maxCapApplied = true;
-    }
-
-    // Ensure discount doesn't exceed purchase amount
-    discountAmount = Math.min(discountAmount, purchaseAmount);
-
-    const finalAmount = Math.max(0, purchaseAmount - discountAmount);
-
-    return {
-      discountAmount,
-      finalAmount,
-      maxCapApplied,
-      appliedItems: cartDetails.items.length // For now, apply to all items
-    };
-  }
-
-  // Get user segments for targeting
-  getUserSegments(user) {
-    const segments = [];
-
-    // Check if new user (registered within last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    if (user.created_at > thirtyDaysAgo) {
-      segments.push('new_user');
-    }
-
-    // Check content creator status
-    if (user.content_creator_agreement_sign_date) {
-      segments.push('content_creator');
-    }
-
-    // Check admin/VIP status
-    if (user.role === 'admin' || user.role === 'sysadmin') {
-      segments.push('vip', 'admin');
-    }
-
-    // Add other segments based on user properties
-    if (user.role === 'student') {
-      segments.push('student');
-    }
-
-    return segments;
-  }
-
-  // Commit coupon usage (call this after successful payment)
-  async commitCouponUsage(couponCode) {
-    try {
-      const coupon = await this.models.Coupon.findOne({
-        where: { code: couponCode, is_active: true }
-      });
-
-      if (coupon) {
-        await coupon.update({
-          usage_count: (coupon.usage_count || 0) + 1,
+      // Create transaction record if one doesn't exist
+      let transactionId = purchase.transaction_id;
+      if (!transactionId) {
+        const transaction = await models.Transaction.create({
+          id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+          user_id: purchase.buyer_user_id,
+          amount: purchase.payment_amount,
+          currency: 'ILS',
+          payment_method: paymentMethod,
+          payment_status: 'completed',
+          metadata: {
+            description: `Purchase completion for ${purchase.purchasable_type} ${purchase.purchasable_id}`,
+            purchaseId: purchaseId,
+            completedAt: new Date().toISOString(),
+            originalPrice: purchase.original_price,
+            discountAmount: purchase.discount_amount,
+            couponCode: purchase.coupon_code,
+            ...transactionData
+          },
+          environment: process.env.NODE_ENV === 'production' ? 'production' : 'staging',
+          created_at: new Date(),
           updated_at: new Date()
         });
-      }
-    } catch (error) {
-      console.error('Error committing coupon usage:', error);
-      // Don't throw here to avoid breaking payment flow
-    }
-  }
-
-  // Legacy method - DEPRECATED: Use PaymentIntentService.createPaymentIntent() instead
-  // This method conflicts with the new PaymentIntent flow and should not be used
-  // Kept for backward compatibility but will be removed in future versions
-  async createPayplusPaymentPage() {
-    throw new Error('DEPRECATED: createPayplusPaymentPage() has been replaced by PaymentIntentService.createPaymentIntent(). Please update your code to use the new PaymentIntent flow.');
-  }
-
-  // Handle PayPlus callback
-  async handlePayplusCallback({ paymentId, status, amount, transactionId, payerEmail }) {
-    try {
-      // Find the purchase
-      const purchase = await this.models.Purchase.findByPk(paymentId);
-      if (!purchase) {
-        throw new Error('Purchase not found');
+        transactionId = transaction.id;
+        clog(`PaymentService: Created transaction ${transactionId} for purchase ${purchaseId}`);
       }
 
-      // Update purchase with callback data
-      await purchase.update({
-        payment_status: status,
-        // buyer_user_id is already set and immutable
+      // Update the purchase
+      const updatedPurchase = await purchase.update({
+        payment_status: 'completed',
+        payment_method: paymentMethod,
+        transaction_id: transactionId,
         updated_at: new Date()
       });
 
-      // If payment successful, handle post-payment logic
-      if (status === 'completed' || status === 'approved') {
-        // Update download count for file products (only files have downloads_count)
-        if (purchase.product_id) {
-          const product = await this.models.Product.findByPk(purchase.product_id);
-          if (product && product.product_type === 'file') {
-            // Find the associated file entity using polymorphic reference
-            const fileEntity = await this.models.File.findByPk(product.entity_id);
-            if (fileEntity) {
-              await fileEntity.update({
-                downloads_count: (fileEntity.downloads_count || 0) + 1
-              });
-            }
-          }
-        }
+      clog(`PaymentService: Purchase ${purchaseId} completed successfully`);
+      return updatedPurchase;
 
-        // Send confirmation email
-        if (payerEmail) {
-          await this.sendPaymentConfirmation({
-            paymentId,
-            userId: null,
-            amount,
-            email: payerEmail
-          });
-        }
-      }
-
-      return {
-        success: true,
-        message: 'Payment callback processed',
-        data: { paymentId, status, processed: true }
-      };
     } catch (error) {
-      console.error('Error handling PayPlus callback:', error);
+      cerror('PaymentService: Error completing purchase:', error);
       throw error;
     }
   }
 
-  // Check payment status
-  async checkPaymentStatus({ paymentId }) {
+  /**
+   * Check if a product/subscription has zero price (is free)
+   * @param {string} purchasableType - Type of purchasable item
+   * @param {string} purchasableId - ID of purchasable item
+   * @returns {Promise<boolean>} True if the item is free
+   */
+  static async isProductFree(purchasableType, purchasableId) {
     try {
-      const purchase = await this.models.Purchase.findByPk(paymentId);
-      if (!purchase) {
-        throw new Error('Purchase not found');
+      let item = null;
+
+      // Find the product based on type
+      switch (purchasableType) {
+        case 'workshop':
+          item = await models.Workshop.findByPk(purchasableId);
+          break;
+        case 'course':
+          item = await models.Course.findByPk(purchasableId);
+          break;
+        case 'file':
+          item = await models.File.findByPk(purchasableId);
+          break;
+        case 'tool':
+          item = await models.Tool.findByPk(purchasableId);
+          break;
+        case 'game':
+          item = await models.Game.findByPk(purchasableId);
+          break;
+        case 'subscription':
+          item = await models.SubscriptionPlan.findByPk(purchasableId);
+          break;
+        default:
+          throw new Error(`Unknown purchasable type: ${purchasableType}`);
       }
 
-      return {
-        success: true,
-        data: {
-          paymentId,
-          status: purchase.payment_status,
-          amount: purchase.payment_amount,
-          productId: purchase.product_id,
-          timestamp: purchase.updated_at
-        }
-      };
+      if (!item) {
+        throw new Error(`${purchasableType} ${purchasableId} not found`);
+      }
+
+      const price = parseFloat(item.price || 0);
+      return price === 0;
+
     } catch (error) {
-      console.error('Error checking payment status:', error);
+      cerror('PaymentService: Error checking if product is free:', error);
       throw error;
     }
   }
 
-  // Create PayPlus payment link using their API
-  async createPayplusPaymentLink({ purchases, products, totalAmount, returnUrl, successUrl, failureUrl, callbackUrl, environment }) {
-    console.log('🎯 STARTING PayPlus createPayplusPaymentLink function');
+  /**
+   * Validate purchase creation constraints
+   * @param {string} userId - User ID
+   * @param {string} purchasableType - Type of purchasable item
+   * @param {string} purchasableId - ID of purchasable item
+   * @returns {Promise<Object>} Validation result with existing purchase if any
+   */
+  static async validatePurchaseCreation(userId, purchasableType, purchasableId) {
     try {
-      // Get PayPlus configuration based on environment
-      const config = this.getPayplusConfig(environment);
-
-      // Force correct callback URL to our webhook endpoint
-      const webhookCallbackUrl = process.env.ENVIRONMENT === 'production'
-        ? 'https://api.ludora.app/api/webhooks/payplus'
-        : 'https://api.ludora.app/api/webhooks/payplus'; // Still use production for development testing since PayPlus can't reach localhost
-
-      // Create invoice name for PayPlus
-      // const invoiceName = products.length === 1
-      //   ? products[0].title
-      //   : `רכישת ${products.length} פריטים`;
-
-      // Get customer information from the first purchase
-      let customerName = 'Customer';
-      let customerEmail = '';
-
-      if (purchases && purchases.length > 0) {
-        try {
-          const user = await this.models.User.findByPk(purchases[0].buyer_user_id);
-          if (user) {
-            customerName = user.full_name || user.display_name || 'Customer';
-            customerEmail = user.email || '';
-          }
-        } catch (error) {
-          console.warn('Could not fetch customer info:', error.message);
+      // Check for existing cart purchase with same product
+      const existingPurchase = await models.Purchase.findOne({
+        where: {
+          buyer_user_id: userId,
+          purchasable_type: purchasableType,
+          purchasable_id: purchasableId,
+          payment_status: 'cart'
         }
-      }
+      });
 
-      // Try PayPlus API with just amount (no items array) first
-      const payload = {
-        payment_page_uid: config.paymentPageUid,
-        amount: totalAmount.toFixed(2),
-        currency_code: 'ILS',
-        sendEmailApproval: true,
-        sendEmailFailure: true,
-        refURL_success: successUrl || returnUrl,
-        refURL_failure: failureUrl || returnUrl,
-        refURL_callback: webhookCallbackUrl,
-        charge_method: 1,
-        custom_invoice_name: customerName,
-        items: products.map(p => ({
-          name: p.title + `${PAYPLUS_PRODUCT_TYPE_NAMES[p.product_type] ? ' - ' + PAYPLUS_PRODUCT_TYPE_NAMES[p.product_type] : ''}`,
-          quantity: 1,
-          price: Number(p.price).toFixed(2),
-          vat_type: PAYPLUS_VAT_TYPE
-        })),
-        charge_default: 1,
-        customer: {
-          customer_name: user.full_name || '',
-          email: userEmail || user.email || '',
-          phone: user.phone || '',
-        },
-      };
-
-      // Add subscription settings if any product has recurring billing
-      const firstProduct = products[0]?.product;
-      if (firstProduct && firstProduct.subscription_type && firstProduct.subscription_type !== 'none') {
-        payload.charge_method = 3; // Recurring payment
-        payload.recurring_settings = {
-          intervalType: this.getPayplusIntervalType(firstProduct.subscription_type),
-          intervalCount: 1,
-          totalOccurrences: firstProduct.subscription_total_cycles || 0, // 0 = unlimited
-          trialDays: firstProduct.trial_days || 0
+      if (existingPurchase) {
+        return {
+          valid: false,
+          error: 'Item already in cart',
+          existingPurchase
         };
       }
 
-      console.log('🚀 PayPlus API Request (FULL DEBUG):', {
-        url: `${config.apiBaseUrl}/PaymentPages/generateLink`,
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': config.apiKey ? `${config.apiKey.substring(0, 8)}...` : 'MISSING',
-          'secret-key': config.secretKey ? `${config.secretKey.substring(0, 8)}...` : 'MISSING'
-        },
-        payload: payload,
-        payloadString: JSON.stringify(payload, null, 2),
-        totalAmount: totalAmount,
-        products: products.map(p => ({ title: p.title, amount: p.amount, originalPrice: p.product?.price })),
-        purchases: purchases?.map(p => ({ id: p.id, buyer_user_id: p.buyer_user_id }))
-      });
-
-      // Make API call to PayPlus
-      const response = await fetch(`${config.apiBaseUrl}/PaymentPages/generateLink`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': config.apiKey,
-          'secret-key': config.secretKey
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`PayPlus API error: ${response.status} - ${errorData.message || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-
-      console.log('🔍 PayPlus API Response:', {
-        status: response.status,
-        statusText: response.statusText,
-        data: JSON.stringify(data, null, 2)
-      });
-
-      if (!data.data?.payment_page_link) {
-        console.error('❌ PayPlus API Error - Missing payment_page_link:', {
-          received_data: data,
-          expected_field: 'data.payment_page_link',
-          available_fields: Object.keys(data || {}),
-          data_fields: Object.keys(data?.data || {})
-        });
-        throw new Error(`PayPlus API did not return a payment link. Response: ${JSON.stringify(data)}`);
-      }
-
-      // Store PayPlus transaction reference
-      console.log(`🔍 PAYPLUS DEBUG: Checking transaction storage. purchases[0]:`, {
-        id: purchases[0]?.id,
-        transaction_id: purchases[0]?.transaction_id,
-        has_transaction_id: !!purchases[0]?.transaction_id
-      });
-
-      if (purchases[0].transaction_id) {
-        // Transaction-based payment (PaymentIntent flow): update Transaction record with PayPlus data
-        const transaction = await this.models.Transaction.findByPk(purchases[0].transaction_id);
-        if (transaction) {
-          console.log(`🔗 PAYPLUS DEBUG: Storing payplus_page_uid in transaction ${transaction.id}: ${data.data.page_request_uid}`);
-          console.log(`🔗 PAYPLUS DEBUG: Transaction before update:`, {
-            id: transaction.id,
-            current_payplus_page_uid: transaction.payplus_page_uid,
-            payment_status: transaction.payment_status
-          });
-
-          const updateResult = await transaction.update({
-            payplus_page_uid: data.data.page_request_uid,
-            payplus_response: {
-              ...transaction.payplus_response, // Preserve existing coupon_info
-              page_request_uid: data.data.page_request_uid,
-              qr_code_image: data.data.qr_code_image,
-              payment_page_link: data.data.payment_page_link,
-              created_at: new Date().toISOString(),
-              environment: environment
-            },
-            updated_at: new Date()
-          });
-
-          console.log(`✅ PAYPLUS DEBUG: Transaction updated successfully:`, {
-            id: transaction.id,
-            new_payplus_page_uid: updateResult.payplus_page_uid,
-            update_affected_rows: updateResult ? 1 : 0
-          });
-        } else {
-          console.error(`❌ PAYPLUS DEBUG: Transaction not found for ID: ${purchases[0].transaction_id}`);
-        }
-
-        // Also update purchases with basic PayPlus reference
-        console.log(`🔗 PAYPLUS DEBUG: Updating ${purchases.length} purchases with PayPlus UID: ${data.data.page_request_uid}`);
-        console.log(`🔗 PAYPLUS DEBUG: Purchase transaction_ids:`, purchases.map(p => p.transaction_id));
-
-        const purchaseUpdateResult = await this.models.Purchase.update(
-          {
-            metadata: {
-              ...purchases[0].metadata,
-              payplus_page_request_uid: data.data.page_request_uid,
-              transaction_type: purchases.length > 1 ? 'multi_item' : 'single_item_with_transaction',
-              environment: environment
-            },
-            updated_at: new Date()
-          },
-          { where: { transaction_id: purchases[0].transaction_id } }
-        );
-
-        console.log(`✅ PAYPLUS DEBUG: Updated ${purchaseUpdateResult[0]} purchases with PayPlus metadata`);
-
-        // Verify purchases were updated
-        const verifyPurchases = await this.models.Purchase.findAll({
-          where: { transaction_id: purchases[0].transaction_id }
-        });
-        console.log(`🔍 PAYPLUS DEBUG: Verified ${verifyPurchases.length} purchases have PayPlus UID in metadata`);
-        verifyPurchases.forEach((purchase, index) => {
-          console.log(`  ${index + 1}. Purchase ${purchase.id}: metadata.payplus_page_request_uid = ${purchase.metadata?.payplus_page_request_uid}`);
-        });
-      } else {
-        // Legacy single-item payment (no transaction_id): update Purchase record directly
-        const purchase = purchases[0];
-        await purchase.update({
-          metadata: {
-            ...purchase.metadata,
-            payplus_page_request_uid: data.data.page_request_uid,
-            payplus_qr_code: data.data.qr_code_image,
-            transaction_type: 'single_item',
-            environment: environment
+      // For subscriptions, check if there's already a subscription in cart
+      if (purchasableType === 'subscription') {
+        const existingSubscriptionInCart = await models.Purchase.findOne({
+          where: {
+            buyer_user_id: userId,
+            purchasable_type: 'subscription',
+            payment_status: 'cart'
           }
         });
+
+        if (existingSubscriptionInCart) {
+          return {
+            valid: false,
+            error: 'Subscription already in cart',
+            existingPurchase: existingSubscriptionInCart,
+            canUpdate: true // Special flag for subscription updates
+          };
+        }
       }
 
-      return data.data.payment_page_link;
+      return { valid: true };
 
     } catch (error) {
-      console.error('Error creating PayPlus payment link:', error);
-
-      // Check if PayPlus is not configured and provide helpful error
-      if (!process.env.PAYPLUS_API_KEY || !process.env.PAYPLUS_SECRET_KEY || !process.env.PAYPLUS_PAYMENT_PAGE_UID) {
-        throw new Error('PayPlus payment gateway is not configured. Please add PAYPLUS_API_KEY, PAYPLUS_SECRET_KEY, and PAYPLUS_PAYMENT_PAGE_UID to your environment variables.');
-      }
-
+      cerror('PaymentService: Error validating purchase creation:', error);
       throw error;
     }
   }
 
-  // Save customer token for future payments
-  async saveCustomerToken({ userId, tokenData, paymentSource = 'card', environment = 'production' }) {
-    try {
-      console.log('💳 PaymentService: Saving customer token for user:', userId);
+  /**
+   * Create or update a transaction for PayPlus payment
+   * @param {Object} options - Transaction creation options
+   * @param {string} options.userId - User ID
+   * @param {number} options.amount - Total amount
+   * @param {string} options.environment - Environment ('production' or 'staging')
+   * @param {string} options.pageRequestUid - PayPlus page request UID
+   * @param {string} options.paymentPageLink - PayPlus payment page link
+   * @param {Array} options.purchaseItems - Array of purchase items to analyze and link
+   * @param {Object} options.metadata - Additional metadata
+   * @returns {Promise<Object>} Created or updated transaction object
+   */
+  static async createPayPlusTransaction(options = {}) {
+    const {
+      userId,
+      amount,
+      environment = 'production',
+      pageRequestUid,
+      paymentPageLink,
+      purchaseItems = [],
+      metadata = {}
+    } = options;
 
-      // Store token in our database for future use - fixed to match CustomerToken model
-      const customerToken = await this.models.CustomerToken.create({
-        id: generateId(),
-        user_id: userId,
-        payplus_customer_uid: tokenData.customer_uid || tokenData.payplus_customer_uid || 'unknown',
-        token_value: tokenData.token_uid || tokenData.token_value,
-        card_mask: tokenData.last_four_digits || tokenData.card_mask,
-        card_brand: tokenData.card_brand,
-        expiry_month: tokenData.expiry_month,
-        expiry_year: tokenData.expiry_year,
-        is_active: true,
-        is_default: false,
-        payment_provider: 'payplus',
-        environment: environment,
-        payplus_response: {
-          created_via: 'payment_completion',
-          payment_source: paymentSource,
-          original_token_data: tokenData,
-          created_at: new Date().toISOString()
-        },
-        created_at: new Date(),
-        updated_at: new Date()
+    try {
+      // Normalize environment for database storage (test -> staging)
+      const dbEnvironment = environment === 'test' ? 'staging' : environment;
+
+      // Determine transaction type based on purchase items
+      const hasSubscriptions = purchaseItems.some(item => item.purchasable_type === 'subscription');
+      const transactionType = hasSubscriptions ? 'recurring' : 'one-time';
+
+      clog('PaymentService: Creating/updating PayPlus transaction', {
+        userId,
+        amount,
+        environment,
+        transactionType,
+        pageRequestUid: pageRequestUid?.substring(0, 8) + '...',
+        purchaseCount: purchaseItems.length
       });
 
-      console.log('✅ PaymentService: Customer token saved successfully:', customerToken.id);
-
-      return {
-        success: true,
-        tokenId: customerToken.id,
-        tokenUid: tokenData.token_uid || tokenData.token_value
-      };
-
-    } catch (error) {
-      console.error('❌ PaymentService: Error saving customer token:', error);
-      throw error;
-    }
-  }
-
-  // Get stored customer tokens
-  async getCustomerTokens(userId) {
-    try {
-      const tokens = await this.models.CustomerToken.findAll({
+      // Check for existing pending transaction of the same type for this user
+      const existingTransaction = await models.Transaction.findOne({
         where: {
           user_id: userId,
-          payment_provider: 'payplus',
-          is_active: true
+          payment_status: 'pending',
+          'metadata.transaction_type': transactionType
         },
         order: [['created_at', 'DESC']]
       });
 
-      return tokens.map(token => ({
-        id: token.id,
-        tokenUid: token.token_value,
-        paymentMethod: 'card', // Default since model doesn't have payment_method field
-        lastFourDigits: token.card_mask,
-        cardBrand: token.card_brand,
-        expiryMonth: token.expiry_month,
-        expiryYear: token.expiry_year,
-        createdAt: token.created_at,
-        isDefault: token.is_default,
-        environment: token.environment
-      }));
+      let transaction;
+      const purchaseIds = purchaseItems.map(item => item.id);
 
-    } catch (error) {
-      console.error('❌ PaymentService: Error getting customer tokens:', error);
-      throw error;
-    }
-  }
+      if (existingTransaction) {
+        // Update existing transaction with new PayPlus data
+        clog(`PaymentService: Found existing pending ${transactionType} transaction ${existingTransaction.id}, updating it`);
 
-  // Charge stored customer token using PayPlus J4 API
-  async chargeCustomerToken({ tokenUid, amount, description, userId, transactionId }) {
-    try {
-      console.log('💳 PaymentService: Charging customer token:', { tokenUid: tokenUid?.substring(0, 8) + '...', amount });
-
-      // Auto-detect environment instead of hardcoding production
-      const config = this.getPayplusConfig();
-
-      const payload = {
-        token_uid: tokenUid,
-        amount: amount.toFixed(2),
-        currency_code: 'ILS',
-        transaction_uid: transactionId,
-        description: description || 'Token-based payment',
-        send_email_approval: true
-      };
-
-      console.log('🚀 PayPlus Token Charge Request:', {
-        url: `${config.apiBaseUrl}/Transactions/ChargeToken`,
-        payload: { ...payload, token_uid: payload.token_uid?.substring(0, 8) + '...' }
-      });
-
-      const response = await fetch(`${config.apiBaseUrl}/Transactions/ChargeToken`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': config.apiKey,
-          'secret-key': config.secretKey
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`PayPlus token charge failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-
-      console.log('✅ PayPlus Token Charge Response:', {
-        success: data.success,
-        transactionId: data.data?.transaction_uid,
-        status: data.data?.status
-      });
-
-      return {
-        success: data.success,
-        transactionUid: data.data?.transaction_uid,
-        status: data.data?.status,
-        approvalNumber: data.data?.approval_number,
-        chargeMethod: 'token'
-      };
-
-    } catch (error) {
-      console.error('❌ PaymentService: Error charging customer token:', error);
-      throw error;
-    }
-  }
-
-  // Check transaction status via PayPlus API
-  async checkTransactionStatus(payplusPageUid) {
-    try {
-      console.log('🔍 PaymentService: Checking transaction status for PayPlus UID:', payplusPageUid?.substring(0, 8) + '...');
-
-      // Auto-detect environment instead of hardcoding production
-      const config = this.getPayplusConfig();
-
-      const response = await fetch(`${config.apiBaseUrl}/PaymentPages/getStatus`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': config.apiKey,
-          'secret-key': config.secretKey
-        },
-        body: JSON.stringify({
-          page_request_uid: payplusPageUid
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`PayPlus status check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-
-      console.log('✅ PayPlus Transaction Status:', {
-        pageUid: payplusPageUid?.substring(0, 8) + '...',
-        status: data.data?.status,
-        amount: data.data?.amount
-      });
-
-      return {
-        success: true,
-        status: data.data?.status,
-        amount: data.data?.amount,
-        transactionUid: data.data?.transaction_uid,
-        approvalNumber: data.data?.approval_number,
-        lastUpdated: new Date().toISOString()
-      };
-
-    } catch (error) {
-      console.error('❌ PaymentService: Error checking transaction status:', error);
-      throw error;
-    }
-  }
-
-  // Check subscription status via PayPlus API
-  async checkSubscriptionStatus(subscriptionUid) {
-    try {
-      console.log('🔍 PaymentService: Checking subscription status for PayPlus UID:', subscriptionUid?.substring(0, 8) + '...');
-
-      // Auto-detect environment instead of hardcoding production
-      const config = this.getPayplusConfig();
-
-      const response = await fetch(`${config.apiBaseUrl}/Subscriptions/getStatus`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': config.apiKey,
-          'secret-key': config.secretKey
-        },
-        body: JSON.stringify({
-          subscription_uid: subscriptionUid
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`PayPlus subscription status check failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-
-      console.log('✅ PayPlus Subscription Status:', {
-        subscriptionUid: subscriptionUid?.substring(0, 8) + '...',
-        status: data.data?.status,
-        nextBilling: data.data?.next_billing_date
-      });
-
-      return {
-        success: true,
-        status: data.data?.status,
-        nextBillingDate: data.data?.next_billing_date,
-        amount: data.data?.amount,
-        lastPayment: data.data?.last_payment_date,
-        totalPayments: data.data?.total_payments,
-        lastUpdated: new Date().toISOString()
-      };
-
-    } catch (error) {
-      console.error('❌ PaymentService: Error checking subscription status:', error);
-      throw error;
-    }
-  }
-
-  // Create recurring subscription using PayPlus API
-  async createRecurringSubscription({ tokenUid, amount, planType, userId, description }) {
-    try {
-      console.log('🔄 PaymentService: Creating recurring subscription:', { planType, amount });
-
-      // Auto-detect environment instead of hardcoding production
-      const config = this.getPayplusConfig();
-
-      const payload = {
-        token_uid: tokenUid,
-        amount: amount.toFixed(2),
-        currency_code: 'ILS',
-        interval_type: planType === 'yearly' ? 4 : 2, // 2 = monthly, 4 = yearly
-        interval_count: 1,
-        total_occurrences: 0, // 0 = unlimited
-        description: description || `${planType} subscription`,
-        send_email_approval: true,
-        start_date: new Date().toISOString().split('T')[0] // Today
-      };
-
-      console.log('🚀 PayPlus Subscription Request:', {
-        url: `${config.apiBaseUrl}/Subscriptions/Create`,
-        payload: { ...payload, token_uid: payload.token_uid?.substring(0, 8) + '...' }
-      });
-
-      const response = await fetch(`${config.apiBaseUrl}/Subscriptions/Create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': config.apiKey,
-          'secret-key': config.secretKey
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`PayPlus subscription creation failed: ${response.status} - ${errorData.message || 'Unknown error'}`);
-      }
-
-      const data = await response.json();
-
-      console.log('✅ PayPlus Subscription Created:', {
-        subscriptionUid: data.data?.subscription_uid,
-        status: data.data?.status,
-        nextBilling: data.data?.next_billing_date
-      });
-
-      return {
-        success: data.success,
-        subscriptionUid: data.data?.subscription_uid,
-        status: data.data?.status,
-        nextBillingDate: data.data?.next_billing_date,
-        chargeMethod: 'recurring'
-      };
-
-    } catch (error) {
-      console.error('❌ PaymentService: Error creating recurring subscription:', error);
-      throw error;
-    }
-  }
-
-  // Process token-based payment for purchases
-  async processTokenPayment({ purchases, tokenUid, userId, appliedCoupons = [] }) {
-    try {
-      console.log('💳 PaymentService: Processing token payment for', purchases.length, 'purchases');
-
-      // Calculate total amount
-      const totalAmount = purchases.reduce((sum, purchase) => sum + parseFloat(purchase.payment_amount), 0);
-
-      // Create transaction description
-      const description = purchases.length === 1
-        ? `Purchase: ${purchases[0].purchasable_type}`
-        : `Cart purchase: ${purchases.length} items`;
-
-      // Create transaction ID for PayPlus reference
-      const transactionId = `txn_token_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-
-      // Charge the token
-      const chargeResult = await this.chargeCustomerToken({
-        tokenUid,
-        amount: totalAmount,
-        description,
-        userId,
-        transactionId
-      });
-
-      if (!chargeResult.success) {
-        throw new Error('Token charge failed');
-      }
-
-      // Create transaction record
-      const transaction = await this.models.Transaction.create({
-        id: transactionId,
-        total_amount: totalAmount,
-        payment_status: chargeResult.status === 'approved' ? 'completed' : 'pending',
-        payment_method: 'payplus_token',
-        environment: process.env.ENVIRONMENT || process.env.NODE_ENV || 'development',
-        payplus_page_uid: chargeResult.transactionUid,
-        payplus_response: {
-          coupon_info: {
-            applied_coupons: appliedCoupons,
-            original_amount: totalAmount,
-            total_discount: 0,
-            final_amount: totalAmount
+        transaction = await existingTransaction.update({
+          amount: amount,
+          environment: dbEnvironment,
+          page_request_uid: pageRequestUid,
+          payment_page_link: paymentPageLink,
+          metadata: {
+            transaction_type: transactionType,
+            purchaseIds: purchaseIds,
+            updatedAt: new Date().toISOString(),
+            createdAt: existingTransaction.metadata.createdAt || new Date().toISOString(),
+            ...metadata
           },
-          token_charge: true,
-          approval_number: chargeResult.approvalNumber,
-          charge_method: 'token',
-          payment_created_at: new Date().toISOString()
-        },
-        created_at: new Date(),
-        updated_at: new Date()
-      });
-
-      // Link purchases to transaction
-      const purchaseIds = purchases.map(p => p.id);
-      await this.models.Purchase.update(
-        { transaction_id: transactionId },
-        { where: { id: purchaseIds } }
-      );
-
-      // Update purchase status based on charge result
-      const purchaseStatus = chargeResult.status === 'approved' ? 'completed' : 'pending';
-      await this.models.Purchase.update(
-        {
-          payment_status: purchaseStatus,
           updated_at: new Date()
-        },
-        { where: { transaction_id: transactionId } }
-      );
+        });
 
-      console.log('✅ PaymentService: Token payment processed successfully:', {
-        transactionId,
-        status: chargeResult.status,
-        amount: totalAmount
-      });
+        clog(`PaymentService: Updated existing transaction ${transaction.id} with new PayPlus data`);
 
-      return {
-        success: true,
-        transactionId,
-        status: chargeResult.status,
-        amount: totalAmount,
-        chargeMethod: 'token',
-        paymentUrl: null // No payment page needed for token payments
-      };
+      } else {
+        // Create new transaction
+        const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
+        transaction = await models.Transaction.create({
+          id: transactionId,
+          user_id: userId,
+          amount: amount,
+          currency: 'ILS',
+          payment_method: 'payplus',
+          payment_status: 'pending',
+          environment: dbEnvironment,
+          page_request_uid: pageRequestUid,
+          payment_page_link: paymentPageLink,
+          metadata: {
+            transaction_type: transactionType,
+            purchaseIds: purchaseIds,
+            createdAt: new Date().toISOString(),
+            ...metadata
+          },
+          created_at: new Date(),
+          updated_at: new Date()
+        });
+
+        clog(`PaymentService: Created new ${transactionType} transaction ${transaction.id}`);
+      }
+
+      // Update all purchases with this transaction ID
+      if (purchaseIds.length > 0) {
+        await models.Purchase.update(
+          {
+            transaction_id: transaction.id,
+            updated_at: new Date()
+          },
+          {
+            where: {
+              id: purchaseIds,
+              buyer_user_id: userId,
+              payment_status: 'cart' // Only update cart purchases
+            }
+          }
+        );
+
+        clog(`PaymentService: Updated ${purchaseIds.length} purchases with transaction ID ${transaction.id}`);
+      }
+
+      clog(`PaymentService: ${existingTransaction ? 'Updated' : 'Created'} ${transactionType} transaction ${transaction.id} successfully`);
+      return transaction;
 
     } catch (error) {
-      console.error('❌ PaymentService: Error processing token payment:', error);
+      cerror('PaymentService: Error creating/updating PayPlus transaction:', error);
       throw error;
     }
   }
 
-  // Get PayPlus configuration based on environment
-  getPayplusConfig(environment) {
-    // Determine PayPlus environment:
-    // 1. Admin override from frontend (environment parameter)
-    // 2. Automatic: production deployment = production, others = test/sandbox
-    let payplusEnv;
+  /**
+   * Get purchases with their associated product/subscription data populated
+   * @param {Array} purchases - Array of purchase objects
+   * @returns {Promise<Array>} Purchases with populated product data
+   */
+  static async populatePurchasesWithProducts(purchases) {
+    const populatedPurchases = [];
 
-    if (environment === 'test' || environment === 'production') {
-      // Admin override via frontend toggle
-      payplusEnv = environment === 'test' ? 'sandbox' : 'production';
-    } else {
-      // Automatic environment detection
-      const deploymentEnv = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
-      payplusEnv = deploymentEnv === 'production' ? 'production' : 'sandbox';
+    for (const purchase of purchases) {
+      try {
+        let product = null;
+
+        // Fetch the associated product based on purchasable_type
+        switch (purchase.purchasable_type) {
+          case 'workshop':
+            product = await models.Workshop.findByPk(purchase.purchasable_id);
+            break;
+          case 'course':
+            product = await models.Course.findByPk(purchase.purchasable_id);
+            break;
+          case 'file':
+            product = await models.File.findByPk(purchase.purchasable_id);
+            break;
+          case 'tool':
+            product = await models.Tool.findByPk(purchase.purchasable_id);
+            break;
+          case 'game':
+            product = await models.Game.findByPk(purchase.purchasable_id);
+            break;
+          case 'subscription':
+            product = await models.SubscriptionPlan.findByPk(purchase.purchasable_id);
+            break;
+          default:
+            clog(`PaymentService: Unknown purchasable type: ${purchase.purchasable_type}`);
+        }
+
+        // Add the product data to the purchase
+        const populatedPurchase = {
+          ...purchase.toJSON ? purchase.toJSON() : purchase,
+          product: product ? (product.toJSON ? product.toJSON() : product) : null
+        };
+
+        populatedPurchases.push(populatedPurchase);
+
+        if (!product) {
+          clog(`PaymentService: Product not found for ${purchase.purchasable_type} ${purchase.purchasable_id}`);
+        }
+
+      } catch (error) {
+        cerror(`PaymentService: Error fetching product for purchase ${purchase.id}:`, error);
+        // Add purchase without product data as fallback
+        populatedPurchases.push(purchase.toJSON ? purchase.toJSON() : purchase);
+      }
     }
 
-    const config = {
-      apiBaseUrl: payplusEnv === 'production'
-        ? 'https://restapidev.payplus.co.il/api/v1.0'
-        : 'https://restapidev.payplus.co.il/api/v1.0',
-      apiKey: payplusEnv === 'production'
-        ? process.env.PAYPLUS_API_KEY
-        : (process.env.PAYPLUS_STAGING_API_KEY || process.env.PAYPLUS_API_KEY),
-      secretKey: payplusEnv === 'production'
-        ? process.env.PAYPLUS_SECRET_KEY
-        : (process.env.PAYPLUS_STAGING_SECRET_KEY || process.env.PAYPLUS_SECRET_KEY),
-      paymentPageUid: payplusEnv === 'production'
-        ? process.env.PAYPLUS_PAYMENT_PAGE_UID
-        : (process.env.PAYPLUS_STAGING_PAYMENT_PAGE_UID || process.env.PAYPLUS_PAYMENT_PAGE_UID)
-    };
-
-    // Validate configuration
-    if (!config.apiKey || !config.secretKey || !config.paymentPageUid) {
-      console.warn('PayPlus configuration incomplete:', {
-        hasApiKey: !!config.apiKey,
-        hasSecretKey: !!config.secretKey,
-        hasPaymentPageUid: !!config.paymentPageUid,
-        payplusEnvironment: payplusEnv,
-        deploymentEnvironment: process.env.ENVIRONMENT || process.env.NODE_ENV,
-        adminOverride: environment || 'none',
-        usingCredentials: payplusEnv === 'production' ? 'production' : 'staging-or-fallback'
-      });
-    }
-
-    console.log('🔧 PayPlus Configuration:', {
-      environment: payplusEnv,
-      apiUrl: config.apiBaseUrl,
-      hasCredentials: !!(config.apiKey && config.secretKey && config.paymentPageUid),
-      credentialSource: payplusEnv === 'production' ? 'PAYPLUS_*' : 'PAYPLUS_STAGING_* (or fallback)',
-      adminOverride: environment
-    });
-
-    return config;
+    return populatedPurchases;
   }
 
-  // Convert subscription types to PayPlus interval types
-  getPayplusIntervalType(subscriptionType) {
-    const intervalMap = {
-      'weekly': 1,      // Weekly
-      'monthly': 2,     // Monthly
-      'quarterly': 3,   // Quarterly
-      'yearly': 4,      // Yearly
-      'daily': 5        // Daily
-    };
+  /**
+   * Get PayPlus credentials based on environment
+   * @param {string} environment - 'production' or 'staging'
+   * @returns {Object} PayPlus configuration object
+   */
+  static getPayPlusCredentials(environment = 'production') {
+    try {
+      clog(`PaymentService: Getting PayPlus credentials for environment: ${environment}`);
 
-    return intervalMap[subscriptionType] || 2; // Default to monthly
+      // Normalize environment for PayPlus credentials (test -> staging)
+      const normalizedEnv = environment === 'test' ? 'staging' : environment;
+      const isProd = normalizedEnv === 'production';
+
+
+
+      const credentials = {
+        payplusUrl: isProd
+          ? 'https://restapi.payplus.co.il/api/v1.0/'
+          : 'https://restapidev.payplus.co.il/api/v1.0/',
+        payment_page_uid: isProd
+          ? process.env.PAYPLUS_PAYMENT_PAGE_UID
+          : process.env.PAYPLUS_STAGING_PAYMENT_PAGE_UID,
+        payment_api_key: isProd
+          ? process.env.PAYPLUS_API_KEY
+          : process.env.PAYPLUS_STAGING_API_KEY,
+        payment_secret_key: isProd
+          ? process.env.PAYPLUS_SECRET_KEY
+          : process.env.PAYPLUS_STAGING_SECRET_KEY,
+        environment: normalizedEnv
+      };
+
+      // Validate required credentials
+      const requiredFields = ['payment_page_uid', 'payment_api_key', 'payment_secret_key'];
+      const missingFields = requiredFields.filter(field => !credentials[field]);
+
+      if (missingFields.length > 0) {
+        const envPrefix = isProd ? 'PAYPLUS_PRODUCTION' : 'PAYPLUS_STAGING';
+        const missingEnvVars = missingFields.map(field => {
+          switch(field) {
+            case 'payment_page_uid': return `${envPrefix}_PAYMENT_PAGE_UID`;
+            case 'payment_api_key': return `${envPrefix}_API_KEY`;
+            case 'payment_secret_key': return `${envPrefix}_SECRET_KEY`;
+            default: return field;
+          }
+        });
+
+        throw new Error(`Missing PayPlus ${normalizedEnv} credentials: ${missingEnvVars.join(', ')}`);
+      }
+
+      clog('PaymentService: PayPlus credentials loaded successfully', {
+        environment,
+        payplusUrl: credentials.payplusUrl,
+        hasPageUid: !!credentials.payment_page_uid,
+        hasApiKey: !!credentials.payment_api_key,
+        hasSecretKey: !!credentials.payment_secret_key
+      });
+
+      return credentials;
+
+    } catch (error) {
+      cerror('PaymentService: Error getting PayPlus credentials:', error);
+      throw error;
+    }
   }
 }
 
-export default new PaymentService();
+export default PaymentService;

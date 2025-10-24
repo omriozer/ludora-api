@@ -29,9 +29,6 @@ import EmailLog from './EmailLog.js';
 import Game from './Game.js';
 import AudioFile from './AudioFile.js';
 import SubscriptionPlan from './SubscriptionPlan.js';
-import WebhookLog from './WebhookLog.js';
-import PendingSubscription from './PendingSubscription.js';
-import SubscriptionHistory from './SubscriptionHistory.js';
 import School from './School.js';
 import Classroom from './Classroom.js';
 import StudentInvitation from './StudentInvitation.js';
@@ -40,7 +37,6 @@ import ClassroomMembership from './ClassroomMembership.js';
 import Curriculum from './Curriculum.js';
 import CurriculumItem from './CurriculumItem.js';
 import Logs from './Logs.js';
-import CustomerToken from './CustomerToken.js';
 
 // Initialize models
 const models = {
@@ -64,9 +60,6 @@ const models = {
   Game: Game(sequelize),
   AudioFile: AudioFile(sequelize),
   SubscriptionPlan: SubscriptionPlan(sequelize),
-  WebhookLog: WebhookLog(sequelize),
-  PendingSubscription: PendingSubscription(sequelize),
-  SubscriptionHistory: SubscriptionHistory(sequelize),
   School: School(sequelize),
   Classroom: Classroom(sequelize),
   StudentInvitation: StudentInvitation(sequelize),
@@ -75,7 +68,6 @@ const models = {
   Curriculum: Curriculum(sequelize),
   CurriculumItem: CurriculumItem(sequelize),
   Logs: Logs(sequelize),
-  CustomerToken: CustomerToken(sequelize),
 };
 
 // Define associations
@@ -88,7 +80,7 @@ Object.keys(models).forEach(modelName => {
 
 
 // Test database connection
-const testConnection = async () => {
+const testDBConnection = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connection has been established successfully.');
@@ -97,7 +89,7 @@ const testConnection = async () => {
   }
 };
 
-testConnection();
+testDBConnection();
 
 export { sequelize };
 export default models;

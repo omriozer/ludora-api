@@ -90,4 +90,3 @@ export const AUDIANCE_TARGETS = {
     tool: TOOLS_AUDIANCE_TARGETS
 };
 
-export const PAYPLUS_VAT_TYPE = 2//vat_type: 2 'vat included' OR 1-'vat not included' OR 2- 'exempt vat'

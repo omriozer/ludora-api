@@ -1,83 +1,13 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
-import PaymentService from '../services/PaymentService.js';
-import PaymentCleanupService from '../services/PaymentCleanupService.js';
 import EmailService from '../services/EmailService.js';
-import SubscriptionService from '../services/SubscriptionService.js';
 import CouponValidationService from '../services/CouponValidationService.js';
 import CouponCodeGenerator from '../utils/couponCodeGenerator.js';
 import models from '../models/index.js';
 import EntityService from '../services/EntityService.js';
 
 const router = express.Router();
-
-// Payment Functions
-router.post('/sendPaymentConfirmation', authenticateToken, validateBody(schemas.paymentConfirmation), async (req, res) => {
-  try {
-    const result = await PaymentService.sendPaymentConfirmation(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error sending payment confirmation:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/testPayplusConnection', authenticateToken, async (req, res) => {
-  try {
-    const result = await PaymentService.testPayplusConnection();
-    res.json(result);
-  } catch (error) {
-    console.error('PayPlus connection test failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/applyCoupon', authenticateToken, validateBody(schemas.applyCoupon), async (req, res) => {
-  try {
-    // Support both legacy single purchase and new multi-item cart parameters
-    const { couponCode, userId, productId, purchaseAmount, purchaseIds, cartItems } = req.body;
-
-    // Build parameters for enhanced applyCoupon method
-    const applyCouponParams = {
-      couponCode,
-      userId,
-      purchaseAmount
-    };
-
-    // Handle legacy single purchase format
-    if (productId && !purchaseIds && !cartItems) {
-      // Legacy format - convert to new format
-      applyCouponParams.cartItems = [{
-        id: `legacy_${Date.now()}`,
-        purchasable_type: 'unknown', // Legacy calls don't specify type
-        purchasable_id: productId,
-        payment_amount: purchaseAmount
-      }];
-    }
-    // Handle new multi-item cart formats
-    else if (purchaseIds) {
-      applyCouponParams.purchaseIds = purchaseIds;
-    } else if (cartItems) {
-      applyCouponParams.cartItems = cartItems;
-    }
-    // No cart info provided - create minimal cart
-    else {
-      applyCouponParams.cartItems = [{
-        id: `minimal_${Date.now()}`,
-        purchasable_type: 'general',
-        purchasable_id: 'general',
-        payment_amount: purchaseAmount
-      }];
-    }
-
-    const result = await PaymentService.applyCoupon(applyCouponParams);
-    res.json(result);
-  } catch (error) {
-    console.error('Error applying coupon:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // Get applicable public coupons for cart auto-suggestion
 router.post('/getApplicableCoupons', authenticateToken, async (req, res) => {
@@ -281,42 +211,11 @@ router.post('/deactivateCouponsByPattern', authenticateToken, async (req, res) =
   }
 });
 
-router.post('/createPayplusPaymentPage', authenticateToken, validateBody(schemas.createPaymentPage), async (req, res) => {
-  try {
-    const result = await PaymentService.createPayplusPaymentPage(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error creating PayPlus payment page:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/handlePayplusCallback', authenticateToken, async (req, res) => {
-  try {
-    const result = await PaymentService.handlePayplusCallback(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error handling PayPlus callback:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/checkPaymentStatus', authenticateToken, async (req, res) => {
-  try {
-    const result = await PaymentService.checkPaymentStatus(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error checking payment status:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-
 // Registration Functions
 router.post('/updateExistingRegistrations', authenticateToken, async (req, res) => {
   try {
     const { registrationData } = req.body;
-    
+
     if (!Array.isArray(registrationData)) {
       return res.status(400).json({ error: 'registrationData must be an array' });
     }
@@ -334,7 +233,7 @@ router.post('/updateExistingRegistrations', authenticateToken, async (req, res) 
     res.json({
       success: true,
       message: 'Registrations update completed',
-      data: { 
+      data: {
         total: registrationData.length,
         updated: results.filter(r => r.status === 'updated').length,
         failed: results.filter(r => r.status === 'failed').length,
@@ -371,7 +270,7 @@ router.post('/processEmailTriggers', authenticateToken, async (req, res) => {
 router.post('/scheduleEmailProcessor', authenticateToken, async (req, res) => {
   try {
     const { schedule, triggers } = req.body;
-    
+
     // Create a scheduled task record for future processing
     const scheduledTask = await models.EmailSchedule?.create({
       schedule_time: schedule.time || new Date(),
@@ -384,8 +283,8 @@ router.post('/scheduleEmailProcessor', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       message: 'Email processor scheduled',
-      data: { 
-        scheduled: true, 
+      data: {
+        scheduled: true,
         schedule,
         taskId: scheduledTask?.id || null
       }
@@ -399,7 +298,7 @@ router.post('/scheduleEmailProcessor', authenticateToken, async (req, res) => {
 router.post('/triggerEmailAutomation', authenticateToken, async (req, res) => {
   try {
     const { automationId, userId, recipientEmail, data } = req.body;
-    
+
     // Find automation template
     const automation = await models.EmailTemplate.findOne({
       where: { id: automationId, is_active: true }
@@ -444,7 +343,7 @@ router.post('/sendInvitationEmails', authenticateToken, async (req, res) => {
 router.post('/updateExistingGames', authenticateToken, async (req, res) => {
   try {
     const { gameUpdates } = req.body;
-    
+
     if (!Array.isArray(gameUpdates)) {
       return res.status(400).json({ error: 'gameUpdates must be an array' });
     }
@@ -462,7 +361,7 @@ router.post('/updateExistingGames', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       message: 'Games update completed',
-      data: { 
+      data: {
         total: gameUpdates.length,
         updated: results.filter(r => r.status === 'updated').length,
         failed: results.filter(r => r.status === 'failed').length,
@@ -478,7 +377,7 @@ router.post('/updateExistingGames', authenticateToken, async (req, res) => {
 router.post('/uploadVerbsBulk', authenticateToken, async (req, res) => {
   try {
     const { verbs } = req.body;
-    
+
     if (!Array.isArray(verbs)) {
       return res.status(400).json({ error: 'verbs must be an array' });
     }
@@ -496,7 +395,7 @@ router.post('/uploadVerbsBulk', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       message: 'Verbs uploaded successfully',
-      data: { 
+      data: {
         uploaded: results.length,
         verbs: results
       }
@@ -506,7 +405,6 @@ router.post('/uploadVerbsBulk', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 
 // File Functions
 router.post('/deleteFile', authenticateToken, async (req, res) => {
@@ -564,7 +462,7 @@ router.post('/deleteFile', authenticateToken, async (req, res) => {
 router.post('/createSignedUrl', authenticateToken, async (req, res) => {
   try {
     const { fileName, fileType, operation = 'upload' } = req.body;
-    
+
     if (!fileName || !fileType) {
       return res.status(400).json({ error: 'fileName and fileType are required' });
     }
@@ -572,7 +470,7 @@ router.post('/createSignedUrl', authenticateToken, async (req, res) => {
     // Generate a secure token for the URL
     const token = Buffer.from(`${fileName}_${Date.now()}_${Math.random()}`).toString('base64url');
     const expiresAt = new Date(Date.now() + 3600000); // 1 hour
-    
+
     // In a real implementation, this would integrate with cloud storage
     const signedUrl = `https://storage.ludora.app/files/${operation}/${encodeURIComponent(fileName)}?token=${token}&expires=${expiresAt.getTime()}`;
 
@@ -608,7 +506,7 @@ router.post('/initializeSystemEmailTemplates', authenticateToken, async (req, re
 router.post('/updateSystemEmailTemplates', authenticateToken, async (req, res) => {
   try {
     const { templates } = req.body;
-    
+
     if (!Array.isArray(templates)) {
       return res.status(400).json({ error: 'templates must be an array' });
     }
@@ -626,7 +524,7 @@ router.post('/updateSystemEmailTemplates', authenticateToken, async (req, res) =
     res.json({
       success: true,
       message: 'System email templates update completed',
-      data: { 
+      data: {
         total: templates.length,
         updated: results.filter(r => r.status === 'updated').length,
         failed: results.filter(r => r.status === 'failed').length,
@@ -639,143 +537,10 @@ router.post('/updateSystemEmailTemplates', authenticateToken, async (req, res) =
   }
 });
 
-// Subscription Functions
-router.post('/createPayplusSubscriptionPage', authenticateToken, validateBody(schemas.createSubscriptionPage), async (req, res) => {
-  try {
-    console.log('🚨🚨🚨 SUBSCRIPTION DEBUG START 🚨🚨🚨');
-    console.log('🔍 SUBSCRIPTION DEBUG: Request body:', JSON.stringify(req.body, null, 2));
-
-    const config = PaymentService.getPayplusConfig(req.body.environment);
-    console.log('🔍 SUBSCRIPTION DEBUG: PayPlus config check:', {
-      requestedEnvironment: req.body.environment,
-      configEnvironment: config.environment,
-      apiUrl: config.apiBaseUrl,
-      hasApiKey: !!config.apiKey,
-      hasSecretKey: !!config.secretKey,
-      hasPaymentPageUid: !!config.paymentPageUid,
-      paymentPageUidPreview: config.paymentPageUid?.substring(0, 12) + '...'
-    });
-    console.log('🚨🚨🚨 SUBSCRIPTION DEBUG END 🚨🚨🚨');
-
-    const result = await SubscriptionService.createPayplusSubscriptionPage(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error creating subscription page:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Diagnostic route to check PayPlus configuration
-router.post('/debugPayplusConfig', authenticateToken, async (req, res) => {
-  try {
-    const { environment } = req.body;
-    const config = PaymentService.getPayplusConfig(environment);
-
-    res.json({
-      success: true,
-      data: {
-        requestedEnvironment: environment,
-        detectedEnvironment: process.env.ENVIRONMENT || process.env.NODE_ENV || 'development',
-        config: {
-          environment: config.environment || 'unknown',
-          apiUrl: config.apiBaseUrl,
-          hasApiKey: !!config.apiKey,
-          hasSecretKey: !!config.secretKey,
-          hasPaymentPageUid: !!config.paymentPageUid,
-          paymentPageUid: config.paymentPageUid?.substring(0, 8) + '...',
-          credentialSource: config.credentialSource || 'unknown'
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error checking PayPlus config:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/handlePayplusSubscriptionCallback', authenticateToken, async (req, res) => {
-  try {
-    const result = await SubscriptionService.handlePayplusSubscriptionCallback(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error handling subscription callback:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/checkSubscriptionStatus', authenticateToken, async (req, res) => {
-  try {
-    // 1. Check and update subscription status via PayPlus API before returning data
-    const { subscriptionId, userId } = req.body;
-    if (userId) {
-      await checkAndUpdateSubscriptionStatus(userId);
-    }
-
-    const result = await SubscriptionService.checkSubscriptionStatus(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error checking subscription status:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/processSubscriptionCallbacks', authenticateToken, async (req, res) => {
-  try {
-    const result = await SubscriptionService.processSubscriptionCallbacks(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error processing subscription callbacks:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/getPayplusRecurringStatus', authenticateToken, async (req, res) => {
-  try {
-    // 1. Check and update subscription status via PayPlus API before returning data
-    const { recurringId, userId } = req.body;
-    if (userId) {
-      await checkAndUpdateSubscriptionStatus(userId);
-    } else if (recurringId) {
-      // If we have recurringId but no userId, try to find user from subscription records
-      const subscription = await models.Subscription?.findOne({
-        where: { payplus_subscription_uid: recurringId }
-      });
-      if (subscription?.user_id) {
-        await checkAndUpdateSubscriptionStatus(subscription.user_id);
-      }
-    }
-
-    const result = await SubscriptionService.getPayplusRecurringStatus(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error getting recurring status:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/cancelPayplusRecurringSubscription', authenticateToken, async (req, res) => {
-  try {
-    const result = await SubscriptionService.cancelPayplusRecurringSubscription(req.body);
-    res.json(result);
-  } catch (error) {
-    console.error('Error cancelling recurring subscription:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Test Functions
 router.post('/testCallback', authenticateToken, async (req, res) => {
   try {
     const { testData } = req.body;
-    
-    // Log test callback for debugging
-    await models.WebhookLog?.create({
-      webhook_type: 'test_callback',
-      payload: JSON.stringify(testData),
-      status: 'received',
-      created_at: new Date(),
-      updated_at: new Date()
-    }).catch(err => console.log('WebhookLog not available:', err.message));
 
     res.json({
       success: true,
@@ -788,217 +553,5 @@ router.post('/testCallback', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/handlePayplusProductCallback', authenticateToken, async (req, res) => {
-  try {
-    const { productId, paymentData, status } = req.body;
-    
-    // Log the callback
-    await models.WebhookLog?.create({
-      webhook_type: 'payplus_product_callback',
-      payload: JSON.stringify(req.body),
-      status: 'received',
-      created_at: new Date(),
-      updated_at: new Date()
-    }).catch(err => console.log('WebhookLog not available:', err.message));
-
-    // If payment was successful, could trigger fulfillment processes
-    if (status === 'success' && productId) {
-      // Find product and process fulfillment
-      const product = await models.Product?.findByPk(productId);
-      if (product) {
-        console.log('Product payment successful:', product.title);
-        // Could trigger email notifications, access grants, etc.
-      }
-    }
-
-    res.json({
-      success: true,
-      message: 'Product callback processed',
-      data: { productId, status, processed: true }
-    });
-  } catch (error) {
-    console.error('Error handling product callback:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/cleanupAbandonedCartItems', authenticateToken, async (req, res) => {
-  try {
-    const { maxHours = 24 } = req.body;
-    const result = await PaymentCleanupService.cleanupAbandonedCartItems(maxHours);
-    res.json(result);
-  } catch (error) {
-    console.error('Error cleaning up abandoned cart items:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/runFullPaymentCleanup', authenticateToken, async (req, res) => {
-  try {
-    const { stalePaymentMinutes = 2, abandonedCartHours = 24 } = req.body;
-    const result = await PaymentCleanupService.runFullCleanup({
-      stalePaymentMinutes,
-      abandonedCartHours
-    });
-    res.json(result);
-  } catch (error) {
-    console.error('Error running full payment cleanup:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * Check and update subscription status for a user by querying PayPlus API
- * This is called before returning subscription data to ensure up-to-date status
- */
-async function checkAndUpdateSubscriptionStatus(userId) {
-  try {
-    console.log('🔍 Checking subscription status for user:', userId);
-
-    // Find all active subscriptions for this user that have PayPlus UIDs
-    const userSubscriptions = await models.Subscription?.findAll({
-      where: {
-        user_id: userId,
-        status: ['active', 'trial', 'pending'],
-        payplus_subscription_uid: {
-          [models.Sequelize.Op.ne]: null
-        }
-      }
-    }) || [];
-
-    if (userSubscriptions.length === 0) {
-      console.log('✅ No active PayPlus subscriptions found for user:', userId);
-      return;
-    }
-
-    console.log(`🔍 Found ${userSubscriptions.length} active subscriptions for user ${userId}, checking status...`);
-
-    // Check each subscription's status via PayPlus API
-    for (const subscription of userSubscriptions) {
-      try {
-        if (!subscription.payplus_subscription_uid) {
-          console.log(`⚠️ Subscription ${subscription.id} has no PayPlus UID, skipping status check`);
-          continue;
-        }
-
-        console.log(`🔍 Checking PayPlus status for subscription ${subscription.id} (UID: ${subscription.payplus_subscription_uid?.substring(0, 8)}...)`);
-
-        // Use PaymentService to check subscription status
-        const statusResult = await PaymentService.checkSubscriptionStatus(subscription.payplus_subscription_uid);
-
-        if (!statusResult.success) {
-          console.warn(`⚠️ Could not check status for subscription ${subscription.id}:`, statusResult);
-          continue;
-        }
-
-        const payplusStatus = statusResult.status;
-        console.log(`📊 PayPlus status for subscription ${subscription.id}: ${payplusStatus} (current: ${subscription.status})`);
-
-        // Map PayPlus status to our subscription status
-        let newStatus = null;
-        let shouldUpdateBilling = false;
-        let newBillingDate = null;
-
-        switch (payplusStatus) {
-          case 'active':
-          case 'approved':
-            newStatus = 'active';
-            shouldUpdateBilling = true;
-            newBillingDate = statusResult.nextBillingDate;
-            break;
-          case 'cancelled':
-          case 'canceled':
-            newStatus = 'cancelled';
-            break;
-          case 'expired':
-            newStatus = 'expired';
-            break;
-          case 'failed':
-          case 'declined':
-            newStatus = 'payment_failed';
-            break;
-          case 'trial':
-            newStatus = 'trial';
-            shouldUpdateBilling = true;
-            newBillingDate = statusResult.nextBillingDate;
-            break;
-          case 'pending':
-            newStatus = 'pending';
-            break;
-          default:
-            console.log(`⚠️ Unknown PayPlus subscription status '${payplusStatus}' for subscription ${subscription.id}`);
-        }
-
-        // Update subscription status if it changed
-        if (newStatus && newStatus !== subscription.status) {
-          console.log(`🔄 Updating subscription ${subscription.id} status from '${subscription.status}' to '${newStatus}'`);
-
-          const updateData = {
-            status: newStatus,
-            updated_at: new Date(),
-            metadata: {
-              ...subscription.metadata,
-              api_status_check: true,
-              payplus_status: payplusStatus,
-              status_checked_at: new Date().toISOString(),
-              last_payplus_amount: statusResult.amount,
-              total_payments: statusResult.totalPayments
-            }
-          };
-
-          // Update billing information if available
-          if (shouldUpdateBilling && newBillingDate) {
-            updateData.next_billing_date = new Date(newBillingDate);
-            updateData.billing_cycle_end = new Date(newBillingDate);
-          }
-
-          await subscription.update(updateData);
-
-          // Create subscription history entry
-          await models.SubscriptionHistory?.create({
-            subscription_id: subscription.id,
-            event_type: 'status_updated',
-            status: newStatus,
-            amount: statusResult.amount || subscription.amount,
-            payment_method: 'payplus',
-            metadata: {
-              api_status_check: true,
-              payplus_status: payplusStatus,
-              previous_status: subscription.status,
-              updated_via: 'api_check'
-            },
-            created_at: new Date()
-          });
-
-          console.log(`✅ Subscription ${subscription.id} status updated successfully`);
-        } else {
-          console.log(`📋 Subscription ${subscription.id} status unchanged (${subscription.status})`);
-
-          // Still update billing information if available, even if status didn't change
-          if (shouldUpdateBilling && newBillingDate &&
-              subscription.next_billing_date?.getTime() !== new Date(newBillingDate).getTime()) {
-
-            console.log(`📅 Updating billing date for subscription ${subscription.id}`);
-            await subscription.update({
-              next_billing_date: new Date(newBillingDate),
-              billing_cycle_end: new Date(newBillingDate),
-              updated_at: new Date()
-            });
-          }
-        }
-
-      } catch (subscriptionError) {
-        console.error(`❌ Error checking subscription ${subscription.id}:`, subscriptionError.message);
-        // Continue with other subscriptions instead of failing completely
-      }
-    }
-
-    console.log(`✅ Completed status check for ${userSubscriptions.length} subscriptions for user ${userId}`);
-
-  } catch (error) {
-    console.error('❌ Error checking subscription status:', error);
-    // Don't throw error - we still want to return subscription data even if status check fails
-  }
-}
 
 export default router;

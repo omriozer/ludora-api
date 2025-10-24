@@ -1,259 +1,345 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
-import Joi from 'joi';
 import { authenticateToken } from '../middleware/auth.js';
-import { validateBody } from '../middleware/validation.js';
-import PaymentIntentService from '../services/PaymentIntentService.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
+import PaymentService from '../services/PaymentService.js';
+import PayplusService from '../services/PayplusService.js';
+import models from '../models/index.js';
+import { clog, cerror } from '../lib/utils.js';
 
 const router = express.Router();
 
-// Payment-specific rate limiting
-const paymentRateLimit = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 20, // 20 payment operations per 5 minutes per IP
-  message: {
-    error: 'Too many payment requests. Please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Note: onLimitReached was deprecated in express-rate-limit v7
-});
-
-// Apply rate limiting to all payment routes
-router.use(paymentRateLimit);
-
-// Payment request validation schema (converted to Joi format) - updated
-const paymentStartSchema = Joi.object({
-  cartItems: Joi.array().min(1).items(
-    Joi.object({
-      id: Joi.string().required(),
-      payment_amount: Joi.number().min(0).optional()
-    }).required()
-  ).required().messages({
-    'array.min': 'At least one cart item is required',
-    'any.required': 'Cart items are required'
-  }),
-  userId: Joi.string().required().messages({
-    'any.required': 'User ID is required',
-    'string.empty': 'User ID cannot be empty'
-  }),
-  appliedCoupons: Joi.array().items(
-    Joi.object({
-      code: Joi.string().required(),
-      discount_amount: Joi.number().optional()
-    })
-  ).default([]),
-  environment: Joi.string().valid('production', 'test').default('production'),
-  frontendOrigin: Joi.string().optional()
-});
-
 /**
- * POST /api/payments/start
- * Start a new payment intent (replaces createPayplusPaymentPage)
+ * Determines if PayPlus payment page should be opened based on cart contents
+ *
+ * PayPlus API supports different charge methods:
+ * - 0: Card Check (J2) - validates card without charging
+ * - 1: Charge (J4) - immediate payment (transactional purchases)
+ * - 2: Approval (J5) - funds verification
+ * - 3: Recurring Payments - subscription billing
+ * - 4: Refund - immediate refund
+ *
+ * @param {Array} cartItems - Array of purchase objects in cart
+ * @returns {boolean} Whether to proceed with PayPlus payment page creation
  */
-router.post('/start',
-  authenticateToken,
-  validateBody(paymentStartSchema),
-  asyncHandler(async (req, res) => {
-    try {
-      console.log('🚀 Payment start endpoint called:', {
-        userId: req.body.userId,
-        cartItemCount: req.body.cartItems?.length || 0,
-        environment: req.body.environment
-      });
+function shouldOpenPayplusPage(cartItems) {
+  if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+    clog('❌ shouldOpenPayplusPage: No cart items provided');
+    return false;
+  }
 
-      const paymentIntentService = new PaymentIntentService();
+  // Check if there is at least one paid item (payment_amount > 0)
+  const hasPaidItems = cartItems.some(item => {
+    const amount = parseFloat(item.payment_amount || 0);
+    return amount > 0;
+  });
 
-      const result = await paymentIntentService.createPaymentIntent({
-        cartItems: req.body.cartItems,
-        userId: req.body.userId,
-        appliedCoupons: req.body.appliedCoupons || [],
-        environment: req.body.environment || 'production',
-        frontendOrigin: req.body.frontendOrigin || req.get('origin')
-      });
+  clog('🔍 shouldOpenPayplusPage: Cart analysis', {
+    itemCount: cartItems.length,
+    hasPaidItems,
+    amounts: cartItems.map(item => ({
+      id: item.id,
+      amount: item.payment_amount,
+      type: item.purchasable_type
+    }))
+  });
 
-      console.log('✅ Payment intent created successfully:', {
-        transactionId: result.transactionId,
-        status: result.status
-      });
+  if (!hasPaidItems) {
+    clog('❌ shouldOpenPayplusPage: No paid items found - all items are free');
+    return false;
+  }
 
-      res.json({
-        success: true,
+  clog('✅ shouldOpenPayplusPage: Found paid items - proceeding with PayPlus');
+  return true;
+}
+
+// Purchase Management Routes
+
+// Create a new purchase (add item to cart)
+router.post('/purchases', authenticateToken, async (req, res) => {
+  try {
+    const { purchasableType, purchasableId, additionalData = {} } = req.body;
+    const userId = req.user.uid;
+
+    // Validation
+    if (!purchasableType || !purchasableId) {
+      return res.status(400).json({ error: 'purchasableType and purchasableId are required' });
+    }
+
+    // Validate purchase creation constraints
+    const validation = await PaymentService.validatePurchaseCreation(userId, purchasableType, purchasableId);
+
+    if (!validation.valid) {
+      if (validation.canUpdate && purchasableType === 'subscription') {
+        // Special case: subscription in cart, need to update instead
+        return res.status(409).json({
+          error: validation.error,
+          canUpdate: true,
+          existingPurchaseId: validation.existingPurchase.id
+        });
+      }
+      return res.status(409).json({ error: validation.error });
+    }
+
+    // Get product/subscription details to determine price
+    let item = null;
+    switch (purchasableType) {
+      case 'workshop':
+        item = await models.Workshop.findByPk(purchasableId);
+        break;
+      case 'course':
+        item = await models.Course.findByPk(purchasableId);
+        break;
+      case 'file':
+        item = await models.File.findByPk(purchasableId);
+        break;
+      case 'tool':
+        item = await models.Tool.findByPk(purchasableId);
+        break;
+      case 'game':
+        item = await models.Game.findByPk(purchasableId);
+        break;
+      case 'subscription':
+        item = await models.SubscriptionPlan.findByPk(purchasableId);
+        break;
+      default:
+        return res.status(400).json({ error: `Unknown purchasable type: ${purchasableType}` });
+    }
+
+    if (!item) {
+      return res.status(404).json({ error: `${purchasableType} not found` });
+    }
+
+    const price = parseFloat(item.price || 0);
+    const isFree = price === 0;
+
+    // Create purchase with cart status for all items
+    const purchaseData = {
+      id: `pur_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      buyer_user_id: userId,
+      purchasable_type: purchasableType,
+      purchasable_id: purchasableId,
+      payment_amount: price,
+      original_price: price,
+      discount_amount: 0,
+      payment_status: 'cart',
+      payment_method: null,
+      metadata: {
+        product_title: item.title || item.name || 'Unknown Product',
+        ...additionalData
+      },
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+
+    const purchase = await models.Purchase.create(purchaseData);
+
+    // Return cart purchase for all items
+    res.json({
+      success: true,
+      message: 'Item added to cart',
+      data: {
+        purchase,
+        isFree,
+        completed: false
+      }
+    });
+
+  } catch (error) {
+    cerror('Error creating purchase:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete cart item (remove from cart)
+router.delete('/purchases/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.uid;
+
+    // Find the purchase
+    const purchase = await models.Purchase.findOne({
+      where: {
+        id,
+        buyer_user_id: userId,
+        payment_status: 'cart'
+      }
+    });
+
+    if (!purchase) {
+      return res.status(404).json({ error: 'Cart item not found' });
+    }
+
+    // Delete the purchase
+    await purchase.destroy();
+
+    res.json({
+      success: true,
+      message: 'Item removed from cart',
+      data: { purchaseId: id }
+    });
+
+  } catch (error) {
+    cerror('Error deleting cart item:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update cart subscription (change subscription plan)
+router.put('/purchases/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subscriptionPlanId } = req.body;
+    const userId = req.user.uid;
+
+    if (!subscriptionPlanId) {
+      return res.status(400).json({ error: 'subscriptionPlanId is required' });
+    }
+
+    // Find the subscription purchase
+    const purchase = await models.Purchase.findOne({
+      where: {
+        id,
+        buyer_user_id: userId,
+        purchasable_type: 'subscription',
+        payment_status: 'cart'
+      }
+    });
+
+    if (!purchase) {
+      return res.status(404).json({ error: 'Subscription cart item not found' });
+    }
+
+    // Get new subscription plan details
+    const newPlan = await models.SubscriptionPlan.findByPk(subscriptionPlanId);
+    if (!newPlan) {
+      return res.status(404).json({ error: 'Subscription plan not found' });
+    }
+
+    const newPrice = parseFloat(newPlan.price || 0);
+    const isFree = newPrice === 0;
+
+    // Update the purchase with cart status for all subscriptions
+    const updatedPurchase = await purchase.update({
+      purchasable_id: subscriptionPlanId,
+      payment_amount: newPrice,
+      original_price: newPrice,
+      payment_status: 'cart',
+      payment_method: null,
+      metadata: {
+        ...purchase.metadata,
+        product_title: newPlan.title || newPlan.name || 'Subscription Plan'
+      },
+      updated_at: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'Subscription plan updated',
+      data: {
+        purchase: updatedPurchase,
+        isFree,
+        completed: false
+      }
+    });
+
+  } catch (error) {
+    cerror('Error updating cart subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PayPlus Payment Page Creation
+router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => {
+  try {
+    const { cartItems, environment = 'production', frontendOrigin = 'cart' } = req.body;
+    const userId = req.user.uid;
+
+    clog('🎯 Payment: Creating PayPlus payment page', {
+      userId,
+      cartItemsCount: cartItems?.length || 0,
+      environment,
+      frontendOrigin
+    });
+
+    // Validation
+    if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
+      return res.status(400).json({ error: 'cartItems are required and must be a non-empty array' });
+    }
+
+    // Check if we should open PayPlus payment page
+    if (!shouldOpenPayplusPage(cartItems)) {
+      clog('❌ Payment: PayPlus page creation denied by shouldOpenPayplusPage');
+      return res.json({
+        success: false,
+        message: 'No paid items found - PayPlus payment page not needed',
         data: {
-          transactionId: result.transactionId,
-          paymentUrl: result.paymentUrl,
-          totalAmount: result.totalAmount,
-          status: result.status,
-          purchaseCount: result.purchaseCount,
-          expiresAt: result.expiresAt
+          reason: 'all_items_free',
+          cartItems: cartItems.length
         }
       });
-
-    } catch (error) {
-      console.error('❌ Payment start failed:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message,
-        code: 'PAYMENT_START_FAILED'
-      });
     }
-  })
-);
 
-/**
- * GET /api/payments/status/:transactionId
- * Get payment status for polling
- */
-router.get('/status/:transactionId',
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    try {
-      const { transactionId } = req.params;
+    // Get user information for customer data
+    const user = await models.User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-      console.log('🔍 Payment status check for transaction:', transactionId);
-
-      const paymentIntentService = new PaymentIntentService();
-      const status = await paymentIntentService.getPaymentStatus(transactionId);
-
-      res.json({
-        success: true,
-        data: status
-      });
-
-    } catch (error) {
-      console.error('❌ Payment status check failed:', error);
-
-      if (error.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'Payment not found',
-          code: 'PAYMENT_NOT_FOUND'
-        });
+    // Use PayplusService to create payment page
+    const paymentResult = await PayplusService.openPayplusPage({
+      frontendOrigin,
+      purchaseItems: cartItems,
+      environment,
+      customer: {
+        customer_name: user.displayName || user.email,
+        email: user.email,
+        phone: user.phone || ''
+      },
+      callbacks: {
+        successUrl: `${process.env.FRONTEND_URL}/payment/success`,
+        failureUrl: `${process.env.FRONTEND_URL}/payment/failure`,
+        cancelUrl: `${process.env.FRONTEND_URL}/payment/cancel`,
+        callbackUrl: `${process.env.API_URL}/webhooks/payplus`
       }
+    });
 
-      res.status(500).json({
-        success: false,
-        error: error.message,
-        code: 'PAYMENT_STATUS_ERROR'
-      });
-    }
-  })
-);
-
-/**
- * POST /api/payments/retry/:transactionId
- * Retry a failed/expired payment
- */
-router.post('/retry/:transactionId',
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    try {
-      const { transactionId } = req.params;
-
-      console.log('🔄 Payment retry requested for transaction:', transactionId);
-
-      const paymentIntentService = new PaymentIntentService();
-
-      // Get current status first
-      const currentStatus = await paymentIntentService.getPaymentStatus(transactionId);
-
-      if (!currentStatus.canRetry) {
-        return res.status(400).json({
-          success: false,
-          error: 'Payment cannot be retried in current status',
-          code: 'PAYMENT_RETRY_NOT_ALLOWED',
-          currentStatus: currentStatus.status
-        });
+    // Create transaction with PayPlus data
+    const transaction = await PaymentService.createPayPlusTransaction({
+      userId,
+      amount: paymentResult.totalAmount,
+      environment,
+      pageRequestUid: paymentResult.pageRequestUid,
+      paymentPageLink: paymentResult.paymentPageLink,
+      purchaseItems: cartItems,
+      metadata: {
+        frontendOrigin,
+        customerInfo: {
+          name: user.displayName || user.email,
+          email: user.email
+        },
+        payplusResponse: paymentResult.data
       }
+    });
 
-      // Reset to pending status for retry
-      await paymentIntentService.updatePaymentStatus(transactionId, 'pending', {
-        retry_requested_at: new Date().toISOString(),
-        retry_reason: 'user_requested'
-      });
+    clog('✅ Payment: PayPlus payment page and transaction created successfully', {
+      transactionId: transaction.id,
+      purchaseCount: cartItems.length,
+      transactionType: transaction.metadata.transaction_type
+    });
 
-      const updatedStatus = await paymentIntentService.getPaymentStatus(transactionId);
+    res.json({
+      success: true,
+      message: 'PayPlus payment page created',
+      data: paymentResult.data,
+      paymentUrl: paymentResult.paymentPageLink,
+      transactionId: transaction.id,
+      pageRequestUid: paymentResult.pageRequestUid,
+      environment: paymentResult.environment
+    });
 
-      res.json({
-        success: true,
-        message: 'Payment retry initiated',
-        data: updatedStatus
-      });
-
-    } catch (error) {
-      console.error('❌ Payment retry failed:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message,
-        code: 'PAYMENT_RETRY_FAILED'
-      });
-    }
-  })
-);
-
-/**
- * POST /api/payments/confirm/:transactionId
- * Frontend confirms payment was submitted to PayPlus
- */
-router.post('/confirm/:transactionId',
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    try {
-      const { transactionId } = req.params;
-
-      console.log('✋ Payment confirmation received for transaction:', transactionId);
-
-      const paymentIntentService = new PaymentIntentService();
-
-      // Mark payment as in progress (moves purchases from 'cart' to 'pending')
-      await paymentIntentService.markPaymentInProgress(transactionId);
-
-      console.log('✅ Payment marked as in progress for transaction:', transactionId);
-
-      res.json({
-        success: true,
-        message: 'Payment confirmation received',
-        transactionId,
-        timestamp: new Date().toISOString()
-      });
-
-    } catch (error) {
-      console.error('❌ Payment confirmation failed:', error);
-
-      if (error.message.includes('not found')) {
-        return res.status(404).json({
-          success: false,
-          error: 'Transaction not found',
-          code: 'TRANSACTION_NOT_FOUND'
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        error: error.message,
-        code: 'PAYMENT_CONFIRMATION_FAILED'
-      });
-    }
-  })
-);
-
-/**
- * GET /api/payments/health
- * Health check endpoint for payment system
- */
-router.get('/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Payment system is healthy',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      start: 'POST /api/payments/start',
-      status: 'GET /api/payments/status/:transactionId',
-      retry: 'POST /api/payments/retry/:transactionId',
-      confirm: 'POST /api/payments/confirm/:transactionId'
-    }
-  });
+  } catch (error) {
+    cerror('❌ Payment: Error creating PayPlus payment page:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;

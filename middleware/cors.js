@@ -38,7 +38,7 @@ class CORSConfig {
   getWebhookOrigins() {
     const origins = [];
 
-    // Webhook specific origins (future feature for payplus and others)
+    // Webhook specific origins (future feature for external providers)
     if (process.env.WEBHOOK_ALLOWED_ORIGINS) {
       const webhookUrls = process.env.WEBHOOK_ALLOWED_ORIGINS.split(',')
         .map(url => url.trim())
