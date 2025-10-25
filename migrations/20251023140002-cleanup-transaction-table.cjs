@@ -45,11 +45,11 @@ module.exports = {
     if (tableDescription['environment']) {
       console.log('Updating environment column to enum');
 
-      // First migrate any 'development' values to 'staging'
+      // First migrate any 'development' and 'test' values to 'staging'
       await queryInterface.sequelize.query(`
         UPDATE transaction
         SET environment = 'staging'
-        WHERE environment = 'development';
+        WHERE environment IN ('development', 'test');
       `);
 
       await queryInterface.changeColumn('transaction', 'environment', {
@@ -184,7 +184,11 @@ module.exports = {
           WHEN payment_status IN ('in_progress', 'expired') THEN 'pending'
           ELSE payment_status
         END,
-        payplus_response, environment,
+        payplus_response,
+        CASE
+          WHEN environment IN ('development', 'test') THEN 'staging'
+          ELSE environment
+        END,
         created_at, updated_at
       FROM transaction;
     `);
