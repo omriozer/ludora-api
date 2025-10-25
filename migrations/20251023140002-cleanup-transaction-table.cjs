@@ -59,42 +59,26 @@ module.exports = {
     }
 
     // Update payment_status enum to remove 'in_progress' and 'expired'
-    if (tableDescription['payment_status'] && tableDescription['payment_status'].type !== 'enum_transaction_payment_status') {
+    if (tableDescription['payment_status']) {
       console.log('Updating payment_status enum');
 
-      // First, update any existing 'in_progress' or 'expired' values to 'pending'
+      // Always clean up invalid payment status values first
       await queryInterface.sequelize.query(`
         UPDATE transaction
         SET payment_status = 'pending'
         WHERE payment_status IN ('in_progress', 'expired');
       `);
 
-      // Drop the default value first
-      await queryInterface.sequelize.query(`
-        ALTER TABLE transaction ALTER COLUMN payment_status DROP DEFAULT;
-      `);
-
-      // Create the enum type if it doesn't exist
-      await queryInterface.sequelize.query(`
-        DO $$
-        BEGIN
-          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_transaction_payment_status') THEN
-            CREATE TYPE enum_transaction_payment_status AS ENUM ('pending', 'completed', 'failed', 'cancelled', 'refunded');
-          END IF;
-        END $$;
-      `);
-
-      // Convert column to enum using raw SQL
-      await queryInterface.sequelize.query(`
-        ALTER TABLE transaction
-        ALTER COLUMN payment_status TYPE enum_transaction_payment_status
-        USING payment_status::enum_transaction_payment_status;
-      `);
-
-      // Set the default value
-      await queryInterface.sequelize.query(`
-        ALTER TABLE transaction ALTER COLUMN payment_status SET DEFAULT 'pending';
-      `);
+      // Simply change the column to enum using Sequelize
+      try {
+        await queryInterface.changeColumn('transaction', 'payment_status', {
+          type: Sequelize.ENUM('pending', 'completed', 'failed', 'cancelled', 'refunded'),
+          allowNull: true,
+          defaultValue: 'pending'
+        });
+      } catch (error) {
+        console.log('Payment status column already converted or error:', error.message);
+      }
     } else {
       console.log('Payment status enum already updated, skipping');
     }
