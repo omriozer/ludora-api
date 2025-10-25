@@ -13,6 +13,16 @@ module.exports = {
       return;
     }
 
+    // Start by clearing all existing data and related foreign key references
+    console.log('Clearing all transaction data and related references...');
+
+    // Clear tables that reference transaction table first
+    await queryInterface.sequelize.query('DELETE FROM subscription WHERE transaction_id IS NOT NULL;');
+    await queryInterface.sequelize.query('DELETE FROM webhook_log WHERE transaction_id IS NOT NULL;');
+
+    // Now safe to clear transaction table
+    await queryInterface.sequelize.query('DELETE FROM transaction;');
+
     // Get table description to check which columns exist
     const tableDescription = await queryInterface.describeTable('transaction');
 
@@ -45,32 +55,6 @@ module.exports = {
     if (tableDescription['environment']) {
       console.log('Updating environment column to enum');
 
-      // First migrate ALL non-production environment values to 'staging'
-      await queryInterface.sequelize.query(`
-        UPDATE transaction
-        SET environment = 'staging'
-        WHERE environment != 'production' AND environment IS NOT NULL;
-      `);
-
-      // Verify all values are now valid before enum conversion
-      const invalidEnvironmentValues = await queryInterface.sequelize.query(`
-        SELECT DISTINCT environment
-        FROM transaction
-        WHERE environment IS NOT NULL
-        AND environment NOT IN ('production', 'staging');
-      `, { type: queryInterface.sequelize.QueryTypes.SELECT });
-
-      if (invalidEnvironmentValues.length > 0) {
-        console.log('Found invalid environment values:', invalidEnvironmentValues.map(row => row.environment));
-        // Force convert any remaining invalid values
-        await queryInterface.sequelize.query(`
-          UPDATE transaction
-          SET environment = 'staging'
-          WHERE environment IS NOT NULL AND environment NOT IN ('production', 'staging');
-        `);
-      }
-
-      // Now safely convert to enum
       try {
         await queryInterface.changeColumn('transaction', 'environment', {
           type: Sequelize.ENUM('production', 'staging'),
@@ -86,34 +70,6 @@ module.exports = {
     if (tableDescription['payment_status']) {
       console.log('Updating payment_status enum');
 
-      // Clean up ALL invalid payment status values first
-      await queryInterface.sequelize.query(`
-        UPDATE transaction
-        SET payment_status = 'pending'
-        WHERE payment_status NOT IN ('pending', 'completed', 'failed', 'cancelled', 'refunded')
-        AND payment_status IS NOT NULL;
-      `);
-
-      // Verify all values are now valid before enum conversion
-      const invalidPaymentStatusValues = await queryInterface.sequelize.query(`
-        SELECT DISTINCT payment_status
-        FROM transaction
-        WHERE payment_status IS NOT NULL
-        AND payment_status NOT IN ('pending', 'completed', 'failed', 'cancelled', 'refunded');
-      `, { type: queryInterface.sequelize.QueryTypes.SELECT });
-
-      if (invalidPaymentStatusValues.length > 0) {
-        console.log('Found invalid payment_status values:', invalidPaymentStatusValues.map(row => row.payment_status));
-        // Force convert any remaining invalid values
-        await queryInterface.sequelize.query(`
-          UPDATE transaction
-          SET payment_status = 'pending'
-          WHERE payment_status IS NOT NULL
-          AND payment_status NOT IN ('pending', 'completed', 'failed', 'cancelled', 'refunded');
-        `);
-      }
-
-      // Now safely convert to enum
       try {
         await queryInterface.changeColumn('transaction', 'payment_status', {
           type: Sequelize.ENUM('pending', 'completed', 'failed', 'cancelled', 'refunded'),
@@ -124,114 +80,28 @@ module.exports = {
         console.log('Payment status column conversion error:', error.message);
         throw error;
       }
-    } else {
-      console.log('Payment status enum already updated, skipping');
     }
 
-    // Recreate table with proper column order (created_at and updated_at last)
-    console.log('Recreating table with proper column order...');
+    // Add missing columns if they don't exist
+    const requiredColumns = {
+      'user_id': { type: Sequelize.STRING, allowNull: true },
+      'amount': { type: Sequelize.DECIMAL(10, 2), allowNull: true },
+      'currency': { type: Sequelize.STRING, allowNull: true, defaultValue: 'ILS' },
+      'payment_method': { type: Sequelize.STRING, allowNull: true },
+      'transaction_id': { type: Sequelize.STRING, allowNull: true },
+      'description': { type: Sequelize.TEXT, allowNull: true },
+      'metadata': { type: Sequelize.JSONB, allowNull: true },
+      'provider_transaction_id': { type: Sequelize.STRING, allowNull: true },
+      'provider_response': { type: Sequelize.JSONB, allowNull: true },
+      'failure_reason': { type: Sequelize.TEXT, allowNull: true }
+    };
 
-    // Create temporary table with new structure
-    await queryInterface.createTable('transaction_temp', {
-      id: {
-        type: Sequelize.STRING,
-        primaryKey: true,
-        allowNull: false,
-      },
-      user_id: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      amount: {
-        type: Sequelize.DECIMAL(10, 2),
-        allowNull: true,
-      },
-      currency: {
-        type: Sequelize.STRING,
-        allowNull: true,
-        defaultValue: 'ILS'
-      },
-      payment_method: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      payment_status: {
-        type: Sequelize.ENUM('pending', 'completed', 'failed', 'cancelled', 'refunded'),
-        allowNull: true,
-        defaultValue: 'pending'
-      },
-      transaction_id: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      description: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      metadata: {
-        type: Sequelize.JSONB,
-        allowNull: true,
-      },
-      environment: {
-        type: Sequelize.ENUM('production', 'staging'),
-        allowNull: true
-      },
-      provider_transaction_id: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      provider_response: {
-        type: Sequelize.JSONB,
-        allowNull: true,
-      },
-      failure_reason: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      created_at: {
-        type: Sequelize.DATE,
-        allowNull: false,
-        defaultValue: Sequelize.NOW,
-      },
-      updated_at: {
-        type: Sequelize.DATE,
-        allowNull: false,
-        defaultValue: Sequelize.NOW,
-      },
-    });
-
-    // Copy data from original table to temp table
-    // Check which columns exist for compatibility across environments
-    const amountColumn = tableDescription['total_amount'] ? 'total_amount' : 'amount';
-    const responseColumn = tableDescription['payplus_response'] ? 'payplus_response' : 'provider_response';
-    console.log(`Using amount column: ${amountColumn}, response column: ${responseColumn}`);
-
-    await queryInterface.sequelize.query(`
-      INSERT INTO transaction_temp (
-        id, amount, currency, payment_method, payment_status,
-        provider_response, environment,
-        created_at, updated_at
-      )
-      SELECT
-        id, ${amountColumn}, 'ILS', payment_method,
-        CASE
-          WHEN payment_status IN ('pending', 'completed', 'failed', 'cancelled', 'refunded') THEN payment_status::text
-          WHEN payment_status IS NULL THEN NULL
-          ELSE 'pending'
-        END::enum_transaction_temp_payment_status,
-        ${responseColumn},
-        CASE
-          WHEN environment = 'production' THEN 'production'
-          WHEN environment IS NULL THEN NULL
-          ELSE 'staging'
-        END::enum_transaction_temp_environment,
-        created_at, updated_at
-      FROM transaction;
-    `);
-
-    // Drop original table and rename temp table
-    await queryInterface.dropTable('transaction');
-    await queryInterface.renameTable('transaction_temp', 'transaction');
+    for (const [columnName, columnDef] of Object.entries(requiredColumns)) {
+      if (!tableDescription[columnName]) {
+        console.log(`Adding missing column: ${columnName}`);
+        await queryInterface.addColumn('transaction', columnName, columnDef);
+      }
+    }
 
     console.log('Transaction table cleanup completed');
   },

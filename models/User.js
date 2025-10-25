@@ -100,6 +100,15 @@ export default function(sequelize) {
       defaultValue: [],
       comment: 'Teacher specializations and teaching subjects as JSON array'
     },
+    school_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      references: {
+        model: 'school',
+        key: 'id'
+      },
+      comment: 'School that this user belongs to (teachers, students, headmasters)'
+    },
   }, {
     tableName: 'user', // Match Base44 table name
     timestamps: false, // We handle timestamps manually
@@ -128,6 +137,18 @@ export default function(sequelize) {
       {
         fields: ['birth_date'],
       },
+      {
+        fields: ['school_id'],
+        name: 'idx_user_school_id'
+      },
+      {
+        fields: ['school_id', 'user_type'],
+        name: 'idx_user_school_type'
+      },
+      {
+        fields: ['user_type'],
+        name: 'idx_user_type'
+      },
     ],
   });
 
@@ -138,6 +159,22 @@ export default function(sequelize) {
     User.hasMany(models.Classroom, { foreignKey: 'teacher_id' });
     User.hasMany(models.StudentInvitation, { foreignKey: 'teacher_id' });
     User.hasMany(models.ClassroomMembership, { foreignKey: 'student_user_id' });
+
+    // School associations
+    User.belongsTo(models.School, {
+      foreignKey: 'school_id',
+      as: 'School',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+
+    // A user can be headmaster of a school (reverse relationship)
+    User.hasOne(models.School, {
+      foreignKey: 'school_headmaster_id',
+      as: 'ManagedSchool',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
   };
 
   // Instance methods
