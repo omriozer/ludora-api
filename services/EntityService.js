@@ -75,6 +75,7 @@ class EntityService {
       'contentlist': 'ContentList',
       'contentrelationship': 'ContentRelationship',
       'subscriptionplan': 'SubscriptionPlan',
+      'subscriptionhistory': 'SubscriptionHistory',
       'gamesession': 'GameSession',
       'gamecontenttag': 'GameContentTag',
       'contenttag': 'ContentTag',

@@ -97,9 +97,7 @@ router.post('/purchases', authenticateToken, async (req, res) => {
       case 'game':
         item = await models.Game.findByPk(purchasableId);
         break;
-      case 'subscription':
-        item = await models.SubscriptionPlan.findByPk(purchasableId);
-        break;
+      // NOTE: 'subscription' case removed - use dedicated /api/subscriptions endpoints
       default:
         return res.status(400).json({ error: `Unknown purchasable type: ${purchasableType}` });
     }
@@ -183,66 +181,27 @@ router.delete('/purchases/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Update cart subscription (change subscription plan)
+// Update cart subscription - DEPRECATED: Use /api/subscriptions endpoints instead
 router.put('/purchases/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { subscriptionPlanId } = req.body;
-    const userId = req.user.uid;
 
-    if (!subscriptionPlanId) {
-      return res.status(400).json({ error: 'subscriptionPlanId is required' });
+    // Check if this is a subscription update request
+    if (subscriptionPlanId) {
+      return res.status(410).json({
+        error: 'Subscription updates via purchase system are deprecated. Use /api/subscriptions endpoints instead.',
+        migrationNote: 'Use POST /api/subscriptions/create-payment with the new subscriptionPlanId'
+      });
     }
 
-    // Find the subscription purchase
-    const purchase = await models.Purchase.findOne({
-      where: {
-        id,
-        buyer_user_id: userId,
-        purchasable_type: 'subscription',
-        payment_status: 'cart'
-      }
-    });
-
-    if (!purchase) {
-      return res.status(404).json({ error: 'Subscription cart item not found' });
-    }
-
-    // Get new subscription plan details
-    const newPlan = await models.SubscriptionPlan.findByPk(subscriptionPlanId);
-    if (!newPlan) {
-      return res.status(404).json({ error: 'Subscription plan not found' });
-    }
-
-    const newPrice = parseFloat(newPlan.price || 0);
-    const isFree = newPrice === 0;
-
-    // Update the purchase with cart status for all subscriptions
-    const updatedPurchase = await purchase.update({
-      purchasable_id: subscriptionPlanId,
-      payment_amount: newPrice,
-      original_price: newPrice,
-      payment_status: 'cart',
-      payment_method: null,
-      metadata: {
-        ...purchase.metadata,
-        product_title: newPlan.title || newPlan.name || 'Subscription Plan'
-      },
-      updated_at: new Date()
-    });
-
-    res.json({
-      success: true,
-      message: 'Subscription plan updated',
-      data: {
-        purchase: updatedPurchase,
-        isFree,
-        completed: false
-      }
+    // Handle other purchase types (non-subscription updates)
+    return res.status(400).json({
+      error: 'Purchase update not supported for this type. Use specific endpoints for different product types.'
     });
 
   } catch (error) {
-    cerror('Error updating cart subscription:', error);
+    cerror('Error updating cart purchase:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -338,6 +297,52 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
 
   } catch (error) {
     cerror('❌ Payment: Error creating PayPlus payment page:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Subscription Payment Creation - Using dedicated SubscriptionPaymentService
+router.post('/createSubscriptionPayment', authenticateToken, async (req, res) => {
+  try {
+    const { subscriptionPlanId, environment = 'production' } = req.body;
+    const userId = req.user.uid;
+
+    clog('🎯 Payment: Creating subscription payment', {
+      userId,
+      subscriptionPlanId,
+      environment
+    });
+
+    // Validation
+    if (!subscriptionPlanId) {
+      return res.status(400).json({ error: 'subscriptionPlanId is required' });
+    }
+
+    // Use dedicated SubscriptionPaymentService instead of Purchase system
+    const SubscriptionPaymentService = (await import('../services/SubscriptionPaymentService.js')).default;
+
+    const result = await SubscriptionPaymentService.createSubscriptionPayment({
+      userId,
+      subscriptionPlanId,
+      environment,
+      metadata: {
+        source: 'subscription_modal',
+        userAgent: req.headers['user-agent'],
+        ip: req.ip
+      }
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    cerror('❌ Payment: Error creating subscription payment:', error);
+
+    // Handle specific validation errors
+    if (error.message.includes('already has an active subscription') ||
+        error.message.includes('already has a pending subscription')) {
+      return res.status(409).json({ error: error.message });
+    }
+
     res.status(500).json({ error: error.message });
   }
 });

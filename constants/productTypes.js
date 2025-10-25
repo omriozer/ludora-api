@@ -21,9 +21,9 @@ export const PRODUCT_TYPES_WITH_CREATORS = [
 ];
 
 // Product types that can be purchased (for purchases, payments, etc.)
+// Note: 'subscription' removed - subscriptions now use dedicated subscription system
 export const PURCHASABLE_PRODUCT_TYPES = [
-  ...ALL_PRODUCT_TYPES,
-  'subscription' // Special case for subscription purchases
+  ...ALL_PRODUCT_TYPES
 ];
 
 // Product types that support media/video access

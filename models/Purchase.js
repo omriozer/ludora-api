@@ -178,6 +178,9 @@ export default function(sequelize) {
       scope: { purchasable_type: 'game' },
       as: 'game'
     });
+
+    // NOTE: Subscription association removed - subscriptions now use dedicated subscription system
+    // Previously had: Purchase.belongsTo(models.SubscriptionPlan, {...})
   };
 
   return Purchase;

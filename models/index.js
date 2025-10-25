@@ -29,6 +29,8 @@ import EmailLog from './EmailLog.js';
 import Game from './Game.js';
 import AudioFile from './AudioFile.js';
 import SubscriptionPlan from './SubscriptionPlan.js';
+import Subscription from './Subscription.js';
+import SubscriptionHistory from './SubscriptionHistory.js';
 import School from './School.js';
 import Classroom from './Classroom.js';
 import StudentInvitation from './StudentInvitation.js';
@@ -37,6 +39,7 @@ import ClassroomMembership from './ClassroomMembership.js';
 import Curriculum from './Curriculum.js';
 import CurriculumItem from './CurriculumItem.js';
 import Logs from './Logs.js';
+import WebhookLog from './WebhookLog.js';
 
 // Initialize models
 const models = {
@@ -60,6 +63,8 @@ const models = {
   Game: Game(sequelize),
   AudioFile: AudioFile(sequelize),
   SubscriptionPlan: SubscriptionPlan(sequelize),
+  Subscription: Subscription(sequelize),
+  SubscriptionHistory: SubscriptionHistory(sequelize),
   School: School(sequelize),
   Classroom: Classroom(sequelize),
   StudentInvitation: StudentInvitation(sequelize),
@@ -68,6 +73,7 @@ const models = {
   Curriculum: Curriculum(sequelize),
   CurriculumItem: CurriculumItem(sequelize),
   Logs: Logs(sequelize),
+  WebhookLog: WebhookLog(sequelize),
 };
 
 // Define associations
