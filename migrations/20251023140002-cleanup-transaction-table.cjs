@@ -45,31 +45,75 @@ module.exports = {
     if (tableDescription['environment']) {
       console.log('Updating environment column to enum');
 
-      // First migrate any 'development' and 'test' values to 'staging'
+      // First migrate ALL non-production environment values to 'staging'
       await queryInterface.sequelize.query(`
         UPDATE transaction
         SET environment = 'staging'
-        WHERE environment IN ('development', 'test');
+        WHERE environment != 'production' AND environment IS NOT NULL;
       `);
 
-      await queryInterface.changeColumn('transaction', 'environment', {
-        type: Sequelize.ENUM('production', 'staging'),
-        allowNull: true
-      });
+      // Verify all values are now valid before enum conversion
+      const invalidEnvironmentValues = await queryInterface.sequelize.query(`
+        SELECT DISTINCT environment
+        FROM transaction
+        WHERE environment IS NOT NULL
+        AND environment NOT IN ('production', 'staging');
+      `, { type: queryInterface.sequelize.QueryTypes.SELECT });
+
+      if (invalidEnvironmentValues.length > 0) {
+        console.log('Found invalid environment values:', invalidEnvironmentValues.map(row => row.environment));
+        // Force convert any remaining invalid values
+        await queryInterface.sequelize.query(`
+          UPDATE transaction
+          SET environment = 'staging'
+          WHERE environment IS NOT NULL AND environment NOT IN ('production', 'staging');
+        `);
+      }
+
+      // Now safely convert to enum
+      try {
+        await queryInterface.changeColumn('transaction', 'environment', {
+          type: Sequelize.ENUM('production', 'staging'),
+          allowNull: true
+        });
+      } catch (error) {
+        console.log('Environment column conversion error:', error.message);
+        throw error;
+      }
     }
 
     // Update payment_status enum to remove 'in_progress' and 'expired'
     if (tableDescription['payment_status']) {
       console.log('Updating payment_status enum');
 
-      // Always clean up invalid payment status values first
+      // Clean up ALL invalid payment status values first
       await queryInterface.sequelize.query(`
         UPDATE transaction
         SET payment_status = 'pending'
-        WHERE payment_status IN ('in_progress', 'expired');
+        WHERE payment_status NOT IN ('pending', 'completed', 'failed', 'cancelled', 'refunded')
+        AND payment_status IS NOT NULL;
       `);
 
-      // Simply change the column to enum using Sequelize
+      // Verify all values are now valid before enum conversion
+      const invalidPaymentStatusValues = await queryInterface.sequelize.query(`
+        SELECT DISTINCT payment_status
+        FROM transaction
+        WHERE payment_status IS NOT NULL
+        AND payment_status NOT IN ('pending', 'completed', 'failed', 'cancelled', 'refunded');
+      `, { type: queryInterface.sequelize.QueryTypes.SELECT });
+
+      if (invalidPaymentStatusValues.length > 0) {
+        console.log('Found invalid payment_status values:', invalidPaymentStatusValues.map(row => row.payment_status));
+        // Force convert any remaining invalid values
+        await queryInterface.sequelize.query(`
+          UPDATE transaction
+          SET payment_status = 'pending'
+          WHERE payment_status IS NOT NULL
+          AND payment_status NOT IN ('pending', 'completed', 'failed', 'cancelled', 'refunded');
+        `);
+      }
+
+      // Now safely convert to enum
       try {
         await queryInterface.changeColumn('transaction', 'payment_status', {
           type: Sequelize.ENUM('pending', 'completed', 'failed', 'cancelled', 'refunded'),
@@ -77,7 +121,8 @@ module.exports = {
           defaultValue: 'pending'
         });
       } catch (error) {
-        console.log('Payment status column already converted or error:', error.message);
+        console.log('Payment status column conversion error:', error.message);
+        throw error;
       }
     } else {
       console.log('Payment status enum already updated, skipping');
@@ -156,6 +201,11 @@ module.exports = {
     });
 
     // Copy data from original table to temp table
+    // Check which columns exist for compatibility across environments
+    const amountColumn = tableDescription['total_amount'] ? 'total_amount' : 'amount';
+    const responseColumn = tableDescription['payplus_response'] ? 'payplus_response' : 'provider_response';
+    console.log(`Using amount column: ${amountColumn}, response column: ${responseColumn}`);
+
     await queryInterface.sequelize.query(`
       INSERT INTO transaction_temp (
         id, amount, currency, payment_method, payment_status,
@@ -163,16 +213,18 @@ module.exports = {
         created_at, updated_at
       )
       SELECT
-        id, total_amount, 'ILS', payment_method,
+        id, ${amountColumn}, 'ILS', payment_method,
         CASE
-          WHEN payment_status IN ('in_progress', 'expired') THEN 'pending'
-          ELSE payment_status
-        END,
-        payplus_response,
+          WHEN payment_status IN ('pending', 'completed', 'failed', 'cancelled', 'refunded') THEN payment_status::text
+          WHEN payment_status IS NULL THEN NULL
+          ELSE 'pending'
+        END::enum_transaction_temp_payment_status,
+        ${responseColumn},
         CASE
-          WHEN environment IN ('development', 'test') THEN 'staging'
-          ELSE environment
-        END,
+          WHEN environment = 'production' THEN 'production'
+          WHEN environment IS NULL THEN NULL
+          ELSE 'staging'
+        END::enum_transaction_temp_environment,
         created_at, updated_at
       FROM transaction;
     `);
