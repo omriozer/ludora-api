@@ -3,114 +3,30 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    // Check if table exists
+    // This migration was made redundant by the cleanup migration (20251023140002)
+    // which already handles the complete table restructuring.
+    // The cleanup migration now does both cleanup AND finalization in one step.
+
+    console.log('Transaction table finalization - SKIPPED (already completed by cleanup migration)');
+
+    // Verify the table structure is correct
     const tableExists = await queryInterface.showAllTables().then(tables =>
       tables.includes('transaction')
     );
 
-    if (!tableExists) {
-      console.log('Transaction table does not exist, skipping restructure');
-      return;
+    if (tableExists) {
+      const tableDescription = await queryInterface.describeTable('transaction');
+      const hasCorrectStructure = tableDescription['amount'] &&
+                                 tableDescription['provider_response'] &&
+                                 !tableDescription['total_amount'] &&
+                                 !tableDescription['payplus_response'];
+
+      if (hasCorrectStructure) {
+        console.log('✅ Transaction table structure verified - cleanup migration was successful');
+      } else {
+        console.log('⚠️ Transaction table structure may need attention');
+      }
     }
-
-    console.log('Finalizing transaction table structure...');
-
-    // Create temporary table with final structure
-    await queryInterface.createTable('transaction_final', {
-      id: {
-        type: Sequelize.STRING,
-        primaryKey: true,
-        allowNull: false,
-      },
-      user_id: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      amount: {
-        type: Sequelize.DECIMAL(10, 2),
-        allowNull: true,
-      },
-      currency: {
-        type: Sequelize.STRING,
-        allowNull: true,
-        defaultValue: 'ILS'
-      },
-      payment_method: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      payment_status: {
-        type: 'enum_transaction_payment_status',
-        allowNull: true,
-        defaultValue: 'pending'
-      },
-      transaction_id: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      description: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      metadata: {
-        type: Sequelize.JSONB,
-        allowNull: true,
-      },
-      environment: {
-        type: 'enum_transaction_environment',
-        allowNull: true
-      },
-      provider_transaction_id: {
-        type: Sequelize.STRING,
-        allowNull: true,
-      },
-      provider_response: {
-        type: Sequelize.JSONB,
-        allowNull: true,
-      },
-      failure_reason: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      created_at: {
-        type: Sequelize.DATE,
-        allowNull: false,
-        defaultValue: Sequelize.NOW,
-      },
-      updated_at: {
-        type: Sequelize.DATE,
-        allowNull: false,
-        defaultValue: Sequelize.NOW,
-      },
-    });
-
-    // Copy data from original table to final table
-    await queryInterface.sequelize.query(`
-      INSERT INTO transaction_final (
-        id, amount, currency, payment_method, payment_status,
-        provider_response, environment,
-        created_at, updated_at
-      )
-      SELECT
-        id,
-        CASE WHEN total_amount IS NOT NULL THEN total_amount
-             WHEN payplus_page_uid IS NOT NULL THEN 0
-             ELSE NULL END,
-        'ILS',
-        payment_method,
-        payment_status,
-        payplus_response,
-        environment,
-        created_at,
-        updated_at
-      FROM transaction;
-    `);
-
-    // Drop original table and rename final table
-    await queryInterface.dropTable('transaction');
-    await queryInterface.renameTable('transaction_final', 'transaction');
-
-    console.log('Transaction table finalization completed');
   },
 
   async down(queryInterface, Sequelize) {
