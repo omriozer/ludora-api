@@ -2,11 +2,8 @@ import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
 
 export default function(sequelize) {
-  // Use baseFields but exclude creator_user_id since curriculum uses teacher_user_id
-  const { creator_user_id, ...curriculumBaseFields } = baseFields;
-
   const Curriculum = sequelize.define('Curriculum', {
-    ...curriculumBaseFields,
+    ...baseFields,
     subject: {
       type: DataTypes.STRING,
       allowNull: false,

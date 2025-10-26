@@ -155,8 +155,15 @@ async function deleteAllFileAssets(fileEntityId) {
  * @returns {Promise<boolean>} True if user has access
  */
 async function checkUserAccess(user, fileEntity) {
-  // Creator has access to their own content
-  if (fileEntity.creator_user_id === user.id) {
+  const product = await db.Product.findOne({
+      where: {
+        product_type: 'file',
+        entity_id: fileEntity.id
+      }
+    });
+    
+
+  if (product.creator_user_id === user.id) {
     console.log('🔍 Access granted: User is creator of file');
     return true;
   }

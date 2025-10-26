@@ -37,14 +37,6 @@ export default function(sequelize) {
         }
       }
     },
-    creator_user_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      references: {
-        model: 'user',
-        key: 'id'
-      }
-    }
   }, {
     ...baseOptions,
     tableName: 'game',
@@ -55,9 +47,6 @@ export default function(sequelize) {
       {
         fields: ['device_compatibility']
       },
-      {
-        fields: ['creator_user_id']
-      }
     ]
   });
 
@@ -95,15 +84,6 @@ export default function(sequelize) {
   };
 
 
-  Game.findByCreator = function(creatorUserId, options = {}) {
-    return this.findAll({
-      where: {
-        creator_user_id: creatorUserId,
-        ...options.where
-      },
-      ...options
-    });
-  };
 
   Game.findCompatibleWith = function(deviceType, options = {}) {
     return this.findAll({
@@ -120,12 +100,6 @@ export default function(sequelize) {
 
   // Define associations
   Game.associate = function(models) {
-    // User associations
-    Game.belongsTo(models.User, {
-      foreignKey: 'creator_user_id',
-      as: 'creator'
-    });
-
     // Note: Purchases will reference this via polymorphic relation
     // Product references this via polymorphic association (product_type + entity_id)
   };

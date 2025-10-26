@@ -17,14 +17,6 @@ export const baseFields = {
     allowNull: false,
     defaultValue: DataTypes.NOW,
   },
-  creator_user_id: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    references: {
-      model: 'user',
-      key: 'id'
-    }
-  },
 };
 
 // Standard options for most models

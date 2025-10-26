@@ -66,14 +66,6 @@ export default function(sequelize) {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-    creator_user_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      references: {
-        model: 'user',
-        key: 'id'
-      }
-    },
   }, {
     ...baseOptions,
     tableName: 'course',
@@ -84,18 +76,10 @@ export default function(sequelize) {
       {
         fields: ['is_published'],
       },
-      {
-        fields: ['creator_user_id'],
-      },
     ],
   });
 
   Course.associate = function(models) {
-    Course.belongsTo(models.User, {
-      foreignKey: 'creator_user_id',
-      as: 'creator',
-      targetKey: 'id'
-    });
     // Note: Purchases will reference this via polymorphic relation
     // Product references this via polymorphic association (product_type + entity_id)
   };

@@ -3,7 +3,7 @@ import { baseFields, baseOptions } from './baseModel.js';
 
 export default function(sequelize) {
   const School = sequelize.define('School', {
-    // Base fields (id, created_at, updated_at, creator_user_id)
+    // Base fields (id, created_at, updated_at)
     ...baseFields,
 
     // Core school information
@@ -159,10 +159,6 @@ export default function(sequelize) {
         name: 'idx_school_edu_system_id'
       },
       {
-        fields: ['creator_user_id'],
-        name: 'idx_school_creator_user_id'
-      },
-      {
         fields: ['created_at'],
         name: 'idx_school_created_at'
       }
@@ -175,14 +171,6 @@ export default function(sequelize) {
     School.belongsTo(models.User, {
       foreignKey: 'school_headmaster_id',
       as: 'Headmaster',
-      onDelete: 'SET NULL',
-      onUpdate: 'CASCADE'
-    });
-
-    // Creator relationship
-    School.belongsTo(models.User, {
-      foreignKey: 'creator_user_id',
-      as: 'Creator',
       onDelete: 'SET NULL',
       onUpdate: 'CASCADE'
     });

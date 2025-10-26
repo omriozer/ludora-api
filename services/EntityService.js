@@ -260,8 +260,8 @@ class EntityService {
         ...data,
         created_at: new Date(),
         updated_at: new Date(),
-        // All entities now use creator_user_id standardized field, except curriculum entities
-        ...(createdBy && !['curriculum', 'curriculumitem'].includes(entityType) && { creator_user_id: createdBy })
+        // Only Product entities should have creator_user_id
+        ...(createdBy && entityType === 'product' && { creator_user_id: createdBy })
       };
 
       const entity = await Model.create(entityData);
@@ -337,8 +337,8 @@ class EntityService {
         id: data.id || generateId(),
         created_at: new Date(),
         updated_at: new Date(),
-        // All entities now use creator_user_id standardized field, except curriculum entities
-        ...(createdBy && !['curriculum', 'curriculumitem'].includes(entityType) && { creator_user_id: createdBy })
+        // Only Product entities should have creator_user_id
+        ...(createdBy && entityType === 'product' && { creator_user_id: createdBy })
       }));
 
       const results = await Model.bulkCreate(entities);
@@ -488,8 +488,7 @@ class EntityService {
       const entityData = {
         ...gameData,
         created_at: new Date(),
-        updated_at: new Date(),
-        creator_user_id: createdBy
+        updated_at: new Date()
       };
 
       // Create the main game record
@@ -617,7 +616,6 @@ class EntityService {
       // Prepare the type-specific data (entity record)
       const entityFields = {
         ...data,
-        creator_user_id: createdBy,
         created_at: new Date(),
         updated_at: new Date()
       };

@@ -21,39 +21,10 @@ const authService = new AuthService();
  * @returns {Promise<boolean>} True if user has access
  */
 async function checkVideoAccess(user, entityType, entityId) {
-  // Get entity based on type
-  let entity;
-  switch (entityType) {
-    case 'workshop':
-      entity = await db.Workshop?.findByPk(entityId);
-      break;
-    case 'course':
-      entity = await db.Course?.findByPk(entityId);
-      break;
-    case 'file':
-      entity = await db.File?.findByPk(entityId);
-      break;
-    case 'tool':
-      entity = await db.Tool?.findByPk(entityId);
-      break;
-    default:
-      return false;
-  }
-
-  if (!entity) {
-    return false;
-  }
-
-  // Admin always has access
   if (user.role === 'admin' || user.role === 'sysadmin') {
     return true;
   }
-
-  // Creator has access
-  if (entity.creator_user_id === user.id) {
-    return true;
-  }
-
+  
   // Check if content is free by looking up the Product
   let isFree = false;
   try {
@@ -64,7 +35,10 @@ async function checkVideoAccess(user, entityType, entityId) {
         entity_id: entityId
       }
     });
-
+    
+    if (product.creator_user_id === user.id) {
+      return true;
+    }
     isFree = product ? parseFloat(product.price || 0) === 0 : false;
   } catch (error) {
     console.error('Error checking product price:', error);
