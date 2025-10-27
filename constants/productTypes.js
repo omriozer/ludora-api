@@ -16,7 +16,8 @@ export const ALL_PRODUCT_TYPES = Object.values(PRODUCT_TYPES);
 
 // Product types that have creator relationships
 export const PRODUCT_TYPES_WITH_CREATORS = [
-  'product' // Only Product table itself has creator_user_id
+  'product', // Product table itself has creator_user_id
+  'game' // Game entities also have creator_user_id
 ];
 
 // Product types that can be purchased (for purchases, payments, etc.)

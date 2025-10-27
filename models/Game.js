@@ -4,6 +4,15 @@ import { baseFields, baseOptions } from './baseModel.js';
 export default function(sequelize) {
   const Game = sequelize.define('Game', {
     ...baseFields,
+    creator_user_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      references: {
+        model: 'user',
+        key: 'id'
+      },
+      comment: 'User who created this game'
+    },
     game_type: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -46,6 +55,9 @@ export default function(sequelize) {
       },
       {
         fields: ['device_compatibility']
+      },
+      {
+        fields: ['creator_user_id']
       },
     ]
   });
@@ -98,8 +110,24 @@ export default function(sequelize) {
     });
   };
 
+  Game.findByCreator = function(creatorUserId, options = {}) {
+    return this.findAll({
+      where: {
+        creator_user_id: creatorUserId,
+        ...options.where
+      },
+      ...options
+    });
+  };
+
   // Define associations
   Game.associate = function(models) {
+    // Creator association
+    Game.belongsTo(models.User, {
+      foreignKey: 'creator_user_id',
+      as: 'creator'
+    });
+
     // Note: Purchases will reference this via polymorphic relation
     // Product references this via polymorphic association (product_type + entity_id)
   };

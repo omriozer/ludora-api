@@ -260,8 +260,8 @@ class EntityService {
         ...data,
         created_at: new Date(),
         updated_at: new Date(),
-        // Only Product entities should have creator_user_id
-        ...(createdBy && entityType === 'product' && { creator_user_id: createdBy })
+        // Only Product and Game entities should have creator_user_id
+        ...(createdBy && (entityType === 'product' || entityType === 'game') && { creator_user_id: createdBy })
       };
 
       const entity = await Model.create(entityData);
@@ -337,8 +337,8 @@ class EntityService {
         id: data.id || generateId(),
         created_at: new Date(),
         updated_at: new Date(),
-        // Only Product entities should have creator_user_id
-        ...(createdBy && entityType === 'product' && { creator_user_id: createdBy })
+        // Only Product and Game entities should have creator_user_id
+        ...(createdBy && (entityType === 'product' || entityType === 'game') && { creator_user_id: createdBy })
       }));
 
       const results = await Model.bulkCreate(entities);
@@ -488,7 +488,8 @@ class EntityService {
       const entityData = {
         ...gameData,
         created_at: new Date(),
-        updated_at: new Date()
+        updated_at: new Date(),
+        creator_user_id: createdBy
       };
 
       // Create the main game record

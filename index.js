@@ -60,6 +60,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import toolRoutes from './routes/tools.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import publicApisRoutes from './routes/publicApis.js';
+import gamesRoutes from './routes/games.js';
 
 const app = express();
 
@@ -126,6 +127,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/tools', toolRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/public', publicApisRoutes);
+app.use('/api/games', gamesRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
@@ -162,7 +164,8 @@ app.get('/api', (req, res) => {
       dashboard: '/api/dashboard',
       tools: '/api/tools',
       subscriptions: '/api/subscriptions',
-      public: '/api/public'
+      public: '/api/public',
+      games: '/api/games'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
   });

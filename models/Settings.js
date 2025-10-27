@@ -11,6 +11,8 @@ export default function(sequelize) {
     course_lifetime_access: { type: DataTypes.BOOLEAN, allowNull: true },
     default_file_access_days: { type: DataTypes.DECIMAL, allowNull: true },
     file_lifetime_access: { type: DataTypes.BOOLEAN, allowNull: true },
+    default_game_access_days: { type: DataTypes.DECIMAL, allowNull: true, defaultValue: 365 },
+    game_lifetime_access: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true },
     contact_email: { type: DataTypes.STRING, allowNull: true },
     contact_phone: { type: DataTypes.STRING, allowNull: true },
     site_description: { type: DataTypes.TEXT, allowNull: true },
