@@ -401,12 +401,27 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
       video_file_url: req.body.video_file_url
     });
 
-    // Debug logging for product update issues
+    // Special handling for product updates
     if (entityType === 'product') {
       console.log('🔍 Product update debug:');
       console.log('   req.body.short_description:', req.body.short_description);
       console.log('   req.body.is_published:', req.body.is_published);
       console.log('   req.body.tags:', req.body.tags);
+      console.log('   req.body.creator_user_id:', req.body.creator_user_id);
+      console.log('   req.body.marketing_video_title:', req.body.marketing_video_title);
+
+      // Only allow admins to change creator_user_id
+      if (req.body.hasOwnProperty('creator_user_id')) {
+        const user = await models.User.findOne({ where: { id: req.user.uid } });
+
+        if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
+          // Non-admin trying to change creator_user_id - remove it from update
+          delete req.body.creator_user_id;
+          console.log('🚫 Non-admin user tried to change creator_user_id - ignored');
+        } else {
+          console.log('✅ Admin user updating creator_user_id');
+        }
+      }
     }
     const entity = await EntityService.update(entityType, id, req.body, req.user.uid);
     res.json(entity);

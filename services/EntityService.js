@@ -282,6 +282,11 @@ class EntityService {
         return await this.updateGame(id, data, updatedBy);
       }
 
+      // Handle normalized product types - need to update both Product and Entity
+      if (NORMALIZED_PRODUCT_TYPES.includes(entityType)) {
+        return await this.updateProductTypeEntity(entityType, id, data, updatedBy);
+      }
+
       // Find existing entity
       const entity = await Model.findByPk(id);
       if (!entity) {
@@ -298,8 +303,7 @@ class EntityService {
       // Don't allow updating certain fields
       delete updateData.id;
       delete updateData.created_at;
-      // Remove creator field from update data (shouldn't be changed)
-      delete updateData.creator_user_id;
+      // Note: creator_user_id is allowed to be updated for admin users (handled in routes)
 
       console.log(`📝 EntityService updating ${entityType} with data:`, updateData);
       console.log('📝 Video fields in EntityService:', {
@@ -617,6 +621,7 @@ class EntityService {
       // Prepare the type-specific data (entity record)
       const entityFields = {
         ...data,
+        id: generateId(), // Generate unique ID for the entity
         created_at: new Date(),
         updated_at: new Date()
       };
@@ -651,7 +656,7 @@ class EntityService {
 
       // Extract fields that belong to the Product table
       const productFields = {
-        id: data.id,
+        id: data.id || generateId(), // Use provided ID or generate new one
         title: data.title,
         description: data.description,
         category: data.category,
@@ -686,6 +691,106 @@ class EntityService {
       await transaction.rollback();
       console.error(`Error creating ${entityType} with product:`, error);
       throw new Error(`Failed to create ${entityType}: ${error.message}`);
+    }
+  }
+
+  // Update product-type entities with proper Product + Entity handling
+  async updateProductTypeEntity(entityType, entityId, data, updatedBy = null) {
+    const transaction = await this.models.sequelize.transaction();
+
+    try {
+      const EntityModel = this.getModel(entityType);
+
+      // Find existing entity
+      const entity = await EntityModel.findByPk(entityId, { transaction });
+      if (!entity) {
+        throw new Error(`${entityType} not found`);
+      }
+
+      // Find the product that references this entity
+      const product = await this.models.Product.findOne({
+        where: {
+          product_type: entityType,
+          entity_id: entityId
+        },
+        transaction
+      });
+
+      if (!product) {
+        throw new Error(`Product not found for ${entityType} ${entityId}`);
+      }
+
+      // Separate fields that belong to Product vs Entity
+      const productFields = {
+        title: data.title,
+        short_description: data.short_description,
+        description: data.description,
+        category: data.category,
+        price: data.price,
+        is_published: data.is_published,
+        image_url: data.image_url,
+        marketing_video_type: data.marketing_video_type,
+        marketing_video_id: data.marketing_video_id,
+        marketing_video_title: data.marketing_video_title,
+        marketing_video_duration: data.marketing_video_duration,
+        tags: data.tags,
+        target_audience: data.target_audience,
+        type_attributes: data.type_attributes,
+        access_days: data.access_days,
+        creator_user_id: data.creator_user_id,
+        updated_at: new Date(),
+        ...(updatedBy && { updated_by: updatedBy })
+      };
+
+      // Remove undefined fields from product update
+      Object.keys(productFields).forEach(key => {
+        if (productFields[key] === undefined) {
+          delete productFields[key];
+        }
+      });
+
+      // Don't allow updating certain Product fields
+      delete productFields.id;
+      delete productFields.created_at;
+      delete productFields.product_type;
+      delete productFields.entity_id;
+
+      // Prepare entity update data (everything except Product fields)
+      const entityFields = { ...data };
+      const productOnlyFields = [
+        'title', 'short_description', 'description', 'category', 'product_type',
+        'price', 'is_published', 'image_url', 'marketing_video_type',
+        'marketing_video_id', 'marketing_video_title', 'marketing_video_duration',
+        'tags', 'target_audience', 'type_attributes', 'access_days', 'creator_user_id'
+      ];
+
+      productOnlyFields.forEach(field => delete entityFields[field]);
+      entityFields.updated_at = new Date();
+      if (updatedBy) entityFields.updated_by = updatedBy;
+
+      // Don't allow updating certain entity fields
+      delete entityFields.id;
+      delete entityFields.created_at;
+
+      console.log(`📝 Updating Product for ${entityType}:`, productFields);
+      console.log(`📝 Updating ${entityType} entity:`, entityFields);
+
+      // Update both Product and Entity
+      await product.update(productFields, { transaction });
+      await entity.update(entityFields, { transaction });
+
+      await transaction.commit();
+
+      // Return combined result
+      return {
+        ...product.toJSON(),
+        [entityType]: entity.toJSON()
+      };
+
+    } catch (error) {
+      await transaction.rollback();
+      console.error(`Error updating ${entityType} with product:`, error);
+      throw error;
     }
   }
 

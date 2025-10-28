@@ -83,10 +83,15 @@ export const TOOLS_AUDIANCE_TARGETS = [
     ...AUDIANCE_TARGETS_GROUPS.school_staff,
 ];
 
+export const GAMES_AUDIANCE_TARGETS = [
+    ...AUDIANCE_TARGETS_GROUPS.student_ages
+];
+
 export const AUDIANCE_TARGETS = {
     file: FILES_AUDIANCE_TARGETS,
     workshop: WORKSHOPS_AUDIANCE_TARGETS,
     course: COURSES_AUDIANCE_TARGETS,
-    tool: TOOLS_AUDIANCE_TARGETS
+    tool: TOOLS_AUDIANCE_TARGETS,
+    game: GAMES_AUDIANCE_TARGETS
 };
 

@@ -61,6 +61,7 @@ import toolRoutes from './routes/tools.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import publicApisRoutes from './routes/publicApis.js';
 import gamesRoutes from './routes/games.js';
+import productsRoutes from './routes/products.js';
 
 const app = express();
 
@@ -114,6 +115,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // API Routes (protected by frontend CORS)
 app.use('/api/auth', authRoutes);
 app.use('/api/entities', entityRoutes);
+app.use('/api/products', productsRoutes);
 app.use('/api/functions', functionRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/integrations', integrationRoutes);
@@ -156,6 +158,7 @@ app.get('/api', (req, res) => {
     endpoints: {
       auth: '/api/auth',
       entities: '/api/entities',
+      products: '/api/products',
       functions: '/api/functions',
       payments: '/api/payments',
       integrations: '/api/integrations',
