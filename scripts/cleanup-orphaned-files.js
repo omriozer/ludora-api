@@ -3,6 +3,7 @@
 /**
  * Orphaned File Cleanup Script
  * Main script to detect and move orphaned S3 files to trash
+ * Production deployment ready
  */
 
 import { fileURLToPath } from 'url';
