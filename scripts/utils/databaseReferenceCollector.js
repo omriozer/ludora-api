@@ -220,15 +220,16 @@ async function collectJsonbReferences() {
   const references = [];
 
   try {
-    // LessonPlan.file_configs
-    const lessonPlans = await safeModelQuery(() => models.LessonPlan.findAll({
-      attributes: ['file_configs'],
-      where: {
-        file_configs: {
-          [models.Sequelize.Op.ne]: null
-        }
-      }
-    }), 'LessonPlan');
+    // LessonPlan.file_configs - temporarily disabled until LessonPlan model is deployed
+    // const lessonPlans = await safeModelQuery(() => models.LessonPlan.findAll({
+    //   attributes: ['file_configs'],
+    //   where: {
+    //     file_configs: {
+    //       [models.Sequelize.Op.ne]: null
+    //     }
+    //   }
+    // }), 'LessonPlan');
+    const lessonPlans = [];
 
     for (const lessonPlan of lessonPlans) {
       if (lessonPlan.file_configs && lessonPlan.file_configs.files) {
@@ -323,15 +324,16 @@ async function collectPolymorphicReferences() {
   const references = [];
 
   try {
-    // LessonPlan file references through file_configs
-    const lessonPlans = await safeModelQuery(() => models.LessonPlan.findAll({
-      attributes: ['file_configs'],
-      where: {
-        file_configs: {
-          [models.Sequelize.Op.ne]: null
-        }
-      }
-    }), 'LessonPlan');
+    // LessonPlan file references through file_configs - temporarily disabled until LessonPlan model is deployed
+    // const lessonPlans = await safeModelQuery(() => models.LessonPlan.findAll({
+    //   attributes: ['file_configs'],
+    //   where: {
+    //     file_configs: {
+    //       [models.Sequelize.Op.ne]: null
+    //     }
+    //   }
+    // }), 'LessonPlan');
+    const lessonPlans = [];
 
     const fileIds = new Set();
     for (const lessonPlan of lessonPlans) {
