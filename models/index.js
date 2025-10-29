@@ -94,9 +94,9 @@ Object.keys(models).forEach(modelName => {
 const testDBConnection = async () => {
   try {
     await sequelize.authenticate();
-    console.log('✅ Database connection has been established successfully.');
+    console.log(new Date().toISOString(), ' ✅ Database connection has been established successfully.');
   } catch (error) {
-    console.error('❌ Unable to connect to the database:', error);
+    console.error(new Date().toISOString(), ' ❌ Unable to connect to the database:', error);
   }
 };
 
