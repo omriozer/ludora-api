@@ -14,6 +14,14 @@ module.exports = {
         return;
       }
 
+      // Check if lesson plan navigation columns exist
+      const tableDescription = await queryInterface.describeTable('settings');
+      if (!tableDescription.nav_lesson_plans_enabled) {
+        console.log('Lesson plan navigation columns do not exist yet, skipping configuration');
+        await transaction.commit();
+        return;
+      }
+
       // Update lesson_plans navigation settings
       await queryInterface.sequelize.query(`
         UPDATE settings SET
@@ -42,6 +50,14 @@ module.exports = {
       const settingsTableExists = await queryInterface.tableExists('settings');
       if (!settingsTableExists) {
         console.log('Settings table does not exist, skipping lesson_plans navigation rollback');
+        await transaction.commit();
+        return;
+      }
+
+      // Check if lesson plan navigation columns exist
+      const tableDescription = await queryInterface.describeTable('settings');
+      if (!tableDescription.nav_lesson_plans_enabled) {
+        console.log('Lesson plan navigation columns do not exist, skipping rollback');
         await transaction.commit();
         return;
       }
