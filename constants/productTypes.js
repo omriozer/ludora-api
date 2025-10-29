@@ -7,7 +7,8 @@ export const PRODUCT_TYPES = {
   COURSE: 'course',
   FILE: 'file',
   TOOL: 'tool',
-  GAME: 'game'
+  GAME: 'game',
+  LESSON_PLAN: 'lesson_plan'
 };
 
 
@@ -136,6 +137,42 @@ export const TYPE_ATTRIBUTE_SCHEMAS = {
     //   description: 'רמת המורכבות של הכלי',
     //   options: ['simple', 'medium', 'complex']
     // },
+  },
+  lesson_plan: {
+    context: {
+      type: 'string',
+      label: 'הקשר/נושא',
+      description: 'הקשר הנושאי של מערך השיעור (חיות, חגים, וכו\')',
+      nullable: true,
+      maxLength: 100
+    },
+    grade_min: {
+      type: 'number',
+      min: 1,
+      max: 12,
+      label: 'כיתה מינימלית',
+      description: 'הכיתה הנמוכה ביותר המתאימה למערך השיעור'
+    },
+    grade_max: {
+      type: 'number',
+      min: 1,
+      max: 12,
+      label: 'כיתה מקסימלית',
+      description: 'הכיתה הגבוהה ביותר המתאימה למערך השיעור'
+    },
+    subject: {
+      type: 'string',
+      label: 'מקצוע',
+      description: 'המקצוע הרלוונטי למערך השיעור',
+      nullable: true
+    },
+    estimated_duration: {
+      type: 'number',
+      min: 5,
+      max: 180,
+      label: 'משך שיעור משוער (דקות)',
+      description: 'משך השיעור המשוער בדקות'
+    }
   }
 };
 

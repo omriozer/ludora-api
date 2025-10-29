@@ -5,6 +5,10 @@ import { validateBody, rateLimiters, schemas, customValidators } from '../middle
 import LLMService from '../services/LLMService.js';
 import EmailService from '../services/EmailService.js';
 import FileService from '../services/FileService.js';
+import models from '../models/index.js';
+import { generateId } from '../models/baseModel.js';
+
+const { sequelize } = models;
 
 const router = express.Router();
 
@@ -44,20 +48,99 @@ router.post('/sendEmail', authenticateToken, rateLimiters.email, validateBody(sc
   }
 });
 
-// Core Integration: Upload File
+// Core Integration: Upload File (with transaction support)
 router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single('file'), customValidators.validateFileUpload, async (req, res) => {
+  const transaction = await sequelize.transaction();
+  let s3UploadCompleted = false;
+  let s3Key = null;
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    
-    const result = await FileService.uploadFile({ file: req.file, userId: req.user.uid });
+
+    // Manual implementation with transaction support (based on FileService.uploadFile)
+
+    // Validate file (same as FileService)
+    if (!req.file.buffer || req.file.buffer.length === 0) {
+      throw new Error('File is empty');
+    }
+    const maxSize = 50 * 1024 * 1024;
+    if (req.file.buffer.length > maxSize) {
+      throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
+    }
+
+    // Generate unique filename (same as FileService)
+    const fileId = generateId();
+    const fileExtension = req.file.originalname.split('.').pop().toLowerCase();
+    const fileName = `${fileId}.${fileExtension}`;
+    const folder = 'general';
+    const filePath = `${folder}/${fileName}`;
+
+    // Upload to S3 first
+    const uploadResult = await FileService.uploadToS3({
+      buffer: req.file.buffer,
+      key: filePath,
+      contentType: req.file.mimetype,
+      metadata: {
+        uploadedBy: req.user.uid,
+        originalName: req.file.originalname
+      }
+    });
+
+    if (!uploadResult.success) {
+      throw new Error('S3 upload failed');
+    }
+
+    s3UploadCompleted = true;
+    s3Key = filePath;
+    console.log(`✅ S3 upload completed: ${s3Key}`);
+
+    // Create AudioFile record within transaction
+    const fileRecord = await models.AudioFile.create({
+      id: fileId,
+      name: req.file.originalname,
+      file_url: uploadResult.url,
+      file_size: req.file.buffer.length,
+      file_type: req.file.mimetype,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }, { transaction });
+
+    // Commit transaction - both S3 upload and DB creation succeeded
+    await transaction.commit();
+    console.log(`✅ Transaction committed for integration file upload: ${s3Key}`);
+
     res.json({
       success: true,
-      data: result
+      data: {
+        fileId,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.buffer.length,
+        url: uploadResult.url,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: req.user.uid
+      }
     });
+
   } catch (error) {
-    console.error('Error uploading file:', error);
+    // Rollback transaction
+    await transaction.rollback();
+    console.log(`🔄 Transaction rolled back for failed integration file upload`);
+
+    // Clean up S3 file if it was uploaded but DB operation failed
+    if (s3UploadCompleted && s3Key) {
+      try {
+        await FileService.deleteS3Object(s3Key);
+        console.log(`🧹 Cleaned up orphaned S3 file: ${s3Key}`);
+      } catch (cleanupError) {
+        console.error(`❌ Failed to cleanup S3 file ${s3Key}:`, cleanupError);
+        // Continue with error response - cleanup failure shouldn't hide original error
+      }
+    }
+
+    console.error('❌ Integration file upload transaction failed:', error);
     res.status(500).json({ error: error.message });
   }
 });

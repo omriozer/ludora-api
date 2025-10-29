@@ -11,12 +11,36 @@ export default function(sequelize) {
     },
     grade: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true, // Made nullable since we're transitioning to ranges
       validate: {
         min: 1,
         max: 12
       },
-      comment: 'Grade level 1-12'
+      comment: 'Grade level 1-12 (legacy field, use grade_from/grade_to for ranges)'
+    },
+    grade_from: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      validate: {
+        min: 1,
+        max: 12
+      },
+      comment: 'Starting grade for range (1-12)'
+    },
+    grade_to: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      validate: {
+        min: 1,
+        max: 12
+      },
+      comment: 'Ending grade for range (1-12)'
+    },
+    is_grade_range: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Whether this curriculum applies to a grade range or single grade'
     },
     teacher_user_id: {
       type: DataTypes.STRING,
@@ -61,6 +85,18 @@ export default function(sequelize) {
         fields: ['grade']
       },
       {
+        fields: ['grade_from']
+      },
+      {
+        fields: ['grade_to']
+      },
+      {
+        fields: ['is_grade_range']
+      },
+      {
+        fields: ['grade_from', 'grade_to']
+      },
+      {
         fields: ['teacher_user_id']
       },
       {
@@ -91,10 +127,39 @@ export default function(sequelize) {
   };
 
   Curriculum.prototype.getDisplayName = function() {
+    const gradeText = this.getGradeDisplayText();
     if (this.isSystemDefault()) {
-      return `תכנית לימודים - ${this.subject} כיתה ${this.grade}`;
+      return `תכנית לימודים - ${this.subject} ${gradeText}`;
     }
-    return `תכנית כיתתית - ${this.subject} כיתה ${this.grade}`;
+    return `תכנית כיתתית - ${this.subject} ${gradeText}`;
+  };
+
+  Curriculum.prototype.getGradeDisplayText = function() {
+    if (this.is_grade_range && this.grade_from && this.grade_to) {
+      if (this.grade_from === this.grade_to) {
+        return `כיתה ${this.grade_from}`;
+      }
+      return `כיתות ${this.grade_from}-${this.grade_to}`;
+    }
+    // Fallback to legacy grade field
+    return `כיתה ${this.grade || this.grade_from || this.grade_to}`;
+  };
+
+  Curriculum.prototype.includesGrade = function(gradeNumber) {
+    if (this.is_grade_range && this.grade_from && this.grade_to) {
+      return gradeNumber >= this.grade_from && gradeNumber <= this.grade_to;
+    }
+    // Fallback to legacy grade field
+    return this.grade === gradeNumber;
+  };
+
+  Curriculum.prototype.getGradeRange = function() {
+    if (this.is_grade_range && this.grade_from && this.grade_to) {
+      return { from: this.grade_from, to: this.grade_to };
+    }
+    // Fallback to legacy grade field
+    const grade = this.grade || this.grade_from || this.grade_to;
+    return { from: grade, to: grade };
   };
 
   // Class methods
@@ -111,13 +176,116 @@ export default function(sequelize) {
   };
 
   Curriculum.findByGradeAndSubject = function(grade, subject, options = {}) {
+    console.log('🔍 findByGradeAndSubject called with:', { grade, subject, options });
+
+    const Op = this.sequelize.Sequelize.Op;
+
+    // Extract specific where conditions and remove them from options.where to avoid conflicts
+    const { teacher_user_id, class_id, is_active, ...otherWhereConditions } = options.where || {};
+
+    // Helper function to normalize values (handle string "null", "undefined", etc)
+    const normalizeValue = (value) => {
+      if (value === undefined || value === 'undefined' || value === 'null' || value === '') {
+        return null;
+      }
+      return value;
+    };
+
+    // Validate subject parameter - require a valid subject for filtering
+    if (!subject || subject.trim() === '') {
+      console.log('❌ Subject validation failed:', { subject });
+      throw new Error('Subject parameter is required for grade-based curriculum filtering');
+    }
+
+    // Build the where clause with properly normalized values
+    const whereClause = {
+      subject: subject.trim(), // Ensure we trim whitespace
+      [Op.or]: [
+        // Legacy single grade curricula
+        {
+          grade: grade,
+          is_grade_range: false
+        },
+        // Range curricula that include this grade
+        {
+          grade_from: { [Op.lte]: grade },
+          grade_to: { [Op.gte]: grade },
+          is_grade_range: true
+        }
+      ],
+      ...otherWhereConditions
+    };
+
+    // Only add these conditions if they have meaningful values
+    const normalizedTeacherUserId = normalizeValue(teacher_user_id);
+    const normalizedClassId = normalizeValue(class_id);
+    const normalizedIsActive = normalizeValue(is_active);
+
+    if (normalizedTeacherUserId !== undefined) {
+      whereClause.teacher_user_id = normalizedTeacherUserId;
+    }
+    if (normalizedClassId !== undefined) {
+      whereClause.class_id = normalizedClassId;
+    }
+    if (normalizedIsActive !== undefined) {
+      whereClause.is_active = normalizedIsActive === 'true' || normalizedIsActive === true;
+    }
+
+    console.log('🔍 Final whereClause:', JSON.stringify(whereClause, null, 2));
+
+    // Remove the where from options to avoid duplication
+    const { where: _, ...optionsWithoutWhere } = options;
+
+    return this.findAll({
+      where: whereClause,
+      ...optionsWithoutWhere
+    });
+  };
+
+  // New method for finding curricula by grade range
+  Curriculum.findByGradeRange = function(gradeFrom, gradeTo, subject, options = {}) {
+    const Op = this.sequelize.Sequelize.Op;
+
     return this.findAll({
       where: {
-        grade: grade,
         subject: subject,
         teacher_user_id: null,
         class_id: null,
         is_active: true,
+        grade_from: gradeFrom,
+        grade_to: gradeTo,
+        is_grade_range: true,
+        ...options.where
+      },
+      ...options
+    });
+  };
+
+  // Helper method to find all curricula that overlap with a grade range
+  Curriculum.findOverlappingGradeRange = function(gradeFrom, gradeTo, subject, options = {}) {
+    const Op = this.sequelize.Sequelize.Op;
+
+    return this.findAll({
+      where: {
+        subject: subject,
+        teacher_user_id: null,
+        class_id: null,
+        is_active: true,
+        [Op.or]: [
+          // Legacy single grade curricula within range
+          {
+            grade: { [Op.between]: [gradeFrom, gradeTo] },
+            is_grade_range: false
+          },
+          // Range curricula that overlap with the specified range
+          {
+            [Op.and]: [
+              { grade_from: { [Op.lte]: gradeTo } },
+              { grade_to: { [Op.gte]: gradeFrom } }
+            ],
+            is_grade_range: true
+          }
+        ],
         ...options.where
       },
       ...options

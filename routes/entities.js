@@ -1,19 +1,36 @@
 import express from 'express';
+import multer from 'multer';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
 import EntityService from '../services/EntityService.js';
 import models from '../models/index.js';
+import { sequelize } from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 import { extractCopyrightText, updateFooterTextContent } from '../utils/footerSettingsHelper.js';
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
+import fileService from '../services/FileService.js';
+import { constructS3Path } from '../utils/s3PathUtils.js';
 
 const router = express.Router();
 
+// Configure multer for file uploads (memory storage for S3)
+const fileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 * 1024 // 5GB limit
+  }
+});
+
 // Helper function to check content creator permissions
-async function checkContentCreatorPermissions(user, entityType) {
+async function checkContentCreatorPermissions(user, entityType, entityData = {}) {
   // Admins and sysadmins always have permission
   if (user.role === 'admin' || user.role === 'sysadmin') {
+    return { allowed: true };
+  }
+
+  // Asset-only files don't require content creator permissions (they're internal assets, not products)
+  if (entityType === 'file' && entityData.is_asset_only === true) {
     return { allowed: true };
   }
 
@@ -204,6 +221,82 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
   }
 });
 
+// GET /entities/curriculum/available-combinations - Get available subject-grade combinations that have curriculum items
+// MUST be before generic /:type route to match correctly
+router.get('/curriculum/available-combinations', optionalAuth, async (req, res) => {
+  try {
+    console.log('🔍 Loading available curriculum combinations...');
+
+    // Single optimized query to get all curricula with their items count
+    const query = `
+      SELECT
+        c.subject,
+        c.grade,
+        c.grade_from,
+        c.grade_to,
+        c.is_grade_range,
+        COUNT(ci.id) as item_count
+      FROM curriculum c
+      LEFT JOIN curriculum_item ci ON c.id = ci.curriculum_id
+      WHERE c.teacher_user_id IS NULL
+        AND c.class_id IS NULL
+        AND c.is_active = true
+      GROUP BY c.id, c.subject, c.grade, c.grade_from, c.grade_to, c.is_grade_range
+      HAVING COUNT(ci.id) > 0
+    `;
+
+    const results = await sequelize.query(query, {
+      type: sequelize.QueryTypes.SELECT
+    });
+
+    console.log(`🔍 Found ${results.length} curricula with items`);
+
+    // Process results to create a lightweight mapping
+    const combinations = {};
+
+    results.forEach(curriculum => {
+      const subject = curriculum.subject;
+
+      // Initialize subject array if it doesn't exist
+      if (!combinations[subject]) {
+        combinations[subject] = [];
+      }
+
+      if (curriculum.is_grade_range && curriculum.grade_from && curriculum.grade_to) {
+        // Add all grades in the range
+        for (let grade = curriculum.grade_from; grade <= curriculum.grade_to; grade++) {
+          if (!combinations[subject].includes(grade)) {
+            combinations[subject].push(grade);
+          }
+        }
+      } else {
+        // Single grade curriculum
+        const grade = curriculum.grade || curriculum.grade_from || curriculum.grade_to;
+        if (grade && !combinations[subject].includes(grade)) {
+          combinations[subject].push(grade);
+        }
+      }
+    });
+
+    // Sort grades within each subject
+    Object.keys(combinations).forEach(subject => {
+      combinations[subject].sort((a, b) => a - b);
+    });
+
+    console.log('🔍 Available combinations:', combinations);
+
+    res.json({
+      combinations,
+      total_subjects: Object.keys(combinations).length,
+      total_combinations: Object.values(combinations).reduce((sum, grades) => sum + grades.length, 0)
+    });
+
+  } catch (error) {
+    console.error('Error fetching available curriculum combinations:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Generic CRUD routes for all entities
 // GET /entities/:type - Find entities with query params
 router.get('/:type', optionalAuth, customValidators.validateEntityType, validateQuery(schemas.entityQuery), async (req, res) => {
@@ -231,6 +324,15 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       if (query.grade !== undefined) {
         query.grade = parseInt(query.grade);
       }
+      if (query.grade_from !== undefined) {
+        query.grade_from = parseInt(query.grade_from);
+      }
+      if (query.grade_to !== undefined) {
+        query.grade_to = parseInt(query.grade_to);
+      }
+      if (query.is_grade_range !== undefined) {
+        query.is_grade_range = query.is_grade_range === 'true' || query.is_grade_range === true;
+      }
       if (query.is_active !== undefined) {
         query.is_active = query.is_active === 'true' || query.is_active === true;
       }
@@ -239,6 +341,61 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       }
       if (query.class_id === 'null') {
         query.class_id = null;
+      }
+
+      // Special handling for grade range queries
+      console.log('🔍 Checking find_by_grade condition:', {
+        find_by_grade: query.find_by_grade,
+        isNaN: isNaN(parseInt(query.find_by_grade)),
+        parseInt: parseInt(query.find_by_grade),
+        subject: query.subject
+      });
+
+      if (query.find_by_grade && !isNaN(parseInt(query.find_by_grade))) {
+        console.log('✅ Using special grade-based filtering');
+        const targetGrade = parseInt(query.find_by_grade);
+        // Remove the helper parameter from the query
+        delete query.find_by_grade;
+
+        // Use the model's method for finding by grade (Sequelize is already imported)
+        const results = await models.Curriculum.findByGradeAndSubject(targetGrade, query.subject || '', {
+          where: {
+            teacher_user_id: query.teacher_user_id,
+            class_id: query.class_id,
+            is_active: query.is_active
+          },
+          limit: options.limit,
+          offset: options.offset
+        });
+
+        return res.json(results);
+      } else {
+        console.log('❌ NOT using special grade-based filtering, falling back to regular EntityService.find');
+      }
+    }
+
+    // For file entity, filter out asset-only files by default
+    if (entityType === 'file') {
+      // Check if include_assets parameter is explicitly set to true
+      const includeAssets = query.include_assets === 'true' || query.include_assets === true;
+
+      // Remove include_assets from query as it's not a database field
+      delete query.include_assets;
+
+      // By default, exclude asset-only files (show only potential products)
+      if (!includeAssets) {
+        query.is_asset_only = false;
+      }
+
+      // Handle type conversions for file query parameters
+      if (query.is_asset_only !== undefined) {
+        query.is_asset_only = query.is_asset_only === 'true' || query.is_asset_only === true;
+      }
+      if (query.allow_preview !== undefined) {
+        query.allow_preview = query.allow_preview === 'true' || query.allow_preview === true;
+      }
+      if (query.add_copyrights_footer !== undefined) {
+        query.add_copyrights_footer = query.add_copyrights_footer === 'true' || query.add_copyrights_footer === true;
       }
     }
 
@@ -322,7 +479,7 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
     // Check content creator permissions (except for curriculum-related entities which are admin-only)
     const curriculumEntities = ['curriculum', 'curriculumitem', 'curriculumproduct'];
     if (!curriculumEntities.includes(entityType)) {
-      const permissionCheck = await checkContentCreatorPermissions(user, entityType);
+      const permissionCheck = await checkContentCreatorPermissions(user, entityType, req.body);
       if (!permissionCheck.allowed) {
         return res.status(403).json({ error: permissionCheck.message });
       }
@@ -348,6 +505,68 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
   }
 });
 
+// Helper function to sanitize numeric and enum fields
+function sanitizeNumericFields(data, entityType) {
+  const sanitizedData = { ...data };
+
+  // Common numeric fields that should be null instead of empty string
+  const numericFields = {
+    product: ['access_days', 'marketing_video_duration', 'total_duration_minutes'],
+    lessonplan: ['estimated_duration', 'total_slides'],
+    workshop: ['duration_minutes', 'max_participants'],
+    course: ['total_modules', 'estimated_duration'],
+    file: ['file_size'],
+    // Add more as needed
+  };
+
+  // ENUM fields that should be null instead of empty string
+  const enumFields = {
+    product: ['marketing_video_type'],
+    // Add more as needed
+  };
+
+  const numericFieldsToSanitize = numericFields[entityType] || [];
+  const enumFieldsToSanitize = enumFields[entityType] || [];
+  const allFieldsToSanitize = [...numericFieldsToSanitize, ...enumFieldsToSanitize];
+
+  console.log('🧹 Sanitizing fields:', {
+    entityType,
+    numericFields: numericFieldsToSanitize,
+    enumFields: enumFieldsToSanitize,
+    beforeSanitization: allFieldsToSanitize.reduce((acc, field) => {
+      acc[field] = sanitizedData[field];
+      return acc;
+    }, {})
+  });
+
+  // Handle numeric fields
+  numericFieldsToSanitize.forEach(field => {
+    if (sanitizedData[field] === '' || sanitizedData[field] === undefined) {
+      console.log(`🧹 Converting numeric ${field} from '${sanitizedData[field]}' to null`);
+      sanitizedData[field] = null;
+    } else if (sanitizedData[field] !== null && !isNaN(sanitizedData[field])) {
+      // Convert string numbers to proper numbers
+      console.log(`🧹 Converting numeric ${field} from '${sanitizedData[field]}' to number`);
+      sanitizedData[field] = Number(sanitizedData[field]);
+    }
+  });
+
+  // Handle enum fields
+  enumFieldsToSanitize.forEach(field => {
+    if (sanitizedData[field] === '' || sanitizedData[field] === undefined) {
+      console.log(`🧹 Converting enum ${field} from '${sanitizedData[field]}' to null`);
+      sanitizedData[field] = null;
+    }
+  });
+
+  console.log('🧹 After sanitization:', allFieldsToSanitize.reduce((acc, field) => {
+    acc[field] = sanitizedData[field];
+    return acc;
+  }, {}));
+
+  return sanitizedData;
+}
+
 // PUT /entities/:type/:id - Update entity
 router.put('/:type/:id', authenticateToken, customValidators.validateEntityType, (req, res, next) => {
   // Use entity-specific validation schemas when available
@@ -371,6 +590,8 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
   const id = req.params.id;
 
   try {
+    // Sanitize numeric fields before processing
+    req.body = sanitizeNumericFields(req.body, entityType);
     // For settings updates, handle footer_settings and copyright_footer_text synchronization
     if (entityType === 'settings') {
       if (req.body.footer_settings) {
@@ -536,6 +757,107 @@ router.get('/purchase/check-product-purchases/:productId', authenticateToken, as
   }
 });
 
+// POST /entities/curriculum/create-range - Create a new grade range curriculum
+router.post('/curriculum/create-range', authenticateToken, validateBody({
+  type: 'object',
+  required: ['subject', 'grade_from', 'grade_to'],
+  properties: {
+    subject: { type: 'string' },
+    grade_from: { type: 'integer', minimum: 1, maximum: 12 },
+    grade_to: { type: 'integer', minimum: 1, maximum: 12 },
+    description: { type: 'string' }
+  }
+}), async (req, res) => {
+  try {
+    const { subject, grade_from, grade_to, description } = req.body;
+    const userId = req.user.uid;
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: userId } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Only admins can create system curricula
+    if (user.role !== 'admin' && user.role !== 'sysadmin') {
+      return res.status(403).json({ error: 'Only admins can create system curricula' });
+    }
+
+    // Validate grade range
+    if (grade_from > grade_to) {
+      return res.status(400).json({ error: 'grade_from must be less than or equal to grade_to' });
+    }
+
+    // Check for existing curriculum with overlapping grade range
+    // Use Sequelize operators from the sequelize instance
+    const { Op } = sequelize.Sequelize;
+
+    const existingCurriculum = await models.Curriculum.findOne({
+      where: {
+        subject: subject,
+        teacher_user_id: null,
+        class_id: null,
+        is_active: true,
+        [Op.or]: [
+          // Check for overlapping grade ranges
+          {
+            [Op.and]: [
+              { grade_from: { [Op.lte]: grade_to } },
+              { grade_to: { [Op.gte]: grade_from } },
+              { is_grade_range: true }
+            ]
+          },
+          // Check for single grade curricula within this range
+          {
+            grade: { [Op.between]: [grade_from, grade_to] },
+            is_grade_range: false
+          }
+        ]
+      }
+    });
+
+    if (existingCurriculum) {
+      return res.status(409).json({
+        error: 'A curriculum already exists that overlaps with this grade range',
+        existing: {
+          id: existingCurriculum.id,
+          gradeRange: existingCurriculum.is_grade_range ?
+            `${existingCurriculum.grade_from}-${existingCurriculum.grade_to}` :
+            existingCurriculum.grade.toString()
+        }
+      });
+    }
+
+    // Generate new curriculum
+    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
+
+    const curriculumData = {
+      id: generateId(),
+      subject: subject,
+      grade: null, // No single grade for range curricula
+      grade_from: grade_from,
+      grade_to: grade_to,
+      is_grade_range: true,
+      teacher_user_id: null, // System curriculum
+      class_id: null, // System curriculum
+      is_active: true,
+      description: description
+    };
+
+    const curriculum = await models.Curriculum.create(curriculumData);
+
+    res.status(201).json({
+      message: 'Grade range curriculum created successfully',
+      curriculum: curriculum,
+      grade_range: `${grade_from}-${grade_to}`
+    });
+
+  } catch (error) {
+    console.error('Error creating grade range curriculum:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /entities/curriculum/copy-to-class - Copy system curriculum to a specific class
 router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas.copyCurriculumToClass || {
   type: 'object',
@@ -578,12 +900,27 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
     }
 
     // Check if a curriculum already exists for this class/subject/grade combination
+    // Need to handle both legacy grade field and new grade range fields
+    let existingWhere = {
+      class_id: classId,
+      subject: systemCurriculum.subject
+    };
+
+    if (systemCurriculum.is_grade_range && systemCurriculum.grade_from && systemCurriculum.grade_to) {
+      // For grade range curricula, check for overlapping ranges
+      existingWhere = {
+        ...existingWhere,
+        grade_from: systemCurriculum.grade_from,
+        grade_to: systemCurriculum.grade_to,
+        is_grade_range: true
+      };
+    } else {
+      // For legacy single grade curricula
+      existingWhere.grade = systemCurriculum.grade;
+    }
+
     const existingCurriculum = await models.Curriculum.findOne({
-      where: {
-        class_id: classId,
-        subject: systemCurriculum.subject,
-        grade: systemCurriculum.grade
-      }
+      where: existingWhere
     });
 
     if (existingCurriculum) {
@@ -593,11 +930,14 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
     // Generate new ID for the class curriculum
     const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
 
-    // Copy the curriculum
+    // Copy the curriculum including grade range fields
     const classCurriculumData = {
       id: generateId(),
       subject: systemCurriculum.subject,
-      grade: systemCurriculum.grade,
+      grade: systemCurriculum.grade, // Keep legacy field for backwards compatibility
+      grade_from: systemCurriculum.grade_from,
+      grade_to: systemCurriculum.grade_to,
+      is_grade_range: systemCurriculum.is_grade_range,
       teacher_user_id: userId,
       class_id: classId,
       original_curriculum_id: systemCurriculumId, // Track which system curriculum this was copied from
@@ -725,6 +1065,76 @@ router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody({
   }
 });
 
+// GET /entities/curriculum/:id/products - Get all products associated with a curriculum item
+router.get('/curriculum/:id/products', optionalAuth, async (req, res) => {
+  try {
+    const curriculumItemId = req.params.id;
+    const userId = req.user?.uid || null;
+
+    // Get the curriculum item to verify it exists
+    const curriculumItem = await models.CurriculumItem.findByPk(curriculumItemId);
+    if (!curriculumItem) {
+      return res.status(404).json({ error: 'Curriculum item not found' });
+    }
+
+    // Get all curriculum_product relationships for this curriculum item
+    const curriculumProducts = await models.CurriculumProduct.findAll({
+      where: { curriculum_item_id: curriculumItemId }
+    });
+
+    // Get all associated products with full details
+    const productIds = curriculumProducts.map(cp => cp.product_id);
+
+    if (productIds.length === 0) {
+      return res.json({
+        curriculum_item: curriculumItem.toJSON(),
+        products: [],
+        total: 0,
+        by_type: {}
+      });
+    }
+
+    // Get products and their associated entities
+    const products = await models.Product.findAll({
+      where: { id: productIds }
+    });
+
+    // Get full product details with entities and purchase info
+    const fullProducts = await Promise.all(
+      products.map(product => getFullProduct(product, userId))
+    );
+
+    // Filter out any files that are asset-only (shouldn't appear in curriculum browsing)
+    const browsableProducts = fullProducts.filter(product => {
+      if (product.product_type === 'file') {
+        return product.is_asset_only === false;
+      }
+      return true; // Include all non-file products
+    });
+
+    // Group products by type for easier frontend consumption
+    const productsByType = browsableProducts.reduce((acc, product) => {
+      const type = product.product_type;
+      if (!acc[type]) {
+        acc[type] = [];
+      }
+      acc[type].push(product);
+      return acc;
+    }, {});
+
+    res.json({
+      curriculum_item: curriculumItem.toJSON(),
+      products: browsableProducts,
+      total: browsableProducts.length,
+      by_type: productsByType
+    });
+
+  } catch (error) {
+    console.error('Error fetching curriculum products:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /entities/curriculum/:id/copy-status - Check if a curriculum has been copied to classes
 router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) => {
   try {
@@ -799,6 +1209,167 @@ router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) =>
   } catch (error) {
     console.error('Error checking curriculum copy status:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+
+// POST /entities/lesson-plan/:lessonPlanId/upload-file - Atomic file upload for lesson plans
+router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpload.single('file'), async (req, res) => {
+  const lessonPlanId = req.params.lessonPlanId;
+  const transaction = await sequelize.transaction();
+  let uploadedS3Key = null;
+
+  try {
+    console.log(`📤 Starting atomic lesson plan file upload for lesson plan ${lessonPlanId}`);
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Check if lesson plan exists and get the product
+    const product = await models.Product.findOne({
+      where: {
+        product_type: 'lesson_plan',
+        entity_id: lessonPlanId
+      }
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Lesson plan product not found' });
+    }
+
+    // Get file upload data from request
+    const { file_role, description = '' } = req.body;
+    if (!file_role || !['opening', 'body', 'audio', 'assets'].includes(file_role)) {
+      return res.status(400).json({ error: 'Valid file_role is required (opening, body, audio, assets)' });
+    }
+
+    // Validate file upload
+    if (!req.file) {
+      return res.status(400).json({ error: 'File is required' });
+    }
+
+    const fileName = req.file.originalname;
+    const fileType = fileName.split('.').pop().toLowerCase();
+
+    console.log(`📤 Processing file: ${fileName}, role: ${file_role}`);
+
+    // 1. Create File entity within transaction
+    const fileData = {
+      title: description || fileName,
+      file_type: fileType,
+      is_asset_only: true,
+      allow_preview: false,
+      add_copyrights_footer: false,
+      creator_user_id: req.user.uid
+    };
+
+    const fileEntity = await models.File.create(fileData, { transaction });
+    console.log(`✅ File entity created: ${fileEntity.id}`);
+
+    // 2. Upload to S3 using FileService
+    const s3Key = constructS3Path('file', fileEntity.id, 'document', fileName);
+
+    const uploadResult = await fileService.uploadToS3({
+      buffer: req.file.buffer,
+      key: s3Key,
+      contentType: req.file.mimetype,
+      metadata: {
+        uploadedBy: req.user.uid,
+        entityType: 'file',
+        entityId: fileEntity.id,
+        assetType: 'document',
+        originalName: fileName,
+        lessonPlanId: lessonPlanId,
+        fileRole: file_role
+      }
+    });
+
+    if (!uploadResult.success) {
+      throw new Error('S3 upload failed');
+    }
+
+    uploadedS3Key = s3Key;
+    console.log(`✅ File uploaded to S3: ${uploadedS3Key}`);
+
+    // Update file entity with S3 information
+    await fileEntity.update({
+      file_name: fileName,
+      file_size: req.file.size
+    }, { transaction });
+
+    // 3. Update lesson plan file_configs within same transaction
+    const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
+    if (!lessonPlan) {
+      throw new Error('Lesson plan entity not found');
+    }
+
+    // Get current file configs
+    const currentConfigs = lessonPlan.file_configs || { files: [] };
+
+    // Add new file config
+    const newFileConfig = {
+      file_id: fileEntity.id,
+      file_role: file_role,
+      filename: fileName,
+      file_type: fileType,
+      upload_date: new Date().toISOString(),
+      description: description || fileName,
+      s3_key: uploadedS3Key,
+      size: req.file.size,
+      mime_type: req.file.mimetype || 'application/octet-stream',
+      is_asset_only: true
+    };
+
+    currentConfigs.files.push(newFileConfig);
+
+    // Update lesson plan with new file configs
+    await lessonPlan.update({
+      file_configs: currentConfigs
+    }, { transaction });
+
+    console.log(`✅ Lesson plan updated with file config`);
+
+    // Commit transaction - everything succeeded
+    await transaction.commit();
+
+    console.log(`🎉 Atomic file upload completed successfully`);
+
+    res.status(201).json({
+      message: 'File uploaded successfully',
+      file: {
+        id: fileEntity.id,
+        filename: fileName,
+        file_role: file_role,
+        s3_key: uploadedS3Key,
+        size: req.file.size,
+        upload_date: newFileConfig.upload_date
+      },
+      lesson_plan_id: lessonPlanId
+    });
+
+  } catch (error) {
+    console.error('❌ Atomic file upload failed:', error);
+
+    // Rollback database transaction
+    await transaction.rollback();
+
+    // Clean up S3 file if it was uploaded
+    if (uploadedS3Key) {
+      try {
+        await fileService.deleteS3Object(uploadedS3Key);
+        console.log(`🧹 Cleaned up S3 file: ${uploadedS3Key}`);
+      } catch (s3Error) {
+        console.error('Failed to clean up S3 file:', s3Error);
+      }
+    }
+
+    res.status(500).json({
+      error: 'File upload failed',
+      details: error.message
+    });
   }
 });
 

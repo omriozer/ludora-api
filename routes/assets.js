@@ -5,6 +5,7 @@ import fs from 'fs';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import fileService from '../services/FileService.js';
 import db from '../models/index.js';
+import { sequelize } from '../models/index.js';
 import { mergePdfFooter } from '../utils/pdfFooterMerge.js';
 import { addPdfWatermarks } from '../utils/pdfWatermark.js';
 import { mergeFooterSettings } from '../utils/footerSettingsHelper.js';
@@ -292,6 +293,10 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
     // Construct S3 path
     const s3Key = constructS3Path(entityType, entityId, assetType, filename);
 
+    // Use transaction to ensure atomicity between S3 upload and database update
+    const transaction = await sequelize.transaction();
+    let s3UploadCompleted = false;
+
     try {
       // Upload to S3
       const uploadResult = await fileService.uploadToS3({
@@ -311,17 +316,24 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
         throw new Error('S3 upload failed');
       }
 
-      // For documents on File entities, update file_name in database
+      s3UploadCompleted = true;
+      console.log(`✅ S3 upload completed: ${s3Key}`);
+
+      // For documents on File entities, update file_name in database within transaction
       if (assetType === 'document' && entityType === 'file') {
-        const fileEntity = await FileModel.findByPk(entityId);
+        const fileEntity = await FileModel.findByPk(entityId, { transaction });
 
         if (fileEntity) {
-          await fileEntity.update({ file_name: filename });
+          await fileEntity.update({ file_name: filename }, { transaction });
           console.log(`✅ Updated File entity ${entityId} with file_name: ${filename}`);
         } else {
-          console.warn(`⚠️ File entity ${entityId} not found in database - file uploaded but entity not updated`);
+          throw new Error(`File entity ${entityId} not found in database`);
         }
       }
+
+      // Commit transaction - both S3 upload and DB update succeeded
+      await transaction.commit();
+      console.log(`✅ Transaction committed for asset upload: ${s3Key}`);
 
       const responseData = {
         success: true,
@@ -341,7 +353,22 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
       res.json(responseData);
 
     } catch (uploadError) {
-      console.error('❌ S3 upload error:', uploadError);
+      // Rollback transaction
+      await transaction.rollback();
+      console.log(`🔄 Transaction rolled back for failed asset upload`);
+
+      // Clean up S3 file if it was uploaded but DB operation failed
+      if (s3UploadCompleted) {
+        try {
+          await fileService.deleteS3Object(s3Key);
+          console.log(`🧹 Cleaned up orphaned S3 file: ${s3Key}`);
+        } catch (cleanupError) {
+          console.error(`❌ Failed to cleanup S3 file ${s3Key}:`, cleanupError);
+          // Continue with error response - cleanup failure shouldn't hide original error
+        }
+      }
+
+      console.error('❌ Asset upload transaction failed:', uploadError);
       return res.status(500).json({
         error: 'Upload failed',
         message: 'Failed to upload file to storage',

@@ -1,0 +1,17 @@
+{
+  "sessionId": 1761723999663,
+  "environment": "development",
+  "operation": "cleanup",
+  "startTime": "2025-10-29T07:46:39.663Z",
+  "lastRun": "2025-10-29T07:46:39.664Z",
+  "processedBatches": 0,
+  "totalBatches": 0,
+  "processedFiles": 0,
+  "totalFiles": 0,
+  "orphansFound": 0,
+  "orphansProcessed": 0,
+  "bytesFreed": 0,
+  "lastContinuationToken": null,
+  "fileCheckHistory": {},
+  "operationData": {}
+}

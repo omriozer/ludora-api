@@ -3,6 +3,8 @@ import { generateId } from '../models/baseModel.js';
 import { Op } from 'sequelize';
 import { PRODUCT_TYPES_WITH_CREATORS, NORMALIZED_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { NotFoundError, BadRequestError, ConflictError } from '../middleware/errorHandler.js';
+import { constructS3Path } from '../utils/s3PathUtils.js';
+import fileService from './FileService.js';
 
 class EntityService {
   constructor() {
@@ -61,6 +63,44 @@ class EntityService {
     }
   }
 
+  // Helper method to extract S3 key from URL
+  extractS3KeyFromUrl(fileUrl) {
+    if (!fileUrl) return null;
+
+    // If it's already just an S3 key (doesn't start with http), return as-is
+    if (!fileUrl.startsWith('http')) {
+      return fileUrl;
+    }
+
+    try {
+      // Parse full S3 URL to extract the key
+      const url = new URL(fileUrl);
+
+      // Handle different S3 URL formats:
+      // Format 1: https://s3.amazonaws.com/bucket-name/path/file.ext
+      // Format 2: https://bucket-name.s3.amazonaws.com/path/file.ext
+      // Format 3: https://bucket-name.s3.region.amazonaws.com/path/file.ext
+
+      let s3Key = null;
+
+      if (url.hostname === 's3.amazonaws.com') {
+        // Format 1: Remove leading slash and bucket name
+        const pathParts = url.pathname.split('/').filter(part => part);
+        if (pathParts.length > 1) {
+          s3Key = pathParts.slice(1).join('/'); // Skip bucket name, join rest
+        }
+      } else if (url.hostname.includes('.s3.') || url.hostname.includes('.s3-')) {
+        // Format 2 & 3: Path is the S3 key (minus leading slash)
+        s3Key = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname;
+      }
+
+      return s3Key;
+    } catch (error) {
+      console.warn(`Failed to parse S3 URL: ${fileUrl}`, error);
+      return null;
+    }
+  }
+
   // Convert string to PascalCase with special mappings for compound words
   toPascalCase(str) {
     // Special mappings for compound words that don't follow standard camelCase
@@ -82,7 +122,8 @@ class EntityService {
       'studentinvitation': 'StudentInvitation',
       'parentconsent': 'ParentConsent',
       'classroommembership': 'ClassroomMembership',
-      'curriculumitem': 'CurriculumItem'
+      'curriculumitem': 'CurriculumItem',
+      'lessonplan': 'LessonPlan'
     };
 
     // Check for special mappings first
@@ -354,23 +395,164 @@ class EntityService {
   }
 
   async bulkDelete(entityType, ids) {
+    const transaction = await this.models.sequelize.transaction();
+
     try {
       const Model = this.getModel(entityType);
-      
+
+      // Handle File entity S3 cleanup before database deletion
+      if (entityType === 'file') {
+        // Import cleanup function
+        const { deleteAllFileAssets } = await import('../routes/assets.js');
+
+        // Clean up S3 assets for each file
+        for (const fileId of ids) {
+          try {
+            const result = await deleteAllFileAssets(fileId);
+            console.log(`🧹 Bulk delete - cleaned up file assets for ${fileId}:`, result);
+          } catch (cleanupError) {
+            console.error(`❌ Bulk delete - failed to cleanup assets for file ${fileId}:`, cleanupError);
+            // Continue with other files even if one cleanup fails
+          }
+        }
+      }
+
+      // Handle marketing video cleanup for Workshop, Course, Game, Tool entities
+      if (['workshop', 'course', 'game', 'tool'].includes(entityType)) {
+        for (const entityId of ids) {
+          try {
+            const marketingVideoKey = constructS3Path(entityType, entityId, 'marketing-video', 'video.mp4');
+            await fileService.deleteS3Object(marketingVideoKey);
+            console.log(`🧹 Bulk delete - deleted marketing video for ${entityType} ${entityId}`);
+          } catch (videoError) {
+            // Marketing video might not exist, which is okay
+            if (videoError.code !== 'NoSuchKey' && videoError.code !== 'NotFound') {
+              console.error(`❌ Bulk delete - failed to delete marketing video for ${entityType} ${entityId}:`, videoError);
+            }
+            // Continue with other entities even if one video cleanup fails
+          }
+        }
+      }
+
+      // Handle AudioFile S3 cleanup for bulk delete
+      if (entityType === 'audiofile') {
+        // Get all audio file entities first to extract their file_urls
+        const audioFiles = await Model.findAll({
+          where: {
+            id: {
+              [Op.in]: ids
+            }
+          },
+          attributes: ['id', 'file_url'],
+          transaction
+        });
+
+        for (const audioFile of audioFiles) {
+          try {
+            if (audioFile.file_url) {
+              // Extract S3 key from file_url (could be full URL or just the key)
+              const s3Key = this.extractS3KeyFromUrl(audioFile.file_url);
+              if (s3Key) {
+                await fileService.deleteS3Object(s3Key);
+                console.log(`🧹 Bulk delete - deleted audio file S3 object for AudioFile ${audioFile.id}: ${s3Key}`);
+              }
+            }
+          } catch (audioError) {
+            // Audio file might not exist in S3, which is okay
+            if (audioError.code !== 'NoSuchKey' && audioError.code !== 'NotFound') {
+              console.error(`❌ Bulk delete - failed to delete audio file for AudioFile ${audioFile.id}:`, audioError);
+            }
+            // Continue with other audio files even if one cleanup fails
+          }
+        }
+      }
+
+      // Handle LessonPlan file cascade cleanup for bulk delete
+      if (entityType === 'lesson_plan') {
+        // Get all lesson plan entities first to extract their file_configs
+        const lessonPlans = await Model.findAll({
+          where: {
+            id: {
+              [Op.in]: ids
+            }
+          },
+          attributes: ['id', 'file_configs'],
+          transaction
+        });
+
+        const allFileIds = new Set(); // Use Set to avoid duplicates across lesson plans
+
+        // Collect all file IDs from all lesson plans
+        for (const lessonPlan of lessonPlans) {
+          const fileConfigs = lessonPlan.file_configs || {};
+          const files = fileConfigs.files || [];
+          const fileIds = files.map(file => file.file_id).filter(Boolean);
+          fileIds.forEach(fileId => allFileIds.add(fileId));
+        }
+
+        if (allFileIds.size > 0) {
+          console.log(`🧹 Bulk delete - cleaning up ${allFileIds.size} files referenced by ${lessonPlans.length} lesson plans`);
+
+          // Delete each referenced File entity (this will trigger their S3 cleanup)
+          for (const fileId of allFileIds) {
+            try {
+              const FileModel = this.getModel('file');
+              const fileEntity = await FileModel.findByPk(fileId, { transaction });
+
+              if (fileEntity) {
+                // Delete File entity's S3 assets first
+                const { deleteAllFileAssets } = await import('../routes/assets.js');
+                await deleteAllFileAssets(fileId);
+
+                // Then delete the File entity
+                await fileEntity.destroy({ transaction });
+                console.log(`🧹 Bulk delete - deleted File entity ${fileId} and its assets`);
+              }
+            } catch (fileError) {
+              console.error(`❌ Bulk delete - failed to delete File entity ${fileId}:`, fileError);
+              // Continue with other files even if one fails
+            }
+          }
+        } else {
+          console.log(`ℹ️ No files to cleanup for lesson plans: ${ids.join(', ')}`);
+        }
+      }
+
+      // Handle normalized product types - delete associated products
+      if (NORMALIZED_PRODUCT_TYPES.includes(entityType)) {
+        // Delete products that reference these entities
+        await this.models.Product.destroy({
+          where: {
+            product_type: entityType,
+            entity_id: {
+              [Op.in]: ids
+            }
+          },
+          transaction
+        });
+        console.log(`🧹 Bulk delete - cleaned up ${entityType} product references`);
+      }
+
+      // Delete the entities
       const deletedCount = await Model.destroy({
         where: {
           id: {
             [Op.in]: ids
           }
-        }
+        },
+        transaction
       });
+
+      await transaction.commit();
+      console.log(`✅ Bulk deleted ${deletedCount} ${entityType} entities with proper cleanup`);
 
       return {
         deletedCount,
         ids: ids.slice(0, deletedCount)
       };
     } catch (error) {
-      console.error(`Error bulk deleting ${entityType}:`, error);
+      await transaction.rollback();
+      console.error(`❌ Error bulk deleting ${entityType}:`, error);
       throw new Error(`Failed to bulk delete ${entityType}: ${error.message}`);
     }
   }
@@ -626,6 +808,18 @@ class EntityService {
         updated_at: new Date()
       };
 
+      // Sanitize numeric fields for lesson_plan - convert empty strings to null
+      if (entityType === 'lesson_plan') {
+        const numericFields = ['estimated_duration', 'total_slides'];
+        numericFields.forEach(field => {
+          if (entityFields[field] === '' || entityFields[field] === undefined) {
+            entityFields[field] = null;
+          } else if (entityFields[field] !== null && !isNaN(entityFields[field])) {
+            entityFields[field] = parseInt(entityFields[field]);
+          }
+        });
+      }
+
       // Remove fields that are definitely Product-only and don't belong in entity tables
       const productOnlyFields = ['product_type', 'is_sample', 'is_published', 'price', 'category', 'image_url', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'access_days'];
       productOnlyFields.forEach(field => delete entityFields[field]);
@@ -669,7 +863,7 @@ class EntityService {
         youtube_video_title: data.youtube_video_title,
         tags: data.tags || [],
         target_audience: data.target_audience,
-        access_days: data.access_days,
+        access_days: data.access_days === '' || data.access_days === undefined ? null : (isNaN(data.access_days) ? null : parseInt(data.access_days)),
         is_sample: data.is_sample || false,
         creator_user_id: createdBy,
         created_at: new Date(),
@@ -736,7 +930,7 @@ class EntityService {
         tags: data.tags,
         target_audience: data.target_audience,
         type_attributes: data.type_attributes,
-        access_days: data.access_days,
+        access_days: data.access_days === '' || data.access_days === undefined ? null : (isNaN(data.access_days) ? null : parseInt(data.access_days)),
         creator_user_id: data.creator_user_id,
         updated_at: new Date(),
         ...(updatedBy && { updated_by: updatedBy })
@@ -765,6 +959,19 @@ class EntityService {
       ];
 
       productOnlyFields.forEach(field => delete entityFields[field]);
+
+      // Sanitize numeric fields for lesson_plan - convert empty strings to null
+      if (entityType === 'lesson_plan') {
+        const numericFields = ['estimated_duration', 'total_slides'];
+        numericFields.forEach(field => {
+          if (entityFields[field] === '' || entityFields[field] === undefined) {
+            entityFields[field] = null;
+          } else if (entityFields[field] !== null && !isNaN(entityFields[field])) {
+            entityFields[field] = parseInt(entityFields[field]);
+          }
+        });
+      }
+
       entityFields.updated_at = new Date();
       if (updatedBy) entityFields.updated_by = updatedBy;
 
@@ -901,6 +1108,87 @@ class EntityService {
             console.log(`Successfully deleted file assets for entity ${id}:`, result);
           } catch (fileError) {
             console.error(`Error deleting file assets for entity ${id}:`, fileError);
+          }
+        }
+
+        // Handle marketing video cleanup for Workshop, Course, Game, Tool entities
+        if (['workshop', 'course', 'game', 'tool'].includes(entityType)) {
+          try {
+            const marketingVideoKey = constructS3Path(entityType, id, 'marketing-video', 'video.mp4');
+            await fileService.deleteS3Object(marketingVideoKey);
+            console.log(`✅ Deleted marketing video for ${entityType} ${id}`);
+          } catch (videoError) {
+            // Marketing video might not exist, which is okay
+            if (videoError.code !== 'NoSuchKey' && videoError.code !== 'NotFound') {
+              console.error(`❌ Failed to delete marketing video for ${entityType} ${id}:`, videoError);
+            } else {
+              console.log(`ℹ️ No marketing video found for ${entityType} ${id} (expected)`);
+            }
+          }
+        }
+
+        // Handle AudioFile S3 cleanup
+        if (entityType === 'audiofile') {
+          try {
+            // Get the audio file entity to extract S3 key from file_url
+            if (entity.file_url) {
+              // Extract S3 key from file_url (could be full URL or just the key)
+              const s3Key = this.extractS3KeyFromUrl(entity.file_url);
+              if (s3Key) {
+                await fileService.deleteS3Object(s3Key);
+                console.log(`✅ Deleted audio file S3 object for AudioFile ${id}: ${s3Key}`);
+              }
+            } else {
+              console.log(`ℹ️ No file_url found for AudioFile ${id}`);
+            }
+          } catch (audioError) {
+            // Audio file might not exist in S3, which is okay
+            if (audioError.code !== 'NoSuchKey' && audioError.code !== 'NotFound') {
+              console.error(`❌ Failed to delete audio file for AudioFile ${id}:`, audioError);
+            } else {
+              console.log(`ℹ️ No audio file found in S3 for AudioFile ${id} (expected)`);
+            }
+          }
+        }
+
+        // Handle LessonPlan file cascade cleanup
+        if (entityType === 'lesson_plan') {
+          try {
+            // Get all file IDs referenced in the lesson plan's file_configs
+            const fileConfigs = entity.file_configs || {};
+            const files = fileConfigs.files || [];
+            const fileIds = files.map(file => file.file_id).filter(Boolean);
+
+            if (fileIds.length > 0) {
+              console.log(`🧹 Cleaning up ${fileIds.length} files referenced by LessonPlan ${id}`);
+
+              // Delete each referenced File entity (this will trigger their S3 cleanup)
+              for (const fileId of fileIds) {
+                try {
+                  const FileModel = this.getModel('file');
+                  const fileEntity = await FileModel.findByPk(fileId, { transaction });
+
+                  if (fileEntity) {
+                    // Delete File entity's S3 assets first
+                    const { deleteAllFileAssets } = await import('../routes/assets.js');
+                    await deleteAllFileAssets(fileId);
+
+                    // Then delete the File entity
+                    await fileEntity.destroy({ transaction });
+                    console.log(`✅ Deleted File entity ${fileId} and its assets`);
+                  } else {
+                    console.log(`ℹ️ File entity ${fileId} not found (may have been deleted already)`);
+                  }
+                } catch (fileError) {
+                  console.error(`❌ Failed to delete File entity ${fileId}:`, fileError);
+                  // Continue with other files even if one fails
+                }
+              }
+            } else {
+              console.log(`ℹ️ No files to cleanup for LessonPlan ${id}`);
+            }
+          } catch (lessonPlanError) {
+            console.error(`❌ Failed to cleanup files for LessonPlan ${id}:`, lessonPlanError);
           }
         }
 

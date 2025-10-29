@@ -38,6 +38,8 @@ import ParentConsent from './ParentConsent.js';
 import ClassroomMembership from './ClassroomMembership.js';
 import Curriculum from './Curriculum.js';
 import CurriculumItem from './CurriculumItem.js';
+import CurriculumProduct from './CurriculumProduct.js';
+import LessonPlan from './LessonPlan.js';
 import Logs from './Logs.js';
 import WebhookLog from './WebhookLog.js';
 
@@ -73,6 +75,8 @@ const models = {
   ClassroomMembership: ClassroomMembership(sequelize),
   Curriculum: Curriculum(sequelize),
   CurriculumItem: CurriculumItem(sequelize),
+  CurriculumProduct: CurriculumProduct(sequelize),
+  LessonPlan: LessonPlan(sequelize),
   Logs: Logs(sequelize),
   WebhookLog: WebhookLog(sequelize),
 };
