@@ -272,80 +272,6 @@ CREATE TABLE public.classroommembership (
 
 
 --
--- Name: contact_page_generators; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.contact_page_generators (
-    id character varying(255) NOT NULL,
-    title character varying(255) NOT NULL,
-    description text,
-    template_config jsonb DEFAULT '"{}"'::jsonb NOT NULL,
-    form_fields jsonb DEFAULT '"[]"'::jsonb NOT NULL,
-    contact_info jsonb DEFAULT '"{}"'::jsonb NOT NULL,
-    settings jsonb DEFAULT '"{}"'::jsonb NOT NULL,
-    is_completed boolean DEFAULT false NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
-
-
---
--- Name: COLUMN contact_page_generators.id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.id IS 'Unique identifier for the contact page generator';
-
-
---
--- Name: COLUMN contact_page_generators.title; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.title IS 'Title of the contact page generator';
-
-
---
--- Name: COLUMN contact_page_generators.description; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.description IS 'Description of the contact page generator';
-
-
---
--- Name: COLUMN contact_page_generators.template_config; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.template_config IS 'Configuration for contact page templates and styling';
-
-
---
--- Name: COLUMN contact_page_generators.form_fields; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.form_fields IS 'Configuration for form fields (name, email, message, etc.)';
-
-
---
--- Name: COLUMN contact_page_generators.contact_info; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.contact_info IS 'Organization contact information to display';
-
-
---
--- Name: COLUMN contact_page_generators.settings; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.settings IS 'Generator settings and options';
-
-
---
--- Name: COLUMN contact_page_generators.is_completed; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.contact_page_generators.is_completed IS 'Whether the generator setup is complete and ready for use';
-
-
---
 -- Name: coupon; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1398,30 +1324,6 @@ CREATE TABLE public.transaction (
     provider_transaction_id character varying(255)
 );
 
-
---
--- Name: transaction_temp; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.transaction_temp (
-    id character varying(255) NOT NULL,
-    user_id character varying(255),
-    amount numeric(10,2),
-    currency character varying(255) DEFAULT 'ILS'::character varying,
-    payment_method character varying(255),
-    payment_status public.enum_transaction_temp_payment_status DEFAULT 'pending'::public.enum_transaction_temp_payment_status,
-    transaction_id character varying(255),
-    description text,
-    metadata jsonb,
-    environment public.enum_transaction_temp_environment,
-    provider_transaction_id character varying(255),
-    provider_response jsonb,
-    failure_reason text,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL
-);
-
-
 --
 -- Name: user; Type: TABLE; Schema: public; Owner: -
 --
@@ -1694,14 +1596,6 @@ ALTER TABLE ONLY public.classroommembership
 
 
 --
--- Name: contact_page_generators contact_page_generators_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.contact_page_generators
-    ADD CONSTRAINT contact_page_generators_pkey PRIMARY KEY (id);
-
-
---
 -- Name: coupon coupon_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1884,15 +1778,6 @@ ALTER TABLE ONLY public.tool
 ALTER TABLE ONLY public.transaction
     ADD CONSTRAINT transaction_final_pkey PRIMARY KEY (id);
 
-
---
--- Name: transaction_temp transaction_temp_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.transaction_temp
-    ADD CONSTRAINT transaction_temp_pkey PRIMARY KEY (id);
-
-
 --
 -- Name: school unique_school_location; Type: CONSTRAINT; Schema: public; Owner: -
 --
@@ -1923,21 +1808,6 @@ ALTER TABLE ONLY public.webhook_log
 
 ALTER TABLE ONLY public.workshop
     ADD CONSTRAINT workshop_pkey PRIMARY KEY (id);
-
-
---
--- Name: contact_page_generators_completed_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX contact_page_generators_completed_idx ON public.contact_page_generators USING btree (is_completed);
-
-
---
--- Name: contact_page_generators_created_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX contact_page_generators_created_idx ON public.contact_page_generators USING btree (created_at);
-
 
 --
 -- Name: curriculum_class_id; Type: INDEX; Schema: public; Owner: -
