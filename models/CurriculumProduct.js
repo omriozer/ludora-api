@@ -2,6 +2,12 @@ import { DataTypes } from 'sequelize';
 
 export default (sequelize) => {
   const CurriculumProduct = sequelize.define('CurriculumProduct', {
+    id: {
+      type: DataTypes.STRING,
+      primaryKey: true,
+      allowNull: false,
+      comment: 'Primary key for curriculum-product association'
+    },
     curriculum_item_id: {
       type: DataTypes.STRING,
       allowNull: false,

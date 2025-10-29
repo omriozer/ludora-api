@@ -35,8 +35,8 @@ DB_PORT=${DB_PORT:-5432}
 DB_NAME=${DB_NAME:-"ludora_${ENVIRONMENT}"}
 DB_USER=${DB_USER:-ludora_user}
 DB_PASSWORD=${DB_PASSWORD:-ludora_pass}
-POSTGRES_USER=${POSTGRES_USER:-postgres}
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+POSTGRES_USER=${POSTGRES_USER:-omri}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
 
 echo "🔌 Database Config:"
 echo "   Host: $DB_HOST:$DB_PORT"
@@ -68,6 +68,7 @@ create_database() {
     echo "🏗️  Creating database and user..."
     
     # Create user if not exists
+    echo "   Creating user $DB_USER..."
     PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -c "
         DO \$\$
         BEGIN
@@ -76,19 +77,21 @@ create_database() {
             END IF;
         END
         \$\$;
-    " 2>/dev/null || echo "   User creation skipped or failed (may already exist)"
-    
+    " > /dev/null 2>&1 && echo "   ✅ User created/exists" || echo "   ⚠️  User creation skipped or failed (may already exist)"
+
     # Create database if not exists
     if ! PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -lqt | cut -d \| -f 1 | grep -qw $DB_NAME; then
-        PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" 2>/dev/null || echo "   Database creation failed"
+        echo "   Creating database $DB_NAME..."
+        PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" > /dev/null 2>&1 && echo "   ✅ Database created" || echo "   ❌ Database creation failed"
     else
-        echo "   Database $DB_NAME already exists"
+        echo "   ✅ Database $DB_NAME already exists"
     fi
-    
+
     # Grant privileges
+    echo "   Setting up permissions..."
     PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $POSTGRES_USER -c "
         GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
-    " 2>/dev/null || echo "   Privilege grant may have failed"
+    " > /dev/null 2>&1 && echo "   ✅ Privileges granted" || echo "   ⚠️  Privilege grant may have failed"
     
     echo "✅ Database and user setup completed"
 }
@@ -119,7 +122,7 @@ setup_tables() {
 
     # Create complete schema directly
     echo "🏗️  Creating database schema..."
-    PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f scripts/create-schema.sql
+    PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f scripts/create-schema.sql > /dev/null 2>&1
 
     if [ $? -eq 0 ]; then
         echo "✅ Schema creation completed successfully"
@@ -134,7 +137,7 @@ setup_tables() {
         CREATE TABLE IF NOT EXISTS \"SequelizeMeta\" (
             name VARCHAR(255) PRIMARY KEY
         );
-    " 2>/dev/null || echo "   SequelizeMeta table already exists"
+    " > /dev/null 2>&1 && echo "   ✅ SequelizeMeta table ready" || echo "   ⚠️  SequelizeMeta table creation skipped"
 
     # Check if there are any migrations to run
     if [ -d "migrations" ] && [ "$(ls -A migrations 2>/dev/null)" ]; then

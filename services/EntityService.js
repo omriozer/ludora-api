@@ -123,6 +123,7 @@ class EntityService {
       'parentconsent': 'ParentConsent',
       'classroommembership': 'ClassroomMembership',
       'curriculumitem': 'CurriculumItem',
+      'curriculumproduct': 'CurriculumProduct',
       'lessonplan': 'LessonPlan'
     };
 

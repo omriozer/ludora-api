@@ -78,9 +78,7 @@ module.exports = {
       allow_content_creator_games: true,
       allow_content_creator_lesson_plans: false,
       created_at: new Date(),
-      updated_at: new Date(),
-      created_by: 'system',
-      created_by_id: 'system'
+      updated_at: new Date()
     }]);
 
     console.log('✅ Default settings seeded successfully');
