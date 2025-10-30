@@ -273,7 +273,7 @@ router.get('/capabilities', optionalAuth, (req, res) => {
         'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'audio/mpeg', 'audio/wav', 'video/mp4'
       ],
-      storage: process.env.USE_S3 === 'true' ? ['s3'] : ['local'],
+      storage: ['s3'],
       features: ['public-upload', 'private-upload', 'signed-urls', 'data-extraction']
     },
     imageGeneration: {
@@ -288,7 +288,7 @@ router.get('/capabilities', optionalAuth, (req, res) => {
       status: 'partial' // Some features not fully implemented
     },
     environment: {
-      storage: process.env.USE_S3 === 'true' ? 's3' : 'local',
+      storage: 's3',
       llmProviders: {
         openai: !!process.env.OPENAI_API_KEY,
         anthropic: !!process.env.ANTHROPIC_API_KEY

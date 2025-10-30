@@ -10,7 +10,7 @@ class FileService {
   constructor() {
     this.s3 = null;
     this.localStoragePath = process.env.LOCAL_STORAGE_PATH || './uploads';
-    this.useS3 = process.env.USE_S3 === 'true';
+    this.useS3 = true;
     this.bucketName = process.env.AWS_S3_BUCKET;
     
     if (this.useS3) {
@@ -275,8 +275,14 @@ class FileService {
       // Use original filename or generate new one
       const fileName = preserveOriginalName ? file.originalname : `${generateId()}.${this.getFileExtension(file.originalname)}`;
 
-      // Use standardized S3 path construction (no userId)
-      const fullS3Key = constructS3Path(entityType, entityId, assetType, fileName);
+      // For S3 storage, use sanitized filename to avoid signature issues with Hebrew characters
+      // but preserve original filename for display purposes
+      const sanitizedFileName = preserveOriginalName ?
+        `${generateId()}.${this.getFileExtension(file.originalname)}` :
+        fileName;
+
+      // Use standardized S3 path construction with sanitized filename for storage
+      const fullS3Key = constructS3Path(entityType, entityId, assetType, sanitizedFileName);
 
       let url, size;
 
@@ -300,7 +306,8 @@ class FileService {
           data: {
             url,
             key: fullS3Key,
-            fileName,
+            fileName, // Original Hebrew filename for display
+            storageFileName: sanitizedFileName, // Sanitized filename used for storage
             mimeType: file.mimetype,
             size,
             uploadedAt: new Date().toISOString(),
@@ -577,6 +584,8 @@ class FileService {
       'text/plain', 'text/csv',
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint', // .ppt files
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx files
       'audio/mpeg', 'audio/wav', 'audio/ogg',
       'video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/x-ms-wmv'
     ];

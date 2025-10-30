@@ -29,7 +29,14 @@ export function constructS3Path(entityType, entityId, assetType, filename) {
   // Determine privacy level based on asset type
   const privacy = (assetType === 'marketing-video' || assetType === 'image') ? 'public' : 'private';
 
-  return `${env}/${privacy}/${assetType}/${entityType}/${entityId}/${filename}`;
+  // Sanitize filename to avoid S3 signature issues with non-ASCII characters
+  // Only use ASCII characters, replace any problematic characters with dashes
+  const sanitizedFilename = filename
+    .replace(/[^\w\-_.]/g, '-') // Replace non-word chars (except dash, underscore, dot) with dash
+    .replace(/-+/g, '-') // Replace multiple consecutive dashes with single dash
+    .replace(/^-|-$/g, ''); // Remove leading/trailing dashes
+
+  return `${env}/${privacy}/${assetType}/${entityType}/${entityId}/${sanitizedFilename}`;
 }
 
 /**

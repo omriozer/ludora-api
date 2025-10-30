@@ -1,12 +1,26 @@
 // Ludora API Server - Enhanced Security Version
 import dotenv from 'dotenv';
 
-// Load environment-specific .env file FIRST before any other imports
+// Load environment files with proper cascading: base .env first, then environment-specific overrides
 const env = process.env.ENVIRONMENT || 'production';
-const envFile = env === 'production' ? '.env' : `.env.${env}`;
-const result = dotenv.config({ path: envFile });
-if (result.error) {
-  console.error(`❌ Failed to load ${envFile}:`, result.error);
+
+// Load base .env file first (defaults)
+const baseResult = dotenv.config({ path: '.env' });
+if (baseResult.error) {
+  console.warn(`⚠️  Failed to load base .env:`, baseResult.error);
+}
+
+// Load environment-specific .env file (overrides) - only if not production
+if (env !== 'production') {
+  const envFile = `.env.${env}`;
+  const envResult = dotenv.config({ path: envFile });
+  if (envResult.error) {
+    console.error(`❌ Failed to load ${envFile}:`, envResult.error);
+  } else {
+    console.log(`✅ Loaded environment configuration: .env + ${envFile}`);
+  }
+} else {
+  console.log(`✅ Loaded environment configuration: .env (production)`);
 }
 
 // Now import other modules after environment is loaded

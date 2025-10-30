@@ -492,7 +492,8 @@ export const customValidators = {
       'webhooklog', 'pendingsubscription', 'subscriptionhistory', 'gamesession',
       'attribute', 'gamecontenttag', 'contenttag',
       'school', 'classroom', 'studentinvitation', 'parentconsent',
-      'classroommembership', 'curriculum', 'curriculumitem', 'curriculumproduct'
+      'classroommembership', 'curriculum', 'curriculumitem', 'curriculumproduct',
+      'lessonplan'
     ];
 
     const entityType = req.params.type?.toLowerCase();

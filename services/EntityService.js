@@ -8,8 +8,19 @@ import fileService from './FileService.js';
 
 class EntityService {
   constructor() {
-    this.models = models;
+    // Don't import models in constructor - lazy load when needed
+    this._models = null;
   }
+
+  // Lazy load models to avoid circular dependency issues
+  get models() {
+    if (!this._models) {
+      this._models = models;
+      console.log('🔍 DEBUG: EntityService lazy-loaded models:', Object.keys(this._models));
+    }
+    return this._models;
+  }
+  // Force restart
 
   // Get model by name (case-insensitive)
   getModel(entityType) {
@@ -329,6 +340,22 @@ class EntityService {
         return await this.updateProductTypeEntity(entityType, id, data, updatedBy);
       }
 
+      // Special handling for Product updates that reference normalized entities
+      if (entityType === 'product') {
+        // Find the product to check its type
+        const product = await Model.findByPk(id);
+        if (!product) {
+          throw new Error('Product not found');
+        }
+
+        // If this product references a normalized entity type, route to updateProductTypeEntity
+        if (NORMALIZED_PRODUCT_TYPES.includes(product.product_type)) {
+          console.log(`🔄 Routing Product update to updateProductTypeEntity for ${product.product_type} entity`);
+          return await this.updateProductTypeEntity(product.product_type, product.entity_id, data, updatedBy);
+        }
+        // Otherwise, fall through to regular product update
+      }
+
       // Find existing entity
       const entity = await Model.findByPk(id);
       if (!entity) {
@@ -639,7 +666,11 @@ class EntityService {
 
   // Get all available entity types
   getAvailableEntityTypes() {
-    return Object.keys(this.models);
+    const availableTypes = Object.keys(this.models);
+    console.log('🔍 DEBUG: EntityService.getAvailableEntityTypes():', availableTypes);
+    console.log('🔍 DEBUG: LessonPlan in models?:', 'LessonPlan' in this.models);
+    console.log('🔍 DEBUG: lessonplan toPascalCase result:', this.toPascalCase('lessonplan'));
+    return availableTypes;
   }
 
   // Count entities
@@ -864,7 +895,7 @@ class EntityService {
         youtube_video_title: data.youtube_video_title,
         tags: data.tags || [],
         target_audience: data.target_audience,
-        access_days: data.access_days === '' || data.access_days === undefined ? null : (isNaN(data.access_days) ? null : parseInt(data.access_days)),
+        access_days: parseInt(data.access_days) ? parseInt(data.access_days) : null,
         is_sample: data.is_sample || false,
         creator_user_id: createdBy,
         created_at: new Date(),
@@ -931,7 +962,7 @@ class EntityService {
         tags: data.tags,
         target_audience: data.target_audience,
         type_attributes: data.type_attributes,
-        access_days: data.access_days === '' || data.access_days === undefined ? null : (isNaN(data.access_days) ? null : parseInt(data.access_days)),
+        access_days: parseInt(data.access_days) ? parseInt(data.access_days) : null,
         creator_user_id: data.creator_user_id,
         updated_at: new Date(),
         ...(updatedBy && { updated_by: updatedBy })
@@ -983,9 +1014,25 @@ class EntityService {
       console.log(`📝 Updating Product for ${entityType}:`, productFields);
       console.log(`📝 Updating ${entityType} entity:`, entityFields);
 
+      // Special debugging for file_configs
+      if (entityType === 'lesson_plan' && entityFields.file_configs) {
+        console.log(`🔍 LESSON PLAN file_configs DEBUG:`);
+        console.log(`   - file_configs type:`, typeof entityFields.file_configs);
+        console.log(`   - file_configs value:`, JSON.stringify(entityFields.file_configs, null, 2));
+        console.log(`   - files array length:`, entityFields.file_configs?.files?.length || 'no files array');
+      }
+
       // Update both Product and Entity
       await product.update(productFields, { transaction });
-      await entity.update(entityFields, { transaction });
+
+      // Enhanced logging for lesson plan entity update
+      if (entityType === 'lesson_plan') {
+        console.log(`🔍 BEFORE lesson plan update - current file_configs:`, JSON.stringify(entity.file_configs, null, 2));
+        await entity.update(entityFields, { transaction });
+        console.log(`🔍 AFTER lesson plan update - new file_configs:`, JSON.stringify(entity.file_configs, null, 2));
+      } else {
+        await entity.update(entityFields, { transaction });
+      }
 
       await transaction.commit();
 

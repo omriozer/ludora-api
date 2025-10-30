@@ -19,8 +19,45 @@ const fileUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024 * 1024 // 5GB limit
+  },
+  // Handle UTF-8 filenames properly
+  preservePath: false,
+  // Ensure proper encoding handling for Hebrew filenames
+  fileFilter: (req, file, cb) => {
+    // Log original filename encoding issue
+    console.log(`📤 Original filename from multer: "${file.originalname}"`);
+    console.log(`📤 Filename buffer: ${Buffer.from(file.originalname, 'latin1').toString('utf8')}`);
+
+    // Try to fix encoding if it's corrupted
+    try {
+      // If filename looks corrupted (contains replacement characters), try to fix it
+      if (file.originalname.includes('�') || file.originalname.includes('×')) {
+        const fixedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        file.originalname = fixedName;
+        console.log(`📤 Fixed filename: "${fixedName}"`);
+      }
+    } catch (error) {
+      console.log(`📤 Could not fix filename encoding: ${error.message}`);
+    }
+
+    cb(null, true);
   }
 });
+
+// Helper function to get file type from extension (must match File model validation)
+function getFileTypeFromExtension(extension) {
+  switch (extension.toLowerCase()) {
+    case 'pdf': return 'pdf';
+    case 'ppt':
+    case 'pptx': return 'ppt';
+    case 'doc':
+    case 'docx': return 'docx';
+    case 'zip': return 'zip';
+    // Audio files and all other types fall back to 'other'
+    // File model only allows: ['pdf', 'ppt', 'docx', 'zip', 'other']
+    default: return 'other';
+  }
+}
 
 // Helper function to check content creator permissions
 async function checkContentCreatorPermissions(user, entityType, entityData = {}) {
@@ -1251,13 +1288,57 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       return res.status(400).json({ error: 'File is required' });
     }
 
-    const fileName = req.file.originalname;
-    const fileType = fileName.split('.').pop().toLowerCase();
+    let fileName = req.file.originalname;
 
-    console.log(`📤 Processing file: ${fileName}, role: ${file_role}`);
+    // Additional filename encoding fix for database storage
+    try {
+      // If filename still looks corrupted, try to decode it properly
+      if (fileName.includes('×') || fileName.includes('Ã')) {
+        const decodedName = decodeURIComponent(escape(fileName));
+        if (decodedName !== fileName && decodedName.length > 0) {
+          fileName = decodedName;
+          console.log(`📤 Decoded filename from "${req.file.originalname}" to "${fileName}"`);
+        }
+      }
+    } catch (error) {
+      console.log(`📤 Filename decoding failed, using original: ${error.message}`);
+    }
+
+    const fileExtension = fileName.split('.').pop().toLowerCase();
+    const fileType = getFileTypeFromExtension(fileExtension);
+
+    console.log(`📤 Processing file: ${fileName}, role: ${file_role}, extension: ${fileExtension}`);
+
+    // Validate file type restrictions for opening and body roles (PPT only)
+    if (file_role === 'opening' || file_role === 'body') {
+      const allowedExtensions = ['ppt', 'pptx'];
+      if (!allowedExtensions.includes(fileExtension)) {
+        console.log(`❌ Invalid file type for ${file_role}: ${fileExtension}. Only PPT files allowed.`);
+        return res.status(400).json({
+          error: `Only PowerPoint files (.ppt, .pptx) are allowed for ${file_role} sections`,
+          details: `Received file type: .${fileExtension}. Expected: ${allowedExtensions.join(', ')}`
+        });
+      }
+    }
+
+    // Validate file type restrictions for audio role
+    if (file_role === 'audio') {
+      const allowedExtensions = ['mp3', 'wav', 'm4a'];
+      if (!allowedExtensions.includes(fileExtension)) {
+        console.log(`❌ Invalid file type for ${file_role}: ${fileExtension}. Only audio files allowed.`);
+        return res.status(400).json({
+          error: `Only audio files (.mp3, .wav, .m4a) are allowed for ${file_role} sections`,
+          details: `Received file type: .${fileExtension}. Expected: ${allowedExtensions.join(', ')}`
+        });
+      }
+    }
+
+    // Generate ID for the File entity
+    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
 
     // 1. Create File entity within transaction
     const fileData = {
+      id: generateId(),
       title: description || fileName,
       file_type: fileType,
       is_asset_only: true,
@@ -1266,33 +1347,28 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       creator_user_id: req.user.uid
     };
 
+    console.log(`📤 Creating File entity with data:`, fileData);
     const fileEntity = await models.File.create(fileData, { transaction });
     console.log(`✅ File entity created: ${fileEntity.id}`);
 
-    // 2. Upload to S3 using FileService
-    const s3Key = constructS3Path('file', fileEntity.id, 'document', fileName);
+    console.log(`📤 Original filename: ${fileName}`);
 
-    const uploadResult = await fileService.uploadToS3({
-      buffer: req.file.buffer,
-      key: s3Key,
-      contentType: req.file.mimetype,
-      metadata: {
-        uploadedBy: req.user.uid,
-        entityType: 'file',
-        entityId: fileEntity.id,
-        assetType: 'document',
-        originalName: fileName,
-        lessonPlanId: lessonPlanId,
-        fileRole: file_role
-      }
+    // 2. Upload file using proper method with local storage fallback
+    const uploadResult = await fileService.uploadPrivateFileEntity({
+      file: req.file,
+      contentType: 'document',
+      entityType: 'file',
+      entityId: fileEntity.id,
+      userId: req.user.uid,
+      preserveOriginalName: false // Use sanitized filename
     });
 
     if (!uploadResult.success) {
-      throw new Error('S3 upload failed');
+      throw new Error('File upload failed');
     }
 
-    uploadedS3Key = s3Key;
-    console.log(`✅ File uploaded to S3: ${uploadedS3Key}`);
+    uploadedS3Key = uploadResult.data.key;
+    console.log(`✅ File uploaded successfully: ${uploadedS3Key}`);
 
     // Update file entity with S3 information
     await fileEntity.update({
@@ -1309,15 +1385,24 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     // Get current file configs
     const currentConfigs = lessonPlan.file_configs || { files: [] };
 
-    // Add new file config
+    // Check if opening/body sections already have a file (single file limit)
+    if (file_role === 'opening' || file_role === 'body') {
+      const existingFilesInRole = currentConfigs.files.filter(f => f.file_role === file_role);
+      if (existingFilesInRole.length > 0) {
+        throw new Error(`Section "${file_role}" can only have one file. Remove existing file first.`);
+      }
+    }
+
+    // Add new file config (use original Hebrew filename for display, storage key from upload result)
     const newFileConfig = {
       file_id: fileEntity.id,
       file_role: file_role,
-      filename: fileName,
+      filename: fileName, // Keep original Hebrew filename for display
       file_type: fileType,
       upload_date: new Date().toISOString(),
       description: description || fileName,
-      s3_key: uploadedS3Key,
+      s3_key: uploadedS3Key, // Storage key from upload result
+      storage_filename: uploadResult.data.fileName, // Actual storage filename
       size: req.file.size,
       mime_type: req.file.mimetype || 'application/octet-stream',
       is_asset_only: true
@@ -1326,14 +1411,29 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     currentConfigs.files.push(newFileConfig);
 
     // Update lesson plan with new file configs
-    await lessonPlan.update({
-      file_configs: currentConfigs
-    }, { transaction });
+    console.log(`📤 Updating lesson plan with file configs:`, JSON.stringify(currentConfigs, null, 2));
+    console.log(`📤 Before update - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
-    console.log(`✅ Lesson plan updated with file config`);
+    // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
+    lessonPlan.file_configs = currentConfigs;
+    lessonPlan.changed('file_configs', true);
+
+    const updateResult = await lessonPlan.save({ transaction });
+
+    console.log(`📤 Update result:`, updateResult.dataValues?.file_configs ? 'has dataValues' : 'no dataValues in result');
+
+    // Force reload to check if update actually persisted
+    await lessonPlan.reload({ transaction });
+    console.log(`📤 After reload within transaction - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
     // Commit transaction - everything succeeded
+    console.log(`📤 Attempting to commit transaction...`);
     await transaction.commit();
+    console.log(`✅ Transaction committed successfully`);
+
+    // Verify the update persisted after commit by checking fresh DB query
+    const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
+    console.log(`📤 Post-commit verification - fresh query file_configs:`, JSON.stringify(verifyLessonPlan?.file_configs, null, 2));
 
     console.log(`🎉 Atomic file upload completed successfully`);
 
@@ -1341,9 +1441,10 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       message: 'File uploaded successfully',
       file: {
         id: fileEntity.id,
-        filename: fileName,
+        filename: fileName, // Original Hebrew filename for display
         file_role: file_role,
-        s3_key: uploadedS3Key,
+        s3_key: uploadedS3Key, // Storage key
+        storage_filename: uploadResult.data.fileName, // Actual storage filename
         size: req.file.size,
         upload_date: newFileConfig.upload_date
       },
@@ -1368,6 +1469,382 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     res.status(500).json({
       error: 'File upload failed',
+      details: error.message
+    });
+  }
+});
+
+// POST /entities/lesson-plan/:lessonPlanId/link-file-product - Link existing File product to lesson plan
+router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, async (req, res) => {
+  const lessonPlanId = req.params.lessonPlanId;
+  const transaction = await sequelize.transaction();
+
+  try {
+    console.log(`🔗 Starting File product linking for lesson plan ${lessonPlanId}`);
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Get request data
+    const { product_id, file_role, filename, file_type } = req.body;
+
+    if (!product_id || !file_role || !['opening', 'body', 'audio', 'assets'].includes(file_role)) {
+      return res.status(400).json({
+        error: 'Valid product_id and file_role are required',
+        details: 'file_role must be one of: opening, body, audio, assets'
+      });
+    }
+
+    // Check if lesson plan exists and get the product
+    const lessonPlanProduct = await models.Product.findOne({
+      where: {
+        product_type: 'lesson_plan',
+        entity_id: lessonPlanId
+      }
+    });
+
+    if (!lessonPlanProduct) {
+      return res.status(404).json({ error: 'Lesson plan product not found' });
+    }
+
+    // Get the File product to link
+    const fileProduct = await models.Product.findByPk(product_id);
+    if (!fileProduct) {
+      return res.status(404).json({ error: 'File product not found' });
+    }
+
+    if (fileProduct.product_type !== 'file') {
+      return res.status(400).json({ error: 'Product must be of type "file"' });
+    }
+
+    // Get the lesson plan entity
+    const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
+    if (!lessonPlan) {
+      return res.status(404).json({ error: 'Lesson plan entity not found' });
+    }
+
+    // Get current file configs
+    const currentConfigs = lessonPlan.file_configs || { files: [] };
+
+    // Check if opening/body sections already have a file (single file limit)
+    if (file_role === 'opening' || file_role === 'body') {
+      const existingFilesInRole = currentConfigs.files.filter(f => f.file_role === file_role);
+      if (existingFilesInRole.length > 0) {
+        return res.status(409).json({
+          error: `Section "${file_role}" can only have one file. Remove existing file first.`,
+          existing_files: existingFilesInRole.map(f => ({
+            file_id: f.file_id,
+            filename: f.filename,
+            is_asset_only: f.is_asset_only
+          }))
+        });
+      }
+
+      // For opening/body sections, only allow PPT File products
+      const fileEntity = await models.File.findByPk(fileProduct.entity_id);
+      if (fileEntity && fileEntity.file_type !== 'ppt') {
+        return res.status(400).json({
+          error: `Section "${file_role}" only accepts PowerPoint files. This File product is of type "${fileEntity.file_type}".`,
+          file_type: fileEntity.file_type,
+          required_type: 'ppt'
+        });
+      }
+    }
+
+    // Check if this File product is already linked
+    const existingLink = currentConfigs.files.find(f =>
+      f.file_id === fileProduct.entity_id && f.file_role === file_role
+    );
+
+    if (existingLink) {
+      return res.status(409).json({
+        error: 'File product is already linked to this lesson plan for this role',
+        existing_link: existingLink
+      });
+    }
+
+    // Create file config for the File product link
+    const newFileConfig = {
+      file_id: fileProduct.entity_id, // Use entity_id from the Product
+      file_role: file_role,
+      filename: filename || fileProduct.title,
+      file_type: file_type || 'other',
+      upload_date: new Date().toISOString(),
+      description: fileProduct.title,
+      is_asset_only: false, // This is a File product, not just an asset
+      product_id: fileProduct.id // Store the Product ID for reference
+    };
+
+    // Add the new file config
+    currentConfigs.files.push(newFileConfig);
+
+    // Update lesson plan with new file configs
+    console.log(`🔗 Updating lesson plan with file configs:`, JSON.stringify(currentConfigs, null, 2));
+
+    // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
+    lessonPlan.file_configs = currentConfigs;
+    lessonPlan.changed('file_configs', true);
+
+    const updateResult = await lessonPlan.save({ transaction });
+    console.log(`🔗 Lesson plan file_configs updated`);
+
+    // Force reload to verify update persisted
+    await lessonPlan.reload({ transaction });
+    console.log(`🔗 After reload - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
+
+    // Commit transaction - everything succeeded
+    console.log(`🔗 Attempting to commit transaction...`);
+    await transaction.commit();
+    console.log(`✅ File product linking transaction committed successfully`);
+
+    // Verify the update persisted after commit
+    const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
+    console.log(`🔗 Post-commit verification - file_configs length:`, verifyLessonPlan?.file_configs?.files?.length || 0);
+
+    console.log(`🎉 File product linking completed successfully`);
+
+    res.status(201).json({
+      message: 'File product linked successfully',
+      linked_file: {
+        file_id: fileProduct.entity_id,
+        product_id: fileProduct.id,
+        filename: newFileConfig.filename,
+        file_role: file_role,
+        is_asset_only: false
+      },
+      lesson_plan_id: lessonPlanId,
+      total_files: currentConfigs.files.length
+    });
+
+  } catch (error) {
+    console.error('❌ File product linking failed:', error);
+
+    // Rollback database transaction
+    await transaction.rollback();
+
+    res.status(500).json({
+      error: 'File product linking failed',
+      details: error.message
+    });
+  }
+});
+
+// DELETE /entities/lesson-plan/:lessonPlanId/unlink-file-product/:fileId - Unlink File product from lesson plan
+router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenticateToken, async (req, res) => {
+  const lessonPlanId = req.params.lessonPlanId;
+  const fileId = req.params.fileId;
+  const transaction = await sequelize.transaction();
+
+  try {
+    console.log(`🔗❌ Starting File product unlinking for lesson plan ${lessonPlanId}, file ${fileId}`);
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Check if lesson plan exists and get the product
+    const product = await models.Product.findOne({
+      where: {
+        product_type: 'lesson_plan',
+        entity_id: lessonPlanId
+      }
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Lesson plan product not found' });
+    }
+
+    // Get the lesson plan
+    const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
+    if (!lessonPlan) {
+      return res.status(404).json({ error: 'Lesson plan not found' });
+    }
+
+    // Get current file configs
+    const currentConfigs = lessonPlan.file_configs || { files: [] };
+
+    // Find the file in the configs
+    const fileIndex = currentConfigs.files.findIndex(f => f.file_id === fileId);
+    if (fileIndex === -1) {
+      return res.status(404).json({ error: 'File not found in lesson plan' });
+    }
+
+    const fileConfig = currentConfigs.files[fileIndex];
+    console.log(`🔗❌ Found file config:`, fileConfig);
+
+    // Only allow unlinking File products (not asset-only files)
+    if (fileConfig.is_asset_only === true) {
+      return res.status(400).json({
+        error: 'This endpoint is for unlinking File products only. Use the delete endpoint for asset-only files.',
+        file_type: 'asset_only'
+      });
+    }
+
+    // Remove file from lesson plan configs (the File product itself remains untouched)
+    console.log(`🔗❌ Removing File product link from lesson plan configs (index ${fileIndex})`);
+    currentConfigs.files.splice(fileIndex, 1);
+
+    // Update lesson plan with new file configs
+    console.log(`🔗❌ Updating lesson plan with updated file configs:`, JSON.stringify(currentConfigs, null, 2));
+
+    // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
+    lessonPlan.file_configs = currentConfigs;
+    lessonPlan.changed('file_configs', true);
+
+    const updateResult = await lessonPlan.save({ transaction });
+    console.log(`🔗❌ Lesson plan file_configs updated`);
+
+    // Force reload to verify update persisted
+    await lessonPlan.reload({ transaction });
+    console.log(`🔗❌ After reload - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
+
+    // Commit transaction - everything succeeded
+    console.log(`🔗❌ Attempting to commit transaction...`);
+    await transaction.commit();
+    console.log(`✅ File product unlinking transaction committed successfully`);
+
+    // Verify the update persisted after commit
+    const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
+    console.log(`🔗❌ Post-commit verification - file_configs length:`, verifyLessonPlan?.file_configs?.files?.length || 0);
+
+    console.log(`🎉 File product unlinking completed successfully`);
+
+    res.json({
+      message: 'File product unlinked successfully',
+      unlinked_file: {
+        id: fileId,
+        filename: fileConfig.filename,
+        file_role: fileConfig.file_role,
+        product_id: fileConfig.product_id
+      },
+      lesson_plan_id: lessonPlanId,
+      remaining_files: currentConfigs.files.length
+    });
+
+  } catch (error) {
+    console.error('❌ File product unlinking failed:', error);
+
+    // Rollback database transaction
+    await transaction.rollback();
+
+    res.status(500).json({
+      error: 'File product unlinking failed',
+      details: error.message
+    });
+  }
+});
+
+// DELETE /entities/lesson-plan/:lessonPlanId/file/:fileId - Delete file from lesson plan
+router.delete('/lesson-plan/:lessonPlanId/file/:fileId', authenticateToken, async (req, res) => {
+  const lessonPlanId = req.params.lessonPlanId;
+  const fileId = req.params.fileId;
+  const transaction = await sequelize.transaction();
+
+  try {
+    console.log(`🗑️ Starting lesson plan file deletion for lesson plan ${lessonPlanId}, file ${fileId}`);
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Check if lesson plan exists and get the product
+    const product = await models.Product.findOne({
+      where: {
+        product_type: 'lesson_plan',
+        entity_id: lessonPlanId
+      }
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Lesson plan product not found' });
+    }
+
+    // Get the lesson plan
+    const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
+    if (!lessonPlan) {
+      return res.status(404).json({ error: 'Lesson plan not found' });
+    }
+
+    // Get current file configs
+    const currentConfigs = lessonPlan.file_configs || { files: [] };
+
+    // Find the file in the configs
+    const fileIndex = currentConfigs.files.findIndex(f => f.file_id === fileId);
+    if (fileIndex === -1) {
+      return res.status(404).json({ error: 'File not found in lesson plan' });
+    }
+
+    const fileConfig = currentConfigs.files[fileIndex];
+    console.log(`🗑️ Found file config:`, fileConfig);
+
+    // 1. Get the File entity
+    const fileEntity = await models.File.findByPk(fileId, { transaction });
+    if (!fileEntity) {
+      console.log(`⚠️ File entity ${fileId} not found, continuing with config removal`);
+    }
+
+    // 2. Delete the File entity (this should also clean up S3 via hooks/triggers)
+    if (fileEntity) {
+      console.log(`🗑️ Deleting File entity: ${fileEntity.id}`);
+      await fileEntity.destroy({ transaction });
+      console.log(`✅ File entity deleted`);
+    }
+
+    // 3. Remove file from lesson plan configs
+    console.log(`🗑️ Removing file from lesson plan configs (index ${fileIndex})`);
+    currentConfigs.files.splice(fileIndex, 1);
+
+    // 4. Update lesson plan with new file configs
+    console.log(`🗑️ Updating lesson plan with updated file configs:`, JSON.stringify(currentConfigs, null, 2));
+
+    // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
+    lessonPlan.file_configs = currentConfigs;
+    lessonPlan.changed('file_configs', true);
+
+    const updateResult = await lessonPlan.save({ transaction });
+    console.log(`🗑️ Lesson plan file_configs updated`);
+
+    // Force reload to verify update persisted
+    await lessonPlan.reload({ transaction });
+    console.log(`🗑️ After reload - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
+
+    // Commit transaction - everything succeeded
+    console.log(`🗑️ Attempting to commit transaction...`);
+    await transaction.commit();
+    console.log(`✅ File deletion transaction committed successfully`);
+
+    // Verify the update persisted after commit
+    const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
+    console.log(`🗑️ Post-commit verification - file_configs length:`, verifyLessonPlan?.file_configs?.files?.length || 0);
+
+    console.log(`🎉 File deletion completed successfully`);
+
+    res.json({
+      message: 'File deleted successfully',
+      deleted_file: {
+        id: fileId,
+        filename: fileConfig.filename,
+        file_role: fileConfig.file_role
+      },
+      lesson_plan_id: lessonPlanId,
+      remaining_files: currentConfigs.files.length
+    });
+
+  } catch (error) {
+    console.error('❌ File deletion failed:', error);
+
+    // Rollback database transaction
+    await transaction.rollback();
+
+    res.status(500).json({
+      error: 'File deletion failed',
       details: error.message
     });
   }
