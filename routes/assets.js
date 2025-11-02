@@ -11,6 +11,9 @@ import { addPdfWatermarks } from '../utils/pdfWatermark.js';
 import { mergeFooterSettings } from '../utils/footerSettingsHelper.js';
 import AccessControlService from '../services/AccessControlService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
+import { createFileLogger, createErrorResponse, createSuccessResponse } from '../utils/fileOperationLogger.js';
+import { createFileVerifier } from '../utils/fileOperationVerifier.js';
+import { createPreUploadValidator } from '../utils/preUploadValidator.js';
 
 const router = express.Router();
 const { File: FileModel, User, Purchase, Settings } = db;
@@ -116,9 +119,13 @@ async function deleteAllFileAssets(fileEntityId) {
     // Delete document if it exists
     if (fileEntity.file_name) {
       try {
-        const s3Key = constructS3Path('file', fileEntityId, 'document', fileEntity.file_name);
-        await fileService.deleteS3Object(s3Key);
-        results.document.deleted = true;
+        const deleteResult = await fileService.deleteAsset({
+          entityType: 'file',
+          entityId: fileEntityId,
+          assetType: 'document',
+          userId: 'system' // System deletion
+        });
+        results.document.deleted = deleteResult.success;
         console.log(`✅ Deleted document asset for File ${fileEntityId}`);
       } catch (error) {
         results.document.error = error.message;
@@ -128,13 +135,19 @@ async function deleteAllFileAssets(fileEntityId) {
 
     // Delete marketing video if it exists
     try {
-      const marketingVideoKey = constructS3Path('file', fileEntityId, 'marketing-video', 'video.mp4');
-      await fileService.deleteS3Object(marketingVideoKey);
-      results.marketingVideo.deleted = true;
+      const deleteResult = await fileService.deleteAsset({
+        entityType: 'file',
+        entityId: fileEntityId,
+        assetType: 'marketing-video',
+        userId: 'system' // System deletion
+      });
+      results.marketingVideo.deleted = deleteResult.success;
       console.log(`✅ Deleted marketing video for File ${fileEntityId}`);
     } catch (error) {
       // Marketing video might not exist, which is okay
-      if (error.code !== 'NoSuchKey' && error.code !== 'NotFound') {
+      if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+        results.marketingVideo.deleted = true; // Treat as success if already deleted
+      } else {
         results.marketingVideo.error = error.message;
         console.error(`❌ Failed to delete marketing video for File ${fileEntityId}:`, error);
       }
@@ -252,32 +265,60 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
 
     // Validate required parameters
     if (!entityType || !entityId || !assetType) {
-      return res.status(400).json({
-        error: 'Missing required parameters',
-        message: 'entityType, entityId, and assetType are required as query parameters',
-        hint: 'Example: /api/assets/upload?entityType=file&entityId=test_file_001&assetType=document'
-      });
+      return res.status(400).json(createErrorResponse(
+        'Missing required parameters',
+        'entityType, entityId, and assetType are required as query parameters',
+        {
+          received: { entityType, entityId, assetType },
+          hint: 'Example: /api/assets/upload?entityType=file&entityId=test_file_001&assetType=document'
+        }
+      ));
     }
 
     // Validate assetType
     const validAssetTypes = ['marketing-video', 'content-video', 'document', 'image'];
     if (!validAssetTypes.includes(assetType)) {
-      return res.status(400).json({
-        error: 'Invalid assetType',
-        message: `assetType must be one of: ${validAssetTypes.join(', ')}`,
-        received: assetType
-      });
+      return res.status(400).json(createErrorResponse(
+        'Invalid assetType',
+        `assetType must be one of: ${validAssetTypes.join(', ')}`,
+        {
+          received: assetType,
+          validOptions: validAssetTypes
+        }
+      ));
     }
 
     // Validate file upload
     if (!req.file) {
-      return res.status(400).json({
-        error: 'No file uploaded',
-        message: 'Please select a file to upload'
-      });
+      return res.status(400).json(createErrorResponse(
+        'No file uploaded',
+        'Please select a file to upload',
+        { contentType: req.headers['content-type'] }
+      ));
     }
 
     console.log(`📤 Asset upload: User ${req.user.id}, Type: ${assetType}, Entity: ${entityType}/${entityId}, File: ${req.file.originalname}`);
+
+    // Create logger for this operation
+    const logger = createFileLogger('Asset Upload', req.user, {
+      entityType,
+      entityId,
+      assetType,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      userAgent: req.headers['user-agent'],
+      ip: req.ip
+    });
+
+    logger.start({
+      entityType,
+      entityId,
+      assetType,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      method: 'POST',
+      url: req.originalUrl
+    });
 
     // Determine filename based on asset type
     let filename;
@@ -290,326 +331,192 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
       filename = req.file.originalname; // Preserve original filename for documents
     }
 
+    // PRE-UPLOAD VALIDATION - Comprehensive validation before any operations
+    logger.info('Starting pre-upload validation');
+    const validator = createPreUploadValidator(logger);
+
+    const validationResult = await validator.validateUpload({
+      file: req.file,
+      user: req.user,
+      entityType,
+      entityId,
+      assetType,
+      filename
+    });
+
+    if (!validationResult.valid) {
+      logger.error(new Error('Pre-upload validation failed'), validationResult.error);
+      return res.status(400).json(validationResult.error);
+    }
+
+    // Log validation warnings if any
+    if (validationResult.warnings.length > 0) {
+      for (const warning of validationResult.warnings) {
+        logger.warn(warning.message, warning);
+      }
+    }
+
+    logger.info('Pre-upload validation passed', {
+      validations: Object.keys(validationResult.validations),
+      warnings: validationResult.warnings.length,
+      entity: validationResult.entity ? validationResult.entity.id : null
+    });
+
     // Construct S3 path
     const s3Key = constructS3Path(entityType, entityId, assetType, filename);
 
     // Use transaction to ensure atomicity between S3 upload and database update
     const transaction = await sequelize.transaction();
+    logger.transaction('start', { s3Key, validationPassed: true });
     let s3UploadCompleted = false;
 
     try {
-      // Upload to S3
-      const uploadResult = await fileService.uploadToS3({
-        buffer: req.file.buffer,
-        key: s3Key,
-        contentType: req.file.mimetype,
-        metadata: {
-          uploadedBy: req.user.id,
-          entityType,
-          entityId,
-          assetType,
-          originalName: req.file.originalname
-        }
-      });
-
-      if (!uploadResult.success) {
-        throw new Error('S3 upload failed');
-      }
-
-      s3UploadCompleted = true;
-      console.log(`✅ S3 upload completed: ${s3Key}`);
-
-      // For documents on File entities, update file_name in database within transaction
-      if (assetType === 'document' && entityType === 'file') {
-        const fileEntity = await FileModel.findByPk(entityId, { transaction });
-
-        if (fileEntity) {
-          await fileEntity.update({ file_name: filename }, { transaction });
-          console.log(`✅ Updated File entity ${entityId} with file_name: ${filename}`);
-        } else {
-          throw new Error(`File entity ${entityId} not found in database`);
-        }
-      }
-
-      // Commit transaction - both S3 upload and DB update succeeded
-      await transaction.commit();
-      console.log(`✅ Transaction committed for asset upload: ${s3Key}`);
-
-      const responseData = {
-        success: true,
-        s3Key,
-        filename,
+      // Upload using consolidated FileService method
+      logger.info('Starting consolidated asset upload', { s3Key, assetType });
+      const uploadResult = await fileService.uploadAsset({
+        file: req.file,
         entityType,
         entityId,
         assetType,
-        size: req.file.size,
-        mimeType: req.file.mimetype,
-        uploadedBy: req.user.id,
-        uploadedAt: new Date().toISOString()
-      };
+        userId: req.user.id,
+        transaction,
+        logger
+      });
 
-      // Don't include direct URLs for security - frontend will construct predictable API paths
+      if (!uploadResult.success) {
+        throw new Error('Asset upload failed');
+      }
+
+      s3UploadCompleted = true;
+      logger.s3Operation('upload', uploadResult.s3Key, { success: true, size: uploadResult.size });
+
+      // Commit transaction - both S3 upload and DB update succeeded
+      await transaction.commit();
+      logger.transaction('commit', { s3Key, s3UploadCompleted });
+
+      // Post-upload verification - ensure upload was successful and consistent
+      logger.info('Performing post-upload verification', { s3Key: uploadResult.s3Key });
+      const verifier = createFileVerifier();
+      const uploadVerification = await verifier.verifyUpload(uploadResult.s3Key, {
+        size: uploadResult.size,
+        contentType: uploadResult.mimeType
+      }, logger);
+
+      const responseData = createSuccessResponse({
+        ...uploadResult, // Include all uploadResult properties (s3Key, filename, etc.)
+        validation: {
+          preUpload: {
+            passed: true,
+            warnings: validationResult.warnings.length
+          },
+          postUpload: uploadVerification.success ? {
+            verified: uploadVerification.verified,
+            s3Size: uploadVerification.fileDetails?.size,
+            s3ContentType: uploadVerification.fileDetails?.contentType
+          } : {
+            error: uploadVerification.error,
+            details: uploadVerification.details
+          }
+        }
+      }, logger.requestId);
+
+      // Log verification warnings if any
+      if (!uploadVerification.success) {
+        logger.warn('Post-upload verification warnings detected', uploadVerification);
+      }
+
+      // Log successful operation
+      logger.success({
+        s3Key: uploadResult.s3Key,
+        filename: uploadResult.filename,
+        entityType: uploadResult.entityType,
+        entityId: uploadResult.entityId,
+        assetType: uploadResult.assetType,
+        fileSize: uploadResult.size,
+        accessLevel: uploadResult.accessLevel,
+        verification: {
+          preUploadPassed: true,
+          postUploadPassed: uploadVerification.success
+        }
+      });
 
       res.json(responseData);
 
     } catch (uploadError) {
       // Rollback transaction
       await transaction.rollback();
-      console.log(`🔄 Transaction rolled back for failed asset upload`);
+      logger.transaction('rollback', { reason: 'Upload operation failed', error: uploadError.message });
 
       // Clean up S3 file if it was uploaded but DB operation failed
       if (s3UploadCompleted) {
         try {
           await fileService.deleteS3Object(s3Key);
-          console.log(`🧹 Cleaned up orphaned S3 file: ${s3Key}`);
+          logger.info('Cleaned up orphaned S3 file after transaction failure', { s3Key });
         } catch (cleanupError) {
-          console.error(`❌ Failed to cleanup S3 file ${s3Key}:`, cleanupError);
+          logger.error(cleanupError, { stage: 's3_cleanup', s3Key });
           // Continue with error response - cleanup failure shouldn't hide original error
         }
       }
 
-      console.error('❌ Asset upload transaction failed:', uploadError);
-      return res.status(500).json({
-        error: 'Upload failed',
-        message: 'Failed to upload file to storage',
-        details: uploadError.message
-      });
-    }
-
-  } catch (error) {
-    console.error('❌ Asset upload error:', error);
-    res.status(500).json({
-      error: 'Upload failed',
-      message: 'Failed to process asset upload request'
-    });
-  }
-});
-
-/**
- * Upload Public Marketing Video
- *
- * Dedicated endpoint for uploading public marketing videos.
- * Videos are stored at: {env}/public/marketing-video/{entityType}/{entityId}/video.mp4
- *
- * @route POST /api/assets/upload/video/public
- * @access Private (requires authentication)
- *
- * @queryparam {string} entityType - Type of entity (workshop, course, file, tool)
- * @queryparam {string} entityId - ID of the entity
- * @formparam {File} file - Video file (multipart upload)
- *
- * @returns {200} Success with S3 key and metadata
- * @returns {400} Bad request (missing params, invalid file)
- * @returns {401} Unauthorized
- * @returns {500} Server error
- */
-router.post('/upload/video/public', authenticateToken, assetUpload.single('file'), async (req, res) => {
-  try {
-    const { entityType, entityId } = req.query;
-
-    // Validate required parameters
-    if (!entityType || !entityId) {
-      return res.status(400).json({
-        error: 'Missing required parameters',
-        message: 'entityType and entityId are required as query parameters'
-      });
-    }
-
-    // Validate file upload
-    if (!req.file) {
-      return res.status(400).json({
-        error: 'No file uploaded',
-        message: 'Please select a video file to upload'
-      });
-    }
-
-    // Validate video file type
-    if (!req.file.mimetype.startsWith('video/')) {
-      return res.status(400).json({
-        error: 'Invalid file type',
-        message: 'Only video files are allowed',
-        receivedType: req.file.mimetype
-      });
-    }
-
-    console.log(`🎬 Public video upload: User ${req.user.id}, Entity: ${entityType}/${entityId}`);
-
-    const filename = 'video.mp4'; // Standard video filename
-    const s3Key = constructS3Path(entityType, entityId, 'marketing-video', filename);
-
-    try {
-      // Upload to S3
-      const uploadResult = await fileService.uploadToS3({
-        buffer: req.file.buffer,
-        key: s3Key,
-        contentType: 'video/mp4',
-        metadata: {
-          uploadedBy: req.user.id,
+      const errorResponse = createErrorResponse(
+        'Upload failed',
+        'Failed to upload file to storage',
+        {
+          details: uploadError.message,
+          s3Key: s3Key || 'unknown',
+          s3UploadCompleted,
+          transactionRolledBack: true,
+          assetType,
           entityType,
-          entityId,
-          assetType: 'marketing-video',
-          originalName: req.file.originalname
-        }
-      });
+          entityId
+        },
+        logger.requestId
+      );
 
-      if (!uploadResult.success) {
-        throw new Error('S3 upload failed');
-      }
-
-      res.json({
-        success: true,
-        s3Key,
-        filename,
-        entityType,
-        entityId,
-        assetType: 'marketing-video',
-        size: req.file.size,
-        mimeType: 'video/mp4',
-        uploadedBy: req.user.id,
-        uploadedAt: new Date().toISOString()
-      });
-
-    } catch (uploadError) {
-      console.error('❌ S3 upload error:', uploadError);
-      return res.status(500).json({
-        error: 'Upload failed',
-        message: 'Failed to upload video to storage',
-        details: uploadError.message
-      });
+      logger.error(uploadError, { stage: 'upload_transaction', s3UploadCompleted });
+      return res.status(500).json(errorResponse);
     }
 
   } catch (error) {
-    console.error('❌ Public video upload error:', error);
-    res.status(500).json({
-      error: 'Upload failed',
-      message: 'Failed to process video upload request'
-    });
+    const errorResponse = createErrorResponse(
+      'Upload failed',
+      'Failed to process asset upload request',
+      { details: error.message },
+      req.logger?.requestId || null
+    );
+
+    // If we have a logger, use it; otherwise fall back to console
+    if (logger) {
+      logger.error(error, { stage: 'request_processing' });
+    } else {
+      console.error('❌ Asset upload error:', error);
+    }
+
+    res.status(500).json(errorResponse);
   }
 });
 
-/**
- * Upload Private Content Video
- *
- * Dedicated endpoint for uploading private content videos.
- * Videos are stored at: {env}/private/content-video/{entityType}/{entityId}/video.mp4
- *
- * @route POST /api/assets/upload/video/private
- * @access Private (requires authentication)
- *
- * @queryparam {string} entityType - Type of entity (workshop, course, file, tool)
- * @queryparam {string} entityId - ID of the entity
- * @formparam {File} file - Video file (multipart upload)
- *
- * @returns {200} Success with S3 key and metadata
- * @returns {400} Bad request (missing params, invalid file)
- * @returns {401} Unauthorized
- * @returns {500} Server error
- */
-router.post('/upload/video/private', authenticateToken, assetUpload.single('file'), async (req, res) => {
-  try {
-    const { entityType, entityId } = req.query;
+// LEGACY ENDPOINT REMOVED: Use POST /api/assets/upload?assetType=marketing-video instead
 
-    // Validate required parameters
-    if (!entityType || !entityId) {
-      return res.status(400).json({
-        error: 'Missing required parameters',
-        message: 'entityType and entityId are required as query parameters'
-      });
-    }
-
-    // Validate file upload
-    if (!req.file) {
-      return res.status(400).json({
-        error: 'No file uploaded',
-        message: 'Please select a video file to upload'
-      });
-    }
-
-    // Validate video file type
-    if (!req.file.mimetype.startsWith('video/')) {
-      return res.status(400).json({
-        error: 'Invalid file type',
-        message: 'Only video files are allowed',
-        receivedType: req.file.mimetype
-      });
-    }
-
-    console.log(`🎬 Private video upload: User ${req.user.id}, Entity: ${entityType}/${entityId}`);
-
-    const filename = 'video.mp4'; // Standard video filename
-    const s3Key = constructS3Path(entityType, entityId, 'content-video', filename);
-
-    try {
-      // Upload to S3
-      const uploadResult = await fileService.uploadToS3({
-        buffer: req.file.buffer,
-        key: s3Key,
-        contentType: 'video/mp4',
-        metadata: {
-          uploadedBy: req.user.id,
-          entityType,
-          entityId,
-          assetType: 'content-video',
-          originalName: req.file.originalname
-        }
-      });
-
-      if (!uploadResult.success) {
-        throw new Error('S3 upload failed');
-      }
-
-      res.json({
-        success: true,
-        s3Key,
-        filename,
-        entityType,
-        entityId,
-        assetType: 'content-video',
-        size: req.file.size,
-        mimeType: 'video/mp4',
-        uploadedBy: req.user.id,
-        uploadedAt: new Date().toISOString()
-      });
-
-    } catch (uploadError) {
-      console.error('❌ S3 upload error:', uploadError);
-      return res.status(500).json({
-        error: 'Upload failed',
-        message: 'Failed to upload video to storage',
-        details: uploadError.message
-      });
-    }
-
-  } catch (error) {
-    console.error('❌ Private video upload error:', error);
-    res.status(500).json({
-      error: 'Upload failed',
-      message: 'Failed to process video upload request'
-    });
-  }
-});
+// LEGACY ENDPOINT REMOVED: Use POST /api/assets/upload?assetType=content-video instead
 
 /**
- * Serve Public Image
+ * Serve Public Image with Database Validation
  *
- * Serves a public image directly from S3 storage.
- * No authentication required for public images.
+ * Serves a public image directly from S3 storage, but ONLY if the entity
+ * should have an image according to the database state. This prevents
+ * serving orphaned files that exist in S3 but shouldn't be accessible.
  *
  * @route GET /api/assets/image/:entityType/:entityId/:filename
  * @access Public (no authentication required)
  *
- * @param {string} entityType - Type of entity (workshop, course, file, tool)
+ * @param {string} entityType - Type of entity (workshop, course, file, tool, product)
  * @param {string} entityId - ID of the entity
  * @param {string} filename - Image filename
  *
- * @returns {200} Image binary data
- * @returns {404} Image not found
+ * @returns {200} Image binary data (only if database indicates image should exist)
+ * @returns {404} Image not found or not supposed to exist
  * @returns {500} Server error
- *
- * @example Get Product Image
- * GET /api/assets/image/workshop/abc123/product-image.jpg
- *
- * Response: Binary image data with appropriate Content-Type header
  */
 router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
   try {
@@ -617,7 +524,359 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
 
     console.log(`🖼️ Public image request: ${entityType}/${entityId}/${filename}`);
 
-    // Construct S3 path for public image
+    // VALIDATION: Check if entity should have an image according to database
+    let shouldHaveImage = false;
+    let entityData = null;
+
+    try {
+      if (entityType === 'product') {
+        // For products, check has_image field and image_filename
+        const product = await db.Product.findByPk(entityId);
+        if (product) {
+          entityData = product;
+          shouldHaveImage = product.has_image === true ||
+                           (product.has_image === undefined && product.image_url && product.image_url.trim().length > 0 && product.image_url !== 'HAS_IMAGE');
+        }
+      } else if (entityType === 'file') {
+        // FIXED: For marketing images on File products, the entityId is actually the Product ID
+        // We need to check if this entityId is a Product ID first, then fall back to File entity lookup
+        console.log(`🔍 File entity image request: Checking entityId ${entityId} for marketing image`);
+
+        // First try: Check if entityId is a Product ID (for marketing images)
+        let product = await db.Product.findByPk(entityId);
+
+        if (product && product.product_type === 'file') {
+          // This is a marketing image request for a File product
+          entityData = product;
+          shouldHaveImage = product.has_image === true ||
+                           (product.has_image === undefined && product.image_url && product.image_url.trim().length > 0 && product.image_url !== 'HAS_IMAGE');
+
+          console.log(`🔍 Marketing image for File product: Found product ${product.id}, has_image: ${product.has_image}`);
+        } else {
+          // Second try: Check if this is a File entity ID and find its associated Product
+          product = await db.Product.findOne({
+            where: {
+              product_type: 'file',
+              entity_id: entityId
+            }
+          });
+
+          if (product) {
+            entityData = product; // Use product data for image validation
+            shouldHaveImage = product.has_image === true ||
+                             (product.has_image === undefined && product.image_url && product.image_url.trim().length > 0 && product.image_url !== 'HAS_IMAGE');
+
+            console.log(`🔍 File entity image check: Found product ${product.id} for file ${entityId}, has_image: ${product.has_image}`);
+          } else {
+            // No product found for this file entity
+            console.warn(`⚠️ No product found for file entity ${entityId} - cannot serve marketing image`);
+          }
+        }
+      } else {
+        // FIXED: For ALL other entity types, check the PRODUCT entity for marketing images
+        // All product types (workshop, course, tool, lesson_plan, game) store marketing images on Product entity
+        // This implements consistent 3-layer architecture across all entity types
+
+        // SPECIAL CASE: If entityType matches a product_type (like lesson_plan),
+        // the entityId might be the Product ID directly, not the content entity ID
+        let product = null;
+
+        // First try: Check if entityId is a Product ID for this product type
+        if (['lesson_plan', 'workshop', 'course', 'tool', 'game'].includes(entityType)) {
+          product = await db.Product.findOne({
+            where: {
+              id: entityId,
+              product_type: entityType
+            }
+          });
+
+          if (product) {
+            console.log(`🔍 Direct product lookup: Found product ${product.id} with product_type ${product.product_type}`);
+          }
+        }
+
+        // Second try: If not found, try the entity_id approach (backwards compatibility)
+        if (!product) {
+          product = await db.Product.findOne({
+            where: {
+              product_type: entityType,
+              entity_id: entityId
+            }
+          });
+
+          if (product) {
+            console.log(`🔍 Entity-based lookup: Found product ${product.id} for ${entityType} entity ${entityId}`);
+          }
+        }
+
+        if (product) {
+          entityData = product; // Use product data for image validation
+          shouldHaveImage = product.has_image === true ||
+                           (product.has_image === undefined && product.image_url && product.image_url.trim().length > 0 && product.image_url !== 'HAS_IMAGE');
+
+          console.log(`🔍 ${entityType} entity image check: Found product ${product.id} for ${entityType} ${entityId}, has_image: ${product.has_image}`);
+        } else {
+          // Check if the content entity exists (for logging purposes)
+          const entityModel = db[entityType.charAt(0).toUpperCase() + entityType.slice(1)];
+          if (entityModel) {
+            const entity = await entityModel.findByPk(entityId);
+            if (entity) {
+              console.warn(`⚠️ ${entityType} entity ${entityId} exists but no product found - cannot serve marketing image`);
+            } else {
+              console.warn(`⚠️ ${entityType} entity ${entityId} not found in database`);
+            }
+          }
+        }
+      }
+    } catch (dbError) {
+      console.error(`❌ Database validation error for ${entityType}/${entityId}:`, dbError);
+      // If database check fails, don't serve the image for security
+      return res.status(500).json(createErrorResponse(
+        'Database validation failed',
+        'Unable to verify if image should exist',
+        { entityType, entityId, filename }
+      ));
+    }
+
+    // If entity doesn't exist in database, don't serve any images
+    if (!entityData) {
+      console.warn(`⚠️ Entity not found in database: ${entityType}/${entityId}, refusing to serve image`);
+
+      // Log this inconsistency to the log table
+      await db.Logs.create({
+        level: 'warning',
+        message: 'Image request for non-existent entity',
+        details: JSON.stringify({
+          entityType,
+          entityId,
+          filename,
+          issue: 'entity_not_found',
+          userAgent: req.headers['user-agent'],
+          ip: req.ip,
+          timestamp: new Date().toISOString()
+        }),
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+
+      return res.status(404).json(createErrorResponse(
+        'Entity not found',
+        'The requested entity does not exist',
+        { entityType, entityId }
+      ));
+    }
+
+    // If entity exists but shouldn't have an image, check if image exists in S3
+    if (!shouldHaveImage) {
+      const s3Key = constructS3Path(entityType, entityId, 'image', filename);
+
+      try {
+        const metadataResult = await fileService.getS3ObjectMetadata(s3Key);
+
+        if (metadataResult.success) {
+          // POTENTIAL INCONSISTENCY: Image exists in S3 but database says has_image=false
+          // This could be a normal race condition during upload (S3 upload completes before DB transaction commits)
+          // OR it could be a genuine orphaned file issue
+
+          console.warn(`⚠️ TIMING ISSUE: Image exists in S3 but database shows has_image=false: ${s3Key}`);
+          console.log(`🔍 This could be an upload in progress. Checking if we should retry...`);
+
+          // Check if this looks like a recent upload (file is less than 30 seconds old)
+          const fileAge = new Date() - new Date(metadataResult.data.lastModified);
+          const isRecentUpload = fileAge < 30000; // 30 seconds
+
+          if (isRecentUpload) {
+            // This appears to be an upload in progress - wait briefly and retry database check
+            console.log(`🕐 File age: ${Math.round(fileAge/1000)}s - appears to be recent upload, retrying database check...`);
+
+            // Wait 1 second for database transaction to potentially commit
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Retry database check
+            let retryEntityData = null;
+            let retryShouldHaveImage = false;
+
+            try {
+              if (entityType === 'file') {
+                // Same logic as above: try Product ID first, then File entity ID
+                let retryProduct = await db.Product.findByPk(entityId);
+
+                if (retryProduct && retryProduct.product_type === 'file') {
+                  // This is a marketing image request for a File product
+                  retryEntityData = retryProduct;
+                  retryShouldHaveImage = retryProduct.has_image === true ||
+                                       (retryProduct.has_image === undefined && retryProduct.image_url && retryProduct.image_url.trim().length > 0 && retryProduct.image_url !== 'HAS_IMAGE');
+                  console.log(`🔄 Retry check (Product ID): Found product ${retryProduct.id}, has_image: ${retryProduct.has_image}`);
+                } else {
+                  // Try File entity ID lookup
+                  retryProduct = await db.Product.findOne({
+                    where: {
+                      product_type: 'file',
+                      entity_id: entityId
+                    }
+                  });
+                  if (retryProduct) {
+                    retryEntityData = retryProduct;
+                    retryShouldHaveImage = retryProduct.has_image === true ||
+                                         (retryProduct.has_image === undefined && retryProduct.image_url && retryProduct.image_url.trim().length > 0 && retryProduct.image_url !== 'HAS_IMAGE');
+                    console.log(`🔄 Retry check (entity_id): Found product ${retryProduct.id} for file ${entityId}, has_image: ${retryProduct.has_image}`);
+                  }
+                }
+              } else if (entityType === 'product') {
+                const retryProduct = await db.Product.findByPk(entityId);
+                if (retryProduct) {
+                  retryEntityData = retryProduct;
+                  retryShouldHaveImage = retryProduct.has_image === true ||
+                                       (retryProduct.has_image === undefined && retryProduct.image_url && retryProduct.image_url.trim().length > 0 && retryProduct.image_url !== 'HAS_IMAGE');
+                }
+              } else {
+                // Apply same fix for retry logic - check direct product lookup first
+                let retryProduct = null;
+
+                // First try: Check if entityId is a Product ID for this product type
+                if (['lesson_plan', 'workshop', 'course', 'tool', 'game'].includes(entityType)) {
+                  retryProduct = await db.Product.findOne({
+                    where: {
+                      id: entityId,
+                      product_type: entityType
+                    }
+                  });
+
+                  if (retryProduct) {
+                    console.log(`🔄 Retry direct product lookup: Found product ${retryProduct.id} with product_type ${retryProduct.product_type}`);
+                  }
+                }
+
+                // Second try: If not found, try the entity_id approach (backwards compatibility)
+                if (!retryProduct) {
+                  retryProduct = await db.Product.findOne({
+                    where: {
+                      product_type: entityType,
+                      entity_id: entityId
+                    }
+                  });
+
+                  if (retryProduct) {
+                    console.log(`🔄 Retry entity-based lookup: Found product ${retryProduct.id} for ${entityType} entity ${entityId}`);
+                  }
+                }
+
+                if (retryProduct) {
+                  retryEntityData = retryProduct;
+                  retryShouldHaveImage = retryProduct.has_image === true ||
+                                       (retryProduct.has_image === undefined && retryProduct.image_url && retryProduct.image_url.trim().length > 0 && retryProduct.image_url !== 'HAS_IMAGE');
+                }
+              }
+
+              if (retryShouldHaveImage) {
+                // Great! Database has been updated - serve the image
+                console.log(`✅ Retry successful: Database now shows has_image=true, serving image`);
+                entityData = retryEntityData;
+                shouldHaveImage = true;
+                // Continue to image serving logic below
+              } else {
+                // Still shows has_image=false after retry - this might be a genuine orphan
+                console.warn(`⚠️ After retry, database still shows has_image=false - potential orphaned file`);
+
+                // Log as warning (not error) since we're not certain it's an orphan
+                await db.Logs.create({
+                  level: 'warning',
+                  message: 'Potential orphaned image file detected after retry',
+                  details: JSON.stringify({
+                    entityType,
+                    entityId,
+                    filename,
+                    s3Key,
+                    issue: 'potential_orphaned_s3_file',
+                    fileAge: Math.round(fileAge/1000),
+                    retryPerformed: true,
+                    entityData: {
+                      id: entityData.id,
+                      has_image: entityData.has_image,
+                      image_url: entityData.image_url,
+                      image_filename: entityData.image_filename
+                    },
+                    s3Metadata: metadataResult.data,
+                    userAgent: req.headers['user-agent'],
+                    ip: req.ip,
+                    timestamp: new Date().toISOString()
+                  }),
+                  created_at: new Date(),
+                  updated_at: new Date()
+                });
+
+                // Still return 404 to not serve potentially orphaned files
+                return res.status(404).json(createErrorResponse(
+                  'Image not available',
+                  'Image exists in storage but database indicates it should not be accessible',
+                  {
+                    entityType,
+                    entityId,
+                    hint: 'This may indicate an orphaned file or a timing issue during upload'
+                  }
+                ));
+              }
+            } catch (retryError) {
+              console.error(`❌ Error during retry database check:`, retryError);
+              // Fall through to treat as orphaned file
+            }
+          } else {
+            // File is older than 30 seconds and still has has_image=false - likely orphaned
+            console.error(`🚨 ORPHANED FILE: Image exists in S3 but database shows has_image=false for ${Math.round(fileAge/1000)}s: ${s3Key}`);
+
+            // Log this as an error since it's likely a genuine orphan
+            await db.Logs.create({
+              level: 'error',
+              message: 'Confirmed orphaned image file detected in S3',
+              details: JSON.stringify({
+                entityType,
+                entityId,
+                filename,
+                s3Key,
+                issue: 'confirmed_orphaned_s3_file',
+                fileAge: Math.round(fileAge/1000),
+                entityData: {
+                  id: entityData.id,
+                  has_image: entityData.has_image,
+                  image_url: entityData.image_url,
+                  image_filename: entityData.image_filename
+                },
+                s3Metadata: metadataResult.data,
+                userAgent: req.headers['user-agent'],
+                ip: req.ip,
+                timestamp: new Date().toISOString()
+              }),
+              created_at: new Date(),
+              updated_at: new Date()
+            });
+
+            // DO NOT serve the image - return 404 as if it doesn't exist
+            return res.status(404).json(createErrorResponse(
+              'Image not available',
+              'Image exists in storage but is not supposed to be accessible',
+              {
+                entityType,
+                entityId,
+                hint: 'This appears to be an orphaned file that should be cleaned up'
+              }
+            ));
+          }
+        }
+      } catch (s3Error) {
+        // Image doesn't exist in S3, which is correct - return 404
+      }
+
+      // Only reach here if shouldHaveImage is still false and no S3 image exists
+      if (!shouldHaveImage) {
+        return res.status(404).json(createErrorResponse(
+          'Image not found',
+          'No image available for this entity',
+          { entityType, entityId }
+        ));
+      }
+    }
+
+    // Entity should have an image according to database - proceed to serve it
     const s3Key = constructS3Path(entityType, entityId, 'image', filename);
 
     try {
@@ -625,13 +884,40 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
       const metadataResult = await fileService.getS3ObjectMetadata(s3Key);
 
       if (!metadataResult.success) {
-        return res.status(404).json({
-          error: 'Image not found',
-          message: 'Image not found in storage'
+        // Image should exist but doesn't - log this inconsistency
+        console.warn(`⚠️ Expected image missing in S3: ${s3Key}`);
+
+        await db.Logs.create({
+          level: 'warning',
+          message: 'Expected image file missing from S3',
+          details: JSON.stringify({
+            entityType,
+            entityId,
+            filename,
+            s3Key,
+            issue: 'missing_expected_file',
+            entityData: {
+              id: entityData.id,
+              has_image: entityData.has_image,
+              image_url: entityData.image_url,
+              image_filename: entityData.image_filename
+            },
+            userAgent: req.headers['user-agent'],
+            ip: req.ip,
+            timestamp: new Date().toISOString()
+          }),
+          created_at: new Date(),
+          updated_at: new Date()
         });
+
+        return res.status(404).json(createErrorResponse(
+          'Image not found',
+          'Image not found in storage',
+          { s3Key, entityType, entityId, filename }
+        ));
       }
 
-      // Stream image directly from S3
+      // Stream image from S3
       const stream = await fileService.createS3Stream(s3Key);
 
       // Set appropriate headers
@@ -646,29 +932,32 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
       stream.on('error', (error) => {
         console.error('❌ Image stream error:', error);
         if (!res.headersSent) {
-          res.status(500).json({
-            error: 'Stream error',
-            message: 'Failed to stream image from storage'
-          });
+          res.status(500).json(createErrorResponse(
+            'Stream error',
+            'Failed to stream image from storage',
+            { s3Key, error: error.message }
+          ));
         }
       });
 
-      console.log(`✅ Image served: ${filename}`);
+      console.log(`✅ Image served (validated): ${filename}`);
 
     } catch (s3Error) {
       console.error('❌ S3 image error:', s3Error);
-      return res.status(404).json({
-        error: 'Image not found',
-        message: 'Failed to retrieve image from S3'
-      });
+      return res.status(404).json(createErrorResponse(
+        'Image not found',
+        'Failed to retrieve image from S3',
+        { s3Key, details: s3Error.message }
+      ));
     }
 
   } catch (error) {
     console.error('❌ Image serve error:', error);
-    res.status(500).json({
-      error: 'Image serve failed',
-      message: 'Failed to process image request'
-    });
+    res.status(500).json(createErrorResponse(
+      'Image serve failed',
+      'Failed to process image request',
+      { details: error.message }
+    ));
   }
 });
 
@@ -742,11 +1031,14 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
 
     // Validate required parameters
     if (!assetType) {
-      return res.status(400).json({
-        error: 'Missing required parameter',
-        message: 'assetType is required as query parameter',
-        hint: 'Example: /api/assets/check/file/test_file_001?assetType=document'
-      });
+      return res.status(400).json(createErrorResponse(
+        'Missing required parameter',
+        'assetType is required as query parameter',
+        {
+          hint: 'Example: /api/assets/check/file/test_file_001?assetType=document',
+          received: { entityType, entityId, assetType }
+        }
+      ));
     }
 
     console.log(`🔍 Asset check: User ${req.user.id}, Type: ${assetType}, Entity: ${entityType}/${entityId}`);
@@ -764,10 +1056,11 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
       const fileEntity = await FileModel.findByPk(entityId);
 
       if (!fileEntity) {
-        return res.status(404).json({
-          error: 'File entity not found',
-          message: `File entity ${entityId} not found in database`
-        });
+        return res.status(404).json(createErrorResponse(
+          'File entity not found',
+          `File entity ${entityId} not found in database`,
+          { entityId, entityType }
+        ));
       }
 
       if (!fileEntity.file_name) {
@@ -783,11 +1076,15 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
 
       targetFilename = fileEntity.file_name;
     } else if (!targetFilename) {
-      return res.status(400).json({
-        error: 'Missing filename',
-        message: 'filename query parameter is required for this asset type',
-        hint: 'Example: ?assetType=document&filename=sample.pdf'
-      });
+      return res.status(400).json(createErrorResponse(
+        'Missing filename',
+        'filename query parameter is required for this asset type',
+        {
+          hint: 'Example: ?assetType=document&filename=sample.pdf',
+          assetType,
+          received: req.query
+        }
+      ));
     }
 
     // Construct S3 path
@@ -837,10 +1134,11 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
 
   } catch (error) {
     console.error('❌ Asset check error:', error);
-    res.status(500).json({
-      error: 'Check failed',
-      message: 'Failed to check asset existence'
-    });
+    res.status(500).json(createErrorResponse(
+      'Check failed',
+      'Failed to check asset existence',
+      { details: error.message }
+    ));
   }
 });
 
@@ -900,12 +1198,15 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
 
     // Only allow downloads for File entities
     if (entityType !== 'file') {
-      return res.status(400).json({
-        error: 'Invalid entityType',
-        message: 'Download only available for File entities (entityType=file)',
-        hint: 'Use /api/media/stream/:entityType/:entityId for video streaming',
-        received: entityType
-      });
+      return res.status(400).json(createErrorResponse(
+        'Invalid entityType',
+        'Download only available for File entities (entityType=file)',
+        {
+          hint: 'Use /api/media/stream/:entityType/:entityId for video streaming',
+          received: entityType,
+          expectedEntityType: 'file'
+        }
+      ));
     }
 
     console.log(`📥 Document download: User ${req.user?.id || 'undefined'}, Entity: ${entityType}/${entityId}`);
@@ -921,19 +1222,24 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
     const fileEntity = await FileModel.findByPk(entityId);
 
     if (!fileEntity) {
-      return res.status(404).json({
-        error: 'File entity not found',
-        message: `File entity ${entityId} not found in database`
-      });
+      return res.status(404).json(createErrorResponse(
+        'File entity not found',
+        `File entity ${entityId} not found in database`,
+        { entityId, entityType }
+      ));
     }
 
     // Check if file uploaded
     if (!fileEntity.file_name) {
-      return res.status(404).json({
-        error: 'File not yet uploaded',
-        message: 'file_name is NULL in database',
-        hint: 'Upload the file first using POST /api/assets/upload'
-      });
+      return res.status(404).json(createErrorResponse(
+        'File not yet uploaded',
+        'file_name is NULL in database',
+        {
+          hint: 'Upload the file first using POST /api/assets/upload',
+          entityId,
+          fileEntity: { id: fileEntity.id, file_name: fileEntity.file_name }
+        }
+      ));
     }
 
     // Handle unauthenticated requests (req.user might be null with optionalAuth)
@@ -971,12 +1277,16 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
     if (!hasAccess) {
       if (!fileEntity.allow_preview) {
         // Case 2: No preview allowed and user has no access → deny access
-        return res.status(403).json({
-          error: 'Access denied',
-          message: 'You do not have permission to download this file',
-          hint: 'Purchase the product or contact the creator for access',
-          allowPreview: false
-        });
+        return res.status(403).json(createErrorResponse(
+          'Access denied',
+          'You do not have permission to download this file',
+          {
+            hint: 'Purchase the product or contact the creator for access',
+            allowPreview: false,
+            entityId,
+            userId: req.user?.id || null
+          }
+        ));
       } else {
         // Case 3: Preview is allowed and user has no access → continue with watermarks
         console.log(`🔍 Preview mode granted for ${req.user ? 'authenticated' : 'unauthenticated'} user ${req.user?.id || 'none'}, file ${entityId}`);
@@ -998,11 +1308,11 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
       const metadataResult = await fileService.getS3ObjectMetadata(s3Key);
 
       if (!metadataResult.success) {
-        return res.status(404).json({
-          error: 'File not found in storage',
-          message: 'File exists in database but not found in S3',
-          s3Key
-        });
+        return res.status(404).json(createErrorResponse(
+          'File not found in storage',
+          'File exists in database but not found in S3',
+          { s3Key, entityId, fileName: fileEntity.file_name }
+        ));
       }
 
       if (needsPdfProcessing) {
@@ -1046,10 +1356,11 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
         stream.on('error', (error) => {
           console.error('❌ Stream error:', error);
           if (!res.headersSent) {
-            res.status(500).json({
-              error: 'Stream error',
-              message: 'Failed to stream file from storage'
-            });
+            res.status(500).json(createErrorResponse(
+              'Stream error',
+              'Failed to stream file from storage',
+              { s3Key, error: error.message }
+            ));
           }
         });
 
@@ -1058,21 +1369,22 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
 
     } catch (s3Error) {
       console.error('❌ S3 download error:', s3Error);
-      return res.status(404).json({
-        error: 'File not found in storage',
-        message: 'Failed to retrieve file from S3',
-        details: s3Error.message
-      });
+      return res.status(404).json(createErrorResponse(
+        'File not found in storage',
+        'Failed to retrieve file from S3',
+        { s3Key, details: s3Error.message }
+      ));
     }
 
   } catch (error) {
     console.error('❌ Document download error:', error);
 
     if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Download failed',
-        message: 'Failed to process download request'
-      });
+      res.status(500).json(createErrorResponse(
+        'Download failed',
+        'Failed to process download request',
+        { details: error.message }
+      ));
     }
   }
 });
@@ -1080,8 +1392,9 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
 /**
  * Delete Asset
  *
- * Deletes an asset from S3 storage.
+ * Deletes an asset from S3 storage with transaction safety.
  * For documents on File entities, sets file_name to NULL in database.
+ * Uses transactions to ensure atomicity between S3 deletion and database update.
  *
  * @route DELETE /api/assets/:entityType/:entityId
  * @access Private (requires authentication)
@@ -1127,119 +1440,622 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
  * }
  */
 router.delete('/:entityType/:entityId', authenticateToken, async (req, res) => {
+  // Create enhanced logger for this operation
+  const logger = createFileLogger('Asset Deletion', req.user, {
+    entityType: req.params.entityType,
+    entityId: req.params.entityId,
+    assetType: req.query.assetType,
+    userAgent: req.headers['user-agent'],
+    ip: req.ip
+  });
+
   try {
     const { entityType, entityId } = req.params;
     const { assetType, filename } = req.query;
 
+    // Start operation logging
+    logger.start({
+      entityType,
+      entityId,
+      assetType,
+      filename,
+      method: 'DELETE',
+      url: req.originalUrl
+    });
+
     // Validate required parameters
     if (!assetType) {
-      return res.status(400).json({
-        error: 'Missing required parameter',
-        message: 'assetType is required as query parameter',
-        hint: 'Example: DELETE /api/assets/file/test_file_001?assetType=document'
-      });
-    }
+      const errorResponse = createErrorResponse(
+        'Missing required parameter',
+        'assetType is required as query parameter',
+        {
+          hint: 'Example: DELETE /api/assets/file/test_file_001?assetType=document',
+          received: { entityType, entityId, filename }
+        },
+        logger.requestId
+      );
 
-    console.log(`🗑️ Asset delete: User ${req.user.id}, Type: ${assetType}, Entity: ${entityType}/${entityId}`);
+      logger.error(new Error('Missing assetType parameter'), { provided: req.query });
+      return res.status(400).json(errorResponse);
+    }
 
     // Determine filename
     let targetFilename = filename;
 
     if (assetType === 'marketing-video' || assetType === 'content-video') {
       targetFilename = 'video.mp4';
+      logger.info('Using standard video filename', { filename: targetFilename });
     } else if (assetType === 'image') {
       // For images, use standard filename for predictable paths
       targetFilename = 'image.jpg';
+      logger.info('Using standard image filename', { filename: targetFilename });
     } else if (assetType === 'document' && entityType === 'file') {
       // For documents on File entities, get filename from database
+      logger.info('Fetching document filename from database', { entityId });
+
       const fileEntity = await FileModel.findByPk(entityId);
+      logger.dbOperation('find', 'File', entityId, { found: !!fileEntity });
 
       if (!fileEntity) {
-        return res.status(404).json({
-          error: 'File entity not found',
-          message: `File entity ${entityId} not found in database`
-        });
+        const errorResponse = createErrorResponse(
+          'File entity not found',
+          `File entity ${entityId} not found in database`,
+          { entityId },
+          logger.requestId
+        );
+
+        logger.error(new Error(`File entity ${entityId} not found`), { entityId });
+        return res.status(404).json(errorResponse);
       }
 
       if (!fileEntity.file_name) {
-        return res.status(404).json({
-          error: 'No file to delete',
-          message: 'file_name is NULL in database (file not uploaded)'
-        });
+        const errorResponse = createErrorResponse(
+          'No file to delete',
+          'file_name is NULL in database (file not uploaded)',
+          { entityId, fileEntity: { id: fileEntity.id, file_name: fileEntity.file_name } },
+          logger.requestId
+        );
+
+        logger.warn('File entity has no uploaded file', { entityId, file_name: fileEntity.file_name });
+        return res.status(404).json(errorResponse);
       }
 
       targetFilename = fileEntity.file_name;
+      logger.info('Retrieved filename from database', { filename: targetFilename });
     } else if (!targetFilename) {
-      return res.status(400).json({
-        error: 'Missing filename',
-        message: 'filename query parameter is required for this asset type',
-        hint: 'Example: ?assetType=document&filename=sample.pdf'
-      });
+      const errorResponse = createErrorResponse(
+        'Missing filename',
+        'filename query parameter is required for this asset type',
+        {
+          hint: 'Example: ?assetType=document&filename=sample.pdf',
+          assetType,
+          received: req.query
+        },
+        logger.requestId
+      );
+
+      logger.error(new Error('Missing filename parameter'), { assetType, query: req.query });
+      return res.status(400).json(errorResponse);
     }
 
     // Construct S3 path
     const s3Key = constructS3Path(entityType, entityId, assetType, targetFilename);
+    logger.info('Constructed S3 path', { s3Key, components: { entityType, entityId, assetType, targetFilename } });
+
+    // Create verifier for consistency checks
+    const verifier = createFileVerifier();
+
+    // Pre-deletion verification - check for multiple references and file existence
+    logger.info('Performing pre-deletion verification');
+    const preDeleteCheck = await verifier.checkPreDeletion(s3Key, logger);
+
+    if (!preDeleteCheck.success) {
+      const errorResponse = createErrorResponse(
+        'Pre-deletion check failed',
+        'Unable to verify file safety for deletion',
+        { preDeleteCheck, s3Key },
+        logger.requestId
+      );
+
+      logger.error(new Error('Pre-deletion verification failed'), preDeleteCheck);
+      return res.status(500).json(errorResponse);
+    }
+
+    // Log pre-deletion check results
+    if (preDeleteCheck.warnings && preDeleteCheck.warnings.length > 0) {
+      for (const warning of preDeleteCheck.warnings) {
+        logger.warn(warning, preDeleteCheck.checks);
+      }
+    }
+
+    // Use transaction to ensure atomicity between database update and S3 deletion
+    const transaction = await sequelize.transaction();
+    logger.transaction('start', { s3Key, preDeleteChecks: preDeleteCheck.checks });
+
+    let dbUpdateCompleted = false;
 
     try {
-      // Delete from S3
-      const deleteResult = await fileService.deleteS3Object(s3Key);
-
-      if (!deleteResult.success) {
-        return res.status(404).json({
-          error: 'Asset not found',
-          message: 'Asset not found in storage or already deleted',
-          s3Key
-        });
-      }
-
-      // For documents on File entities, set file_name to NULL
-      let databaseUpdated = false;
-      if (assetType === 'document' && entityType === 'file') {
-        const fileEntity = await FileModel.findByPk(entityId);
-
-        if (fileEntity) {
-          await fileEntity.update({ file_name: null });
-          databaseUpdated = true;
-          console.log(`✅ Set file_name to NULL for File entity ${entityId}`);
-        }
-      }
-
-      res.json({
-        success: true,
+      // Use consolidated FileService deleteAsset method for unified deletion
+      logger.info('Starting consolidated asset deletion', { s3Key, assetType });
+      const deleteResult = await fileService.deleteAsset({
         entityType,
         entityId,
         assetType,
-        s3Key,
-        databaseUpdated,
-        message: databaseUpdated
-          ? 'Asset deleted successfully and file_name set to NULL'
-          : 'Asset deleted successfully'
+        userId: req.user.id,
+        transaction,
+        logger
       });
 
-    } catch (s3Error) {
-      console.error('❌ S3 delete error:', s3Error);
+      if (!deleteResult.success) {
+        throw new Error(`Asset deletion failed: ${deleteResult.error || deleteResult.reason}`);
+      }
 
-      if (s3Error.code === 'NoSuchKey') {
-        return res.status(404).json({
-          error: 'Asset not found',
-          message: 'Asset not found in storage',
-          s3Key
+      // Get metadata for response consistency
+      const databaseUpdated = deleteResult.databaseUpdated;
+
+      // Both operations succeeded - commit transaction
+      await transaction.commit();
+      logger.transaction('commit', { s3Key: deleteResult.s3Key, databaseUpdated });
+
+      // Post-deletion verification - ensure deletion was successful and no dangling references
+      logger.info('Performing post-deletion verification');
+      const postDeleteCheck = await verifier.verifyDeletion(deleteResult.s3Key, logger);
+
+      // Prepare success response with verification results
+      const successResponse = createSuccessResponse({
+        ...deleteResult, // Include all deleteResult properties (s3Key, filename, entityType, etc.)
+        verification: {
+          preDelete: preDeleteCheck.checks,
+          postDelete: postDeleteCheck.success ? postDeleteCheck.verified : { error: postDeleteCheck.error }
+        },
+        message: deleteResult.databaseUpdated
+          ? 'Asset deleted successfully and file_name set to NULL'
+          : 'Asset deleted successfully'
+      }, logger.requestId);
+
+      // Log warnings if post-deletion verification has issues
+      if (!postDeleteCheck.success || postDeleteCheck.warning) {
+        logger.warn('Post-deletion verification warnings detected', {
+          success: postDeleteCheck.success,
+          error: postDeleteCheck.error,
+          warning: postDeleteCheck.warning
         });
       }
 
-      return res.status(500).json({
-        error: 'Delete failed',
-        message: 'Failed to delete asset from storage',
-        details: s3Error.message
+      logger.success({
+        ...deleteResult, // Include all deleteResult properties
+        operations: ['unified_delete'],
+        verification: {
+          preDeleteSafe: preDeleteCheck.checks.safeToDelete,
+          postDeleteClean: postDeleteCheck.success
+        }
       });
+
+      res.json(successResponse);
+
+    } catch (deleteError) {
+      // Rollback transaction on any error
+      await transaction.rollback();
+      logger.transaction('rollback', { reason: 'Operation failed', error: deleteError.message });
+
+      // Handle specific S3 errors
+      if (deleteError.code === 'NoSuchKey') {
+        const errorResponse = createErrorResponse(
+          'Asset not found',
+          'Asset not found in storage',
+          {
+            s3Key,
+            hint: 'File may have been already deleted or never existed',
+            errorCode: deleteError.code
+          },
+          logger.requestId
+        );
+
+        logger.error(deleteError, { s3Key, errorCode: deleteError.code });
+        return res.status(404).json(errorResponse);
+      }
+
+      const errorResponse = createErrorResponse(
+        'Delete failed',
+        'Failed to delete asset (transaction rolled back)',
+        {
+          details: deleteError.message,
+          s3Key,
+          errorCode: deleteError.code
+        },
+        logger.requestId
+      );
+
+      logger.error(deleteError, { s3Key, dbUpdateCompleted });
+      return res.status(500).json(errorResponse);
     }
 
   } catch (error) {
-    console.error('❌ Asset delete error:', error);
-    res.status(500).json({
-      error: 'Delete failed',
-      message: 'Failed to process delete request'
+    const errorResponse = createErrorResponse(
+      'Delete failed',
+      'Failed to process delete request',
+      { details: error.message },
+      logger.requestId
+    );
+
+    logger.error(error, { stage: 'request_processing' });
+    res.status(500).json(errorResponse);
+  }
+});
+
+/**
+ * Verify File Integrity
+ *
+ * Verifies the integrity of an uploaded file by comparing its calculated checksum
+ * with an expected SHA-256 checksum. This endpoint is used to ensure file integrity
+ * and detect corruption during upload or storage.
+ *
+ * @route POST /api/assets/verify/:entityType/:entityId
+ * @access Private (requires authentication)
+ *
+ * @param {string} entityType - Type of entity (workshop, course, file, tool)
+ * @param {string} entityId - ID of the entity
+ * @queryparam {string} assetType - Type of asset (document, image, marketing-video, content-video)
+ * @body {string} expectedSha256 - Expected SHA-256 checksum to verify against
+ *
+ * @returns {200} Verification result with integrity status
+ * @returns {400} Bad request (missing params)
+ * @returns {401} Unauthorized
+ * @returns {404} Asset not found
+ * @returns {500} Server error
+ *
+ * @example Verify Document Integrity
+ * POST /api/assets/verify/file/test_file_001?assetType=document
+ * Authorization: Bearer <token>
+ * Content-Type: application/json
+ *
+ * {
+ *   "expectedSha256": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+ * }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "verified": true,
+ *   "s3Key": "development/private/document/file/test_file_001/sample.pdf",
+ *   "filename": "sample.pdf",
+ *   "entityType": "file",
+ *   "entityId": "test_file_001",
+ *   "assetType": "document",
+ *   "expected": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+ *   "calculated": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+ *   "fileSize": 1048576,
+ *   "verifiedAt": "2025-10-30T15:45:00.000Z"
+ * }
+ *
+ * @example Verification Failed
+ * {
+ *   "success": true,
+ *   "verified": false,
+ *   "expected": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+ *   "calculated": "b776e9c9e5a54f5c4e8d7f5e4e6d5c4b3a2f1e0d9c8b7a6958473625f1e4d3c2b",
+ *   "message": "File integrity verification failed - checksums do not match"
+ * }
+ */
+router.post('/verify/:entityType/:entityId', authenticateToken, async (req, res) => {
+  try {
+    const { entityType, entityId } = req.params;
+    const { assetType } = req.query;
+    const { expectedSha256 } = req.body;
+
+    // Validate required parameters
+    if (!assetType) {
+      return res.status(400).json(createErrorResponse(
+        'Missing required parameter',
+        'assetType is required as query parameter',
+        {
+          hint: 'Example: POST /api/assets/verify/file/test_file_001?assetType=document',
+          received: { entityType, entityId }
+        }
+      ));
+    }
+
+    if (!expectedSha256) {
+      return res.status(400).json(createErrorResponse(
+        'Missing expected checksum',
+        'expectedSha256 is required in request body',
+        {
+          hint: 'Include SHA-256 checksum in request body: {"expectedSha256": "abc123..."}',
+          received: req.body
+        }
+      ));
+    }
+
+    // Validate SHA-256 format (64 hex characters)
+    if (!/^[a-fA-F0-9]{64}$/.test(expectedSha256)) {
+      return res.status(400).json(createErrorResponse(
+        'Invalid checksum format',
+        'expectedSha256 must be a valid SHA-256 hash (64 hex characters)',
+        {
+          received: expectedSha256,
+          format: 'Expected: 64 hex characters (0-9, a-f, A-F)'
+        }
+      ));
+    }
+
+    console.log(`🔍 File integrity verification: User ${req.user.id}, Entity: ${entityType}/${entityId}, Asset: ${assetType}`);
+
+    // Create logger for this operation
+    const logger = createFileLogger('File Integrity Verification', req.user, {
+      entityType,
+      entityId,
+      assetType,
+      expectedSha256: expectedSha256.substring(0, 16) + '...',
+      userAgent: req.headers['user-agent'],
+      ip: req.ip
     });
+
+    logger.start({
+      entityType,
+      entityId,
+      assetType,
+      expectedSha256: expectedSha256.substring(0, 16) + '...',
+      method: 'POST',
+      url: req.originalUrl
+    });
+
+    try {
+      // Use FileService integrity verification
+      const verificationResult = await fileService.verifyFileIntegrity({
+        entityType,
+        entityId,
+        assetType,
+        expectedSha256,
+        logger
+      });
+
+      if (!verificationResult.success) {
+        if (verificationResult.error.includes('not found')) {
+          logger.warn('Asset not found for verification', { entityType, entityId, assetType });
+          return res.status(404).json(createErrorResponse(
+            'Asset not found',
+            verificationResult.error,
+            {
+              entityType,
+              entityId,
+              assetType
+            },
+            logger.requestId
+          ));
+        }
+
+        logger.error(new Error('Verification failed'), verificationResult);
+        return res.status(500).json(createErrorResponse(
+          'Verification failed',
+          verificationResult.error,
+          { entityType, entityId, assetType },
+          logger.requestId
+        ));
+      }
+
+      const responseData = createSuccessResponse(verificationResult, logger.requestId);
+
+      // Log verification result
+      if (verificationResult.verified) {
+        logger.success({
+          ...verificationResult,
+          expectedHash: verificationResult.expected.substring(0, 16) + '...',
+          calculatedHash: verificationResult.calculated.substring(0, 16) + '...',
+          verification: 'passed'
+        });
+      } else {
+        logger.warn('File integrity verification failed', {
+          ...verificationResult,
+          expectedHash: verificationResult.expected.substring(0, 16) + '...',
+          calculatedHash: verificationResult.calculated.substring(0, 16) + '...',
+          verification: 'failed'
+        });
+      }
+
+      res.json(responseData);
+
+    } catch (verificationError) {
+      logger.error(verificationError, { stage: 'integrity_verification' });
+      return res.status(500).json(createErrorResponse(
+        'Verification error',
+        'Failed to perform file integrity verification',
+        {
+          details: verificationError.message,
+          entityType,
+          entityId,
+          assetType
+        },
+        logger.requestId
+      ));
+    }
+
+  } catch (error) {
+    console.error('❌ File integrity verification error:', error);
+    res.status(500).json(createErrorResponse(
+      'Verification failed',
+      'Failed to process integrity verification request',
+      { details: error.message }
+    ));
+  }
+});
+
+/**
+ * Get File Metadata
+ *
+ * Retrieves comprehensive metadata for an uploaded file including checksums,
+ * content analysis, and S3 storage information. This endpoint provides detailed
+ * information about uploaded assets for debugging and analysis purposes.
+ *
+ * @route GET /api/assets/metadata/:entityType/:entityId
+ * @access Private (requires authentication)
+ *
+ * @param {string} entityType - Type of entity (workshop, course, file, tool)
+ * @param {string} entityId - ID of the entity
+ * @queryparam {string} assetType - Type of asset (document, image, marketing-video, content-video)
+ *
+ * @returns {200} Comprehensive file metadata
+ * @returns {400} Bad request (missing params)
+ * @returns {401} Unauthorized
+ * @returns {404} Asset not found
+ * @returns {500} Server error
+ *
+ * @example Get Document Metadata
+ * GET /api/assets/metadata/file/test_file_001?assetType=document
+ * Authorization: Bearer <token>
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "s3Key": "development/private/document/file/test_file_001/sample.pdf",
+ *   "filename": "sample.pdf",
+ *   "entityType": "file",
+ *   "entityId": "test_file_001",
+ *   "assetType": "document",
+ *   "s3Metadata": {
+ *     "size": 1048576,
+ *     "contentType": "application/pdf",
+ *     "lastModified": "2025-10-30T15:45:00.000Z",
+ *     "etag": "\"d41d8cd98f00b204e9800998ecf8427e\""
+ *   },
+ *   "enhancedAnalysis": {
+ *     "basic": {
+ *       "fileName": "sample.pdf",
+ *       "mimeType": "application/pdf",
+ *       "size": 1048576,
+ *       "assetType": "document"
+ *     },
+ *     "integrity": {
+ *       "sha256": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+ *       "md5": "5d41402abc4b2a76b9719d911017c592",
+ *       "verified": true,
+ *       "calculatedAt": "2025-10-30T15:45:00.000Z"
+ *     },
+ *     "content": {
+ *       "type": "document",
+ *       "metadata": {
+ *         "format": "application/pdf",
+ *         "extension": "pdf"
+ *       }
+ *     }
+ *   },
+ *   "retrievedAt": "2025-10-30T15:45:00.000Z"
+ * }
+ *
+ * @example Large File (No Enhanced Analysis)
+ * {
+ *   "success": true,
+ *   "s3Metadata": { ... },
+ *   "enhancedAnalysis": null,
+ *   "note": "Enhanced analysis skipped for files larger than 50MB"
+ * }
+ */
+router.get('/metadata/:entityType/:entityId', authenticateToken, async (req, res) => {
+  try {
+    const { entityType, entityId } = req.params;
+    const { assetType } = req.query;
+
+    // Validate required parameters
+    if (!assetType) {
+      return res.status(400).json(createErrorResponse(
+        'Missing required parameter',
+        'assetType is required as query parameter',
+        {
+          hint: 'Example: GET /api/assets/metadata/file/test_file_001?assetType=document',
+          received: { entityType, entityId }
+        }
+      ));
+    }
+
+    console.log(`📊 File metadata request: User ${req.user.id}, Entity: ${entityType}/${entityId}, Asset: ${assetType}`);
+
+    // Create logger for this operation
+    const logger = createFileLogger('File Metadata Retrieval', req.user, {
+      entityType,
+      entityId,
+      assetType,
+      userAgent: req.headers['user-agent'],
+      ip: req.ip
+    });
+
+    logger.start({
+      entityType,
+      entityId,
+      assetType,
+      method: 'GET',
+      url: req.originalUrl
+    });
+
+    try {
+      // Use FileService metadata retrieval
+      const metadataResult = await fileService.getFileMetadata({
+        entityType,
+        entityId,
+        assetType,
+        logger
+      });
+
+      if (!metadataResult.success) {
+        if (metadataResult.error.includes('not found')) {
+          logger.warn('Asset not found for metadata retrieval', { entityType, entityId, assetType });
+          return res.status(404).json(createErrorResponse(
+            'Asset not found',
+            metadataResult.error,
+            {
+              entityType,
+              entityId,
+              assetType
+            },
+            logger.requestId
+          ));
+        }
+
+        logger.error(new Error('Metadata retrieval failed'), metadataResult);
+        return res.status(500).json(createErrorResponse(
+          'Metadata retrieval failed',
+          metadataResult.error,
+          { entityType, entityId, assetType },
+          logger.requestId
+        ));
+      }
+
+      const responseData = createSuccessResponse(metadataResult, logger.requestId);
+
+      // Log successful metadata retrieval
+      logger.success({
+        s3Key: metadataResult.s3Key,
+        filename: metadataResult.filename,
+        entityType: metadataResult.entityType,
+        entityId: metadataResult.entityId,
+        assetType: metadataResult.assetType,
+        fileSize: metadataResult.s3Metadata?.size,
+        hasEnhancedAnalysis: !!metadataResult.enhancedAnalysis,
+        checksumAvailable: !!metadataResult.enhancedAnalysis?.integrity?.sha256
+      });
+
+      res.json(responseData);
+
+    } catch (metadataError) {
+      logger.error(metadataError, { stage: 'metadata_retrieval' });
+      return res.status(500).json(createErrorResponse(
+        'Metadata error',
+        'Failed to retrieve file metadata',
+        {
+          details: metadataError.message,
+          entityType,
+          entityId,
+          assetType
+        },
+        logger.requestId
+      ));
+    }
+
+  } catch (error) {
+    console.error('❌ File metadata error:', error);
+    res.status(500).json(createErrorResponse(
+      'Metadata failed',
+      'Failed to process metadata request',
+      { details: error.message }
+    ));
   }
 });
 
@@ -1247,10 +2063,15 @@ router.delete('/:entityType/:entityId', authenticateToken, async (req, res) => {
 router.use((error, _req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({
-        error: 'File too large',
-        message: 'File exceeds the maximum allowed size (5GB)'
-      });
+      return res.status(413).json(createErrorResponse(
+        'File too large',
+        'File exceeds the maximum allowed size (5GB)',
+        {
+          maxSize: '5GB',
+          errorCode: error.code,
+          field: error.field
+        }
+      ));
     }
   }
 
@@ -1258,6 +2079,6 @@ router.use((error, _req, res, next) => {
 });
 
 // Export utility functions for use in other modules
-export { deleteAllFileAssets };
+export { deleteAllFileAssets, checkUserAccess, processPdf };
 
 export default router;

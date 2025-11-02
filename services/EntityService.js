@@ -853,7 +853,7 @@ class EntityService {
       }
 
       // Remove fields that are definitely Product-only and don't belong in entity tables
-      const productOnlyFields = ['product_type', 'is_sample', 'is_published', 'price', 'category', 'image_url', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'access_days'];
+      const productOnlyFields = ['product_type', 'is_sample', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'access_days'];
       productOnlyFields.forEach(field => delete entityFields[field]);
 
       // For specific entity types, remove fields that they don't have in their schema
@@ -955,6 +955,8 @@ class EntityService {
         price: data.price,
         is_published: data.is_published,
         image_url: data.image_url,
+        has_image: data.has_image,
+        image_filename: data.image_filename,
         marketing_video_type: data.marketing_video_type,
         marketing_video_id: data.marketing_video_id,
         marketing_video_title: data.marketing_video_title,
@@ -985,8 +987,8 @@ class EntityService {
       const entityFields = { ...data };
       const productOnlyFields = [
         'title', 'short_description', 'description', 'category', 'product_type',
-        'price', 'is_published', 'image_url', 'marketing_video_type',
-        'marketing_video_id', 'marketing_video_title', 'marketing_video_duration',
+        'price', 'is_published', 'image_url', 'has_image', 'image_filename',
+        'marketing_video_type', 'marketing_video_id', 'marketing_video_title', 'marketing_video_duration',
         'tags', 'target_audience', 'type_attributes', 'access_days', 'creator_user_id'
       ];
 

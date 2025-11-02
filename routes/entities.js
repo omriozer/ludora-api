@@ -666,9 +666,27 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
       console.log('   req.body.is_published:', req.body.is_published);
       console.log('   req.body.tags:', req.body.tags);
       console.log('   req.body.creator_user_id:', req.body.creator_user_id);
+      console.log('   req.body.is_ludora_creator:', req.body.is_ludora_creator);
       console.log('   req.body.marketing_video_title:', req.body.marketing_video_title);
 
-      // Only allow admins to change creator_user_id
+      // Handle is_ludora_creator flag (transform to creator_user_id)
+      if (req.body.hasOwnProperty('is_ludora_creator')) {
+        const user = await models.User.findOne({ where: { id: req.user.uid } });
+
+        if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
+          // Non-admin trying to change Ludora creator status - ignore it
+          delete req.body.is_ludora_creator;
+          console.log('🚫 Non-admin user tried to change is_ludora_creator - ignored');
+        } else {
+          // Admin user - transform is_ludora_creator to creator_user_id
+          console.log('✅ Admin user updating is_ludora_creator:', req.body.is_ludora_creator);
+          req.body.creator_user_id = req.body.is_ludora_creator ? null : req.user.uid;
+          console.log('✅ Transformed to creator_user_id:', req.body.creator_user_id);
+          delete req.body.is_ludora_creator; // Remove the flag after transformation
+        }
+      }
+
+      // Only allow admins to change creator_user_id directly
       if (req.body.hasOwnProperty('creator_user_id')) {
         const user = await models.User.findOne({ where: { id: req.user.uid } });
 
@@ -1353,21 +1371,22 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     console.log(`📤 Original filename: ${fileName}`);
 
-    // 2. Upload file using proper method with local storage fallback
-    const uploadResult = await fileService.uploadPrivateFileEntity({
+    // 2. Upload file using unified asset upload method
+    const uploadResult = await fileService.uploadAsset({
       file: req.file,
-      contentType: 'document',
       entityType: 'file',
       entityId: fileEntity.id,
+      assetType: 'document',
       userId: req.user.uid,
-      preserveOriginalName: false // Use sanitized filename
+      transaction: transaction,
+      preserveOriginalName: true // Keep original filename for documents
     });
 
     if (!uploadResult.success) {
       throw new Error('File upload failed');
     }
 
-    uploadedS3Key = uploadResult.data.key;
+    uploadedS3Key = uploadResult.s3Key;
     console.log(`✅ File uploaded successfully: ${uploadedS3Key}`);
 
     // Update file entity with S3 information
@@ -1402,7 +1421,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       upload_date: new Date().toISOString(),
       description: description || fileName,
       s3_key: uploadedS3Key, // Storage key from upload result
-      storage_filename: uploadResult.data.fileName, // Actual storage filename
+      storage_filename: uploadResult.filename, // Actual storage filename
       size: req.file.size,
       mime_type: req.file.mimetype || 'application/octet-stream',
       is_asset_only: true
@@ -1444,7 +1463,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
         filename: fileName, // Original Hebrew filename for display
         file_role: file_role,
         s3_key: uploadedS3Key, // Storage key
-        storage_filename: uploadResult.data.fileName, // Actual storage filename
+        storage_filename: uploadResult.filename, // Actual storage filename
         size: req.file.size,
         upload_date: newFileConfig.upload_date
       },

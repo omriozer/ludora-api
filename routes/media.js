@@ -47,30 +47,54 @@ async function checkVideoAccess(user, entityType, entityId) {
   }
 
   if (isFree) {
-    // Auto-create purchase record for free content
+    // Auto-create purchase record for free content with transaction safety
     try {
-      const orderNumber = `FREE-AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      await db.Purchase.findOrCreate({
-        where: {
-          buyer_user_id: user.id,
-          purchasable_type: entityType,
-          purchasable_id: entityId
-        },
-        defaults: {
-          id: `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          order_number: orderNumber,
-          buyer_user_id: user.id,
-          purchasable_type: entityType,
-          purchasable_id: entityId,
-          payment_status: 'completed',
-          payment_amount: 0,
-          original_price: 0,
-          access_expires_at: null,
-          first_accessed_at: new Date()
+      const { sequelize } = db;
+      const transaction = await sequelize.transaction();
+
+      try {
+        const orderNumber = `FREE-AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        // Use findOrCreate within transaction to prevent race conditions
+        const [purchase, created] = await db.Purchase.findOrCreate({
+          where: {
+            buyer_user_id: user.id,
+            purchasable_type: entityType,
+            purchasable_id: entityId
+          },
+          defaults: {
+            id: `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            order_number: orderNumber,
+            buyer_user_id: user.id,
+            purchasable_type: entityType,
+            purchasable_id: entityId,
+            payment_status: 'completed',
+            payment_amount: 0,
+            original_price: 0,
+            access_expires_at: null,
+            first_accessed_at: new Date()
+          },
+          transaction
+        });
+
+        await transaction.commit();
+
+        if (created) {
+          console.log(`✅ Auto-created purchase record for free content: ${user.id} -> ${entityType}/${entityId}`);
+        } else {
+          console.log(`ℹ️ Purchase record already exists for free content: ${user.id} -> ${entityType}/${entityId}`);
         }
-      });
+
+      } catch (transactionError) {
+        await transaction.rollback();
+        console.error('❌ Auto-purchase transaction failed, rolled back:', transactionError);
+        // Still return true for free content access, even if purchase record creation failed
+        console.warn(`⚠️ Allowing free content access despite purchase record creation failure: ${user.id} -> ${entityType}/${entityId}`);
+      }
     } catch (error) {
-      console.error('Failed to create auto-access record:', error);
+      console.error('❌ Failed to create auto-access record transaction:', error);
+      // Still return true for free content access
+      console.warn(`⚠️ Allowing free content access despite transaction setup failure: ${user.id} -> ${entityType}/${entityId}`);
     }
 
     return true;

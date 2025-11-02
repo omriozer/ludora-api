@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
+import DeprecationWarnings from '../utils/deprecationWarnings.js';
 
 export default function(sequelize) {
   const School = sequelize.define('School', {
@@ -112,7 +113,18 @@ export default function(sequelize) {
         isUrl: true,
         len: [0, 500]
       },
-      comment: 'URL to school logo image'
+      comment: 'DEPRECATED: Use has_logo and logo_filename instead. Kept for backward compatibility.'
+    },
+    has_logo: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Clear boolean indicator for logo image existence'
+    },
+    logo_filename: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Standardized logo filename storage (replaces logo_url)'
     },
 
     // Management & System Integration (Admin-only fields)
@@ -161,6 +173,14 @@ export default function(sequelize) {
       {
         fields: ['created_at'],
         name: 'idx_school_created_at'
+      },
+      {
+        fields: ['has_logo'],
+        name: 'idx_school_has_logo'
+      },
+      {
+        fields: ['logo_filename'],
+        name: 'idx_school_logo_filename'
       }
     ]
   });
@@ -190,6 +210,58 @@ export default function(sequelize) {
       onDelete: 'SET NULL',
       onUpdate: 'CASCADE'
     });
+  };
+
+  // Logo reference standardization methods
+  School.prototype.hasLogoAsset = function() {
+    // Use standardized field if available, fallback to legacy pattern
+    if (this.has_logo !== undefined) {
+      return this.has_logo;
+    }
+    // Legacy fallback
+    return !!(this.logo_url && this.logo_url !== '');
+  };
+
+  School.prototype.getLogoFilename = function() {
+    // Use standardized field if available
+    if (this.logo_filename) {
+      return this.logo_filename;
+    }
+    // Legacy fallback - extract filename from URL
+    if (this.logo_url && this.logo_url.includes('/')) {
+      DeprecationWarnings.warnDirectUrlStorage('school', 'logo_url', {
+        schoolId: this.id,
+        logoUrl: this.logo_url,
+        location: 'School.getLogoFilename'
+      });
+      const parts = this.logo_url.split('/');
+      return parts[parts.length - 1] || 'logo.jpg';
+    }
+    return null;
+  };
+
+  School.prototype.getLogoUrl = function() {
+    // For backward compatibility during transition period
+    if (this.hasLogoAsset()) {
+      const filename = this.getLogoFilename();
+      if (filename) {
+        // Return the standardized path structure
+        return `/api/assets/image/school/${this.id}/${filename}`;
+      }
+    }
+    return null;
+  };
+
+  // Legacy compatibility method with deprecation warning
+  School.prototype.getLegacyLogoUrl = function() {
+    if (this.logo_url) {
+      DeprecationWarnings.warnDirectUrlStorage('school', 'logo_url', {
+        schoolId: this.id,
+        logoUrl: this.logo_url,
+        location: 'School.getLegacyLogoUrl'
+      });
+    }
+    return this.getLogoUrl();
   };
 
   return School;

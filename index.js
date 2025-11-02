@@ -65,6 +65,7 @@ import integrationRoutes from './routes/integrations.js';
 import authRoutes from './routes/auth.js';
 import videoRoutes from './routes/videos.js';
 import assetsRoutes from './routes/assets.js';
+import unifiedAssetsRoutes from './routes/unifiedAssets.js';
 import accessRoutes from './routes/access.js';
 import mediaRoutes from './routes/media.js';
 import logsRoutes from './routes/logs.js';
@@ -135,6 +136,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/assets', assetsRoutes);
+app.use('/api/v2/assets', unifiedAssetsRoutes); // Unified REST API structure
 app.use('/api/access', accessRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/logs', logsRoutes);
@@ -177,6 +179,8 @@ app.get('/api', (req, res) => {
       payments: '/api/payments',
       integrations: '/api/integrations',
       videos: '/api/videos',
+      assets: '/api/assets', // Legacy file operations
+      'assets-v2': '/api/v2/assets', // Unified REST API for file management
       access: '/api/access',
       dashboard: '/api/dashboard',
       tools: '/api/tools',

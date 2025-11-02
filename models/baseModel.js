@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { customAlphabet } from 'nanoid';
 
 // Base fields that appear in most models (following Base44 schema)
 export const baseFields = {
@@ -36,7 +37,10 @@ export function createSimpleModel(sequelize, modelName, tableName) {
   return Model;
 }
 
-// Generate UUID-like ID for new entities
+// Create nanoid generator with custom alphabet (excludes confusing characters 0, O, 1, l, I)
+const nanoid = customAlphabet('23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz', 6);
+
+// Generate 6-character ID for new entities
 export function generateId() {
-  return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  return nanoid();
 }

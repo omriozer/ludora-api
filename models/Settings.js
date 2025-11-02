@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
+import DeprecationWarnings from '../utils/deprecationWarnings.js';
 
 export default function(sequelize) {
   const Settings = sequelize.define('Settings', {
@@ -20,7 +21,22 @@ export default function(sequelize) {
     contact_email: { type: DataTypes.STRING, allowNull: true },
     contact_phone: { type: DataTypes.STRING, allowNull: true },
     site_description: { type: DataTypes.TEXT, allowNull: true },
-    logo_url: { type: DataTypes.STRING, allowNull: true },
+    logo_url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'DEPRECATED: Use has_logo and logo_filename instead. Kept for backward compatibility.'
+    },
+    has_logo: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Clear boolean indicator for system logo existence'
+    },
+    logo_filename: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Standardized system logo filename storage (replaces logo_url)'
+    },
     site_name: { type: DataTypes.STRING, allowNull: true },
     maintenance_mode: { type: DataTypes.BOOLEAN, allowNull: true },
     student_invitation_expiry_days: { type: DataTypes.DECIMAL, allowNull: true },
@@ -80,7 +96,91 @@ export default function(sequelize) {
   }, {
     ...baseOptions,
     tableName: 'settings',
+    indexes: [
+      {
+        fields: ['has_logo'],
+        name: 'idx_settings_has_logo'
+      },
+      {
+        fields: ['logo_filename'],
+        name: 'idx_settings_logo_filename'
+      },
+      {
+        fields: ['maintenance_mode'],
+        name: 'idx_settings_maintenance_mode'
+      },
+      {
+        fields: ['created_at'],
+        name: 'idx_settings_created_at'
+      }
+    ]
   });
+
+  // Logo reference standardization methods
+  Settings.prototype.hasLogoAsset = function() {
+    // Use standardized field if available, fallback to legacy pattern
+    if (this.has_logo !== undefined) {
+      return this.has_logo;
+    }
+    // Legacy fallback
+    return !!(this.logo_url && this.logo_url !== '');
+  };
+
+  Settings.prototype.getLogoFilename = function() {
+    // Use standardized field if available
+    if (this.logo_filename) {
+      return this.logo_filename;
+    }
+    // Legacy fallback - extract filename from URL
+    if (this.logo_url && this.logo_url.includes('/')) {
+      DeprecationWarnings.warnDirectUrlStorage('settings', 'logo_url', {
+        settingsId: this.id,
+        logoUrl: this.logo_url,
+        location: 'Settings.getLogoFilename'
+      });
+      const parts = this.logo_url.split('/');
+      return parts[parts.length - 1] || 'logo.png';
+    }
+    return null;
+  };
+
+  Settings.prototype.getLogoUrl = function() {
+    // For backward compatibility during transition period
+    if (this.hasLogoAsset()) {
+      const filename = this.getLogoFilename();
+      if (filename) {
+        // Return the standardized path structure
+        return `/api/assets/image/settings/${this.id}/${filename}`;
+      }
+    }
+    return null;
+  };
+
+  // Legacy compatibility method with deprecation warning
+  Settings.prototype.getLegacyLogoUrl = function() {
+    if (this.logo_url) {
+      DeprecationWarnings.warnDirectUrlStorage('settings', 'logo_url', {
+        settingsId: this.id,
+        logoUrl: this.logo_url,
+        location: 'Settings.getLegacyLogoUrl'
+      });
+    }
+    return this.getLogoUrl();
+  };
+
+  // Settings-specific utility methods
+  Settings.prototype.isMaintenanceMode = function() {
+    return !!this.maintenance_mode;
+  };
+
+  Settings.prototype.getContactInfo = function() {
+    return {
+      email: this.contact_email,
+      phone: this.contact_phone,
+      siteName: this.site_name,
+      description: this.site_description
+    };
+  };
 
   return Settings;
 }

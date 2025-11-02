@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
+import DeprecationWarnings from '../utils/deprecationWarnings.js';
 
 export default function(sequelize) {
   const File = sequelize.define('File', {
@@ -34,7 +35,12 @@ export default function(sequelize) {
     footer_settings: {
       type: DataTypes.JSONB,
       allowNull: true,
-      comment: 'Footer configuration (positions, styles, visibility). Text content comes from settings.'
+      comment: 'DEPRECATED: Use footer_overrides instead. Complete footer config now in Settings. Kept for backward compatibility.'
+    },
+    footer_overrides: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'File-specific footer overrides (positioning, styling). Content comes from Settings.'
     },
     is_asset_only: {
       type: DataTypes.BOOLEAN,
@@ -51,6 +57,10 @@ export default function(sequelize) {
       },
       {
         fields: ['is_asset_only'],
+      },
+      {
+        fields: ['footer_overrides'],
+        name: 'idx_file_footer_overrides'
       },
     ],
   });
@@ -92,6 +102,66 @@ export default function(sequelize) {
         is_asset_only: true
       }
     });
+  };
+
+  // Footer settings standardization methods
+  File.prototype.hasFooterOverrides = function() {
+    return !!(this.footer_overrides && Object.keys(this.footer_overrides).length > 0);
+  };
+
+  File.prototype.getFooterOverrides = function() {
+    // Use standardized field if available
+    if (this.footer_overrides) {
+      return this.footer_overrides;
+    }
+    return null;
+  };
+
+  File.prototype.shouldAddFooter = function() {
+    // Check the add_copyrights_footer flag
+    return this.add_copyrights_footer === true;
+  };
+
+  // Legacy compatibility method with deprecation warning
+  File.prototype.getLegacyFooterSettings = function() {
+    if (this.footer_settings) {
+      DeprecationWarnings.warnDirectUsage('file', 'footer_settings', {
+        fileId: this.id,
+        location: 'File.getLegacyFooterSettings',
+        message: 'Use footer_overrides with Settings.footer_settings merge instead'
+      });
+    }
+    return this.footer_settings;
+  };
+
+  // Footer merge helper (for use with Settings footer_settings)
+  File.prototype.mergeWithSystemFooterSettings = function(systemFooterSettings) {
+    if (!systemFooterSettings) {
+      return this.footer_overrides || {};
+    }
+
+    if (!this.hasFooterOverrides()) {
+      return systemFooterSettings;
+    }
+
+    // Deep merge system settings with file overrides
+    const merged = JSON.parse(JSON.stringify(systemFooterSettings));
+    const overrides = this.footer_overrides;
+
+    if (overrides.logo) {
+      merged.logo = { ...merged.logo, ...overrides.logo };
+    }
+    if (overrides.text) {
+      merged.text = { ...merged.text, ...overrides.text };
+    }
+    if (overrides.url) {
+      merged.url = { ...merged.url, ...overrides.url };
+    }
+    if (overrides.customElements) {
+      merged.customElements = { ...merged.customElements, ...overrides.customElements };
+    }
+
+    return merged;
   };
 
   return File;

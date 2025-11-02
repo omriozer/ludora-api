@@ -106,10 +106,20 @@ router.post('/purchases', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: `${purchasableType} not found` });
     }
 
-    const price = parseFloat(item.price || 0);
+    // Check if price is provided in additionalData (for entities that don't have price)
+    let price = parseFloat(item.price || 0);
+    if (additionalData.product_price && price === 0) {
+      price = parseFloat(additionalData.product_price || 0);
+      clog('📦 Using price from additionalData:', {
+        entityPrice: item.price,
+        providedPrice: additionalData.product_price,
+        finalPrice: price
+      });
+    }
+
     const isFree = price === 0;
 
-    // Create purchase with cart status for all items
+    // Create purchase with appropriate status based on price
     const purchaseData = {
       id: `pur_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       buyer_user_id: userId,
@@ -118,8 +128,8 @@ router.post('/purchases', authenticateToken, async (req, res) => {
       payment_amount: price,
       original_price: price,
       discount_amount: 0,
-      payment_status: 'cart',
-      payment_method: null,
+      payment_status: isFree ? 'completed' : 'cart', // Complete free items immediately
+      payment_method: isFree ? 'free' : null,
       metadata: {
         product_title: item.title || item.name || 'Unknown Product',
         ...additionalData
@@ -130,16 +140,36 @@ router.post('/purchases', authenticateToken, async (req, res) => {
 
     const purchase = await models.Purchase.create(purchaseData);
 
-    // Return cart purchase for all items
-    res.json({
-      success: true,
-      message: 'Item added to cart',
-      data: {
-        purchase,
-        isFree,
-        completed: false
-      }
+    clog('💰 Purchase created:', {
+      id: purchase.id,
+      price,
+      isFree,
+      status: purchase.payment_status,
+      method: purchase.payment_method
     });
+
+    // Return appropriate response based on item type
+    if (isFree) {
+      res.json({
+        success: true,
+        message: 'Free item added to library',
+        data: {
+          purchase,
+          isFree,
+          completed: true // Free items are completed immediately
+        }
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Item added to cart',
+        data: {
+          purchase,
+          isFree,
+          completed: false
+        }
+      });
+    }
 
   } catch (error) {
     cerror('Error creating purchase:', error);

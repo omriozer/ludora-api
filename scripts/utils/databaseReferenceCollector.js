@@ -1,13 +1,153 @@
 /**
  * Database Reference Collector
  * Collects all file references from the database across all models
+ * Enhanced to work with unified FileReferenceService and standardized fields
  */
 
 import models from '../../models/index.js';
 import EntityService from '../../services/EntityService.js';
 import { constructS3Path } from '../../utils/s3PathUtils.js';
+import FileReferenceService from '../../services/FileReferenceService.js';
 
 const { sequelize } = models;
+
+/**
+ * Collect file references using the unified FileReferenceService
+ * This handles standardized fields and asset types consistently
+ * @param {string} environment - Environment name
+ * @returns {Promise<Array>} Array of S3 keys from standardized file references
+ */
+async function collectUnifiedFileReferences(environment) {
+  console.log('🔧 Collecting unified file references using FileReferenceService...');
+
+  const references = [];
+
+  try {
+    // Product entities with standardized image fields
+    const products = await safeModelQuery(() => models.Product.findAll({
+      attributes: ['id', 'product_type', 'has_image', 'image_filename', 'image_url', 'marketing_video_type', 'marketing_video_id'],
+      where: {
+        [models.Sequelize.Op.or]: [
+          { has_image: true },
+          { image_url: { [models.Sequelize.Op.and]: [{ [models.Sequelize.Op.ne]: null }, { [models.Sequelize.Op.ne]: '' }] } },
+          { marketing_video_type: 'uploaded' }
+        ]
+      }
+    }), 'Product');
+
+    for (const product of products) {
+      try {
+        // Check for image asset
+        if (product.hasImageAsset()) {
+          const imageInfo = await FileReferenceService.getAssetInfo(product, product.product_type || 'product', 'image');
+          if (imageInfo.s3Key) {
+            references.push(imageInfo.s3Key);
+          }
+        }
+
+        // Check for marketing video asset (uploaded type only)
+        if (product.marketing_video_type === 'uploaded' && product.marketing_video_id) {
+          const videoInfo = await FileReferenceService.getAssetInfo(product, product.product_type || 'product', 'marketing-video');
+          if (videoInfo.s3Key) {
+            references.push(videoInfo.s3Key);
+          }
+        }
+      } catch (error) {
+        console.warn(`Warning: Could not get asset info for product ${product.id}: ${error.message}`);
+      }
+    }
+
+    // Workshop entities (check if entity_id column exists)
+    try {
+      const workshopTableInfo = await models.sequelize.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'workshop' AND column_name = 'entity_id'",
+        { type: models.Sequelize.QueryTypes.SELECT }
+      );
+
+      if (workshopTableInfo.length > 0) {
+        const workshops = await safeModelQuery(() => models.Workshop.findAll({
+          attributes: ['id', 'entity_id'],
+          where: {
+            entity_id: { [models.Sequelize.Op.ne]: null }
+          }
+        }), 'Workshop');
+
+        for (const workshop of workshops) {
+          try {
+            // Check all possible workshop assets
+            const assetTypes = ['image', 'content-video', 'recording'];
+            for (const assetType of assetTypes) {
+              const assetInfo = await FileReferenceService.getAssetInfo(workshop, 'workshop', assetType);
+              if (assetInfo.s3Key) {
+                references.push(assetInfo.s3Key);
+              }
+            }
+          } catch (error) {
+            console.warn(`Warning: Could not get asset info for workshop ${workshop.id}: ${error.message}`);
+          }
+        }
+      } else {
+        console.log('ℹ️  Workshop table does not have entity_id column, skipping unified workshop references');
+      }
+    } catch (error) {
+      console.warn(`Warning: Could not check workshop schema: ${error.message}`);
+    }
+
+    // Course entities (check if entity_id column exists)
+    try {
+      const courseTableInfo = await models.sequelize.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'course' AND column_name = 'entity_id'",
+        { type: models.Sequelize.QueryTypes.SELECT }
+      );
+
+      if (courseTableInfo.length > 0) {
+        const courses = await safeModelQuery(() => models.Course.findAll({
+          attributes: ['id', 'entity_id'],
+          where: {
+            entity_id: { [models.Sequelize.Op.ne]: null }
+          }
+        }), 'Course');
+
+        for (const course of courses) {
+          try {
+            const assetInfo = await FileReferenceService.getAssetInfo(course, 'course', 'image');
+            if (assetInfo.s3Key) {
+              references.push(assetInfo.s3Key);
+            }
+          } catch (error) {
+            console.warn(`Warning: Could not get asset info for course ${course.id}: ${error.message}`);
+          }
+        }
+      } else {
+        console.log('ℹ️  Course table does not have entity_id column, skipping unified course references');
+      }
+    } catch (error) {
+      console.warn(`Warning: Could not check course schema: ${error.message}`);
+    }
+
+    // School entities
+    const schools = await safeModelQuery(() => models.School.findAll({
+      attributes: ['id'],
+    }), 'School');
+
+    for (const school of schools) {
+      try {
+        const assetInfo = await FileReferenceService.getAssetInfo(school, 'school', 'logo');
+        if (assetInfo.s3Key) {
+          references.push(assetInfo.s3Key);
+        }
+      } catch (error) {
+        console.warn(`Warning: Could not get asset info for school ${school.id}: ${error.message}`);
+      }
+    }
+
+    console.log(`✅ Found ${references.length} unified file references`);
+    return references;
+  } catch (error) {
+    console.error('❌ Error collecting unified file references:', error);
+    return [];
+  }
+}
 
 /**
  * Collect all file references from File model using S3 path construction
@@ -30,7 +170,7 @@ async function collectDirectFileReferences(environment) {
     const references = [];
 
     for (const file of files) {
-      if (file.file_name) {
+      if (file.file_name && file.file_name.trim() !== '') {
         // Use existing S3 path construction logic
         try {
           const s3Path = constructS3Path({
@@ -417,6 +557,7 @@ function resolvePolymorphicReferences(polymorphicRefs, environment) {
 
 /**
  * Main function to collect all file references from database
+ * Enhanced to include unified FileReferenceService approach
  * @param {string} environment - Environment name (development, staging, production)
  * @returns {Promise<Array>} Array of all S3 keys referenced in database
  */
@@ -425,11 +566,13 @@ async function collectAllFileReferences(environment) {
 
   try {
     const [
+      unifiedRefs,
       directRefs,
       urlRefs,
       jsonbRefs,
       polymorphicRefs
     ] = await Promise.all([
+      collectUnifiedFileReferences(environment),
       collectDirectFileReferences(environment),
       collectUrlFieldReferences(),
       collectJsonbReferences(),
@@ -441,6 +584,7 @@ async function collectAllFileReferences(environment) {
 
     // Combine all references and remove duplicates
     const allReferences = [
+      ...unifiedRefs,
       ...directRefs,
       ...urlRefs,
       ...jsonbRefs,
@@ -450,6 +594,7 @@ async function collectAllFileReferences(environment) {
     const uniqueReferences = [...new Set(allReferences)].filter(ref => ref && !ref.startsWith('POLYMORPHIC_FILE:'));
 
     console.log(`✅ Total unique file references found: ${uniqueReferences.length}`);
+    console.log(`   - Unified references: ${unifiedRefs.length}`);
     console.log(`   - Direct files: ${directRefs.length}`);
     console.log(`   - URL fields: ${urlRefs.length}`);
     console.log(`   - JSONB fields: ${jsonbRefs.length}`);
@@ -463,6 +608,7 @@ async function collectAllFileReferences(environment) {
 }
 
 export {
+  collectUnifiedFileReferences,
   collectDirectFileReferences,
   collectUrlFieldReferences,
   collectJsonbReferences,

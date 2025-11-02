@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { generateId } from './baseModel.js';
+import DeprecationWarnings from '../utils/deprecationWarnings.js';
 
 export default (sequelize) => {
   const Product = sequelize.define('Product', {
@@ -31,7 +32,20 @@ export default (sequelize) => {
       type: DataTypes.BOOLEAN
     },
     image_url: {
-      type: DataTypes.STRING
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'DEPRECATED: Use image_filename and has_image instead. Kept for backward compatibility.'
+    },
+    image_filename: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'Standardized image filename storage (replaces image_url placeholder)'
+    },
+    has_image: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Clear boolean indicator for image existence'
     },
     marketing_video_type: {
       type: DataTypes.ENUM('youtube', 'uploaded'),
@@ -93,6 +107,8 @@ export default (sequelize) => {
       { fields: ['product_type'] },
       { fields: ['entity_id'] },
       { fields: ['access_days'] },
+      { fields: ['has_image'], name: 'idx_product_has_image' },
+      { fields: ['image_filename'], name: 'idx_product_image_filename' },
       {
         unique: true,
         fields: ['product_type', 'entity_id'],
@@ -151,6 +167,88 @@ export default (sequelize) => {
 
   Product.prototype.getAccessDuration = function() {
     return this.isLifetimeAccess() ? 'lifetime' : `${this.access_days} days`;
+  };
+
+  // File reference standardization methods
+  Product.prototype.hasImageAsset = function() {
+    // Use standardized field if available, fallback to legacy pattern
+    if (this.has_image !== undefined) {
+      return this.has_image;
+    }
+    // Legacy fallback
+    return !!(this.image_url && this.image_url !== '' && this.image_url !== 'HAS_IMAGE');
+  };
+
+  Product.prototype.getImageFilename = function() {
+    // Use standardized field if available
+    if (this.image_filename) {
+      return this.image_filename;
+    }
+    // Legacy fallback - check for HAS_IMAGE placeholder
+    if (this.image_url === 'HAS_IMAGE') {
+      DeprecationWarnings.warnHasImageUsage({
+        productId: this.id,
+        productType: this.product_type,
+        imageUrl: this.image_url,
+        location: 'Product.getImageFilename'
+      });
+      return 'image.jpg'; // Standard filename for legacy placeholders
+    }
+    // Legacy full URL - extract filename
+    if (this.image_url && this.image_url.includes('/')) {
+      DeprecationWarnings.warnDirectUrlStorage('product', 'image_url', {
+        productId: this.id,
+        productType: this.product_type,
+        imageUrl: this.image_url,
+        location: 'Product.getImageFilename'
+      });
+      const parts = this.image_url.split('/');
+      return parts[parts.length - 1] || 'image.jpg';
+    }
+    return null;
+  };
+
+  Product.prototype.getMarketingVideoInfo = function() {
+    if (this.marketing_video_type === 'youtube') {
+      return {
+        type: 'youtube',
+        source: this.marketing_video_id,
+        url: `https://www.youtube.com/embed/${this.marketing_video_id}`,
+        title: this.marketing_video_title,
+        duration: this.marketing_video_duration
+      };
+    }
+
+    if (this.marketing_video_type === 'uploaded') {
+      return {
+        type: 'uploaded',
+        source: 'video.mp4',
+        url: `/api/media/stream/${this.product_type}/${this.entity_id}`,
+        title: this.marketing_video_title,
+        duration: this.marketing_video_duration
+      };
+    }
+
+    return {
+      type: null,
+      source: null,
+      url: null,
+      title: null,
+      duration: null
+    };
+  };
+
+  // Legacy compatibility method
+  Product.prototype.getImageUrl = function() {
+    // For backward compatibility during transition period
+    if (this.hasImageAsset()) {
+      const filename = this.getImageFilename();
+      if (filename) {
+        // Return the standardized path structure
+        return `/api/assets/image/${this.product_type}/${this.id}/${filename}`;
+      }
+    }
+    return null;
   };
 
   // Polymorphic association methods
