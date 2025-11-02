@@ -153,7 +153,7 @@ async function getFullProduct(product, userId = null) {
         buyer_user_id: userId,
         purchasable_id: product.entity_id || product.id,
         purchasable_type: product.product_type,
-        payment_status: ['completed', 'pending'] // Include both completed and pending purchases
+        payment_status: ['completed', 'pending', 'cart'] // Include completed, pending, and cart purchases
       },
       attributes: ['id', 'payment_status', 'access_expires_at', 'created_at'],
       order: [['created_at', 'DESC']] // Get the most recent purchase
