@@ -11,6 +11,7 @@ import { extractCopyrightText, updateFooterTextContent } from '../utils/footerSe
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
 import fileService from '../services/FileService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
+import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCounter.js';
 
 const router = express.Router();
 
@@ -1395,7 +1396,20 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       file_size: req.file.size
     }, { transaction });
 
-    // 3. Update lesson plan file_configs within same transaction
+    // 3. Count slides for PowerPoint files (opening and body roles)
+    let slideCount = 0;
+    if ((file_role === 'opening' || file_role === 'body') && (fileExtension === 'ppt' || fileExtension === 'pptx')) {
+      console.log(`📊 Counting slides for ${file_role} PowerPoint file: ${fileName}`);
+      try {
+        slideCount = await countSlidesInPowerPoint(req.file.buffer, fileName);
+        console.log(`📊 Detected ${slideCount} slides in ${fileName}`);
+      } catch (slideError) {
+        console.warn(`⚠️ Failed to count slides in ${fileName}:`, slideError.message);
+        // Continue with slideCount = 0, don't fail the upload
+      }
+    }
+
+    // 4. Update lesson plan file_configs within same transaction
     const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
     if (!lessonPlan) {
       throw new Error('Lesson plan entity not found');
@@ -1408,7 +1422,48 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     if (file_role === 'opening' || file_role === 'body') {
       const existingFilesInRole = currentConfigs.files.filter(f => f.file_role === file_role);
       if (existingFilesInRole.length > 0) {
-        throw new Error(`Section "${file_role}" can only have one file. Remove existing file first.`);
+        // Check if this is a published lesson plan product - allow replacement for published products
+        const lessonPlanProduct = await models.Product.findOne({
+          where: {
+            product_type: 'lesson_plan',
+            entity_id: lessonPlanId
+          }
+        });
+
+        if (!lessonPlanProduct || !lessonPlanProduct.is_published) {
+          // For unpublished products, maintain strict single-file policy
+          throw new Error(`Section "${file_role}" can only have one file. Remove existing file first.`);
+        }
+
+        // For published products, allow replacement by removing the existing file first
+        console.log(`📤 Published lesson plan - replacing existing ${file_role} file`);
+
+        // Remove the existing file from configs and delete the File entity if it's asset-only
+        const existingFileConfig = existingFilesInRole[0];
+        console.log(`📤 Removing existing file:`, existingFileConfig);
+
+        // Remove from current configs
+        const indexToRemove = currentConfigs.files.findIndex(f => f.file_id === existingFileConfig.file_id);
+        if (indexToRemove !== -1) {
+          currentConfigs.files.splice(indexToRemove, 1);
+        }
+
+        // If it's an asset-only file, also delete the File entity
+        if (existingFileConfig.is_asset_only) {
+          try {
+            const existingFileEntity = await models.File.findByPk(existingFileConfig.file_id, { transaction });
+            if (existingFileEntity) {
+              console.log(`📤 Deleting existing asset-only File entity: ${existingFileEntity.id}`);
+              await existingFileEntity.destroy({ transaction });
+              console.log(`✅ Existing File entity deleted during replacement`);
+            }
+          } catch (deleteError) {
+            console.warn(`⚠️ Failed to delete existing File entity during replacement:`, deleteError.message);
+            // Continue with replacement even if deletion fails
+          }
+        }
+
+        console.log(`✅ Existing ${file_role} file removed, proceeding with replacement`);
       }
     }
 
@@ -1424,18 +1479,29 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       storage_filename: uploadResult.filename, // Actual storage filename
       size: req.file.size,
       mime_type: req.file.mimetype || 'application/octet-stream',
-      is_asset_only: true
+      is_asset_only: true,
+      slide_count: slideCount // Add slide count for PowerPoint files
     };
 
     currentConfigs.files.push(newFileConfig);
 
-    // Update lesson plan with new file configs
+    // 5. Calculate total slides from opening and body files and update lesson plan
+    const newTotalSlides = calculateTotalSlides(currentConfigs);
+    console.log(`📊 Calculated total slides: ${newTotalSlides}`);
+
+    // Update lesson plan with new file configs and total slides
     console.log(`📤 Updating lesson plan with file configs:`, JSON.stringify(currentConfigs, null, 2));
     console.log(`📤 Before update - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
     // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
     lessonPlan.file_configs = currentConfigs;
     lessonPlan.changed('file_configs', true);
+
+    // Update total_slides field if it has changed
+    if (lessonPlan.total_slides !== newTotalSlides) {
+      console.log(`📊 Updating total_slides from ${lessonPlan.total_slides} to ${newTotalSlides}`);
+      lessonPlan.total_slides = newTotalSlides;
+    }
 
     const updateResult = await lessonPlan.save({ transaction });
 
@@ -1467,6 +1533,8 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
         size: req.file.size,
         upload_date: newFileConfig.upload_date
       },
+      file_config: newFileConfig, // Include the complete file config with slide count
+      total_slides: newTotalSlides, // Include the updated total slides
       lesson_plan_id: lessonPlanId
     });
 
@@ -1552,14 +1620,48 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
     if (file_role === 'opening' || file_role === 'body') {
       const existingFilesInRole = currentConfigs.files.filter(f => f.file_role === file_role);
       if (existingFilesInRole.length > 0) {
-        return res.status(409).json({
-          error: `Section "${file_role}" can only have one file. Remove existing file first.`,
-          existing_files: existingFilesInRole.map(f => ({
-            file_id: f.file_id,
-            filename: f.filename,
-            is_asset_only: f.is_asset_only
-          }))
-        });
+        // Check if this is a published lesson plan product - allow replacement for published products
+        if (!lessonPlanProduct.is_published) {
+          // For unpublished products, maintain strict single-file policy
+          return res.status(409).json({
+            error: `Section "${file_role}" can only have one file. Remove existing file first.`,
+            existing_files: existingFilesInRole.map(f => ({
+              file_id: f.file_id,
+              filename: f.filename,
+              is_asset_only: f.is_asset_only
+            }))
+          });
+        }
+
+        // For published products, allow replacement by removing the existing file first
+        console.log(`🔗 Published lesson plan - replacing existing ${file_role} file during linking`);
+
+        // Remove the existing file from configs (don't delete File entities when unlinking)
+        const existingFileConfig = existingFilesInRole[0];
+        console.log(`🔗 Removing existing file config:`, existingFileConfig);
+
+        // Remove from current configs
+        const indexToRemove = currentConfigs.files.findIndex(f => f.file_id === existingFileConfig.file_id);
+        if (indexToRemove !== -1) {
+          currentConfigs.files.splice(indexToRemove, 1);
+        }
+
+        // If the existing file was asset-only, delete the File entity
+        if (existingFileConfig.is_asset_only) {
+          try {
+            const existingFileEntity = await models.File.findByPk(existingFileConfig.file_id, { transaction });
+            if (existingFileEntity) {
+              console.log(`🔗 Deleting existing asset-only File entity during linking: ${existingFileEntity.id}`);
+              await existingFileEntity.destroy({ transaction });
+              console.log(`✅ Existing asset-only File entity deleted during linking replacement`);
+            }
+          } catch (deleteError) {
+            console.warn(`⚠️ Failed to delete existing File entity during linking replacement:`, deleteError.message);
+            // Continue with replacement even if deletion fails
+          }
+        }
+
+        console.log(`✅ Existing ${file_role} file removed, proceeding with File product linking`);
       }
 
       // For opening/body sections, only allow PPT File products
@@ -1585,6 +1687,24 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
       });
     }
 
+    // For PowerPoint file products in opening/body roles, detect slide counts
+    let slideCount = 0;
+    if ((file_role === 'opening' || file_role === 'body') && (file_type === 'ppt')) {
+      const fileEntity = await models.File.findByPk(fileProduct.entity_id);
+      if (fileEntity && fileEntity.file_name) {
+        console.log(`📊 Attempting to count slides for linked PowerPoint file: ${fileEntity.file_name}`);
+        try {
+          // For linked files, we need to download from S3 to count slides
+          const fileBuffer = await fileService.downloadToBuffer(fileEntity.s3_key || fileEntity.file_name);
+          slideCount = await countSlidesInPowerPoint(fileBuffer, fileEntity.file_name);
+          console.log(`📊 Detected ${slideCount} slides in linked file ${fileEntity.file_name}`);
+        } catch (slideError) {
+          console.warn(`⚠️ Failed to count slides in linked file ${fileEntity.file_name}:`, slideError.message);
+          // Continue with slideCount = 0, don't fail the linking
+        }
+      }
+    }
+
     // Create file config for the File product link
     const newFileConfig = {
       file_id: fileProduct.entity_id, // Use entity_id from the Product
@@ -1594,11 +1714,16 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
       upload_date: new Date().toISOString(),
       description: fileProduct.title,
       is_asset_only: false, // This is a File product, not just an asset
-      product_id: fileProduct.id // Store the Product ID for reference
+      product_id: fileProduct.id, // Store the Product ID for reference
+      slide_count: slideCount // Add slide count for PowerPoint files
     };
 
     // Add the new file config
     currentConfigs.files.push(newFileConfig);
+
+    // Calculate total slides from opening and body files and update lesson plan
+    const newTotalSlides = calculateTotalSlides(currentConfigs);
+    console.log(`📊 Calculated total slides after linking: ${newTotalSlides}`);
 
     // Update lesson plan with new file configs
     console.log(`🔗 Updating lesson plan with file configs:`, JSON.stringify(currentConfigs, null, 2));
@@ -1606,6 +1731,12 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
     // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
     lessonPlan.file_configs = currentConfigs;
     lessonPlan.changed('file_configs', true);
+
+    // Update total_slides field if it has changed
+    if (lessonPlan.total_slides !== newTotalSlides) {
+      console.log(`📊 Updating total_slides from ${lessonPlan.total_slides} to ${newTotalSlides}`);
+      lessonPlan.total_slides = newTotalSlides;
+    }
 
     const updateResult = await lessonPlan.save({ transaction });
     console.log(`🔗 Lesson plan file_configs updated`);
