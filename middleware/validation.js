@@ -244,14 +244,6 @@ export const schemas = {
     environment: Joi.string().valid('test', 'production').optional()
   }),
 
-  // Image generation
-  generateImage: Joi.object({
-    prompt: Joi.string().min(1).max(1000).required(),
-    size: Joi.string().valid('256x256', '512x512', '1024x1024').default('1024x1024'),
-    style: Joi.string().valid('natural', 'vivid', 'artistic').default('natural'),
-    quality: Joi.string().valid('standard', 'hd').default('standard')
-  }),
-
   // Workshop-specific validation
   workshopCreate: Joi.object({
     title: Joi.string().min(1).max(255).required(),
@@ -530,7 +522,7 @@ export const customValidators = {
       'application/pdf', 'text/plain', 'text/csv',
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'audio/mpeg', 'audio/wav', 'audio/ogg',
+      'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/x-m4a', 'audio/m4a', 'audio/mp4',
       'video/mp4', 'video/avi', 'video/mov'
     ];
 

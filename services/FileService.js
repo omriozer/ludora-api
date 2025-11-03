@@ -50,54 +50,6 @@ class FileService {
     }
   }
 
-
-
-
-
-
-  // Generate signed URL
-  async createFileSignedUrl({ fileName, operation = 'read', expiresIn = 3600, contentType }) {
-    try {
-      if (!fileName) {
-        throw new Error('fileName is required');
-      }
-
-      let signedUrl;
-
-      if (this.useS3 && this.s3) {
-        const params = {
-          Bucket: this.bucketName,
-          Key: fileName,
-          Expires: expiresIn,
-          ...(contentType && { ContentType: contentType })
-        };
-
-        const s3Operation = operation === 'write' ? 'putObject' : 'getObject';
-        signedUrl = await this.s3.getSignedUrlPromise(s3Operation, params);
-      } else {
-        // Generate mock signed URL for local development
-        const token = Buffer.from(`${fileName}:${Date.now() + (expiresIn * 1000)}:${operation}`).toString('base64');
-        signedUrl = `/api/files/signed/${fileName}?token=${token}&operation=${operation}`;
-      }
-
-      return {
-        success: true,
-        data: {
-          fileName,
-          signedUrl,
-          operation,
-          expiresIn,
-          expiresAt: new Date(Date.now() + (expiresIn * 1000)).toISOString(),
-          contentType: contentType || 'application/octet-stream',
-          createdAt: new Date().toISOString()
-        }
-      };
-    } catch (error) {
-      console.error('Error creating signed URL:', error);
-      throw error;
-    }
-  }
-
   // Extract data from uploaded file
   async extractDataFromUploadedFile({ file, extractionType = 'text' }) {
     try {
@@ -368,8 +320,7 @@ class FileService {
   /**
    * Upload Asset - Unified transaction-safe upload method
    *
-   * Replaces: uploadFile, uploadFileEntity, uploadPublicFile, uploadPrivateFileEntity,
-   *          uploadPrivateFile, uploadPublicVideo, uploadPrivateVideo
+   * Replaces: uploadFile, uploadFileEntity, uploadPublicFile, uploadPublicVideo, uploadPrivateVideo
    *
    * @param {Object} params - Upload parameters
    * @param {Object} params.file - Multer file object
@@ -657,8 +608,6 @@ class FileService {
   // - uploadFile() → use uploadAsset()
   // - uploadFileEntity() → use uploadAsset()
   // - uploadPublicFile() → use uploadAsset()
-  // - uploadPrivateFileEntity() → use uploadAsset()
-  // - uploadPrivateFile() → use uploadAsset()
   // - uploadPublicVideo() → use uploadAsset()
   // - uploadPrivateVideo() → use uploadAsset()
   // - uploadToS3() → use uploadToS3WithTransaction()

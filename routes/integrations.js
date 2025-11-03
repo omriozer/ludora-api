@@ -20,20 +20,6 @@ const upload = multer({
   storage: multer.memoryStorage()
 });
 
-// Core Integration: Invoke LLM
-router.post('/invokeLLM', authenticateToken, rateLimiters.llm, validateBody(schemas.llmRequest), async (req, res) => {
-  try {
-    const result = await LLMService.invokeLLM(req.body);
-    res.json({
-      success: true,
-      data: result
-    });
-  } catch (error) {
-    console.error('Error invoking LLM:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Core Integration: Send Email
 router.post('/sendEmail', authenticateToken, rateLimiters.email, validateBody(schemas.sendEmail), async (req, res) => {
   try {
@@ -48,7 +34,7 @@ router.post('/sendEmail', authenticateToken, rateLimiters.email, validateBody(sc
   }
 });
 
-// Core Integration: Upload File (with transaction support)
+// Core Integration: Upload File (with transaction support for AudioFile)
 router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single('file'), customValidators.validateFileUpload, async (req, res) => {
   const transaction = await sequelize.transaction();
   let s3UploadCompleted = false;
@@ -59,8 +45,6 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Manual implementation with transaction support (based on FileService.uploadFile)
-
     // Validate file (same as FileService)
     if (!req.file.buffer || req.file.buffer.length === 0) {
       throw new Error('File is empty');
@@ -70,22 +54,27 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
       throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
     }
 
-    // Generate unique filename (same as FileService)
-    const fileId = generateId();
+    // Generate unique ID for AudioFile
+    const audioFileId = generateId();
     const fileExtension = req.file.originalname.split('.').pop().toLowerCase();
-    const fileName = `${fileId}.${fileExtension}`;
-    const folder = 'general';
-    const filePath = `${folder}/${fileName}`;
+    const fileName = `${audioFileId}.${fileExtension}`;
+
+    // Use proper S3 path structure for AudioFile (System Layer)
+    const environment = process.env.NODE_ENV || 'development';
+    const s3Path = `${environment}/private/audio/audiofile/${audioFileId}/${fileName}`;
 
     // Upload to S3 first
-    const uploadResult = await FileService.uploadToS3({
+    const uploadResult = await FileService.uploadToS3WithTransaction({
       buffer: req.file.buffer,
-      key: filePath,
+      key: s3Path,
       contentType: req.file.mimetype,
       metadata: {
         uploadedBy: req.user.uid,
-        originalName: req.file.originalname
-      }
+        originalName: req.file.originalname,
+        entityType: 'audiofile',
+        entityId: audioFileId
+      },
+      transaction
     });
 
     if (!uploadResult.success) {
@@ -93,32 +82,52 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
     }
 
     s3UploadCompleted = true;
-    s3Key = filePath;
+    s3Key = s3Path;
     console.log(`✅ S3 upload completed: ${s3Key}`);
 
-    // Create AudioFile record within transaction
-    const fileRecord = await models.AudioFile.create({
-      id: fileId,
-      name: req.file.originalname,
-      file_url: uploadResult.url,
+    // Extract metadata from form data
+    const audioMetadata = {
+      name: req.body.name || req.file.originalname,
+      volume: req.body.volume ? parseFloat(req.body.volume) : 1.0,
+      duration: req.body.duration ? parseFloat(req.body.duration) : null,
+      is_default_for: req.body.is_default_for ? JSON.parse(req.body.is_default_for) : []
+    };
+
+    // Create AudioFile record within transaction using STANDARDIZED fields
+    const audioFileRecord = await models.AudioFile.create({
+      id: audioFileId,
+      name: audioMetadata.name,
+      // Use standardized fields instead of deprecated file_url
+      has_file: true,
+      file_filename: fileName,
+      // Metadata fields
+      duration: audioMetadata.duration,
+      volume: audioMetadata.volume,
       file_size: req.file.buffer.length,
       file_type: req.file.mimetype,
+      is_default_for: audioMetadata.is_default_for,
+      // Timestamps
       created_at: new Date(),
       updated_at: new Date(),
     }, { transaction });
 
     // Commit transaction - both S3 upload and DB creation succeeded
     await transaction.commit();
-    console.log(`✅ Transaction committed for integration file upload: ${s3Key}`);
+    console.log(`✅ Transaction committed for AudioFile upload: ${s3Key}`);
 
     res.json({
       success: true,
       data: {
-        fileId,
-        fileName: req.file.originalname,
+        id: audioFileId,
+        name: audioMetadata.name,
+        filename: fileName,
         mimeType: req.file.mimetype,
         size: req.file.buffer.length,
-        url: uploadResult.url,
+        duration: audioMetadata.duration,
+        volume: audioMetadata.volume,
+        has_file: true,
+        file_filename: fileName,
+        s3Key: s3Path,
         uploadedAt: new Date().toISOString(),
         uploadedBy: req.user.uid
       }
@@ -127,7 +136,7 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
   } catch (error) {
     // Rollback transaction
     await transaction.rollback();
-    console.log(`🔄 Transaction rolled back for failed integration file upload`);
+    console.log(`🔄 Transaction rolled back for failed AudioFile upload`);
 
     // Clean up S3 file if it was uploaded but DB operation failed
     if (s3UploadCompleted && s3Key) {
@@ -140,58 +149,7 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
       }
     }
 
-    console.error('❌ Integration file upload transaction failed:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Core Integration: Upload Private File
-router.post('/uploadPrivateFile', authenticateToken, rateLimiters.upload, upload.single('file'), customValidators.validateFileUpload, async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-    
-    const result = await FileService.uploadPrivateFile({ 
-      file: req.file, 
-      folder: req.body.folder, 
-      tags: req.body.tags, 
-      userId: req.user.uid 
-    });
-    res.json({
-      success: true,
-      data: result
-    });
-  } catch (error) {
-    console.error('Error uploading private file:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Core Integration: Generate Image
-router.post('/generateImage', authenticateToken, rateLimiters.llm, validateBody(schemas.generateImage), async (req, res) => {
-  try {
-    const { prompt, size = '1024x1024', style = 'natural', quality = 'standard' } = req.body;
-    
-    // Mock implementation until ImageService is created
-    const imageResult = {
-      imageId: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      prompt,
-      url: `https://images.ludora.app/generated/${Date.now()}.png`,
-      size,
-      style,
-      quality,
-      generatedAt: new Date().toISOString(),
-      requestedBy: req.user.uid,
-      status: 'mock_generated'
-    };
-    
-    res.json({
-      success: true,
-      data: imageResult
-    });
-  } catch (error) {
-    console.error('Error generating image:', error);
+    console.error('❌ AudioFile upload transaction failed:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -217,20 +175,6 @@ router.post('/extractDataFromUploadedFile', authenticateToken, rateLimiters.uplo
   }
 });
 
-// Core Integration: Create File Signed URL
-router.post('/createFileSignedUrl', authenticateToken, rateLimiters.upload, validateBody(schemas.signedUrl), async (req, res) => {
-  try {
-    const result = await FileService.createFileSignedUrl(req.body);
-    res.json({
-      success: true,
-      data: result
-    });
-  } catch (error) {
-    console.error('Error creating signed URL:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Health check for integrations
 router.get('/health', (req, res) => {
   res.json({
@@ -245,70 +189,6 @@ router.get('/health', (req, res) => {
     },
     timestamp: new Date().toISOString()
   });
-});
-
-// Get integration capabilities
-router.get('/capabilities', optionalAuth, (req, res) => {
-  const llmModels = LLMService.getAvailableModels();
-  
-  res.json({
-    llm: {
-      models: [...llmModels.openai, ...llmModels.anthropic],
-      openai: llmModels.openai,
-      anthropic: llmModels.anthropic,
-      capabilities: llmModels.capabilities,
-      maxTokens: 8192,
-      supportedLanguages: ['en', 'he', 'es', 'fr', 'ar', 'de', 'it', 'pt']
-    },
-    email: {
-      providers: ['smtp', 'sendgrid', 'ses'],
-      features: ['html', 'text', 'templates', 'triggers', 'automation'],
-      templateTypes: ['registration_confirmation', 'payment_confirmation', 'student_invitation']
-    },
-    fileUpload: {
-      maxSize: '50MB',
-      supportedTypes: [
-        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-        'application/pdf', 'text/plain', 'text/csv',
-        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'audio/mpeg', 'audio/wav', 'video/mp4'
-      ],
-      storage: ['s3'],
-      features: ['public-upload', 'private-upload', 'signed-urls', 'data-extraction']
-    },
-    imageGeneration: {
-      status: 'mock', // Indicates this is not fully implemented
-      providers: ['mock'],
-      sizes: ['256x256', '512x512', '1024x1024'],
-      styles: ['natural', 'vivid', 'artistic']
-    },
-    dataExtraction: {
-      supportedTypes: ['pdf', 'image', 'csv', 'excel', 'text'],
-      features: ['metadata-extraction', 'text-extraction'],
-      status: 'partial' // Some features not fully implemented
-    },
-    environment: {
-      storage: 's3',
-      llmProviders: {
-        openai: !!process.env.OPENAI_API_KEY,
-        anthropic: !!process.env.ANTHROPIC_API_KEY
-      },
-      email: !!process.env.EMAIL_HOST
-    }
-  });
-});
-
-// Get LLM models (dedicated endpoint)
-router.get('/llm/models', optionalAuth, (req, res) => {
-  try {
-    const models = LLMService.getAvailableModels();
-    res.json({
-      success: true,
-      data: models
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
 });
 
 export default router;

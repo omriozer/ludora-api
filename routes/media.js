@@ -149,6 +149,149 @@ router.options('/stream/:entityType/:entityId', (req, res) => {
 });
 
 /**
+ * Download AudioFile
+ *
+ * Downloads complete audio files for authenticated users.
+ * Supports query parameter authentication for HTML audio element compatibility.
+ * Returns the complete file (not streaming) for client-side caching.
+ *
+ * S3 Path Structure:
+ * - Audio files: {env}/private/audio/audiofile/{audioFileId}/{fileName}
+ *
+ * @route GET /api/media/download/audiofile/:audioFileId
+ * @access Private (requires authentication)
+ *
+ * @param {string} audioFileId - ID of the AudioFile entity
+ * @queryparam {string} [token] - Auth token (alternative to header)
+ * @queryparam {string} [authToken] - Auth token (alias)
+ * @header {string} [Authorization] - Bearer token
+ *
+ * @returns {200} Complete audio file download
+ * @returns {401} Unauthorized (no token)
+ * @returns {403} Forbidden (invalid token)
+ * @returns {404} Audio file not found
+ * @returns {500} Server error
+ *
+ * @example Audio File Download with Query Token
+ * GET /api/media/download/audiofile/8ph4wf?authToken=eyJhbGc...
+ *
+ * Response: 200 OK
+ * Content-Type: audio/mpeg (or appropriate MIME type)
+ * Content-Disposition: inline; filename="audio.mp3"
+ * [Complete audio file binary data]
+ */
+router.get('/download/audiofile/:audioFileId', async (req, res) => {
+  try {
+    const { audioFileId } = req.params;
+    const env = process.env.ENVIRONMENT || 'development';
+
+    console.log(`🎵 AudioFile download request: ${audioFileId}`);
+
+    // Extract token from header or query
+    const authHeader = req.headers['authorization'];
+    let token = null;
+
+    if (authHeader) {
+      token = authHeader.split(' ')[1]; // Bearer TOKEN
+    } else if (req.query.authToken || req.query.token) {
+      token = req.query.authToken || req.query.token;
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        error: 'Authentication required',
+        message: 'Audio file download requires authentication',
+        hint: 'Provide token via Authorization header or query parameter (authToken or token)'
+      });
+    }
+
+    // Verify token
+    let user;
+    try {
+      user = await authService.verifyToken(token);
+      console.log(`🔐 Token verified for AudioFile download: ${user.id}`);
+    } catch (authError) {
+      console.error('🔐 Token verification failed for AudioFile:', authError);
+      return res.status(403).json({
+        error: 'Invalid or expired token',
+        message: authError.message || 'Token verification failed'
+      });
+    }
+
+    // Get AudioFile record to find the filename
+    const audioFile = await db.AudioFile.findByPk(audioFileId);
+    if (!audioFile) {
+      return res.status(404).json({
+        error: 'Audio file not found',
+        message: `AudioFile with ID ${audioFileId} not found`
+      });
+    }
+
+    if (!audioFile.has_file || !audioFile.file_filename) {
+      return res.status(404).json({
+        error: 'Audio file not available',
+        message: 'No audio file data associated with this record'
+      });
+    }
+
+    // Construct S3 path for AudioFile
+    const s3Key = `${env}/private/audio/audiofile/${audioFileId}/${audioFile.file_filename}`;
+
+    console.log(`🎵 Downloading AudioFile from S3: ${s3Key}`);
+
+    try {
+      // Get the complete file from S3
+      const fileBuffer = await fileService.downloadToBuffer(s3Key);
+
+      if (!fileBuffer) {
+        return res.status(404).json({
+          error: 'Audio file not found in storage',
+          message: `Audio file for ${audioFileId} not found in S3`
+        });
+      }
+
+      const contentType = audioFile.file_type || 'audio/mpeg';
+
+      // Set headers for file download
+      const headers = {
+        'Content-Type': contentType,
+        'Content-Length': fileBuffer.length,
+        'Content-Disposition': `inline; filename="${audioFile.file_filename}"`,
+        'Cache-Control': 'private, max-age=3600', // Cache for 1 hour
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'X-Content-Type': 'audio-file',
+        'X-AudioFile-ID': audioFileId
+      };
+
+      res.set(headers);
+      res.send(fileBuffer);
+
+      console.log(`✅ AudioFile download completed: ${audioFileId} (${audioFile.file_filename})`);
+
+    } catch (s3Error) {
+      console.error('❌ S3 download error for AudioFile:', s3Error);
+      return res.status(404).json({
+        error: 'Audio file not found in storage',
+        message: `Audio file for ${audioFileId} not found in storage`,
+        details: s3Error.message
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ AudioFile download error:', error);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Internal server error',
+        message: 'Failed to process audio file download request'
+      });
+    }
+  }
+});
+
+/**
  * Stream Video
  *
  * Unified streaming endpoint for all videos (marketing and private content).

@@ -7,15 +7,59 @@ export async function authenticateToken(req, res, next) {
   try {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    
+
+    // Debug logging for troubleshooting audio upload authentication
+    const isIntegrationsUpload = req.path.includes('uploadFile') && req.method === 'POST';
+    const isAnyUpload = req.method === 'POST' && (req.path.includes('upload') || req.path.includes('Upload'));
+
+    // Log all POST requests to debug routing
+    if (req.method === 'POST') {
+      console.log('🔍 [AUTH DEBUG] POST request detected');
+      console.log('🔍 [AUTH DEBUG] Full request path:', req.path);
+      console.log('🔍 [AUTH DEBUG] Original URL:', req.originalUrl);
+      console.log('🔍 [AUTH DEBUG] Request method:', req.method);
+    }
+
+    if (isIntegrationsUpload) {
+      console.log('🔍 [AUTH DEBUG] Integration uploadFile authentication attempt');
+      console.log('🔍 [AUTH DEBUG] Request path:', req.path);
+      console.log('🔍 [AUTH DEBUG] Request method:', req.method);
+      console.log('🔍 [AUTH DEBUG] Auth header present:', !!authHeader);
+      console.log('🔍 [AUTH DEBUG] Token extracted:', !!token);
+      if (token) {
+        console.log('🔍 [AUTH DEBUG] Token length:', token.length);
+        console.log('🔍 [AUTH DEBUG] Token preview:', token.substring(0, 20) + '...');
+      }
+    }
+
     if (!token) {
+      if (isIntegrationsUpload) {
+        console.log('❌ [AUTH DEBUG] No token provided for integration upload');
+      }
       return res.status(401).json({ error: 'Access token required' });
     }
 
+    if (isIntegrationsUpload) {
+      console.log('🔍 [AUTH DEBUG] Attempting token verification...');
+    }
+
     const tokenData = await authService.verifyToken(token);
+
+    if (isIntegrationsUpload) {
+      console.log('✅ [AUTH DEBUG] Token verification successful');
+      console.log('🔍 [AUTH DEBUG] User ID:', tokenData.uid);
+      console.log('🔍 [AUTH DEBUG] User role:', tokenData.role);
+    }
+
     req.user = tokenData;
     next();
   } catch (error) {
+    const isIntegrationsUpload = req.path.includes('uploadFile') && req.method === 'POST';
+    if (isIntegrationsUpload) {
+      console.log('❌ [AUTH DEBUG] Token verification failed for integration upload');
+      console.log('❌ [AUTH DEBUG] Error details:', error.message);
+      console.log('❌ [AUTH DEBUG] Error type:', error.constructor.name);
+    }
     console.error('Authentication error:', error);
     res.status(403).json({ error: error.message || 'Invalid or expired token' });
   }
