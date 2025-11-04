@@ -183,12 +183,13 @@ class FileService {
     // Check file type
     const allowedTypes = [
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'image/svg+xml', // SVG slides for presentations
       'application/pdf',
       'text/plain', 'text/csv',
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-powerpoint', // .ppt files
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx files
+      'application/vnd.ms-powerpoint', // .ppt files (legacy support)
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx files (legacy support)
       'application/msword', // .doc files
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx files
       'audio/mpeg', 'audio/wav', 'audio/ogg',

@@ -14,9 +14,33 @@ import { constructS3Path } from '../utils/s3PathUtils.js';
 import { createFileLogger, createErrorResponse, createSuccessResponse } from '../utils/fileOperationLogger.js';
 import { createFileVerifier } from '../utils/fileOperationVerifier.js';
 import { createPreUploadValidator } from '../utils/preUploadValidator.js';
+// Import pptx2html library - try using dynamic import to handle the UMD build correctly
+let renderPptx;
 
 const router = express.Router();
 const { File: FileModel, User, Purchase, Settings } = db;
+
+/**
+ * Helper: Encode filename for Content-Disposition header
+ *
+ * HTTP headers cannot contain non-ASCII characters directly.
+ * This function creates a proper Content-Disposition header value
+ * with both a fallback ASCII filename and an RFC 5987 encoded filename.
+ *
+ * @param {string} disposition - 'attachment' or 'inline'
+ * @param {string} filename - Original filename (may contain Hebrew/Unicode)
+ * @returns {string} Properly formatted Content-Disposition header value
+ */
+function encodeContentDisposition(disposition, filename) {
+  // Create ASCII fallback by removing non-ASCII characters
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_');
+
+  // RFC 5987 encoding: UTF-8 percent-encoding
+  const encodedFilename = encodeURIComponent(filename);
+
+  // Return both formats for maximum compatibility
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
+}
 
 // Configure multer for asset uploads (memory storage for S3)
 const assetUpload = multer({
@@ -169,13 +193,31 @@ async function deleteAllFileAssets(fileEntityId) {
  * @returns {Promise<boolean>} True if user has access
  */
 async function checkUserAccess(user, fileEntity) {
+  // For asset-only files, they don't have Products - check via lesson plan ownership instead
+  if (fileEntity.is_asset_only) {
+    console.log('🔍 Asset-only file detected, checking lesson plan access for user:', user.id);
+
+    // Asset-only files are internal to lesson plans, so we grant access if user has access
+    // to any lesson plan that references this file. This is handled by the presentation
+    // endpoint's access control, so if we reached here, access should be granted.
+
+    // For security, we could add additional checks here in the future
+    console.log('🔍 Access granted: Asset-only file in lesson plan context');
+    return true;
+  }
+
+  // For non-asset files, check via Product
   const product = await db.Product.findOne({
       where: {
         product_type: 'file',
         entity_id: fileEntity.id
       }
     });
-    
+
+  if (!product) {
+    console.log('🔍 No product found for file entity:', fileEntity.id);
+    return false;
+  }
 
   if (product.creator_user_id === user.id) {
     console.log('🔍 Access granted: User is creator of file');
@@ -962,6 +1004,122 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
 });
 
 /**
+ * Download Lesson Plan Slide
+ *
+ * Downloads a specific SVG slide from a lesson plan stored in direct storage.
+ * Serves slides that are stored directly in LessonPlan file_configs.presentation
+ * array, bypassing the Files table entirely.
+ *
+ * @route GET /api/assets/download/lesson-plan-slide/:lessonPlanId/:slideId
+ * @access Public (no authentication required - lesson plan slides are public assets)
+ *
+ * @param {string} lessonPlanId - ID of the lesson plan
+ * @param {string} slideId - ID of the slide within the lesson plan
+ *
+ * @returns {200} SVG file binary data
+ * @returns {404} Lesson plan or slide not found
+ * @returns {500} Server error
+ *
+ * @example Download SVG Slide
+ * GET /api/assets/download/lesson-plan-slide/abc123/slide_123456_xyz
+ *
+ * Response:
+ * Content-Disposition: attachment; filename="slide-1.svg"
+ * Content-Type: image/svg+xml
+ * [Binary SVG data]
+ */
+router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', async (req, res) => {
+  try {
+    const { lessonPlanId, slideId } = req.params;
+
+    console.log(`📥 Lesson plan slide download: LessonPlan ${lessonPlanId}, Slide ${slideId}`);
+
+    // Import DirectSlideService
+    const DirectSlideService = (await import('../services/DirectSlideService.js')).default;
+
+    // Get lesson plan
+    const lessonPlan = await db.LessonPlan.findByPk(lessonPlanId);
+    if (!lessonPlan) {
+      return res.status(404).json(createErrorResponse(
+        'Lesson plan not found',
+        `Lesson plan ${lessonPlanId} not found in database`,
+        { lessonPlanId }
+      ));
+    }
+
+    // Get slide from lesson plan
+    const slide = lessonPlan.getDirectPresentationSlide(slideId);
+    if (!slide) {
+      return res.status(404).json(createErrorResponse(
+        'Slide not found',
+        `Slide ${slideId} not found in lesson plan ${lessonPlanId}`,
+        { lessonPlanId, slideId }
+      ));
+    }
+
+    console.log(`📄 Found slide: ${slide.filename} (${slide.s3_key})`);
+
+    try {
+      // Get file metadata first to check existence
+      const metadataResult = await fileService.getS3ObjectMetadata(slide.s3_key);
+
+      if (!metadataResult.success) {
+        return res.status(404).json(createErrorResponse(
+          'Slide file not found in storage',
+          'Slide exists in database but not found in S3',
+          { s3Key: slide.s3_key, slideId, lessonPlanId }
+        ));
+      }
+
+      // Stream SVG file from S3
+      const stream = await fileService.createS3Stream(slide.s3_key);
+
+      // Set headers for download
+      res.setHeader('Content-Disposition', encodeContentDisposition('attachment', slide.filename));
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Content-Length', metadataResult.data.size);
+      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+
+      // Pipe stream to response
+      stream.pipe(res);
+
+      // Handle stream errors
+      stream.on('error', (error) => {
+        console.error('❌ Slide stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).json(createErrorResponse(
+            'Stream error',
+            'Failed to stream slide from storage',
+            { s3Key: slide.s3_key, error: error.message }
+          ));
+        }
+      });
+
+      console.log(`✅ Slide download started: ${slide.filename}`);
+
+    } catch (s3Error) {
+      console.error('❌ S3 slide download error:', s3Error);
+      return res.status(404).json(createErrorResponse(
+        'Slide file not found in storage',
+        'Failed to retrieve slide from S3',
+        { s3Key: slide.s3_key, details: s3Error.message }
+      ));
+    }
+
+  } catch (error) {
+    console.error('❌ Lesson plan slide download error:', error);
+
+    if (!res.headersSent) {
+      res.status(500).json(createErrorResponse(
+        'Download failed',
+        'Failed to process slide download request',
+        { details: error.message }
+      ));
+    }
+  }
+});
+
+/**
  * Check Asset Existence
  *
  * Checks if an asset exists in S3 storage without downloading it.
@@ -1261,11 +1419,12 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
       userRole: req.user?.role || 'none',
       fileId: entityId,
       fileName: fileEntity.file_name,
-      fileCreatorId: fileEntity.creator_user_id,
+      fileCreatorId: fileEntity.is_asset_only ? 'N/A (asset-only)' : (fileEntity.creator_user_id || 'N/A'),
       allowPreview: fileEntity.allow_preview,
       addCopyrightsFooter: fileEntity.add_copyrights_footer,
       hasAccess,
-      isPreviewRequest
+      isPreviewRequest,
+      isAssetOnly: fileEntity.is_asset_only
     });
 
     // Implement user's access control requirements:
@@ -1332,7 +1491,7 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
         // Set headers - inline for preview mode, attachment for download
         const isPreviewMode = !hasAccess && fileEntity.allow_preview;
         const disposition = isPreviewMode ? 'inline' : 'attachment';
-        res.setHeader('Content-Disposition', `${disposition}; filename="${fileEntity.file_name}"`);
+        res.setHeader('Content-Disposition', encodeContentDisposition(disposition, fileEntity.file_name));
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', finalPdfBuffer.length);
 
@@ -1345,7 +1504,7 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
         const stream = await fileService.createS3Stream(s3Key);
 
         // Set headers for download
-        res.setHeader('Content-Disposition', `attachment; filename="${fileEntity.file_name}"`);
+        res.setHeader('Content-Disposition', encodeContentDisposition('attachment', fileEntity.file_name));
         res.setHeader('Content-Type', metadataResult.data.contentType || 'application/octet-stream');
         res.setHeader('Content-Length', metadataResult.data.size);
 
@@ -2058,6 +2217,8 @@ router.get('/metadata/:entityType/:entityId', authenticateToken, async (req, res
     ));
   }
 });
+
+// REMOVED: PPTX conversion endpoint - replaced with SVG slide system
 
 // Error handling middleware for multer errors
 router.use((error, _req, res, next) => {

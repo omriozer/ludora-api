@@ -29,12 +29,16 @@ export function constructS3Path(entityType, entityId, assetType, filename) {
   // Determine privacy level based on asset type
   const privacy = (assetType === 'marketing-video' || assetType === 'image') ? 'public' : 'private';
 
-  // Sanitize filename to avoid S3 signature issues with non-ASCII characters
-  // Only use ASCII characters, replace any problematic characters with dashes
+  // Sanitize filename to avoid S3 issues while preserving Unicode characters (like Hebrew)
+  // Only replace truly problematic characters, preserve Unicode letters and numbers
   const sanitizedFilename = filename
-    .replace(/[^\w\-_.]/g, '-') // Replace non-word chars (except dash, underscore, dot) with dash
+    .replace(/[<>:"|?*]/g, '-') // Replace Windows/filesystem forbidden chars
+    .replace(/[\x00-\x1f\x7f]/g, '-') // Replace control characters
+    .replace(/[/\\]/g, '-') // Replace path separators
+    .replace(/\s+/g, ' ') // Normalize whitespace to single spaces
     .replace(/-+/g, '-') // Replace multiple consecutive dashes with single dash
-    .replace(/^-|-$/g, ''); // Remove leading/trailing dashes
+    .replace(/^-|-$/g, '') // Remove leading/trailing dashes
+    .trim(); // Remove leading/trailing whitespace
 
   return `${env}/${privacy}/${assetType}/${entityType}/${entityId}/${sanitizedFilename}`;
 }

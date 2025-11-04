@@ -100,6 +100,9 @@ class PaymentService {
         case 'file':
           item = await models.File.findByPk(purchasableId);
           break;
+        case 'lesson_plan':
+          item = await models.LessonPlan.findByPk(purchasableId);
+          break;
         case 'tool':
           item = await models.Tool.findByPk(purchasableId);
           break;
@@ -332,6 +335,9 @@ class PaymentService {
             break;
           case 'file':
             product = await models.File.findByPk(purchase.purchasable_id);
+            break;
+          case 'lesson_plan':
+            product = await models.LessonPlan.findByPk(purchase.purchasable_id);
             break;
           case 'tool':
             product = await models.Tool.findByPk(purchase.purchasable_id);

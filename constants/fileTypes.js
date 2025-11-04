@@ -48,6 +48,14 @@ export const FILE_TYPES = {
     mimeTypes: ['video/mp4', 'video/quicktime', 'video/x-msvideo'],
     maxSize: 500 * 1024 * 1024, // 500MB
     displayName: 'Video'
+  },
+
+  // SVG slides for presentations
+  svg_slide: {
+    extensions: ['.svg'],
+    mimeTypes: ['image/svg+xml'],
+    maxSize: 10 * 1024 * 1024, // 10MB per slide
+    displayName: 'SVG Slide'
   }
 };
 
@@ -81,8 +89,9 @@ export function getFileTypeConfig(uploadType) {
 export function detectFileTypeFromMime(mimetype) {
   if (mimetype === 'application/pdf') return 'pdf';
   if (mimetype.includes('word')) return 'docx';
-  if (mimetype.includes('powerpoint')) return 'ppt';
+  if (mimetype.includes('powerpoint')) return 'ppt'; // Legacy PowerPoint support
   if (mimetype.includes('excel') || mimetype.includes('sheet')) return 'xlsx';
+  if (mimetype === 'image/svg+xml') return 'svg'; // SVG slides for presentations
   if (mimetype.startsWith('image/')) return 'image';
   if (mimetype.includes('zip')) return 'zip';
   if (mimetype.startsWith('video/')) return 'video';

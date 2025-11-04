@@ -105,6 +105,130 @@ export default (sequelize) => {
     return this.getFilesByRole('asset');
   };
 
+  LessonPlan.prototype.getPresentationFiles = function() {
+    return this.getFilesByRole('presentation').sort((a, b) => (a.slide_order || 0) - (b.slide_order || 0));
+  };
+
+  // Add a presentation slide with order
+  LessonPlan.prototype.addPresentationSlide = function(fileId, slideOrder = null) {
+    const presentationFiles = this.getPresentationFiles();
+    const maxOrder = presentationFiles.length > 0 ? Math.max(...presentationFiles.map(f => f.slide_order || 0)) : 0;
+    const newOrder = slideOrder !== null ? slideOrder : maxOrder + 1;
+
+    const fileConfig = {
+      file_id: fileId,
+      file_role: 'presentation',
+      slide_order: newOrder
+    };
+
+    this.addFileConfig(fileConfig);
+  };
+
+  // Reorder presentation slides
+  LessonPlan.prototype.reorderPresentationSlides = function(fileIdOrder) {
+    const configs = this.getFileConfigs();
+    if (!configs.files) return;
+
+    // Update slide_order for presentation files based on the new order
+    fileIdOrder.forEach((fileId, index) => {
+      const fileConfig = configs.files.find(file => file.file_id === fileId && file.file_role === 'presentation');
+      if (fileConfig) {
+        fileConfig.slide_order = index + 1;
+      }
+    });
+
+    this.file_configs = configs;
+  };
+
+  // Remove a presentation slide
+  LessonPlan.prototype.removePresentationSlide = function(fileId) {
+    this.removeFileConfig(fileId);
+
+    // Reorder remaining slides to fill gaps
+    const presentationFiles = this.getPresentationFiles();
+    const reorderedIds = presentationFiles.map(f => f.file_id);
+    this.reorderPresentationSlides(reorderedIds);
+  };
+
+  // ===== DIRECT SVG STORAGE METHODS (No Files Table) =====
+
+  // Add SVG slide directly to file_configs without Files table
+  LessonPlan.prototype.addDirectPresentationSlide = function(slideData) {
+    const configs = this.getFileConfigs();
+    if (!configs.presentation) {
+      configs.presentation = [];
+    }
+
+    const slideOrder = configs.presentation.length + 1;
+
+    const slideConfig = {
+      id: slideData.id || `slide_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      filename: slideData.filename,
+      s3_key: slideData.s3_key,
+      slide_order: slideOrder,
+      title: slideData.title || slideData.filename,
+      upload_date: new Date().toISOString(),
+      file_size: slideData.file_size || null
+    };
+
+    configs.presentation.push(slideConfig);
+    this.file_configs = configs;
+    this.changed('file_configs', true); // Mark as changed for Sequelize
+
+    return slideConfig;
+  };
+
+  // Get all direct presentation slides (not file_id based)
+  LessonPlan.prototype.getDirectPresentationSlides = function() {
+    const configs = this.getFileConfigs();
+    return (configs.presentation || []).sort((a, b) => (a.slide_order || 0) - (b.slide_order || 0));
+  };
+
+  // Reorder direct presentation slides
+  LessonPlan.prototype.reorderDirectPresentationSlides = function(slideIds) {
+    const configs = this.getFileConfigs();
+    if (!configs.presentation) return;
+
+    // Update slide_order based on new order
+    slideIds.forEach((slideId, index) => {
+      const slide = configs.presentation.find(s => s.id === slideId);
+      if (slide) {
+        slide.slide_order = index + 1;
+      }
+    });
+
+    this.file_configs = configs;
+    this.changed('file_configs', true);
+  };
+
+  // Remove direct presentation slide
+  LessonPlan.prototype.removeDirectPresentationSlide = function(slideId) {
+    const configs = this.getFileConfigs();
+    if (!configs.presentation) return null;
+
+    const slideIndex = configs.presentation.findIndex(s => s.id === slideId);
+    if (slideIndex === -1) return null;
+
+    const removedSlide = configs.presentation.splice(slideIndex, 1)[0];
+
+    // Reorder remaining slides to fill gaps
+    configs.presentation.forEach((slide, index) => {
+      slide.slide_order = index + 1;
+    });
+
+    this.file_configs = configs;
+    this.changed('file_configs', true);
+
+    return removedSlide;
+  };
+
+  // Get direct presentation slide by ID
+  LessonPlan.prototype.getDirectPresentationSlide = function(slideId) {
+    const configs = this.getFileConfigs();
+    if (!configs.presentation) return null;
+    return configs.presentation.find(s => s.id === slideId) || null;
+  };
+
   LessonPlan.prototype.addFileConfig = function(fileConfig) {
     const configs = this.getFileConfigs();
     if (!configs.files) {
@@ -249,7 +373,7 @@ export default (sequelize) => {
           return false;
         }
 
-        const validRoles = ['opening', 'body', 'audio', 'asset'];
+        const validRoles = ['opening', 'body', 'audio', 'asset', 'presentation'];
         if (!validRoles.includes(file.file_role)) {
           return false;
         }

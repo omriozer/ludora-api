@@ -133,14 +133,32 @@ export function apiSecurityHeaders(req, res, next) {
 // Request size limiting middleware
 export function requestSizeLimiter(req, res, next) {
   const contentLength = parseInt(req.headers['content-length'] || '0');
-  const maxSize = process.env.MAX_REQUEST_SIZE || 50 * 1024 * 1024; // 50MB default
+
+  // Define routes that need higher size limits for file uploads
+  const highLimitRoutes = [
+    '/api/svg-slides/', // SVG slide uploads
+    '/api/assets/', // Asset uploads
+    '/api/v2/assets/', // Unified asset uploads
+    '/api/media/', // Media uploads
+    '/api/videos/' // Video uploads
+  ];
+
+  // Check if this request is for a high-limit route
+  const isHighLimitRoute = highLimitRoutes.some(route => req.path.startsWith(route));
+
+  // Set appropriate size limits
+  const maxSize = isHighLimitRoute
+    ? 100 * 1024 * 1024 // 100MB for file uploads
+    : process.env.MAX_REQUEST_SIZE || 50 * 1024 * 1024; // 50MB for regular requests
 
   if (contentLength > maxSize) {
     return res.status(413).json({
       error: {
         message: 'Request entity too large',
         code: 'REQUEST_TOO_LARGE',
-        maxSize: `${maxSize / 1024 / 1024}MB`
+        maxSize: `${maxSize / 1024 / 1024}MB`,
+        route: req.path,
+        isHighLimitRoute
       }
     });
   }

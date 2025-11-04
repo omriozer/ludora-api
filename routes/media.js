@@ -7,6 +7,28 @@ const router = express.Router();
 const authService = new AuthService();
 
 /**
+ * Helper: Encode filename for Content-Disposition header
+ *
+ * HTTP headers cannot contain non-ASCII characters directly.
+ * This function creates a proper Content-Disposition header value
+ * with both a fallback ASCII filename and an RFC 5987 encoded filename.
+ *
+ * @param {string} disposition - 'attachment' or 'inline'
+ * @param {string} filename - Original filename (may contain Hebrew/Unicode)
+ * @returns {string} Properly formatted Content-Disposition header value
+ */
+function encodeContentDisposition(disposition, filename) {
+  // Create ASCII fallback by removing non-ASCII characters
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_');
+
+  // RFC 5987 encoding: UTF-8 percent-encoding
+  const encodedFilename = encodeURIComponent(filename);
+
+  // Return both formats for maximum compatibility
+  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
+}
+
+/**
  * Helper: Check if user has access to private video content
  *
  * Access is granted if:
@@ -256,7 +278,7 @@ router.get('/download/audiofile/:audioFileId', async (req, res) => {
       const headers = {
         'Content-Type': contentType,
         'Content-Length': fileBuffer.length,
-        'Content-Disposition': `inline; filename="${audioFile.file_filename}"`,
+        'Content-Disposition': encodeContentDisposition('inline', audioFile.file_filename),
         'Cache-Control': 'private, max-age=3600', // Cache for 1 hour
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',

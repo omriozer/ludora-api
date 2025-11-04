@@ -11,7 +11,8 @@ import { extractCopyrightText, updateFooterTextContent } from '../utils/footerSe
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
 import fileService from '../services/FileService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
-import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCounter.js';
+import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
+import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCountingUtils.js';
 
 const router = express.Router();
 
@@ -49,13 +50,12 @@ const fileUpload = multer({
 function getFileTypeFromExtension(extension) {
   switch (extension.toLowerCase()) {
     case 'pdf': return 'pdf';
-    case 'ppt':
-    case 'pptx': return 'ppt';
     case 'doc':
     case 'docx': return 'docx';
     case 'zip': return 'zip';
+    case 'svg': return 'other'; // SVG files for new slide system
     // Audio files and all other types fall back to 'other'
-    // File model only allows: ['pdf', 'ppt', 'docx', 'zip', 'other']
+    // File model only allows: ['pdf', 'docx', 'zip', 'other']
     default: return 'other';
   }
 }
@@ -1328,17 +1328,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     console.log(`📤 Processing file: ${fileName}, role: ${file_role}, extension: ${fileExtension}`);
 
-    // Validate file type restrictions for opening and body roles (PPT only)
-    if (file_role === 'opening' || file_role === 'body') {
-      const allowedExtensions = ['ppt', 'pptx'];
-      if (!allowedExtensions.includes(fileExtension)) {
-        console.log(`❌ Invalid file type for ${file_role}: ${fileExtension}. Only PPT files allowed.`);
-        return res.status(400).json({
-          error: `Only PowerPoint files (.ppt, .pptx) are allowed for ${file_role} sections`,
-          details: `Received file type: .${fileExtension}. Expected: ${allowedExtensions.join(', ')}`
-        });
-      }
-    }
+    // TODO: SVG validation will be added here for new presentation upload system
 
     // Validate file type restrictions for audio role
     if (file_role === 'audio') {
@@ -1396,18 +1386,8 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       file_size: req.file.size
     }, { transaction });
 
-    // 3. Count slides for PowerPoint files (opening and body roles)
+    // 3. TODO: SVG slide handling will be implemented here
     let slideCount = 0;
-    if ((file_role === 'opening' || file_role === 'body') && (fileExtension === 'ppt' || fileExtension === 'pptx')) {
-      console.log(`📊 Counting slides for ${file_role} PowerPoint file: ${fileName}`);
-      try {
-        slideCount = await countSlidesInPowerPoint(req.file.buffer, fileName);
-        console.log(`📊 Detected ${slideCount} slides in ${fileName}`);
-      } catch (slideError) {
-        console.warn(`⚠️ Failed to count slides in ${fileName}:`, slideError.message);
-        // Continue with slideCount = 0, don't fail the upload
-      }
-    }
 
     // 4. Update lesson plan file_configs within same transaction
     const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
@@ -1485,9 +1465,9 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     currentConfigs.files.push(newFileConfig);
 
-    // 5. Calculate total slides from opening and body files and update lesson plan
-    const newTotalSlides = calculateTotalSlides(currentConfigs);
-    console.log(`📊 Calculated total slides: ${newTotalSlides}`);
+    // 5. TODO: SVG slide counting will be implemented here
+    const newTotalSlides = currentConfigs.files.length; // Simple count for now
+    console.log(`📊 Total files count: ${newTotalSlides}`);
 
     // Update lesson plan with new file configs and total slides
     console.log(`📤 Updating lesson plan with file configs:`, JSON.stringify(currentConfigs, null, 2));
@@ -2064,6 +2044,83 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
   } catch (error) {
     console.error('Error resetting user onboarding:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /entities/lesson-plan/:lessonPlanId/presentation - Get lesson plan presentation files with access control
+router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (req, res) => {
+  try {
+    const { lessonPlanId } = req.params;
+    const userId = req.user.uid;
+
+    console.log(`🎯 Lesson plan presentation request:`, {
+      lessonPlanId,
+      userId
+    });
+
+    // Check user access to the lesson plan
+    const hasAccess = await checkLessonPlanAccess(userId, lessonPlanId);
+    if (!hasAccess) {
+      console.log(`🚫 Access denied for user ${userId} to lesson plan ${lessonPlanId}`);
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'You need to purchase this lesson plan to view the presentation',
+        hasAccess: false
+      });
+    }
+
+    console.log(`✅ Access granted for user ${userId} to lesson plan ${lessonPlanId}`);
+
+    // Get presentation files
+    const presentationFiles = await getLessonPlanPresentationFiles(lessonPlanId);
+
+    if (!presentationFiles.hasPresentation) {
+      console.log(`📋 No presentation files found for lesson plan ${lessonPlanId}`);
+      return res.status(404).json({
+        error: 'No presentation found',
+        message: 'This lesson plan does not have any presentation files',
+        hasPresentation: false
+      });
+    }
+
+    // Get ordered URLs for frontend consumption
+    const orderedUrls = getOrderedPresentationUrls(presentationFiles);
+
+    console.log(`🎯 Returning presentation data for lesson plan ${lessonPlanId}:`, {
+      openingFiles: presentationFiles.opening.length,
+      bodyFiles: presentationFiles.body.length,
+      totalSlides: presentationFiles.totalSlides,
+      orderedUrls: orderedUrls.length
+    });
+
+    res.json({
+      success: true,
+      hasAccess: true,
+      hasPresentation: true,
+      lessonPlan: {
+        id: lessonPlanId,
+        title: presentationFiles.lessonPlan.title,
+        description: presentationFiles.lessonPlan.description,
+        totalSlides: presentationFiles.totalSlides
+      },
+      files: {
+        opening: presentationFiles.opening,
+        body: presentationFiles.body,
+        totalSlides: presentationFiles.totalSlides
+      },
+      presentation: {
+        urls: orderedUrls,
+        totalFiles: orderedUrls.length,
+        totalSlides: presentationFiles.totalSlides
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error getting lesson plan presentation:', error);
+    res.status(500).json({
+      error: 'Failed to get presentation',
+      message: error.message
+    });
   }
 });
 

@@ -91,6 +91,9 @@ router.post('/purchases', authenticateToken, async (req, res) => {
       case 'file':
         item = await models.File.findByPk(purchasableId);
         break;
+      case 'lesson_plan':
+        item = await models.LessonPlan.findByPk(purchasableId);
+        break;
       case 'tool':
         item = await models.Tool.findByPk(purchasableId);
         break;

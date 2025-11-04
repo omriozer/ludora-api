@@ -77,6 +77,7 @@ import subscriptionRoutes from './routes/subscriptions.js';
 import publicApisRoutes from './routes/publicApis.js';
 import gamesRoutes from './routes/games.js';
 import productsRoutes from './routes/products.js';
+import svgSlidesRoutes from './routes/svgSlides.js';
 
 const app = express();
 
@@ -118,14 +119,14 @@ app.use(secureCookies);
 app.use('/api', apiSecurityHeaders);
 
 // Body parsing middleware
-app.use(express.json({ 
-  limit: '50mb',
+app.use(express.json({
+  limit: '100mb', // Increased to match file upload limits
   verify: (req, res, buf) => {
     // Store raw body for webhook verification if needed
     req.rawBody = buf;
   }
 }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' })); // Increased to match file upload limits
 
 // API Routes (protected by frontend CORS)
 app.use('/api/auth', authRoutes);
@@ -146,6 +147,7 @@ app.use('/api/tools', toolRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/public', publicApisRoutes);
 app.use('/api/games', gamesRoutes);
+app.use('/api/svg-slides', svgSlidesRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
@@ -186,7 +188,8 @@ app.get('/api', (req, res) => {
       tools: '/api/tools',
       subscriptions: '/api/subscriptions',
       public: '/api/public',
-      games: '/api/games'
+      games: '/api/games',
+      'svg-slides': '/api/svg-slides'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
   });
