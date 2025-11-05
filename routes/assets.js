@@ -579,6 +579,22 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
           shouldHaveImage = product.has_image === true ||
                            (product.has_image === undefined && product.image_url && product.image_url.trim().length > 0 && product.image_url !== 'HAS_IMAGE');
         }
+      } else if (entityType === 'gamecontent') {
+        // For GameContent entities, check the GameContent table for image data
+        console.log(`🔍 GameContent entity image request: Checking GameContent ${entityId}`);
+
+        const gameContent = await db.GameContent.findByPk(entityId);
+        if (gameContent && gameContent.semantic_type === 'image') {
+          entityData = gameContent;
+          // GameContent should have an image if it has a value field with an S3 key
+          shouldHaveImage = !!(gameContent.value && gameContent.value.trim().length > 0);
+
+          console.log(`🔍 GameContent image check: Found GameContent ${gameContent.id}, semantic_type: ${gameContent.semantic_type}, has_value: ${!!gameContent.value}`);
+        } else if (gameContent) {
+          console.warn(`⚠️ GameContent ${entityId} exists but semantic_type is '${gameContent.semantic_type}', not 'image'`);
+        } else {
+          console.warn(`⚠️ GameContent ${entityId} not found in database`);
+        }
       } else if (entityType === 'file') {
         // FIXED: For marketing images on File products, the entityId is actually the Product ID
         // We need to check if this entityId is a Product ID first, then fall back to File entity lookup
@@ -686,9 +702,9 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
 
       // Log this inconsistency to the log table
       await db.Logs.create({
-        level: 'warning',
-        message: 'Image request for non-existent entity',
-        details: JSON.stringify({
+        source_type: 'api',
+        log_type: 'warn',
+        message: `Image request for non-existent entity: ${JSON.stringify({
           entityType,
           entityId,
           filename,
@@ -696,9 +712,8 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
           userAgent: req.headers['user-agent'],
           ip: req.ip,
           timestamp: new Date().toISOString()
-        }),
-        created_at: new Date(),
-        updated_at: new Date()
+        })}`,
+        created_at: new Date()
       });
 
       return res.status(404).json(createErrorResponse(
@@ -739,7 +754,15 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
             let retryShouldHaveImage = false;
 
             try {
-              if (entityType === 'file') {
+              if (entityType === 'gamecontent') {
+                // For GameContent entities, retry the same logic
+                const retryGameContent = await db.GameContent.findByPk(entityId);
+                if (retryGameContent && retryGameContent.semantic_type === 'image') {
+                  retryEntityData = retryGameContent;
+                  retryShouldHaveImage = !!(retryGameContent.value && retryGameContent.value.trim().length > 0);
+                  console.log(`🔄 Retry check (GameContent): Found GameContent ${retryGameContent.id}, semantic_type: ${retryGameContent.semantic_type}, has_value: ${!!retryGameContent.value}`);
+                }
+              } else if (entityType === 'file') {
                 // Same logic as above: try Product ID first, then File entity ID
                 let retryProduct = await db.Product.findByPk(entityId);
 
@@ -822,9 +845,9 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
 
                 // Log as warning (not error) since we're not certain it's an orphan
                 await db.Logs.create({
-                  level: 'warning',
-                  message: 'Potential orphaned image file detected after retry',
-                  details: JSON.stringify({
+                  source_type: 'api',
+                  log_type: 'warn',
+                  message: `Potential orphaned image file detected after retry: ${JSON.stringify({
                     entityType,
                     entityId,
                     filename,
@@ -842,9 +865,8 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                     userAgent: req.headers['user-agent'],
                     ip: req.ip,
                     timestamp: new Date().toISOString()
-                  }),
-                  created_at: new Date(),
-                  updated_at: new Date()
+                  })}`,
+                  created_at: new Date()
                 });
 
                 // Still return 404 to not serve potentially orphaned files
@@ -868,9 +890,9 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
 
             // Log this as an error since it's likely a genuine orphan
             await db.Logs.create({
-              level: 'error',
-              message: 'Confirmed orphaned image file detected in S3',
-              details: JSON.stringify({
+              source_type: 'api',
+              log_type: 'error',
+              message: `Confirmed orphaned image file detected in S3: ${JSON.stringify({
                 entityType,
                 entityId,
                 filename,
@@ -887,9 +909,8 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                 userAgent: req.headers['user-agent'],
                 ip: req.ip,
                 timestamp: new Date().toISOString()
-              }),
-              created_at: new Date(),
-              updated_at: new Date()
+              })}`,
+              created_at: new Date()
             });
 
             // DO NOT serve the image - return 404 as if it doesn't exist

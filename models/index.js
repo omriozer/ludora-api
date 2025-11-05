@@ -42,6 +42,10 @@ import CurriculumProduct from './CurriculumProduct.js';
 import LessonPlan from './LessonPlan.js';
 import Logs from './Logs.js';
 import WebhookLog from './WebhookLog.js';
+import GameContent from './GameContent.js';
+import GameContentRelation from './GameContentRelation.js';
+import GameContentRelationItem from './GameContentRelationItem.js';
+import GameContentLink from './GameContentLink.js';
 
 // Initialize models
 const models = {
@@ -79,6 +83,10 @@ const models = {
   LessonPlan: LessonPlan(sequelize),
   Logs: Logs(sequelize),
   WebhookLog: WebhookLog(sequelize),
+  GameContent: GameContent(sequelize),
+  GameContentRelation: GameContentRelation(sequelize),
+  GameContentRelationItem: GameContentRelationItem(sequelize),
+  GameContentLink: GameContentLink(sequelize),
 };
 
 // Define associations

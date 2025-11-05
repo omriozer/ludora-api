@@ -19,20 +19,17 @@ export default function(sequelize) {
       validate: {
         isIn: [[
           'scatter_game',
-          'wisdom_maze',
           'sharp_and_smooth',
           'memory_game',
           'ar_up_there'
         ]]
       }
     },
-    device_compatibility: {
-      type: DataTypes.STRING,
+    digital: {
+      type: DataTypes.BOOLEAN,
       allowNull: false,
-      defaultValue: 'both',
-      validate: {
-        isIn: [['mobile_only', 'desktop_only', 'both']]
-      }
+      defaultValue: true,
+      comment: 'true = דיגיטלי, false = גרסה להדפסה'
     },
     game_settings: {
       type: DataTypes.JSONB,
@@ -46,6 +43,12 @@ export default function(sequelize) {
         }
       }
     },
+    content_query: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+      comment: 'JSON object defining how to query content for this game'
+    },
   }, {
     ...baseOptions,
     tableName: 'game',
@@ -54,7 +57,7 @@ export default function(sequelize) {
         fields: ['game_type']
       },
       {
-        fields: ['device_compatibility']
+        fields: ['digital']
       },
       {
         fields: ['creator_user_id']
@@ -77,9 +80,12 @@ export default function(sequelize) {
     return this.save();
   };
 
-  Game.prototype.isCompatibleWith = function(deviceType) {
-    if (this.device_compatibility === 'both') return true;
-    return this.device_compatibility === deviceType;
+  Game.prototype.isDigital = function() {
+    return this.digital === true;
+  };
+
+  Game.prototype.isPrintVersion = function() {
+    return this.digital === false;
   };
 
 
@@ -97,17 +103,22 @@ export default function(sequelize) {
 
 
 
-  Game.findCompatibleWith = function(deviceType, options = {}) {
+  Game.findByFormat = function(isDigital, options = {}) {
     return this.findAll({
       where: {
-        [sequelize.Sequelize.Op.or]: [
-          { device_compatibility: 'both' },
-          { device_compatibility: deviceType }
-        ],
+        digital: isDigital,
         ...options.where
       },
       ...options
     });
+  };
+
+  Game.findDigitalGames = function(options = {}) {
+    return this.findByFormat(true, options);
+  };
+
+  Game.findPrintGames = function(options = {}) {
+    return this.findByFormat(false, options);
   };
 
   Game.findByCreator = function(creatorUserId, options = {}) {
@@ -126,6 +137,28 @@ export default function(sequelize) {
     Game.belongsTo(models.User, {
       foreignKey: 'creator_user_id',
       as: 'creator'
+    });
+
+    // Has many content links (flexible links to content or relations)
+    Game.hasMany(models.GameContentLink, {
+      foreignKey: 'game_id',
+      as: 'contentLinks'
+    });
+
+    // Many-to-many with GameContent through GameContentLink
+    Game.belongsToMany(models.GameContent, {
+      through: models.GameContentLink,
+      foreignKey: 'game_id',
+      otherKey: 'target_id',
+      as: 'linkedContent'
+    });
+
+    // Many-to-many with GameContentRelation through GameContentLink
+    Game.belongsToMany(models.GameContentRelation, {
+      through: models.GameContentLink,
+      foreignKey: 'game_id',
+      otherKey: 'target_id',
+      as: 'linkedRelations'
     });
 
     // Note: Purchases will reference this via polymorphic relation

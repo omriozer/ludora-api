@@ -33,7 +33,7 @@ module.exports = {
             "created_at": "2025-10-28 10:40:21.678+07",
             "updated_at": "2025-10-28 10:40:21.678+07",
             "game_type": null,
-            "device_compatibility": "both",
+            "digital": true,
             "game_settings": "{}",
             "difficulty_level": null,
             "creator_user_id": null

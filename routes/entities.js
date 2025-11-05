@@ -13,6 +13,7 @@ import fileService from '../services/FileService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
 import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
 import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCountingUtils.js';
+import { GAME_TYPES } from '../config/gameTypes.js';
 
 const router = express.Router();
 
@@ -453,8 +454,31 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
           file_types_config: getFileTypesForFrontend(),
           study_subjects: STUDY_SUBJECTS,
           audiance_targets: AUDIANCE_TARGETS,
-          school_grades: SCHOOL_GRADES
+          school_grades: SCHOOL_GRADES,
+          game_types: GAME_TYPES
         };
+      });
+      return res.json(enhancedResults);
+    }
+
+    // For GameContent entity, transform S3 keys to API URLs for security
+    if (entityType === 'gamecontent') {
+      const enhancedResults = results.map(gameContent => {
+        const gameContentData = gameContent.toJSON ? gameContent.toJSON() : gameContent;
+
+        // Transform S3 keys to API URLs for image files
+        if (gameContentData.semantic_type === 'image' && gameContentData.value) {
+          // Extract filename from S3 key (format: env/privacy/assetType/entityType/entityId/filename)
+          const pathParts = gameContentData.value.split('/');
+          const filename = pathParts[pathParts.length - 1];
+
+          // Check if value looks like an S3 key (not already an API URL)
+          if (gameContentData.value.includes('/') && !gameContentData.value.startsWith('/api/')) {
+            gameContentData.value = `/api/assets/image/gamecontent/${gameContentData.id}/${filename}`;
+          }
+        }
+
+        return gameContentData;
       });
       return res.json(enhancedResults);
     }
@@ -473,6 +497,19 @@ router.get('/:type/:id', optionalAuth, customValidators.validateEntityType, asyn
 
   try {
     const entity = await EntityService.findById(entityType, id);
+
+    // Apply S3 URL transformation for GameContent images
+    if (entityType === 'gamecontent' && entity && entity.semantic_type === 'image' && entity.value) {
+      // Extract filename from S3 key (format: env/privacy/assetType/entityType/entityId/filename)
+      const pathParts = entity.value.split('/');
+      const filename = pathParts[pathParts.length - 1];
+
+      // Check if value looks like an S3 key (not already an API URL)
+      if (entity.value.includes('/') && !entity.value.startsWith('/api/')) {
+        entity.value = `/api/assets/image/gamecontent/${entity.id}/${filename}`;
+      }
+    }
+
     res.json(entity);
   } catch (error) {
     if (error.message.includes('not found')) {
@@ -2120,6 +2157,205 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
     res.status(500).json({
       error: 'Failed to get presentation',
       message: error.message
+    });
+  }
+});
+
+// POST /entities/gamecontent/upload - Atomic file upload for GameContent
+router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'), async (req, res) => {
+  const transaction = await sequelize.transaction();
+  let uploadedS3Key = null;
+
+  try {
+    console.log('📤 Starting atomic GameContent file upload');
+
+    // Get user information
+    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Get form data
+    const { semantic_type, metadata } = req.body;
+
+    // Validate semantic_type
+    const validSemanticTypes = ['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video'];
+    if (!semantic_type || !validSemanticTypes.includes(semantic_type)) {
+      return res.status(400).json({
+        error: 'Valid semantic_type is required',
+        valid_types: validSemanticTypes
+      });
+    }
+
+    // Validate file upload for file-based types
+    const fileTypes = ['image', 'audio', 'video'];
+    if (fileTypes.includes(semantic_type)) {
+      if (!req.file) {
+        return res.status(400).json({ error: 'File is required for file-based semantic types' });
+      }
+    } else {
+      if (req.file) {
+        return res.status(400).json({ error: 'Files are not allowed for text-based semantic types' });
+      }
+    }
+
+    // Parse metadata if provided
+    let parsedMetadata = {};
+    if (metadata) {
+      try {
+        parsedMetadata = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+      } catch (error) {
+        return res.status(400).json({ error: 'Invalid metadata JSON format' });
+      }
+    }
+
+    // For text-based types, get value from metadata or request body
+    let contentValue = '';
+    let dataType = '';
+
+    if (fileTypes.includes(semantic_type)) {
+      // File-based types: value will be set to S3 URL after upload
+      dataType = `${semantic_type}_url`;
+      contentValue = ''; // Will be updated with S3 URL
+    } else {
+      // Text-based types: get value from request body
+      dataType = 'string';
+      contentValue = req.body.value || '';
+      if (!contentValue.trim()) {
+        return res.status(400).json({ error: 'Value is required for text-based semantic types' });
+      }
+    }
+
+    // Generate ID for the GameContent entity
+    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
+
+    // 1. Create GameContent entity within transaction
+    const gameContentData = {
+      id: generateId(),
+      semantic_type: semantic_type,
+      data_type: dataType,
+      value: contentValue,
+      metadata: parsedMetadata
+    };
+
+    console.log('📤 Creating GameContent entity with data:', gameContentData);
+    const gameContentEntity = await models.GameContent.create(gameContentData, { transaction });
+    console.log('✅ GameContent entity created:', gameContentEntity.id);
+
+    // 2. If file-based type, upload file and update entity
+    if (fileTypes.includes(semantic_type) && req.file) {
+
+      // Declare fileName variable for use in response and file processing
+      let fileName = req.file.originalname;
+
+      // Handle filename encoding
+      try {
+        if (fileName.includes('×') || fileName.includes('Ã')) {
+          const decodedName = decodeURIComponent(escape(fileName));
+          if (decodedName !== fileName && decodedName.length > 0) {
+            fileName = decodedName;
+            console.log(`📤 Decoded filename from "${req.file.originalname}" to "${fileName}"`);
+          }
+        }
+      } catch (error) {
+        console.log(`📤 Filename decoding failed, using original: ${error.message}`);
+      }
+
+      console.log(`📤 Processing file: ${fileName}, semantic_type: ${semantic_type}`);
+
+      // Map semantic type to asset type for S3 upload
+      const assetTypeMap = {
+        'image': 'image',
+        'audio': 'audio',
+        'video': 'video'
+      };
+      const assetType = assetTypeMap[semantic_type];
+
+      // Create predictable S3 path using constructS3Path
+      const s3Key = constructS3Path('gamecontent', gameContentEntity.id, assetType, fileName);
+      console.log(`📤 Using predictable S3 path: ${s3Key}`);
+
+      // Upload file using unified asset upload method
+      const uploadResult = await fileService.uploadAsset({
+        file: req.file,
+        entityType: 'gamecontent',
+        entityId: gameContentEntity.id,
+        assetType: assetType,
+        userId: req.user.uid,
+        transaction: transaction,
+        preserveOriginalName: true
+      });
+
+      if (!uploadResult.success) {
+        throw new Error('File upload failed');
+      }
+
+      uploadedS3Key = uploadResult.s3Key;
+      console.log('✅ File uploaded successfully:', uploadedS3Key);
+
+      // 3. Update GameContent entity with S3 key (not URL) for security
+      await gameContentEntity.update({
+        value: uploadedS3Key
+      }, { transaction });
+
+      console.log('✅ GameContent entity updated with S3 key:', uploadedS3Key);
+    }
+
+    // Commit transaction - everything succeeded
+    console.log('📤 Attempting to commit transaction...');
+    await transaction.commit();
+    console.log('✅ Transaction committed successfully');
+
+    console.log('🎉 Atomic GameContent upload completed successfully');
+
+    // Prepare response with API URL for image files
+    const response = {
+      message: 'GameContent created successfully',
+      gamecontent: {
+        id: gameContentEntity.id,
+        semantic_type: gameContentEntity.semantic_type,
+        data_type: gameContentEntity.data_type,
+        value: fileTypes.includes(semantic_type) && semantic_type === 'image'
+          ? `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`
+          : gameContentEntity.value,
+        metadata: gameContentEntity.metadata
+      }
+    };
+
+    // Add file info for file-based types
+    if (fileTypes.includes(semantic_type) && req.file) {
+      response.file = {
+        filename: fileName,
+        s3_key: uploadedS3Key,
+        api_url: semantic_type === 'image'
+          ? `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`
+          : undefined,
+        size: req.file.size,
+        mime_type: req.file.mimetype
+      };
+    }
+
+    res.status(201).json(response);
+
+  } catch (error) {
+    console.error('❌ Atomic GameContent upload failed:', error);
+
+    // Rollback database transaction
+    await transaction.rollback();
+
+    // Clean up S3 file if it was uploaded
+    if (uploadedS3Key) {
+      try {
+        await fileService.deleteS3Object(uploadedS3Key);
+        console.log(`🧹 Cleaned up S3 file: ${uploadedS3Key}`);
+      } catch (s3Error) {
+        console.error('Failed to clean up S3 file:', s3Error);
+      }
+    }
+
+    res.status(500).json({
+      error: 'GameContent upload failed',
+      details: error.message
     });
   }
 });
