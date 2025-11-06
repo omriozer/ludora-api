@@ -1,0 +1,112 @@
+name: Deploy to Heroku
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  deploy:
+    name: Deploy API to Heroku
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Check for dependency changes
+        id: deps-check
+        run: |
+          git diff HEAD~1 HEAD -- package.json package-lock.json > /dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Setup Heroku CLI
+        uses: akhileshns/heroku-deploy@v3.13.15
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "ludora-api-prod"
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          usedocker: false
+          dontautocreate: true
+          justlogin: true
+
+      - name: Deploy to Heroku
+        run: |
+          # Add Heroku remote if it doesn't exist
+          git remote -v | grep heroku || git remote add heroku https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/ludora-api-prod.git
+
+          # Configure git
+          git config user.email "github-actions@ludora.app"
+          git config user.name "GitHub Actions"
+
+          # Deploy to Heroku
+          git push heroku HEAD:main --force
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for Heroku deployment to complete..."
+          sleep 60
+
+      - name: Run database migrations
+        run: |
+          echo "Running database migrations..."
+          heroku run npm run migrate:prod --app ludora-api-prod
+          echo "✅ Migrations completed successfully"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
+      - name: Restart dynos
+        run: |
+          echo "Restarting Heroku dynos..."
+          heroku ps:restart --app ludora-api-prod
+          echo "✅ Dynos restarted successfully"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
+      - name: Handle dependency changes
+        if: steps.deps-check.outputs.changes == 'true'
+        run: |
+          echo "⚠️ Package.json changes detected - dependencies will be updated during Heroku build"
+          echo "Heroku automatically installs dependencies based on package.json during build"
+
+      - name: Health check
+        run: |
+          echo "Waiting for deployment to be ready..."
+          sleep 60
+          curl -f https://api.ludora.app/health || exit 1
+          echo "✅ API deployment successful and healthy!"
+
+      - name: Check dyno status
+        run: |
+          echo "Checking dyno status..."
+          heroku ps --app ludora-api-prod
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
+      - name: Deployment summary
+        run: |
+          echo "🚀 Heroku deployment completed successfully!"
+          echo "API URL: https://api.ludora.app"
+          echo "Health Check: https://api.ludora.app/health"
+          echo "Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-prod"

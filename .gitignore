@@ -125,3 +125,9 @@ build/
 # Lock files (choose one)
 # Keep package-lock.json for this project
 # yarn.lock
+
+# Migration artifacts (temporary)
+migration-backups/
+scripts/export-db-for-migration.sh
+scripts/final-deployment-check.sh
+scripts/verify-render-import.sh

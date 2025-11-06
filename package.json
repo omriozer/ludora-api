@@ -46,7 +46,7 @@
     "pm2:reload": "pm2 reload ludora-api-dev",
     "pm2:reload:staging": "pm2 reload ludora-api-staging",
     "pm2:reload:prod": "pm2 reload ludora-api-prod",
-    "logs:prod": "flyctl logs -a ludora-api",
+    "logs:prod": "heroku logs -a ludora-api-prod --tail",
     "logs:clean": "truncate -s 0 logs/pm2-*.log",
     "logs:backup": "mkdir -p logs/backup-$(date +%Y%m%d-%H%M) && cp logs/*.log logs/backup-$(date +%Y%m%d-%H%M)/",
     "logs:size": "du -sh logs/ && ls -lah logs/",
