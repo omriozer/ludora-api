@@ -40,6 +40,12 @@ export default {
     use_env_variable: 'DATABASE_URL',
     dialect: 'postgres',
     logging: false,
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    },
     pool: {
       max: 20,
       min: 0,
