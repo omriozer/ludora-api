@@ -1,0 +1,97 @@
+name: 'Telegram Notification'
+description: 'Send deployment notifications to Telegram'
+inputs:
+  bot-token:
+    description: 'Telegram bot token'
+    required: true
+  chat-id:
+    description: 'Telegram chat ID'
+    required: true
+  status:
+    description: 'Deployment status (started/success/failed)'
+    required: true
+  service:
+    description: 'Service name (API/Frontend)'
+    required: true
+  details:
+    description: 'Additional details for the message'
+    required: false
+    default: ''
+  commit-sha:
+    description: 'Commit SHA'
+    required: false
+    default: ${{ github.sha }}
+  commit-message:
+    description: 'Commit message'
+    required: false
+    default: ''
+  run-url:
+    description: 'GitHub Actions run URL'
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Send Telegram notification
+      shell: bash
+      run: |
+        # Set message based on status
+        case "${{ inputs.status }}" in
+          "started")
+            EMOJI="🚀"
+            TITLE="פריסה החלה"
+            COLOR=""
+            ;;
+          "success")
+            EMOJI="✅"
+            TITLE="פריסה הושלמה בהצלחה"
+            COLOR=""
+            ;;
+          "failed")
+            EMOJI="❌"
+            TITLE="פריסה נכשלה"
+            COLOR=""
+            ;;
+          *)
+            EMOJI="ℹ️"
+            TITLE="עדכון פריסה"
+            COLOR=""
+            ;;
+        esac
+
+        # Truncate commit message if too long
+        COMMIT_MSG="${{ inputs.commit-message }}"
+        if [ ${#COMMIT_MSG} -gt 100 ]; then
+          COMMIT_MSG="${COMMIT_MSG:0:97}..."
+        fi
+
+        # Build message
+        MESSAGE="$EMOJI *$TITLE*
+
+🔧 *שירות:* ${{ inputs.service }}
+📝 *Commit:* \`${COMMIT_MSG}\`
+🔗 *SHA:* \`${{ inputs.commit-sha }}\`"
+
+        # Add details if provided
+        if [ -n "${{ inputs.details }}" ]; then
+          MESSAGE="$MESSAGE
+
+📋 *פרטים:*
+${{ inputs.details }}"
+        fi
+
+        # Add action link
+        MESSAGE="$MESSAGE
+
+🔗 [צפיה ב-GitHub Actions](${{ inputs.run-url }})"
+
+        # Send to Telegram
+        curl -s -X POST "https://api.telegram.org/bot${{ inputs.bot-token }}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"chat_id\": \"${{ inputs.chat-id }}\",
+            \"text\": \"$MESSAGE\",
+            \"parse_mode\": \"Markdown\",
+            \"disable_web_page_preview\": true
+          }"
