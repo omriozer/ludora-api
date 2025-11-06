@@ -130,4 +130,3 @@ build/
 migration-backups/
 scripts/export-db-for-migration.sh
 scripts/final-deployment-check.sh
-scripts/verify-render-import.sh
