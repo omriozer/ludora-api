@@ -584,14 +584,14 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
         console.log(`🔍 GameContent entity image request: Checking GameContent ${entityId}`);
 
         const gameContent = await db.GameContent.findByPk(entityId);
-        if (gameContent && gameContent.semantic_type === 'image') {
+        if (gameContent && (gameContent.semantic_type === 'image' || gameContent.semantic_type === 'game_card_bg' || gameContent.semantic_type === 'complete_card')) {
           entityData = gameContent;
           // GameContent should have an image if it has a value field with an S3 key
           shouldHaveImage = !!(gameContent.value && gameContent.value.trim().length > 0);
 
           console.log(`🔍 GameContent image check: Found GameContent ${gameContent.id}, semantic_type: ${gameContent.semantic_type}, has_value: ${!!gameContent.value}`);
         } else if (gameContent) {
-          console.warn(`⚠️ GameContent ${entityId} exists but semantic_type is '${gameContent.semantic_type}', not 'image'`);
+          console.warn(`⚠️ GameContent ${entityId} exists but semantic_type is '${gameContent.semantic_type}', not 'image', 'game_card_bg', or 'complete_card'`);
         } else {
           console.warn(`⚠️ GameContent ${entityId} not found in database`);
         }
@@ -757,7 +757,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
               if (entityType === 'gamecontent') {
                 // For GameContent entities, retry the same logic
                 const retryGameContent = await db.GameContent.findByPk(entityId);
-                if (retryGameContent && retryGameContent.semantic_type === 'image') {
+                if (retryGameContent && (retryGameContent.semantic_type === 'image' || retryGameContent.semantic_type === 'game_card_bg' || retryGameContent.semantic_type === 'complete_card')) {
                   retryEntityData = retryGameContent;
                   retryShouldHaveImage = !!(retryGameContent.value && retryGameContent.value.trim().length > 0);
                   console.log(`🔄 Retry check (GameContent): Found GameContent ${retryGameContent.id}, semantic_type: ${retryGameContent.semantic_type}, has_value: ${!!retryGameContent.value}`);
@@ -943,45 +943,81 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
     const s3Key = constructS3Path(entityType, entityId, 'image', filename);
 
     try {
-      // Get image metadata first
-      const metadataResult = await fileService.getS3ObjectMetadata(s3Key);
-
-      if (!metadataResult.success) {
-        // Image should exist but doesn't - log this inconsistency
-        console.warn(`⚠️ Expected image missing in S3: ${s3Key}`);
-
-        await db.Logs.create({
-          level: 'warning',
-          message: 'Expected image file missing from S3',
-          details: JSON.stringify({
-            entityType,
-            entityId,
-            filename,
-            s3Key,
-            issue: 'missing_expected_file',
-            entityData: {
-              id: entityData.id,
-              has_image: entityData.has_image,
-              image_url: entityData.image_url,
-              image_filename: entityData.image_filename
-            },
-            userAgent: req.headers['user-agent'],
-            ip: req.ip,
-            timestamp: new Date().toISOString()
-          }),
-          created_at: new Date(),
-          updated_at: new Date()
-        });
-
-        return res.status(404).json(createErrorResponse(
-          'Image not found',
-          'Image not found in storage',
-          { s3Key, entityType, entityId, filename }
-        ));
+      // Get image metadata first - wrap in try-catch to handle S3 errors
+      let metadataResult;
+      try {
+        metadataResult = await fileService.getS3ObjectMetadata(s3Key);
+      } catch (s3MetadataError) {
+        // Convert S3 exception to a failed result for consistent handling
+        metadataResult = { success: false, error: s3MetadataError.message };
       }
 
-      // Stream image from S3
-      const stream = await fileService.createS3Stream(s3Key);
+      let activeS3Key = s3Key;
+
+      if (!metadataResult.success) {
+        // FALLBACK: For gamecontent entities, try legacy S3 path (from when assetType was undefined)
+        let legacyS3Key = null;
+        let legacyMetadataResult = null;
+
+        if (entityType === 'gamecontent' && (entityData?.semantic_type === 'game_card_bg' || entityData?.semantic_type === 'complete_card')) {
+          // Construct legacy S3 path: development/private/undefined/gamecontent/entityId/filename
+          const env = process.env.ENVIRONMENT || 'development';
+          legacyS3Key = `${env}/private/undefined/gamecontent/${entityId}/${filename}`;
+
+          console.log(`🔄 Trying legacy S3 path for ${entityData.semantic_type}: ${legacyS3Key}`);
+
+          try {
+            legacyMetadataResult = await fileService.getS3ObjectMetadata(legacyS3Key);
+            if (legacyMetadataResult.success) {
+              console.log(`✅ Found legacy ${entityData.semantic_type} image at: ${legacyS3Key}`);
+              // Use the legacy S3 key for streaming
+              activeS3Key = legacyS3Key;
+              metadataResult = legacyMetadataResult;
+            }
+          } catch (legacyError) {
+            console.log(`❌ Legacy path also failed: ${legacyError.message}`);
+          }
+        }
+
+        // If both current and legacy paths failed, return 404
+        if (!metadataResult.success) {
+          // Image should exist but doesn't - log this inconsistency
+          console.warn(`⚠️ Expected image missing in S3: ${s3Key}${legacyS3Key ? ` and legacy path: ${legacyS3Key}` : ''}`);
+
+          await db.Logs.create({
+            level: 'warning',
+            message: 'Expected image file missing from S3',
+            details: JSON.stringify({
+              entityType,
+              entityId,
+              filename,
+              s3Key,
+              legacyS3Key,
+              issue: 'missing_expected_file',
+              entityData: {
+                id: entityData.id,
+                has_image: entityData.has_image,
+                image_url: entityData.image_url,
+                image_filename: entityData.image_filename
+              },
+              userAgent: req.headers['user-agent'],
+              ip: req.ip,
+              timestamp: new Date().toISOString()
+            }),
+            created_at: new Date(),
+            updated_at: new Date()
+          });
+
+          return res.status(404).json(createErrorResponse(
+            'Image not found',
+            'Image not found in storage',
+            { s3Key, legacyS3Key, entityType, entityId, filename }
+          ));
+        }
+      }
+
+      // Stream image from S3 using the active S3 key (could be original or legacy path)
+      const stream = await fileService.createS3Stream(activeS3Key);
 
       // Set appropriate headers
       res.setHeader('Content-Type', metadataResult.data.contentType || 'image/jpeg');
@@ -998,19 +1034,19 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
           res.status(500).json(createErrorResponse(
             'Stream error',
             'Failed to stream image from storage',
-            { s3Key, error: error.message }
+            { s3Key: activeS3Key, error: error.message }
           ));
         }
       });
 
-      console.log(`✅ Image served (validated): ${filename}`);
+      console.log(`✅ Image served (validated): ${filename} from ${activeS3Key}`);
 
     } catch (s3Error) {
       console.error('❌ S3 image error:', s3Error);
       return res.status(404).json(createErrorResponse(
         'Image not found',
         'Failed to retrieve image from S3',
-        { s3Key, details: s3Error.message }
+        { s3Key: s3Error.s3Key || s3Key, details: s3Error.message }
       ));
     }
 

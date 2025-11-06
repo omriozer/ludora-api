@@ -15,7 +15,7 @@ export default function (sequelize) {
 				type: DataTypes.STRING,
 				allowNull: false,
 				validate: {
-					isIn: [['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video']],
+					isIn: [['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video', 'game_card_bg', 'complete_card']],
 				},
 			},
 			data_type: {

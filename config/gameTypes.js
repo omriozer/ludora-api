@@ -21,7 +21,7 @@ export const GAME_TYPES = {
 		gradient: 'from-red-400 via-pink-500 to-purple-600',
 		defaultPrice: 0,
 		digital: true,
-		offline: true,
+		offline: false,
 		isPublished: false,
 		allowContentCreator: false,
 		showInCatalog: false,
@@ -64,7 +64,7 @@ export const GAME_TYPES = {
 		gradient: 'from-green-400 via-emerald-500 to-teal-600',
 		defaultPrice: 0,
 		digital: true,
-		offline: true,
+		offline: false,
 		isPublished: false,
 		allowContentCreator: false,
 		showInCatalog: false,
@@ -104,45 +104,69 @@ export const GAME_TYPES = {
 					}
 				},
 				semanticTypeSetA: {
+					type: 'text',
+					label: 'סוג תוכן קבוצה א\'',
+					defaultValue: 'מילה',
+					maxLength: 50,
+					description: 'תיאור סוג התוכן של קבוצת הקלפים הראשונה',
+					validation: {
+						required: true,
+						maxLength: 50,
+						message: 'תיאור סוג התוכן חייב להיות עד 50 תווים'
+					}
+				},
+				semanticTypeSetB: {
+					type: 'text',
+					label: 'סוג תוכן קבוצה ב\'',
+					defaultValue: 'מילה',
+					maxLength: 50,
+					description: 'תיאור סוג התוכן של קבוצת הקלפים השנייה',
+					validation: {
+						required: true,
+						maxLength: 50,
+						message: 'תיאור סוג התוכן חייב להיות עד 50 תווים'
+					}
+				},
+				semanticTypeSetA: {
 					type: 'select',
 					label: 'סוג תוכן קבוצה א\'',
 					defaultValue: 'word',
 					options: [
-						{ value: 'word', label: 'מילה' },
-						{ value: 'question', label: 'שאלה' },
-						{ value: 'name', label: 'שם' },
-						{ value: 'place', label: 'מקום' },
-						{ value: 'text', label: 'טקסט' },
-						{ value: 'image', label: 'תמונה' },
-						{ value: 'audio', label: 'אודיו' },
-						{ value: 'video', label: 'וידאו' }
+						{ value: 'word', label: 'מילים' },
+						{ value: 'question', label: 'שאלות' },
+						{ value: 'name', label: 'שמות' },
+						{ value: 'place', label: 'מקומות' },
+						{ value: 'text', label: 'טקסטים' },
+						{ value: 'image', label: 'תמונות' },
+						{ value: 'audio', label: 'קבצי שמע' },
+						{ value: 'video', label: 'סרטונים' }
 					],
-					description: 'סוג התוכן של קבוצת הקלפים הראשונה',
+					description: 'בחר סוג התוכן של קבוצת הקלפים הראשונה',
 					validation: {
 						required: true,
 						isIn: [['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video']],
-						message: 'יש לבחור סוג תוכן חוקי'
+						message: 'בחר סוג תוכן תקין'
 					}
 				},
 				semanticTypeSetB: {
 					type: 'select',
 					label: 'סוג תוכן קבוצה ב\'',
-					defaultValue: 'word',
+					defaultValue: 'image',
 					options: [
-						{ value: 'word', label: 'מילה' },
-						{ value: 'question', label: 'שאלה' },
-						{ value: 'name', label: 'שם' },
-						{ value: 'place', label: 'מקום' },
-						{ value: 'text', label: 'טקסט' },
-						{ value: 'image', label: 'תמונה' },
-						{ value: 'audio', label: 'אודיו' },
-						{ value: 'video', label: 'וידאו' }
+						{ value: 'word', label: 'מילים' },
+						{ value: 'question', label: 'שאלות' },
+						{ value: 'name', label: 'שמות' },
+						{ value: 'place', label: 'מקומות' },
+						{ value: 'text', label: 'טקסטים' },
+						{ value: 'image', label: 'תמונות' },
+						{ value: 'audio', label: 'קבצי שמע' },
+						{ value: 'video', label: 'סרטונים' }
 					],
-					description: 'סוג התוכן של קבוצת הקלפים השנייה',
+					description: 'בחר סוג התוכן של קבוצת הקלפים השנייה',
 					validation: {
 						required: true,
 						isIn: [['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video']],
-						message: 'יש לבחור סוג תוכן חוקי'
+						message: 'בחר סוג תוכן תקין'
 					}
 				},
 				time_limit: {

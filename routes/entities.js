@@ -3,6 +3,7 @@ import multer from 'multer';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
 import EntityService from '../services/EntityService.js';
+import GameDetailsService from '../services/GameDetailsService.js';
 import models from '../models/index.js';
 import { sequelize } from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
@@ -119,7 +120,7 @@ async function checkContentCreatorPermissions(user, entityType, entityData = {})
 }
 
 // Helper function to get full product with entity and creator
-async function getFullProduct(product, userId = null) {
+async function getFullProduct(product, userId = null, includeGameDetails = false) {
   // Get the entity based on product_type and entity_id
   let entity = null;
   if (product.entity_id && product.product_type) {
@@ -172,7 +173,20 @@ async function getFullProduct(product, userId = null) {
     delete entityData.id;
   }
 
-  return {
+  // Calculate game details if requested and product is a game
+  let gameDetails = null;
+  if (includeGameDetails && product.product_type === 'game' && entity && entity.game_type) {
+    try {
+      gameDetails = await GameDetailsService.getGameDetails(product.entity_id, entity.game_type);
+    } catch (error) {
+      console.error(`Error calculating game details for game ${product.entity_id}:`, error);
+      // Don't fail the entire request if game details calculation fails
+      gameDetails = null;
+    }
+  }
+
+  // Build the response object
+  const response = {
     ...productData,
     ...entityData,
     id: productData.id, // Ensure product ID is preserved
@@ -185,6 +199,13 @@ async function getFullProduct(product, userId = null) {
     },
     purchase: purchase ? purchase.toJSON() : null
   };
+
+  // Add game details if calculated
+  if (gameDetails) {
+    response.game_details = gameDetails;
+  }
+
+  return response;
 }
 
 // GET /entities/products/list - Get all products with full details and filtering
@@ -238,8 +259,10 @@ router.get('/products/list', optionalAuth, async (req, res) => {
 
 // GET /entities/product/:id/details - Get product with full details (Product + Entity + Creator)
 // This MUST be before generic /:type/:id route to match correctly
+// Optional query parameter: ?includeGameDetails=true
 router.get('/product/:id/details', optionalAuth, async (req, res) => {
   const productId = req.params.id;
+  const includeGameDetails = req.query.includeGameDetails === 'true';
 
   try {
     // Get the Product
@@ -252,7 +275,7 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
     // Get user ID from auth if available
     const userId = req.user?.uid || null;
 
-    const fullProduct = await getFullProduct(product, userId);
+    const fullProduct = await getFullProduct(product, userId, includeGameDetails);
     res.json(fullProduct);
   } catch (error) {
     console.error('Error fetching product details:', error);
@@ -466,8 +489,8 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       const enhancedResults = results.map(gameContent => {
         const gameContentData = gameContent.toJSON ? gameContent.toJSON() : gameContent;
 
-        // Transform S3 keys to API URLs for image files
-        if (gameContentData.semantic_type === 'image' && gameContentData.value) {
+        // Transform S3 keys to API URLs for image files and complete cards
+        if ((gameContentData.semantic_type === 'image' || gameContentData.semantic_type === 'complete_card') && gameContentData.value) {
           // Extract filename from S3 key (format: env/privacy/assetType/entityType/entityId/filename)
           const pathParts = gameContentData.value.split('/');
           const filename = pathParts[pathParts.length - 1];
@@ -498,8 +521,8 @@ router.get('/:type/:id', optionalAuth, customValidators.validateEntityType, asyn
   try {
     const entity = await EntityService.findById(entityType, id);
 
-    // Apply S3 URL transformation for GameContent images
-    if (entityType === 'gamecontent' && entity && entity.semantic_type === 'image' && entity.value) {
+    // Apply S3 URL transformation for GameContent images and complete cards
+    if (entityType === 'gamecontent' && entity && (entity.semantic_type === 'image' || entity.semantic_type === 'complete_card') && entity.value) {
       // Extract filename from S3 key (format: env/privacy/assetType/entityType/entityId/filename)
       const pathParts = entity.value.split('/');
       const filename = pathParts[pathParts.length - 1];
@@ -2179,7 +2202,7 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
     const { semantic_type, metadata } = req.body;
 
     // Validate semantic_type
-    const validSemanticTypes = ['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video'];
+    const validSemanticTypes = ['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video', 'game_card_bg', 'complete_card'];
     if (!semantic_type || !validSemanticTypes.includes(semantic_type)) {
       return res.status(400).json({
         error: 'Valid semantic_type is required',
@@ -2188,7 +2211,7 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
     }
 
     // Validate file upload for file-based types
-    const fileTypes = ['image', 'audio', 'video'];
+    const fileTypes = ['image', 'audio', 'video', 'game_card_bg', 'complete_card'];
     if (fileTypes.includes(semantic_type)) {
       if (!req.file) {
         return res.status(400).json({ error: 'File is required for file-based semantic types' });
@@ -2215,7 +2238,11 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
 
     if (fileTypes.includes(semantic_type)) {
       // File-based types: value will be set to S3 URL after upload
-      dataType = `${semantic_type}_url`;
+      if (semantic_type === 'game_card_bg' || semantic_type === 'complete_card') {
+        dataType = 'image_url'; // Background cards and complete cards use image_url data type
+      } else {
+        dataType = `${semantic_type}_url`;
+      }
       contentValue = ''; // Will be updated with S3 URL
     } else {
       // Text-based types: get value from request body
@@ -2242,11 +2269,14 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
     const gameContentEntity = await models.GameContent.create(gameContentData, { transaction });
     console.log('✅ GameContent entity created:', gameContentEntity.id);
 
+    // Declare fileName variable for broader scope
+    let fileName = null;
+
     // 2. If file-based type, upload file and update entity
     if (fileTypes.includes(semantic_type) && req.file) {
 
-      // Declare fileName variable for use in response and file processing
-      let fileName = req.file.originalname;
+      // Initialize fileName for use in response and file processing
+      fileName = req.file.originalname;
 
       // Handle filename encoding
       try {
@@ -2267,7 +2297,9 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
       const assetTypeMap = {
         'image': 'image',
         'audio': 'audio',
-        'video': 'video'
+        'video': 'video',
+        'game_card_bg': 'image',
+        'complete_card': 'image'
       };
       const assetType = assetTypeMap[semantic_type];
 
@@ -2293,12 +2325,19 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
       uploadedS3Key = uploadResult.s3Key;
       console.log('✅ File uploaded successfully:', uploadedS3Key);
 
-      // 3. Update GameContent entity with S3 key (not URL) for security
+      // 3. Update GameContent entity with appropriate value
+      let valueToStore = uploadedS3Key; // Default to S3 key for security
+
+      // For image-based types, store API URL for direct access
+      if (semantic_type === 'image' || semantic_type === 'game_card_bg') {
+        valueToStore = `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`;
+      }
+
       await gameContentEntity.update({
-        value: uploadedS3Key
+        value: valueToStore
       }, { transaction });
 
-      console.log('✅ GameContent entity updated with S3 key:', uploadedS3Key);
+      console.log('✅ GameContent entity updated with value:', valueToStore);
     }
 
     // Commit transaction - everything succeeded
@@ -2315,7 +2354,7 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
         id: gameContentEntity.id,
         semantic_type: gameContentEntity.semantic_type,
         data_type: gameContentEntity.data_type,
-        value: fileTypes.includes(semantic_type) && semantic_type === 'image'
+        value: fileTypes.includes(semantic_type) && (semantic_type === 'image' || semantic_type === 'game_card_bg')
           ? `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`
           : gameContentEntity.value,
         metadata: gameContentEntity.metadata
@@ -2327,7 +2366,7 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
       response.file = {
         filename: fileName,
         s3_key: uploadedS3Key,
-        api_url: semantic_type === 'image'
+        api_url: (semantic_type === 'image' || semantic_type === 'game_card_bg')
           ? `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`
           : undefined,
         size: req.file.size,
