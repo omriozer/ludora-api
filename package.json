@@ -70,7 +70,13 @@
     "schema:check": "echo 'Use db:test to verify database schema'",
     "db:create": "npx sequelize-cli db:create",
     "db:drop": "npx sequelize-cli db:drop",
-    "db:fix-migration-meta": "node scripts/fix-migration-meta.js"
+    "db:fix-migration-meta": "node scripts/fix-migration-meta.js",
+    "deploy": "../ludora-utils/scripts/deploy-api.sh",
+    "deploy:staging": "../ludora-utils/scripts/deploy-api.sh --staging",
+    "deploy:force": "../ludora-utils/scripts/deploy-api.sh --force",
+    "deploy:heroku": "git push heroku main",
+    "deploy:heroku:staging": "git push heroku-staging staging",
+    "deploy:heroku:force": "git push heroku main --force"
   },
   "dependencies": {
     "aws-sdk": "^2.1692.0",
