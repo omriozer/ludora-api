@@ -64,15 +64,17 @@ jobs:
           dontautocreate: true
           branch: "main"
 
-      - name: Setup Heroku CLI
-        uses: akhileshns/heroku-deploy@v3.13.15
-        with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "ludora-api-prod"
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
-          usedocker: false
-          dontautocreate: true
-          justlogin: true
+      - name: Install Heroku CLI
+        run: |
+          curl https://cli-assets.heroku.com/install.sh | sh
+          echo "Heroku CLI installed successfully"
+
+      - name: Authenticate Heroku CLI
+        run: |
+          echo "${{ secrets.HEROKU_API_KEY }}" | heroku auth:token
+          heroku auth:whoami
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
       - name: Wait for deployment
         run: |
