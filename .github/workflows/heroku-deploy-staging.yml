@@ -26,8 +26,10 @@ jobs:
       - name: Get commit message
         id: commit
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          echo "message=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Notify deployment started
         uses: ./.github/actions/telegram-notify
@@ -108,7 +110,7 @@ jobs:
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 60
-          curl -f https://api-staging.ludora.app/health || exit 1
+          curl -f https://ludora-api-staging-9195d79ec928.herokuapp.com/ || exit 1
           echo "✅ API staging deployment successful and healthy!"
 
       - name: Check dyno status
@@ -121,9 +123,9 @@ jobs:
       - name: Deployment summary
         run: |
           echo "🚀 Heroku staging deployment completed successfully!"
-          echo "API URL: https://api-staging.ludora.app"
-          echo "Health Check: https://api-staging.ludora.app/health"
-          echo "Fallback URL: https://ludora-api-staging-4278d977e70d.herokuapp.com"
+          echo "API URL: https://ludora-api-staging-9195d79ec928.herokuapp.com"
+          echo "Health Check: https://ludora-api-staging-9195d79ec928.herokuapp.com/"
+          echo "Future Custom Domain: https://api-staging.ludora.app (to be configured)"
           echo "Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-staging"
 
       - name: Notify deployment success
@@ -136,9 +138,9 @@ jobs:
           service: 'API Staging (Heroku)'
           commit-message: ${{ steps.commit.outputs.message }}
           details: |
-            🌐 API URL: https://api-staging.ludora.app
-            ❤️ Health Check: https://api-staging.ludora.app/health
-            🔗 Fallback URL: https://ludora-api-staging-4278d977e70d.herokuapp.com
+            🌐 API URL: https://ludora-api-staging-9195d79ec928.herokuapp.com
+            ❤️ Health Check: https://ludora-api-staging-9195d79ec928.herokuapp.com/
+            🔗 Future Custom Domain: https://api-staging.ludora.app (to be configured)
             📊 Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-staging
 
       - name: Notify deployment failure
