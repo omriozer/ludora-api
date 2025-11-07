@@ -181,7 +181,7 @@ export function israeliEducationalAlertsMonitor() {
         parentCount: req.user?.role === 'parent' ? 1 : 0,
 
         // Content analysis
-        subjectAreas: this.extractSubjectFromPath(req.path),
+        subjectAreas: extractSubjectFromPath(req.path),
         gradeLevel: req.query.grade || req.user?.grade || 'unknown',
         hebrewContentUsage: req.headers['accept-language']?.includes('he') ? 1 : 0
       };
@@ -192,7 +192,7 @@ export function israeliEducationalAlertsMonitor() {
       if (req.user?.role === 'student') {
         const studentActivity = {
           studentId: req.user.id,
-          type: this.getActivityTypeFromPath(req.path),
+          type: getActivityTypeFromPath(req.path),
           duration: 0, // Will be updated on response
           content: req.path,
 
@@ -284,7 +284,7 @@ export function israeliMarketAlertsDashboard() {
             alertsData = alertsService.alertHistory.slice(-50); // Last 50 alerts
             break;
           case 'summary':
-            alertsData = this.generateAlertsSummary();
+            alertsData = generateAlertsSummary();
             break;
           default:
             alertsData = Array.from(alertsService.activeAlerts.values());
@@ -445,7 +445,7 @@ export function israeliMarketAlertsDashboard() {
             .slice(-50), // Last 50 activities
 
           // Alert trends
-          alertTrends: this.calculateAlertTrends()
+          alertTrends: calculateAlertTrends()
         };
 
         return res.json({
