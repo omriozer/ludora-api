@@ -21,8 +21,8 @@ export default {
       idle: 10000,
     },
   },
-  staging: process.env.DATABASE_URL ? {
-    use_env_variable: 'DATABASE_URL',
+  staging: process.env.DATABASE_URL_SSL ? {
+    use_env_variable: 'DATABASE_URL_SSL',
     dialect: 'postgres',
     logging: false,
     dialectOptions: {
