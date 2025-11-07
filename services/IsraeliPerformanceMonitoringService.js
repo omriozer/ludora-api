@@ -768,6 +768,44 @@ class IsraeliPerformanceMonitoringService extends EventEmitter {
 
     return ispPerformance;
   }
+
+  /**
+   * Generate health alert for critical issues
+   */
+  generateHealthAlert(healthCheck) {
+    const alert = {
+      type: 'health_alert',
+      severity: healthCheck.overallHealth === 'critical' ? 'critical' : 'warning',
+      timestamp: healthCheck.timestamp,
+      israelTime: healthCheck.israelTime,
+      overallHealth: healthCheck.overallHealth,
+      failedChecks: Object.entries(healthCheck.checks)
+        .filter(([key, check]) => check.status !== 'healthy' && check.status !== 'optimal')
+        .map(([key, check]) => ({ name: key, status: check.status, details: check })),
+      recommendations: healthCheck.recommendations || [],
+      message: `Israeli performance monitoring detected ${healthCheck.overallHealth} health status`
+    };
+
+    // Store alert
+    this.alertHistory.push(alert);
+
+    // Keep only recent alerts
+    if (this.alertHistory.length > 100) {
+      this.alertHistory = this.alertHistory.slice(-50);
+    }
+
+    // Emit alert event
+    this.emit('health_alert', alert);
+
+    // Log alert for debugging
+    console.log(`🚨 Israeli Performance Alert [${alert.severity}]: ${alert.message}`, {
+      failedChecks: alert.failedChecks.length,
+      overallHealth: alert.overallHealth,
+      timestamp: alert.israelTime
+    });
+
+    return alert;
+  }
 }
 
 export default IsraeliPerformanceMonitoringService;
