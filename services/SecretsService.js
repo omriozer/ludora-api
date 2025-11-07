@@ -19,6 +19,12 @@ class SecretsService {
         return;
       }
 
+      // In staging, load with relaxed validation for DATABASE_URL_SSL usage
+      if (this.environment === 'staging') {
+        this.loadFromEnvironmentForStaging();
+        return;
+      }
+
       // In production, attempt to load from AWS Secrets Manager or similar
       // For now, fallback to environment variables with validation
       this.loadFromEnvironmentWithValidation();
@@ -60,6 +66,61 @@ class SecretsService {
     }
 
     console.log('✅ Secrets loaded from environment');
+  }
+
+  loadFromEnvironmentForStaging() {
+    // Staging environment - more secure than development but less strict than production
+    const requiredSecrets = [
+      'JWT_SECRET'
+    ];
+
+    // DB_PASSWORD is optional in staging if DATABASE_URL_SSL is present
+    const conditionalSecrets = [
+      { key: 'DB_PASSWORD', condition: !process.env.DATABASE_URL_SSL },
+      { key: 'FIREBASE_SERVICE_ACCOUNT', required: false }
+    ];
+
+    const optionalSecrets = [
+      'AWS_SECRET_ACCESS_KEY',
+      'OPENAI_API_KEY',
+      'ANTHROPIC_API_KEY',
+      'EMAIL_PASSWORD'
+    ];
+
+    // Load required secrets
+    for (const secret of requiredSecrets) {
+      const value = process.env[secret];
+      if (!value) {
+        throw new Error(`Required secret ${secret} is not set`);
+      }
+      this.secrets.set(secret, value);
+    }
+
+    // Load conditional secrets
+    for (const { key, condition, required } of conditionalSecrets) {
+      const value = process.env[key];
+      if (condition !== false && !value && required !== false) {
+        if (key === 'DB_PASSWORD' && process.env.DATABASE_URL_SSL) {
+          // Skip DB_PASSWORD if using DATABASE_URL_SSL
+          console.log(`ℹ️ Skipping ${key} - using DATABASE_URL_SSL`);
+          continue;
+        }
+        throw new Error(`Required secret ${key} is not set for staging`);
+      }
+      if (value) {
+        this.secrets.set(key, value);
+      }
+    }
+
+    // Load optional secrets
+    for (const secret of optionalSecrets) {
+      const value = process.env[secret];
+      if (value) {
+        this.secrets.set(secret, value);
+      }
+    }
+
+    console.log('✅ Secrets loaded for staging environment');
   }
 
   loadFromEnvironmentWithValidation() {
