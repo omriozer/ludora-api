@@ -710,6 +710,64 @@ class IsraeliPerformanceMonitoringService extends EventEmitter {
     if (healthPercentage >= 60) return 'fair';
     return 'poor';
   }
+
+  /**
+   * Analyze ISP performance breakdown for Israeli providers
+   */
+  analyzeISPPerformance(metrics) {
+    const ispPerformance = {};
+    const isps = Object.keys(ISRAELI_PERFORMANCE_CONFIG.ISRAELI_ISPS);
+
+    // Initialize ISP performance data
+    isps.forEach(isp => {
+      ispPerformance[isp] = {
+        name: ISRAELI_PERFORMANCE_CONFIG.ISRAELI_ISPS[isp].name,
+        requestCount: 0,
+        averageResponseTime: 0,
+        averageLoadTime: 0,
+        errorRate: 0,
+        qualityScore: 0,
+        marketShare: ISRAELI_PERFORMANCE_CONFIG.ISRAELI_ISPS[isp].marketShare,
+        expectedLatency: ISRAELI_PERFORMANCE_CONFIG.ISRAELI_ISPS[isp].expectedLatency
+      };
+    });
+
+    // Group metrics by ISP
+    const ispMetrics = {};
+    metrics.forEach(metric => {
+      const isp = metric.estimatedISP || 'OTHER';
+      if (!ispMetrics[isp]) {
+        ispMetrics[isp] = [];
+      }
+      ispMetrics[isp].push(metric);
+    });
+
+    // Calculate performance for each ISP
+    Object.keys(ispMetrics).forEach(isp => {
+      const ispData = ispMetrics[isp];
+      if (ispData.length === 0) return;
+
+      const performance = ispPerformance[isp] || ispPerformance['OTHER'];
+      performance.requestCount = ispData.length;
+      performance.averageResponseTime = this.calculateAverage(ispData, 'responseTime');
+      performance.averageLoadTime = this.calculateAverage(ispData, 'loadTime');
+      performance.errorRate = this.calculateErrorRate(ispData);
+      performance.qualityScore = this.calculateAverage(ispData, 'qualityScore');
+
+      // Performance grade
+      if (performance.averageResponseTime <= performance.expectedLatency) {
+        performance.grade = 'excellent';
+      } else if (performance.averageResponseTime <= performance.expectedLatency * 1.5) {
+        performance.grade = 'good';
+      } else if (performance.averageResponseTime <= performance.expectedLatency * 2) {
+        performance.grade = 'fair';
+      } else {
+        performance.grade = 'poor';
+      }
+    });
+
+    return ispPerformance;
+  }
 }
 
 export default IsraeliPerformanceMonitoringService;
