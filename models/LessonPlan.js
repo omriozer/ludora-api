@@ -50,6 +50,23 @@ export default (sequelize) => {
       type: DataTypes.TEXT,
       allowNull: true,
       comment: 'Notes and instructions for the teacher conducting the lesson'
+    },
+    accessible_slides: {
+      type: DataTypes.ARRAY(DataTypes.INTEGER),
+      allowNull: true,
+      defaultValue: null,
+      comment: 'Array of slide indices (0-based) accessible in preview mode: [0,2,4] or null for all slides'
+    },
+    allow_slide_preview: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: 'Whether slides can be previewed without purchase access'
+    },
+    watermark_template_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Reference to system_templates for watermark configuration on slides'
     }
   }, {
     tableName: 'lesson_plan',
@@ -63,6 +80,18 @@ export default (sequelize) => {
         fields: ['file_configs'],
         using: 'gin',
         name: 'idx_lesson_plan_file_configs_gin'
+      },
+      {
+        fields: ['accessible_slides'],
+        name: 'idx_lesson_plan_accessible_slides'
+      },
+      {
+        fields: ['allow_slide_preview'],
+        name: 'idx_lesson_plan_allow_slide_preview'
+      },
+      {
+        fields: ['watermark_template_id'],
+        name: 'idx_lesson_plan_watermark_template_id'
       }
     ]
   });
@@ -70,6 +99,12 @@ export default (sequelize) => {
   LessonPlan.associate = function(models) {
     // Lesson plans are connected to curriculum items through Product -> CurriculumProduct
     // No direct association needed here since it goes through the Product table
+
+    // SystemTemplate association for watermark configuration
+    LessonPlan.belongsTo(models.SystemTemplate, {
+      foreignKey: 'watermark_template_id',
+      as: 'watermarkTemplate'
+    });
 
     // Store models reference for dynamic file associations
     LessonPlan.models = models;
@@ -389,6 +424,135 @@ export default (sequelize) => {
     }
 
     return true;
+  };
+
+  // ===== SLIDE ACCESS CONTROL METHODS =====
+
+  // Check if slide preview is enabled
+  LessonPlan.prototype.supportsSlidePreview = function() {
+    return this.allow_slide_preview === true;
+  };
+
+  // Check if there are slide access restrictions
+  LessonPlan.prototype.hasAccessibleSlidesRestriction = function() {
+    return !!(this.accessible_slides && Array.isArray(this.accessible_slides) && this.accessible_slides.length > 0);
+  };
+
+  // Get accessible slide indices
+  LessonPlan.prototype.getAccessibleSlides = function() {
+    return this.accessible_slides || null; // null means all slides are accessible
+  };
+
+  // Set accessible slide indices
+  LessonPlan.prototype.setAccessibleSlides = function(slideIndices) {
+    if (slideIndices === null || slideIndices === undefined) {
+      this.accessible_slides = null; // Clear restrictions, all slides accessible
+    } else if (Array.isArray(slideIndices)) {
+      // Validate slide indices (must be non-negative integers)
+      const validIndices = slideIndices.filter(index => Number.isInteger(index) && index >= 0);
+      this.accessible_slides = validIndices.length > 0 ? [...new Set(validIndices)].sort((a, b) => a - b) : null;
+    } else {
+      throw new Error('Accessible slides must be an array of non-negative integers or null');
+    }
+    return this.save();
+  };
+
+  // Check if specific slide index is accessible
+  LessonPlan.prototype.isSlideAccessible = function(slideIndex) {
+    if (!this.hasAccessibleSlidesRestriction()) {
+      return true; // No restrictions, all slides accessible
+    }
+
+    return this.accessible_slides.includes(slideIndex);
+  };
+
+  // Add slide index to accessible slides
+  LessonPlan.prototype.addAccessibleSlide = function(slideIndex) {
+    if (!Number.isInteger(slideIndex) || slideIndex < 0) {
+      throw new Error('Slide index must be a non-negative integer');
+    }
+
+    if (!this.hasAccessibleSlidesRestriction()) {
+      this.accessible_slides = [slideIndex];
+    } else if (!this.accessible_slides.includes(slideIndex)) {
+      this.accessible_slides = [...this.accessible_slides, slideIndex].sort((a, b) => a - b);
+    }
+
+    return this.save();
+  };
+
+  // Remove slide index from accessible slides
+  LessonPlan.prototype.removeAccessibleSlide = function(slideIndex) {
+    if (!this.hasAccessibleSlidesRestriction()) {
+      return this; // No restrictions to remove from
+    }
+
+    this.accessible_slides = this.accessible_slides.filter(index => index !== slideIndex);
+
+    // If no slides left, set to null (unrestricted)
+    if (this.accessible_slides.length === 0) {
+      this.accessible_slides = null;
+    }
+
+    return this.save();
+  };
+
+  // Get accessible slides for direct presentation slides
+  LessonPlan.prototype.getAccessibleDirectSlides = function() {
+    const allSlides = this.getDirectPresentationSlides();
+
+    if (!this.hasAccessibleSlidesRestriction()) {
+      return allSlides; // All slides accessible
+    }
+
+    // Filter slides based on accessible_slides indices (0-based)
+    return allSlides.filter((slide, index) => this.isSlideAccessible(index));
+  };
+
+  // Check if preview mode is restricted (has slide access restrictions)
+  LessonPlan.prototype.isPreviewModeRestricted = function() {
+    return this.supportsSlidePreview() && this.hasAccessibleSlidesRestriction();
+  };
+
+  // ===== WATERMARK TEMPLATE METHODS =====
+
+  // Check if lesson plan has watermark template
+  LessonPlan.prototype.hasWatermarkTemplate = function() {
+    return !!(this.watermark_template_id);
+  };
+
+  // Get watermark template ID
+  LessonPlan.prototype.getWatermarkTemplateId = function() {
+    return this.watermark_template_id;
+  };
+
+  // Set watermark template
+  LessonPlan.prototype.setWatermarkTemplate = function(templateId) {
+    this.watermark_template_id = templateId;
+    return this.save();
+  };
+
+  // Clear watermark template
+  LessonPlan.prototype.clearWatermarkTemplate = function() {
+    this.watermark_template_id = null;
+    return this.save();
+  };
+
+  // Get comprehensive preview mode information
+  LessonPlan.prototype.getPreviewModeInfo = function() {
+    const directSlides = this.getDirectPresentationSlides();
+
+    return {
+      supportsSlidePreview: this.supportsSlidePreview(),
+      hasSlideRestrictions: this.hasAccessibleSlidesRestriction(),
+      accessibleSlides: this.getAccessibleSlides(),
+      totalSlides: directSlides.length,
+      totalAccessibleSlides: this.hasAccessibleSlidesRestriction()
+        ? this.getAccessibleDirectSlides().length
+        : directSlides.length,
+      hasWatermarkTemplate: this.hasWatermarkTemplate(),
+      watermarkTemplateId: this.getWatermarkTemplateId()
+    };
   };
 
   return LessonPlan;

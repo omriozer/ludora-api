@@ -1,4 +1,5 @@
 import path from 'path';
+import models from '../models/index.js';
 
 /**
  * Get default footer settings structure
@@ -10,12 +11,16 @@ export function getDefaultFooterSettings() {
   return {
     logo: {
       visible: true,
+      hidden: false,
+      rotation: 0,
       url: path.join(process.cwd(), 'assets', 'images', 'logo.png'), // Always use standard logo path
       position: { x: 50, y: 95 },
       style: { size: 80, opacity: 100 }
     },
     text: {
       visible: true,
+      hidden: false,
+      rotation: 0,
       content: '', // Will be populated from system settings
       position: { x: 50, y: 90 },
       style: {
@@ -29,6 +34,8 @@ export function getDefaultFooterSettings() {
     },
     url: {
       visible: true,
+      hidden: false,
+      rotation: 0,
       href: 'https://ludora.app',
       position: { x: 50, y: 85 },
       style: {
@@ -221,4 +228,119 @@ export function validateFooterSettings(footerSettings) {
     valid: errors.length === 0,
     errors
   };
+}
+
+// =====================================
+// NEW TEMPLATE-BASED FOOTER RESOLUTION
+// =====================================
+
+/**
+ * Resolve footer template for a file
+ * Determines which template to use based on file settings and defaults
+ *
+ * @param {Object} fileEntity - File entity from database
+ * @returns {Promise<Object|null>} SystemTemplate instance or null if not found
+ */
+export async function resolveFooterTemplate(fileEntity) {
+  let template = null;
+
+  // Step 1: Check if file has a specific footer template
+  if (fileEntity.footer_template_id) {
+    try {
+      template = await models.SystemTemplate.findByPk(fileEntity.footer_template_id);
+      if (template) {
+        console.log('🎯 Using file-specific footer template:', template.id, template.name);
+        return template;
+      } else {
+        console.warn('⚠️ File references non-existent footer template:', fileEntity.footer_template_id);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching file footer template:', error);
+    }
+  }
+
+  // Step 2: Fall back to default footer template
+  try {
+    template = await models.SystemTemplate.findDefaultByType('footer');
+    if (template) {
+      console.log('🎯 Using default footer template:', template.id, template.name);
+      return template;
+    } else {
+      console.warn('⚠️ No default footer template found in system');
+    }
+  } catch (error) {
+    console.error('❌ Error fetching default footer template:', error);
+  }
+
+  return null;
+}
+
+/**
+ * Merge template data with file-specific overrides
+ * NEW SystemTemplate-based footer resolution
+ *
+ * @param {Object} fileEntity - File entity from database
+ * @returns {Promise<Object>} Complete footer settings ready for PDF rendering
+ */
+export async function resolveFooterSettingsFromTemplate(fileEntity) {
+  // Get the appropriate template
+  const template = await resolveFooterTemplate(fileEntity);
+
+  if (!template) {
+    console.warn('⚠️ No footer template available, using defaults');
+    return getDefaultFooterSettings();
+  }
+
+  // Start with template data
+  let footerSettings = JSON.parse(JSON.stringify(template.template_data));
+
+  // Apply file-specific overrides if they exist
+  if (fileEntity.footer_overrides && Object.keys(fileEntity.footer_overrides).length > 0) {
+    footerSettings = fileEntity.mergeWithTemplateData(footerSettings);
+    console.log('🔄 Applied file-specific footer overrides');
+  }
+
+  // Always ensure the standard logo path is used (security/consistency)
+  if (footerSettings.logo) {
+    footerSettings.logo.url = path.join(process.cwd(), 'assets', 'images', 'logo.png');
+  }
+
+  console.log('✅ Footer settings resolved from template:', {
+    templateId: template.id,
+    templateName: template.name,
+    hasFileOverrides: !!(fileEntity.footer_overrides && Object.keys(fileEntity.footer_overrides).length > 0)
+  });
+
+  return footerSettings;
+}
+
+/**
+ * Resolve footer settings with legacy Settings fallback
+ * This function bridges the old and new systems during transition
+ *
+ * @param {Object} fileEntity - File entity from database
+ * @param {Object} legacySettings - Legacy Settings entity (optional)
+ * @returns {Promise<Object>} Complete footer settings ready for PDF rendering
+ */
+export async function resolveFooterSettingsWithFallback(fileEntity, legacySettings = null) {
+  // Try new template system first
+  try {
+    const template = await resolveFooterTemplate(fileEntity);
+    if (template) {
+      return await resolveFooterSettingsFromTemplate(fileEntity);
+    }
+  } catch (error) {
+    console.error('❌ Error with template-based footer resolution:', error);
+  }
+
+  // Fallback to legacy system if template system fails
+  console.warn('⚠️ Falling back to legacy Settings-based footer resolution');
+
+  if (legacySettings) {
+    return mergeFooterSettings(fileEntity.footer_settings || fileEntity.footer_overrides, legacySettings);
+  }
+
+  // Final fallback to defaults
+  console.warn('⚠️ No legacy settings available, using defaults');
+  return getDefaultFooterSettings();
 }

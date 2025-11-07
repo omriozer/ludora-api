@@ -56,6 +56,19 @@ jobs:
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
+      - name: Sync environment variables
+        run: |
+          echo "Syncing environment variables for production..."
+          echo "🔧 Setting AWS credentials from GitHub Secrets..."
+          heroku config:set \
+            AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID_PROD }}" \
+            AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}" \
+            AWS_S3_BUCKET="ludora-files-prod" \
+            --app ludora-api-prod
+          echo "✅ AWS credentials synchronized!"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
       - name: Check for dependency changes
         id: deps-check
         run: |

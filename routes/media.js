@@ -2,6 +2,8 @@ import express from 'express';
 import AuthService from '../services/AuthService.js';
 import fileService from '../services/FileService.js';
 import db from '../models/index.js';
+import { generateIsraeliCacheHeaders, applyIsraeliCaching } from '../middleware/israeliCaching.js';
+import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.js';
 
 const router = express.Router();
 const authService = new AuthService();
@@ -274,12 +276,15 @@ router.get('/download/audiofile/:audioFileId', async (req, res) => {
 
       const contentType = audioFile.file_type || 'audio/mpeg';
 
+      // Generate Israeli-optimized cache headers for audio files
+      const israeliCacheHeaders = generateIsraeliCacheHeaders('audio');
+
       // Set headers for file download
       const headers = {
         'Content-Type': contentType,
         'Content-Length': fileBuffer.length,
-        'Content-Disposition': encodeContentDisposition('inline', audioFile.file_filename),
-        'Cache-Control': 'private, max-age=3600', // Cache for 1 hour
+        'Content-Disposition': generateHebrewContentDisposition('inline', audioFile.file_filename),
+        ...israeliCacheHeaders, // Apply Israeli-optimized caching
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -397,11 +402,14 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
           const fileSize = metadata.size;
           const range = req.headers.range;
 
+          // Generate Israeli-optimized cache headers for marketing videos
+          const israeliCacheHeaders = generateIsraeliCacheHeaders('marketing-video');
+
           // Set CORS and cache headers for public content
           const headers = {
             'Content-Type': 'video/mp4',
             'Accept-Ranges': 'bytes',
-            'Cache-Control': 'public, max-age=86400', // Public cache for 24 hours
+            ...israeliCacheHeaders, // Apply Israeli-optimized caching
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Credentials': 'false',
             'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
@@ -557,7 +565,10 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
       const fileSize = metadata.size;
       const range = req.headers.range;
 
-      // Set headers for private content
+      // Generate Israeli timezone info for debugging private content access
+      const israeliCacheHeaders = generateIsraeliCacheHeaders('user-data', { skipTimeOptimization: true });
+
+      // Set headers for private content (keep restrictive caching for security)
       const headers = {
         'Content-Type': 'video/mp4',
         'Accept-Ranges': 'bytes',
@@ -575,7 +586,10 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
         'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length, Content-Type',
         'X-Content-Type': 'private-video',
         'X-Entity-Type': entityType,
-        'X-Entity-ID': entityId
+        'X-Entity-ID': entityId,
+        // Add Israeli timezone info for access logging
+        'X-Israel-Time': israeliCacheHeaders['X-Israel-Time'],
+        'X-Cache-Optimized': israeliCacheHeaders['X-Cache-Optimized']
       };
 
       if (range) {

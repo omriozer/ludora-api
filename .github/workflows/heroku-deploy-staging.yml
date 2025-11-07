@@ -58,6 +58,19 @@ jobs:
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
+      - name: Sync environment variables
+        run: |
+          echo "Syncing environment variables for staging..."
+          echo "🔧 Setting AWS credentials from GitHub Secrets..."
+          heroku config:set \
+            AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}" \
+            AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}" \
+            AWS_S3_BUCKET="ludora-files-staging" \
+            --app ludora-api-staging
+          echo "✅ AWS credentials synchronized!"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
       - name: Check for dependency changes
         id: deps-check
         run: |
@@ -110,7 +123,7 @@ jobs:
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 60
-          curl -f https://ludora-api-staging-9195d79ec928.herokuapp.com/ || exit 1
+          curl -f https://api-staging.ludora.app/ || exit 1
           echo "✅ API staging deployment successful and healthy!"
 
       - name: Check dyno status
@@ -123,9 +136,9 @@ jobs:
       - name: Deployment summary
         run: |
           echo "🚀 Heroku staging deployment completed successfully!"
-          echo "API URL: https://ludora-api-staging-9195d79ec928.herokuapp.com"
-          echo "Health Check: https://ludora-api-staging-9195d79ec928.herokuapp.com/"
-          echo "Future Custom Domain: https://api-staging.ludora.app (to be configured)"
+          echo "API URL: https://api-staging.ludora.app"
+          echo "Health Check: https://api-staging.ludora.app/"
+          echo "Heroku URL: https://ludora-api-staging-9195d79ec928.herokuapp.com (fallback)"
           echo "Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-staging"
 
       - name: Notify deployment success
@@ -138,9 +151,9 @@ jobs:
           service: 'API Staging (Heroku)'
           commit-message: ${{ steps.commit.outputs.message }}
           details: |
-            🌐 API URL: https://ludora-api-staging-9195d79ec928.herokuapp.com
-            ❤️ Health Check: https://ludora-api-staging-9195d79ec928.herokuapp.com/
-            🔗 Future Custom Domain: https://api-staging.ludora.app (to be configured)
+            🌐 API URL: https://api-staging.ludora.app
+            ❤️ Health Check: https://api-staging.ludora.app/
+            🔗 Heroku URL: https://ludora-api-staging-9195d79ec928.herokuapp.com
             📊 Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-staging
 
       - name: Notify deployment failure

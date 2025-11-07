@@ -275,8 +275,8 @@ async function mergePdfFooter(pdfBuffer, footerSettings) {
         transformNote: 'Frontend uses: left:X%, top:Y%, transform:translate(-50%,-50%)'
       });
 
-      // Draw logo if available
-      if (logoImage && settings?.logo?.visible) {
+      // Draw logo if available (check for visible and not hidden)
+      if (logoImage && settings?.logo?.visible && !settings?.logo?.hidden) {
         const logoSettings = settings.logo;
 
         // Convert percentage positions to actual coordinates
@@ -330,6 +330,16 @@ async function mergePdfFooter(pdfBuffer, footerSettings) {
         // Opacity
         const opacity = (logoSettings.style?.opacity || 100) / 100;
 
+        // Rotation support (simplified approach)
+        const rotation = logoSettings.rotation || 0; // degrees
+
+        if (rotation !== 0) {
+          console.warn(`⚠️ Logo rotation (${rotation}°) requested but not yet implemented in PDF rendering. Logo will appear without rotation.`);
+          // TODO: Implement proper rotation using pdf-lib transformation matrix
+          // For now, render without rotation
+        }
+
+        // Draw logo (with or without rotation)
         page.drawImage(logoImage, {
           x: logoX - (logoWidth / 2), // Center logo horizontally
           y: logoY - (logoHeight / 2), // Center logo vertically
@@ -339,8 +349,8 @@ async function mergePdfFooter(pdfBuffer, footerSettings) {
         });
       }
 
-      // Draw copyright text if visible
-      if (settings?.text?.visible && settings?.text?.content) {
+      // Draw copyright text if visible and not hidden
+      if (settings?.text?.visible && !settings?.text?.hidden && settings?.text?.content) {
         const textSettings = settings.text;
         const originalText = textSettings.content.trim();
 
@@ -518,6 +528,14 @@ async function mergePdfFooter(pdfBuffer, footerSettings) {
               numLines: lines.length,
               note: 'Centering text block around textY coordinate'
             });
+
+            // Rotation support for text
+            const textRotation = textSettings.rotation || 0; // degrees
+            if (textRotation !== 0) {
+              console.warn(`⚠️ Text rotation (${textRotation}°) requested but not yet implemented in PDF rendering. Text will appear without rotation.`);
+              // TODO: Implement proper rotation using pdf-lib transformation matrix
+              // For now, render without rotation
+            }
 
             // Draw each line
             for (let i = 0; i < lines.length; i++) {

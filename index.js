@@ -69,6 +69,55 @@ import {
 // Import CORS configuration
 import { dynamicCors } from './middleware/cors.js';
 
+// Import compression optimization
+import { israeliCompressionMiddleware, hebrewContentCompressionMiddleware } from './middleware/israeliCompression.js';
+
+// Import Israeli compliance middleware
+import {
+  israeliComplianceHeaders,
+  israeliTimezoneCompliance,
+  israeliDataResidencyCompliance,
+  israeliPrivacyCompliance,
+  israeliHebrewContentCompliance,
+  israeliComplianceAuditLogger,
+  israeliComplianceReport,
+  israeliMaintenanceCompliance
+} from './middleware/israeliCompliance.js';
+
+// Import Israeli performance monitoring middleware
+import {
+  israeliPerformanceTracker,
+  israeliS3PerformanceTracker,
+  israeliHebrewContentPerformanceTracker,
+  israeliPeakHoursPerformanceTracker,
+  israeliPerformanceDashboard,
+  israeliPerformanceAlerts,
+  cleanupIsraeliPerformanceMonitoring
+} from './middleware/israeliPerformanceMonitoring.js';
+
+// Import Israeli cost optimization middleware
+import {
+  israeliS3CostTracker,
+  israeliBandwidthCostTracker,
+  israeliHebrewContentCostTracker,
+  israeliCostOptimizationDashboard,
+  israeliCostAlerts,
+  israeliRealtimeCostMonitor,
+  cleanupIsraeliCostOptimization
+} from './middleware/israeliCostOptimization.js';
+
+// Import Israeli market alerts middleware
+import {
+  israeliPerformanceAlertsMonitor,
+  israeliHebrewContentAlertsMonitor,
+  israeliEducationalAlertsMonitor,
+  israeliRealtimeMarketMonitor,
+  israeliMarketAlertsDashboard,
+  israeliSystemHealthMonitor,
+  israeliMarketAlertsWebhook,
+  cleanupIsraeliMarketAlerts
+} from './middleware/israeliMarketAlerts.js';
+
 // Import error handling and validation middleware
 import {
   globalErrorHandler,
@@ -135,11 +184,43 @@ app.use(rateLimiters.general);
 // 9. Dynamic CORS with webhook support
 app.use(dynamicCors);
 
-// 10. Secure cookie configuration
+// 10. Israeli-optimized response compression
+app.use(israeliCompressionMiddleware);
+
+// 11. Secure cookie configuration
 app.use(secureCookies);
 
-// 11. API-specific security headers
+// 12. API-specific security headers
 app.use('/api', apiSecurityHeaders);
+
+// 13. Israeli compliance middleware stack
+app.use(israeliComplianceHeaders());
+app.use(israeliTimezoneCompliance());
+app.use('/api', israeliDataResidencyCompliance());
+app.use('/api', israeliPrivacyCompliance());
+app.use(israeliHebrewContentCompliance());
+app.use('/api', israeliMaintenanceCompliance());
+
+// 14. Israeli performance monitoring middleware stack
+app.use(israeliPerformanceTracker());
+app.use(israeliS3PerformanceTracker());
+app.use(israeliHebrewContentPerformanceTracker());
+app.use(israeliPeakHoursPerformanceTracker());
+app.use(israeliPerformanceAlerts());
+
+// 15. Israeli cost optimization middleware stack
+app.use(israeliS3CostTracker());
+app.use(israeliBandwidthCostTracker());
+app.use(israeliHebrewContentCostTracker());
+app.use(israeliCostAlerts());
+app.use(israeliRealtimeCostMonitor());
+
+// 16. Israeli market alerts and monitoring middleware stack
+app.use(israeliPerformanceAlertsMonitor());
+app.use(israeliHebrewContentAlertsMonitor());
+app.use(israeliEducationalAlertsMonitor());
+app.use(israeliRealtimeMarketMonitor());
+app.use(israeliSystemHealthMonitor());
 
 // Body parsing middleware
 app.use(express.json({
@@ -152,6 +233,23 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: '100mb' })); // Increased to match file upload limits
 
 // API Routes (protected by frontend CORS)
+// Apply Hebrew-optimized compression for routes likely to contain Hebrew content
+app.use('/api/entities', hebrewContentCompressionMiddleware);
+app.use('/api/products', hebrewContentCompressionMiddleware);
+app.use('/api/dashboard', hebrewContentCompressionMiddleware);
+
+// Israeli compliance report endpoint (before other routes)
+app.use(israeliComplianceReport());
+
+// Israeli performance dashboard endpoints (admin-only routes)
+app.use(israeliPerformanceDashboard());
+
+// Israeli cost optimization dashboard endpoints (admin-only routes)
+app.use(israeliCostOptimizationDashboard());
+
+// Israeli market alerts dashboard endpoints (admin-only routes)
+app.use(israeliMarketAlertsDashboard());
+
 app.use('/api/auth', authRoutes);
 app.use('/api/entities', entityRoutes);
 app.use('/api/products', productsRoutes);
@@ -174,6 +272,9 @@ app.use('/api/svg-slides', svgSlidesRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
+
+// Israeli market alerts webhook
+app.use(israeliMarketAlertsWebhook());
 
 // Health check endpoints
 app.get('/', (req, res) => {
@@ -221,6 +322,9 @@ app.get('/api', (req, res) => {
 // Static file serving for local uploads
 app.use('/uploads', express.static('./uploads'));
 
+// Israeli compliance audit logging (after all routes)
+app.use(israeliComplianceAuditLogger());
+
 // 404 handler (must come before global error handler)
 app.use(notFoundHandler);
 
@@ -267,7 +371,12 @@ process.on('SIGTERM', async () => {
 
   // Stop background services
   try {
-
+    // Stop Israeli performance monitoring
+    cleanupIsraeliPerformanceMonitoring();
+    // Stop Israeli cost optimization tracking
+    cleanupIsraeliCostOptimization();
+    // Stop Israeli market alerts monitoring
+    cleanupIsraeliMarketAlerts();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }
@@ -282,7 +391,12 @@ process.on('SIGINT', async () => {
 
   // Stop background services
   try {
-
+    // Stop Israeli performance monitoring
+    cleanupIsraeliPerformanceMonitoring();
+    // Stop Israeli cost optimization tracking
+    cleanupIsraeliCostOptimization();
+    // Stop Israeli market alerts monitoring
+    cleanupIsraeliMarketAlerts();
   } catch (error) {
     console.error('⚠️  Error stopping background services:', error);
   }

@@ -8,9 +8,13 @@ import db from '../models/index.js';
 import { sequelize } from '../models/index.js';
 import { mergePdfFooter } from '../utils/pdfFooterMerge.js';
 import { addPdfWatermarks } from '../utils/pdfWatermark.js';
-import { mergeFooterSettings } from '../utils/footerSettingsHelper.js';
+import { mergeFooterSettings, resolveFooterSettingsWithFallback } from '../utils/footerSettingsHelper.js';
+import { processSelectiveAccessPdf } from '../services/PdfPageReplacementService.js';
+import { applyWatermarksToSvg } from '../utils/svgWatermark.js';
 import AccessControlService from '../services/AccessControlService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
+import { generateIsraeliCacheHeaders, applyIsraeliCaching } from '../middleware/israeliCaching.js';
+import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.js';
 import { createFileLogger, createErrorResponse, createSuccessResponse } from '../utils/fileOperationLogger.js';
 import { createFileVerifier } from '../utils/fileOperationVerifier.js';
 import { createPreUploadValidator } from '../utils/preUploadValidator.js';
@@ -52,70 +56,170 @@ const assetUpload = multer({
 
 
 /**
- * Helper: Process PDF with footer and/or watermarks
+ * Helper: Process PDF with template-based watermarks and selective access control
  *
  * @param {Buffer} pdfBuffer - Original PDF buffer
  * @param {Object} fileEntity - File entity from database
  * @param {boolean} hasAccess - Whether user has access
  * @param {Object} settings - System settings
+ * @param {boolean} skipFooter - Whether to skip footer processing
+ * @param {Object} user - User object for variables (optional)
  * @returns {Promise<Buffer>} Processed PDF buffer
  */
-async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter = false) {
-  const shouldMergeFooter = fileEntity.add_copyrights_footer && !skipFooter;
-  const shouldAddWatermarks = !hasAccess && fileEntity.allow_preview;
+async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter = false, user = null) {
+  try {
+    console.log('🔧 Enhanced PDF processing starting...', {
+      fileName: fileEntity.file_name,
+      hasAccess,
+      skipFooter,
+      userId: user?.id,
+      hasSelectiveAccess: !!(fileEntity.accessible_pages),
+      hasWatermarkTemplate: !!(fileEntity.watermark_template_id)
+    });
 
-  let finalPdfBuffer = pdfBuffer;
+    // Check if we need to use the new selective access system
+    const needsSelectiveAccess = !hasAccess && fileEntity.allow_preview && fileEntity.accessible_pages;
+    const needsWatermarks = !hasAccess && fileEntity.allow_preview;
+    const shouldMergeFooter = fileEntity.add_copyrights_footer && !skipFooter;
 
-  // Build complete footer settings using helper function
-  let footerSettings = null;
-  if (shouldMergeFooter) {
-    footerSettings = mergeFooterSettings(fileEntity.footer_settings, settings);
-  }
+    // If selective access is configured, use the new PdfPageReplacementService
+    if (needsSelectiveAccess || (needsWatermarks && fileEntity.watermark_template_id)) {
+      console.log('📄 Using enhanced PDF processing with selective access/templates');
 
-  // DEBUG: Log PDF processing decisions
-  console.log('🔍 PDF Processing Debug:', {
-    fileName: fileEntity.file_name,
-    hasAccess,
-    skipFooter,
-    add_copyrights_footer: fileEntity.add_copyrights_footer,
-    allow_preview: fileEntity.allow_preview,
-    shouldMergeFooter,
-    shouldAddWatermarks,
-    watermarkLogic: `!hasAccess(${!hasAccess}) && allow_preview(${fileEntity.allow_preview}) = ${shouldAddWatermarks}`,
-    hasFileFooterSettings: !!fileEntity.footer_settings,
-    hasSystemFooterSettings: !!settings?.footer_settings,
-    finalFooterSettings: footerSettings ? 'generated' : 'none'
-  });
+      // Get watermark template if configured
+      let watermarkTemplate = null;
+      if (fileEntity.watermark_template_id) {
+        try {
+          const { SystemTemplate } = db;
+          const template = await SystemTemplate.findOne({
+            where: {
+              id: fileEntity.watermark_template_id,
+              template_type: 'watermark',
+              is_active: true
+            }
+          });
 
-  // Step 1: Apply footer if needed
-  if (shouldMergeFooter && footerSettings) {
-    try {
-      finalPdfBuffer = await mergePdfFooter(finalPdfBuffer, footerSettings);
-      console.log(`✅ Footer merged successfully`);
-    } catch (error) {
-      console.error('❌ Footer merge failed, continuing without footer:', error);
-    }
-  }
+          if (template) {
+            watermarkTemplate = template.template_data;
+            console.log(`✅ Found watermark template: ${template.name}`);
+          } else {
+            console.warn(`⚠️ Watermark template ${fileEntity.watermark_template_id} not found or inactive`);
+          }
+        } catch (templateError) {
+          console.error('❌ Error fetching watermark template:', templateError);
+        }
+      }
 
-  // Step 2: Apply watermarks if needed
-  if (shouldAddWatermarks) {
-    try {
-      // Always use the backend logo file
-      const logoUrl = path.join(process.cwd(), 'assets', 'images', 'logo.png');
+      // Prepare variables for watermark substitution
+      const variables = {
+        filename: fileEntity.file_name,
+        user: user?.email || user?.name || 'User',
+        date: new Date().toLocaleDateString(),
+        time: new Date().toLocaleTimeString()
+      };
 
-      console.log('🔍 PDF Watermark: Logo URL resolution:', {
-        originalUrl: settings?.footer_settings?.logo?.url || settings?.logo_url,
-        resolvedUrl: logoUrl,
-        fileExists: logoUrl ? fs.existsSync(logoUrl) : false
+      // Determine accessible pages - null means all pages accessible
+      const accessiblePages = needsSelectiveAccess ? fileEntity.accessible_pages : null;
+
+      console.log('🔍 Selective access configuration:', {
+        accessiblePages: accessiblePages ? `Pages: [${accessiblePages.join(', ')}]` : 'All pages',
+        hasWatermarkTemplate: !!watermarkTemplate,
+        templateType: watermarkTemplate ? 'custom' : 'none',
+        variables: Object.keys(variables)
       });
-      finalPdfBuffer = await addPdfWatermarks(finalPdfBuffer, logoUrl);
-      console.log(`✅ Watermarks added successfully`);
-    } catch (error) {
-      console.error('❌ Watermark addition failed, continuing without watermarks:', error);
-    }
-  }
 
-  return finalPdfBuffer;
+      // Use new PdfPageReplacementService for comprehensive processing
+      let processedBuffer = await processSelectiveAccessPdf(
+        pdfBuffer,
+        accessiblePages,
+        watermarkTemplate,
+        variables,
+        {
+          applyWatermarksToAccessible: needsWatermarks,
+          preservePageStructure: true
+        }
+      );
+
+      // Apply footer if needed (after selective access processing)
+      if (shouldMergeFooter) {
+        try {
+          const footerSettings = await resolveFooterSettingsWithFallback(fileEntity, settings);
+          if (footerSettings) {
+            processedBuffer = await mergePdfFooter(processedBuffer, footerSettings);
+            console.log(`✅ Footer merged after selective access processing`);
+          }
+        } catch (footerError) {
+          console.error('❌ Footer merge failed after selective access:', footerError);
+        }
+      }
+
+      console.log('✅ Enhanced PDF processing completed');
+      return processedBuffer;
+    }
+
+    // Fall back to legacy processing for backward compatibility
+    console.log('📄 Using legacy PDF processing (no selective access/templates)');
+
+    const shouldAddWatermarks = !hasAccess && fileEntity.allow_preview;
+    let finalPdfBuffer = pdfBuffer;
+
+    // Build complete footer settings using template-based helper function
+    let footerSettings = null;
+    if (shouldMergeFooter) {
+      footerSettings = await resolveFooterSettingsWithFallback(fileEntity, settings);
+    }
+
+    // DEBUG: Log PDF processing decisions
+    console.log('🔍 Legacy PDF Processing Debug:', {
+      fileName: fileEntity.file_name,
+      hasAccess,
+      skipFooter,
+      add_copyrights_footer: fileEntity.add_copyrights_footer,
+      allow_preview: fileEntity.allow_preview,
+      shouldMergeFooter,
+      shouldAddWatermarks,
+      watermarkLogic: `!hasAccess(${!hasAccess}) && allow_preview(${fileEntity.allow_preview}) = ${shouldAddWatermarks}`,
+      hasFileFooterOverrides: !!(fileEntity.footer_overrides && Object.keys(fileEntity.footer_overrides).length > 0),
+      hasFileFooterTemplate: !!fileEntity.footer_template_id,
+      legacySettingsAvailable: !!(settings?.footer_settings),
+      finalFooterSettings: footerSettings ? 'generated' : 'none'
+    });
+
+    // Step 1: Apply footer if needed
+    if (shouldMergeFooter && footerSettings) {
+      try {
+        finalPdfBuffer = await mergePdfFooter(finalPdfBuffer, footerSettings);
+        console.log(`✅ Footer merged successfully`);
+      } catch (error) {
+        console.error('❌ Footer merge failed, continuing without footer:', error);
+      }
+    }
+
+    // Step 2: Apply legacy watermarks if needed
+    if (shouldAddWatermarks) {
+      try {
+        // Always use the backend logo file
+        const logoUrl = path.join(process.cwd(), 'assets', 'images', 'logo.png');
+
+        console.log('🔍 Legacy PDF Watermark: Logo URL resolution:', {
+          originalUrl: settings?.footer_settings?.logo?.url || settings?.logo_url,
+          resolvedUrl: logoUrl,
+          fileExists: logoUrl ? fs.existsSync(logoUrl) : false
+        });
+        finalPdfBuffer = await addPdfWatermarks(finalPdfBuffer, logoUrl);
+        console.log(`✅ Legacy watermarks added successfully`);
+      } catch (error) {
+        console.error('❌ Watermark addition failed, continuing without watermarks:', error);
+      }
+    }
+
+    console.log('✅ Legacy PDF processing completed');
+    return finalPdfBuffer;
+
+  } catch (error) {
+    console.error('❌ PDF processing failed:', error);
+    throw new Error(`PDF processing failed: ${error.message}`);
+  }
 }
 
 /**
@@ -1019,10 +1123,17 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
       // Stream image from S3 using the active S3 key (could be original or legacy path)
       const stream = await fileService.createS3Stream(activeS3Key);
 
+      // Generate Israeli-optimized cache headers for static assets (images)
+      const israeliCacheHeaders = generateIsraeliCacheHeaders('static');
+
       // Set appropriate headers
       res.setHeader('Content-Type', metadataResult.data.contentType || 'image/jpeg');
       res.setHeader('Content-Length', metadataResult.data.size);
-      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+
+      // Apply Israeli-optimized caching
+      Object.entries(israeliCacheHeaders).forEach(([key, value]) => {
+        res.setHeader(key, value);
+      });
 
       // Pipe stream to response
       stream.pipe(res);
@@ -1061,40 +1172,46 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
 });
 
 /**
- * Download Lesson Plan Slide
+ * Download Lesson Plan Slide with Selective Access Control
  *
- * Downloads a specific SVG slide from a lesson plan stored in direct storage.
- * Serves slides that are stored directly in LessonPlan file_configs.presentation
- * array, bypassing the Files table entirely.
+ * Downloads a specific SVG slide from a lesson plan with access control and watermarking.
+ * Supports selective slide access, template-based watermarks, and placeholder serving.
  *
  * @route GET /api/assets/download/lesson-plan-slide/:lessonPlanId/:slideId
- * @access Public (no authentication required - lesson plan slides are public assets)
+ * @access Optional Auth (supports both authenticated and unauthenticated access with different capabilities)
  *
  * @param {string} lessonPlanId - ID of the lesson plan
  * @param {string} slideId - ID of the slide within the lesson plan
  *
- * @returns {200} SVG file binary data
+ * @returns {200} SVG file binary data (original, watermarked, or placeholder)
+ * @returns {403} Access denied (slide not accessible and no preview allowed)
  * @returns {404} Lesson plan or slide not found
  * @returns {500} Server error
  *
- * @example Download SVG Slide
+ * @example Download Accessible Slide
  * GET /api/assets/download/lesson-plan-slide/abc123/slide_123456_xyz
+ * Authorization: Bearer <token>
  *
  * Response:
- * Content-Disposition: attachment; filename="slide-1.svg"
+ * Content-Disposition: inline; filename="slide-1.svg"
  * Content-Type: image/svg+xml
- * [Binary SVG data]
+ * [Original or watermarked SVG data]
+ *
+ * @example Download Restricted Slide (Preview Mode)
+ * GET /api/assets/download/lesson-plan-slide/abc123/slide_789_restricted
+ *
+ * Response:
+ * Content-Disposition: inline; filename="preview-not-available.svg"
+ * Content-Type: image/svg+xml
+ * [Placeholder SVG data]
  */
-router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', async (req, res) => {
+router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, async (req, res) => {
   try {
     const { lessonPlanId, slideId } = req.params;
 
-    console.log(`📥 Lesson plan slide download: LessonPlan ${lessonPlanId}, Slide ${slideId}`);
+    console.log(`📥 Enhanced lesson plan slide request: LessonPlan ${lessonPlanId}, Slide ${slideId}, User: ${req.user?.id || 'unauthenticated'}`);
 
-    // Import DirectSlideService
-    const DirectSlideService = (await import('../services/DirectSlideService.js')).default;
-
-    // Get lesson plan
+    // Get lesson plan with all necessary fields
     const lessonPlan = await db.LessonPlan.findByPk(lessonPlanId);
     if (!lessonPlan) {
       return res.status(404).json(createErrorResponse(
@@ -1102,6 +1219,44 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', async (req, res
         `Lesson plan ${lessonPlanId} not found in database`,
         { lessonPlanId }
       ));
+    }
+
+    // Check lesson plan access control if user is authenticated
+    let hasAccess = false;
+    if (req.user) {
+      // Ensure consistent user ID property
+      if (!req.user.id && req.user.uid) {
+        req.user.id = req.user.uid;
+      }
+
+      // Check if user has access to the lesson plan
+      try {
+        const product = await db.Product.findOne({
+          where: {
+            product_type: 'lesson_plan',
+            entity_id: lessonPlanId
+          }
+        });
+
+        if (product) {
+          if (product.creator_user_id === req.user.id) {
+            hasAccess = true;
+            console.log('🔍 Access granted: User is creator of lesson plan');
+          } else {
+            // Use AccessControlService to check purchase access
+            const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', lessonPlanId);
+            hasAccess = accessResult.hasAccess;
+            console.log('🔍 Access control result:', {
+              userId: req.user.id,
+              lessonPlanId,
+              hasAccess: accessResult.hasAccess,
+              isLifetime: accessResult.isLifetimeAccess
+            });
+          }
+        }
+      } catch (accessError) {
+        console.error('❌ Error checking lesson plan access:', accessError);
+      }
     }
 
     // Get slide from lesson plan
@@ -1114,7 +1269,77 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', async (req, res
       ));
     }
 
-    console.log(`📄 Found slide: ${slide.filename} (${slide.s3_key})`);
+    // Check selective slide access
+    const needsSelectiveAccess = !hasAccess && lessonPlan.allow_slide_preview && lessonPlan.accessible_slides;
+    const isSlideAccessible = !needsSelectiveAccess || lessonPlan.accessible_slides.includes(slideId);
+    const shouldApplyWatermarks = !hasAccess && lessonPlan.allow_slide_preview && isSlideAccessible;
+
+    console.log('🔍 Slide Access Control Debug:', {
+      slideId,
+      lessonPlanId,
+      userId: req.user?.id || 'unauthenticated',
+      hasAccess,
+      allowSlidePreview: lessonPlan.allow_slide_preview,
+      hasSelectiveAccess: !!lessonPlan.accessible_slides,
+      accessibleSlides: lessonPlan.accessible_slides ? `[${lessonPlan.accessible_slides.join(', ')}]` : 'all',
+      isSlideAccessible,
+      shouldApplyWatermarks,
+      hasWatermarkTemplate: !!lessonPlan.watermark_template_id
+    });
+
+    // Handle inaccessible slides
+    if (!isSlideAccessible) {
+      if (!lessonPlan.allow_slide_preview) {
+        // No preview allowed - deny access
+        return res.status(403).json(createErrorResponse(
+          'Access denied',
+          'You do not have permission to view this slide',
+          {
+            hint: 'Purchase the lesson plan or contact the creator for access',
+            allowPreview: false,
+            slideId,
+            lessonPlanId
+          }
+        ));
+      } else {
+        // Serve placeholder for restricted slide
+        console.log(`📄 Serving placeholder for restricted slide: ${slideId}`);
+
+        const placeholderPath = path.join(process.cwd(), 'assets', 'placeholders', 'preview-not-available.svg');
+
+        try {
+          if (fs.existsSync(placeholderPath)) {
+            const placeholderContent = fs.readFileSync(placeholderPath, 'utf8');
+
+            // Set headers for placeholder
+            res.setHeader('Content-Disposition', generateHebrewContentDisposition('inline', 'preview-not-available.svg'));
+            res.setHeader('Content-Type', 'image/svg+xml');
+            res.setHeader('Cache-Control', 'no-cache');
+
+            res.send(placeholderContent);
+            console.log(`✅ Placeholder served for restricted slide: ${slideId}`);
+            return;
+          } else {
+            console.warn('⚠️ Placeholder SVG not found, denying access');
+            return res.status(403).json(createErrorResponse(
+              'Slide not accessible',
+              'This slide is not available in preview mode',
+              { slideId, lessonPlanId }
+            ));
+          }
+        } catch (placeholderError) {
+          console.error('❌ Error serving placeholder:', placeholderError);
+          return res.status(500).json(createErrorResponse(
+            'Error serving placeholder',
+            'Failed to serve placeholder slide',
+            { details: placeholderError.message }
+          ));
+        }
+      }
+    }
+
+    // Serve accessible slide (original or with watermarks)
+    console.log(`📄 Serving accessible slide: ${slide.filename} (${slide.s3_key})`);
 
     try {
       // Get file metadata first to check existence
@@ -1128,31 +1353,80 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', async (req, res
         ));
       }
 
-      // Stream SVG file from S3
-      const stream = await fileService.createS3Stream(slide.s3_key);
+      // Download SVG content
+      const svgBuffer = await fileService.downloadToBuffer(slide.s3_key);
+      let svgContent = svgBuffer.toString('utf8');
 
-      // Set headers for download
-      res.setHeader('Content-Disposition', encodeContentDisposition('attachment', slide.filename));
-      res.setHeader('Content-Type', 'image/svg+xml');
-      res.setHeader('Content-Length', metadataResult.data.size);
-      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+      // Apply watermarks if needed
+      if (shouldApplyWatermarks) {
+        try {
+          // Get watermark template if configured
+          let watermarkTemplate = null;
+          if (lessonPlan.watermark_template_id) {
+            const { SystemTemplate } = db;
+            const template = await SystemTemplate.findOne({
+              where: {
+                id: lessonPlan.watermark_template_id,
+                template_type: 'watermark',
+                is_active: true
+              }
+            });
 
-      // Pipe stream to response
-      stream.pipe(res);
+            if (template) {
+              watermarkTemplate = template.template_data;
+              console.log(`✅ Found watermark template: ${template.name}`);
+            } else {
+              console.warn(`⚠️ Watermark template ${lessonPlan.watermark_template_id} not found or inactive`);
+            }
+          }
 
-      // Handle stream errors
-      stream.on('error', (error) => {
-        console.error('❌ Slide stream error:', error);
-        if (!res.headersSent) {
-          res.status(500).json(createErrorResponse(
-            'Stream error',
-            'Failed to stream slide from storage',
-            { s3Key: slide.s3_key, error: error.message }
-          ));
+          if (watermarkTemplate) {
+            // Prepare variables for watermark substitution
+            const variables = {
+              filename: slide.filename,
+              slideId: slideId,
+              lessonPlan: lessonPlan.title || lessonPlan.name || 'Lesson Plan',
+              user: req.user?.email || req.user?.name || 'User',
+              date: new Date().toLocaleDateString(),
+              time: new Date().toLocaleTimeString()
+            };
+
+            console.log('🎨 Applying watermarks to slide with variables:', Object.keys(variables));
+            svgContent = await applyWatermarksToSvg(svgContent, watermarkTemplate, variables);
+            console.log('✅ Watermarks applied to slide');
+          } else {
+            console.log('ℹ️ No watermark template configured, serving original slide');
+          }
+        } catch (watermarkError) {
+          console.error('❌ Watermark application failed, serving original slide:', watermarkError);
         }
+      }
+
+      // Generate Israeli-optimized cache headers based on access level
+      let israeliCacheHeaders;
+      if (hasAccess) {
+        // Full access - use static asset caching
+        israeliCacheHeaders = generateIsraeliCacheHeaders('static');
+      } else {
+        // Preview only - generate no-cache headers with Israeli timezone info for debugging
+        israeliCacheHeaders = generateIsraeliCacheHeaders('user-data', { skipTimeOptimization: true });
+        israeliCacheHeaders['Cache-Control'] = 'no-cache'; // Override for previews
+      }
+
+      // Set headers for slide download
+      const disposition = hasAccess ? 'attachment' : 'inline'; // Attachment for full access, inline for preview
+      res.setHeader('Content-Disposition', generateHebrewContentDisposition(disposition, slide.filename));
+      res.setHeader('Content-Type', 'image/svg+xml');
+
+      // Apply Israeli-optimized caching
+      Object.entries(israeliCacheHeaders).forEach(([key, value]) => {
+        res.setHeader(key, value);
       });
 
-      console.log(`✅ Slide download started: ${slide.filename}`);
+      // Send processed SVG content
+      res.send(svgContent);
+
+      console.log(`✅ Slide served: ${slide.filename} (${shouldApplyWatermarks ? 'with watermarks' : 'original'})`);
 
     } catch (s3Error) {
       console.error('❌ S3 slide download error:', s3Error);
@@ -1164,7 +1438,7 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', async (req, res
     }
 
   } catch (error) {
-    console.error('❌ Lesson plan slide download error:', error);
+    console.error('❌ Enhanced lesson plan slide download error:', error);
 
     if (!res.headersSent) {
       res.status(500).json(createErrorResponse(
@@ -1543,12 +1817,12 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
 
         // Process PDF with unified function
         const skipFooter = req.query.skipFooter === 'true';
-        const finalPdfBuffer = await processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter);
+        const finalPdfBuffer = await processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter, req.user);
 
         // Set headers - inline for preview mode, attachment for download
         const isPreviewMode = !hasAccess && fileEntity.allow_preview;
         const disposition = isPreviewMode ? 'inline' : 'attachment';
-        res.setHeader('Content-Disposition', encodeContentDisposition(disposition, fileEntity.file_name));
+        res.setHeader('Content-Disposition', generateHebrewContentDisposition(disposition, fileEntity.file_name));
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', finalPdfBuffer.length);
 
@@ -1561,7 +1835,7 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
         const stream = await fileService.createS3Stream(s3Key);
 
         // Set headers for download
-        res.setHeader('Content-Disposition', encodeContentDisposition('attachment', fileEntity.file_name));
+        res.setHeader('Content-Disposition', generateHebrewContentDisposition('attachment', fileEntity.file_name));
         res.setHeader('Content-Type', metadataResult.data.contentType || 'application/octet-stream');
         res.setHeader('Content-Length', metadataResult.data.size);
 
