@@ -239,18 +239,37 @@ class SecretsService {
     }
 
     try {
+      let parsedAccount;
+
       // If it's a file path, read from file (legacy support)
       if (serviceAccountData.startsWith('{')) {
-        return JSON.parse(serviceAccountData);
+        parsedAccount = JSON.parse(serviceAccountData);
       }
-
       // If it's base64 encoded JSON
-      if (serviceAccountData.length > 100 && !serviceAccountData.includes('/')) {
+      else if (serviceAccountData.length > 100 && !serviceAccountData.includes('/')) {
         const decoded = Buffer.from(serviceAccountData, 'base64').toString('utf8');
-        return JSON.parse(decoded);
+        parsedAccount = JSON.parse(decoded);
+      }
+      else {
+        throw new Error('Invalid Firebase service account format');
       }
 
-      throw new Error('Invalid Firebase service account format');
+      // Check for placeholder values in staging/test environments
+      if (parsedAccount && parsedAccount.private_key) {
+        const privateKey = parsedAccount.private_key;
+        const isPlaceholder =
+          privateKey.includes('placeholder') ||
+          privateKey.includes('staging-placeholder') ||
+          privateKey.includes('will-need-real-key') ||
+          parsedAccount.private_key_id === 'staging-placeholder';
+
+        if (isPlaceholder) {
+          console.warn('⚠️ Firebase service account contains placeholder values - skipping Firebase initialization');
+          return null;
+        }
+      }
+
+      return parsedAccount;
     } catch (error) {
       console.error('Failed to parse Firebase service account:', error);
       return null;
