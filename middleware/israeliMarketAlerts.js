@@ -249,7 +249,7 @@ export function israeliRealtimeMarketMonitor() {
       const monitoringData = {
         timestamp: israelTime.toISOString(),
         activeRequests: req.requestId ? 1 : 0, // Simplified metric
-        currentLoad: this.estimateCurrentLoad(),
+        currentLoad: estimateCurrentLoad(),
         responseTimeThreshold: israelTime.hour() >= 8 && israelTime.hour() <= 18 ? 2000 : 3000
       };
 
