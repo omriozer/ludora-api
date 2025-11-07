@@ -66,25 +66,27 @@ runs:
           COMMIT_MSG="${COMMIT_MSG:0:97}..."
         fi
 
-        # Build message
-        MESSAGE="$EMOJI *$TITLE*
+        # Build message parts
+        MESSAGE_TITLE="$EMOJI *$TITLE*"
+        MESSAGE_SERVICE="🔧 *שירות:* ${{ inputs.service }}"
+        MESSAGE_COMMIT="📝 *Commit:* ${COMMIT_MSG}"
+        MESSAGE_SHA="🔗 *SHA:* ${{ inputs.commit-sha }}"
+        MESSAGE_LINK="🔗 [צפיה ב-GitHub Actions](${{ inputs.run-url }})"
 
-🔧 *שירות:* ${{ inputs.service }}
-📝 *Commit:* \`${COMMIT_MSG}\`
-🔗 *SHA:* \`${{ inputs.commit-sha }}\`"
+        # Combine message parts
+        MESSAGE="$MESSAGE_TITLE"
+        MESSAGE="$MESSAGE"$'\n'$'\n'"$MESSAGE_SERVICE"
+        MESSAGE="$MESSAGE"$'\n'"$MESSAGE_COMMIT"
+        MESSAGE="$MESSAGE"$'\n'"$MESSAGE_SHA"
 
         # Add details if provided
         if [ -n "${{ inputs.details }}" ]; then
-          MESSAGE="$MESSAGE
-
-📋 *פרטים:*
-${{ inputs.details }}"
+          MESSAGE="$MESSAGE"$'\n'$'\n'"📋 *פרטים:*"
+          MESSAGE="$MESSAGE"$'\n'"${{ inputs.details }}"
         fi
 
         # Add action link
-        MESSAGE="$MESSAGE
-
-🔗 [צפיה ב-GitHub Actions](${{ inputs.run-url }})"
+        MESSAGE="$MESSAGE"$'\n'$'\n'"$MESSAGE_LINK"
 
         # Send to Telegram
         curl -s -X POST "https://api.telegram.org/bot${{ inputs.bot-token }}/sendMessage" \
