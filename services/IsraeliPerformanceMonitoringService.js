@@ -952,6 +952,151 @@ class IsraeliPerformanceMonitoringService extends EventEmitter {
   }
 
   /**
+   * Analyze device performance breakdown (mobile vs desktop vs tablet)
+   */
+  analyzeDevicePerformance(metrics) {
+    const devicePerformance = {
+      mobile: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 },
+      desktop: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 },
+      tablet: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 },
+      unknown: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 }
+    };
+
+    if (metrics.length === 0) return devicePerformance;
+
+    // Group metrics by device type
+    const deviceMetrics = { mobile: [], desktop: [], tablet: [], unknown: [] };
+    metrics.forEach(metric => {
+      const deviceType = metric.deviceType || 'unknown';
+      if (deviceMetrics[deviceType]) {
+        deviceMetrics[deviceType].push(metric);
+      }
+    });
+
+    // Calculate performance for each device type
+    Object.keys(deviceMetrics).forEach(deviceType => {
+      const deviceData = deviceMetrics[deviceType];
+      const performance = devicePerformance[deviceType];
+
+      performance.requestCount = deviceData.length;
+      performance.averageResponseTime = this.calculateAverage(deviceData, 'responseTime');
+      performance.averageLoadTime = this.calculateAverage(deviceData, 'loadTime');
+      performance.errorRate = this.calculateErrorRate(deviceData);
+    });
+
+    return devicePerformance;
+  }
+
+  /**
+   * Calculate CDN hit rate from metrics
+   */
+  calculateCDNHitRate(metrics) {
+    if (metrics.length === 0) return 0;
+    const cdnHits = metrics.filter(m => m.cdnHit).length;
+    return (cdnHits / metrics.length) * 100;
+  }
+
+  /**
+   * Analyze Hebrew content performance
+   */
+  analyzeHebrewContentPerformance(metrics) {
+    const hebrewMetrics = metrics.filter(m => m.hasHebrewContent);
+    const nonHebrewMetrics = metrics.filter(m => !m.hasHebrewContent);
+
+    return {
+      hebrewContentRequests: hebrewMetrics.length,
+      hebrewAverageResponseTime: this.calculateAverage(hebrewMetrics, 'responseTime'),
+      hebrewAverageLoadTime: this.calculateAverage(hebrewMetrics, 'loadTime'),
+      nonHebrewAverageResponseTime: this.calculateAverage(nonHebrewMetrics, 'responseTime'),
+      performance: hebrewMetrics.length > 0 ? 'measured' : 'no_hebrew_content'
+    };
+  }
+
+  /**
+   * Assess overall quality from metrics
+   */
+  assessOverallQuality(metrics) {
+    if (metrics.length === 0) return { grade: 'insufficient_data', score: 0 };
+
+    const avgQualityScore = this.calculateAverage(metrics, 'qualityScore');
+    let grade = 'poor';
+
+    if (avgQualityScore >= 90) grade = 'excellent';
+    else if (avgQualityScore >= 80) grade = 'good';
+    else if (avgQualityScore >= 70) grade = 'fair';
+
+    return { grade, score: avgQualityScore };
+  }
+
+  /**
+   * Check for performance alerts
+   */
+  checkPerformanceAlerts(metrics) {
+    const alerts = [];
+
+    if (metrics.length === 0) return alerts;
+
+    const avgResponseTime = this.calculateAverage(metrics, 'responseTime');
+    const errorRate = this.calculateErrorRate(metrics);
+
+    if (avgResponseTime > 5000) {
+      alerts.push({ type: 'high_response_time', severity: 'critical', value: avgResponseTime });
+    } else if (avgResponseTime > 3000) {
+      alerts.push({ type: 'elevated_response_time', severity: 'warning', value: avgResponseTime });
+    }
+
+    if (errorRate > 5) {
+      alerts.push({ type: 'high_error_rate', severity: 'critical', value: errorRate });
+    } else if (errorRate > 2) {
+      alerts.push({ type: 'elevated_error_rate', severity: 'warning', value: errorRate });
+    }
+
+    return alerts;
+  }
+
+  /**
+   * Store realtime metrics (stub implementation)
+   */
+  storeRealtimeMetrics(aggregated) {
+    // Stub implementation - in production might store in database/cache
+    console.log('📊 Realtime metrics collected:', {
+      timestamp: aggregated.israelTime,
+      requests: aggregated.totalRequests,
+      avgResponseTime: Math.round(aggregated.averageResponseTime),
+      errorRate: aggregated.errorRate
+    });
+  }
+
+  /**
+   * Calculate success rate from metrics
+   */
+  calculateSuccessRate(metrics) {
+    if (metrics.length === 0) return 100;
+    const successfulRequests = metrics.filter(m => m.statusCode < 400).length;
+    return (successfulRequests / metrics.length) * 100;
+  }
+
+  /**
+   * Calculate user satisfaction score
+   */
+  calculateUserSatisfactionScore(metrics) {
+    if (metrics.length === 0) return 0;
+    const avgResponseTime = this.calculateAverage(metrics, 'responseTime');
+    const errorRate = this.calculateErrorRate(metrics);
+
+    let score = 100;
+    // Response time impact
+    if (avgResponseTime > 3000) score -= 40;
+    else if (avgResponseTime > 2000) score -= 20;
+    else if (avgResponseTime > 1000) score -= 10;
+
+    // Error rate impact
+    score -= (errorRate * 10); // Each 1% error rate reduces score by 10 points
+
+    return Math.max(score, 0);
+  }
+
+  /**
    * Generate health alert for critical issues
    */
   generateHealthAlert(healthCheck) {
