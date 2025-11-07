@@ -211,40 +211,7 @@ router.post('/deactivateCouponsByPattern', authenticateToken, async (req, res) =
   }
 });
 
-// Registration Functions
-router.post('/updateExistingRegistrations', authenticateToken, async (req, res) => {
-  try {
-    const { registrationData } = req.body;
-
-    if (!Array.isArray(registrationData)) {
-      return res.status(400).json({ error: 'registrationData must be an array' });
-    }
-
-    const results = [];
-    for (const registration of registrationData) {
-      try {
-        const updated = await EntityService.update('Registration', registration.id, registration);
-        results.push({ id: registration.id, status: 'updated', data: updated });
-      } catch (error) {
-        results.push({ id: registration.id, status: 'failed', error: error.message });
-      }
-    }
-
-    res.json({
-      success: true,
-      message: 'Registrations update completed',
-      data: {
-        total: registrationData.length,
-        updated: results.filter(r => r.status === 'updated').length,
-        failed: results.filter(r => r.status === 'failed').length,
-        results
-      }
-    });
-  } catch (error) {
-    console.error('Error updating registrations:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+// Registration Functions - DEPRECATED: Registration model removed
 
 router.post('/sendRegistrationEmail', authenticateToken, async (req, res) => {
   try {

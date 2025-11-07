@@ -12,13 +12,11 @@ const sequelize = process.env.DATABASE_URL
 // Import all models
 import User from './User.js';
 import Settings from './Settings.js';
-import Registration from './Registration.js';
 import EmailTemplate from './EmailTemplate.js';
 import Category from './Category.js';
 import Coupon from './Coupon.js';
 import Transaction from './Transaction.js';
 import SupportMessage from './SupportMessage.js';
-import Notification from './Notification.js';
 import Purchase from './Purchase.js';
 import Product from './Product.js';
 import Workshop from './Workshop.js';
@@ -34,7 +32,6 @@ import SubscriptionHistory from './SubscriptionHistory.js';
 import School from './School.js';
 import Classroom from './Classroom.js';
 import StudentInvitation from './StudentInvitation.js';
-import ParentConsent from './ParentConsent.js';
 import ClassroomMembership from './ClassroomMembership.js';
 import Curriculum from './Curriculum.js';
 import CurriculumItem from './CurriculumItem.js';
@@ -46,6 +43,7 @@ import GameContent from './GameContent.js';
 import GameContentRelation from './GameContentRelation.js';
 import GameContentRelationItem from './GameContentRelationItem.js';
 import GameContentLink from './GameContentLink.js';
+import SystemTemplate from './SystemTemplate.js';
 
 // Initialize models
 const models = {
@@ -53,13 +51,11 @@ const models = {
   Sequelize, // Add Sequelize constructor for operators
   User: User(sequelize),
   Settings: Settings(sequelize),
-  Registration: Registration(sequelize),
   EmailTemplate: EmailTemplate(sequelize),
   Category: Category(sequelize),
   Coupon: Coupon(sequelize),
   Transaction: Transaction(sequelize),
   SupportMessage: SupportMessage(sequelize),
-  Notification: Notification(sequelize),
   Purchase: Purchase(sequelize),
   Product: Product(sequelize),
   Workshop: Workshop(sequelize),
@@ -75,7 +71,6 @@ const models = {
   School: School(sequelize),
   Classroom: Classroom(sequelize),
   StudentInvitation: StudentInvitation(sequelize),
-  ParentConsent: ParentConsent(sequelize),
   ClassroomMembership: ClassroomMembership(sequelize),
   Curriculum: Curriculum(sequelize),
   CurriculumItem: CurriculumItem(sequelize),
@@ -87,6 +82,7 @@ const models = {
   GameContentRelation: GameContentRelation(sequelize),
   GameContentRelationItem: GameContentRelationItem(sequelize),
   GameContentLink: GameContentLink(sequelize),
+  SystemTemplate: SystemTemplate(sequelize),
 };
 
 // Define associations

@@ -35,7 +35,7 @@ export default function(sequelize) {
     // Define associations here
     EmailLog.belongsTo(models.EmailTemplate, { foreignKey: 'template_id' });
     // Removed Product association as it doesn't exist
-    EmailLog.belongsTo(models.Registration, { foreignKey: 'related_registration_id' });
+    // Removed Registration association - deprecated model
     EmailLog.belongsTo(models.Purchase, { foreignKey: 'related_purchase_id' });
   };
 

@@ -43,7 +43,7 @@ export default function(sequelize) {
     StudentInvitation.belongsTo(models.Classroom, { foreignKey: 'classroom_id' });
     StudentInvitation.belongsTo(models.User, { foreignKey: 'teacher_id', as: 'Teacher' });
     StudentInvitation.belongsTo(models.User, { foreignKey: 'student_user_id', as: 'Student' });
-    StudentInvitation.hasOne(models.ParentConsent, { foreignKey: 'related_invitation_id' });
+    // Removed ParentConsent association - deprecated model
     StudentInvitation.hasOne(models.ClassroomMembership, { foreignKey: 'student_user_id', sourceKey: 'student_user_id' });
   };
 
