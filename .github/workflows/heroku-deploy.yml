@@ -31,15 +31,15 @@ jobs:
           echo "$COMMIT_MSG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # TODO: Fix Telegram bot configuration
-      # - name: Notify deployment started
-      #   uses: ./.github/actions/telegram-notify
-      #   with:
-      #     bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      #     chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
-      #     status: 'started'
-      #     service: 'API (Heroku)'
-      #     commit-message: ${{ steps.commit.outputs.message }}
+      - name: Notify deployment started
+        uses: ./.github/actions/telegram-notify
+        continue-on-error: true
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          status: 'started'
+          service: 'API (Heroku)'
+          commit-message: ${{ steps.commit.outputs.message }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -141,31 +141,31 @@ jobs:
           echo "Health Check: https://api.ludora.app/health"
           echo "Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-prod"
 
-      # TODO: Fix Telegram bot configuration
-      # - name: Notify deployment success
-      #   if: success()
-      #   uses: ./.github/actions/telegram-notify
-      #   with:
-      #     bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      #     chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
-      #     status: 'success'
-      #     service: 'API (Heroku)'
-      #     commit-message: ${{ steps.commit.outputs.message }}
-      #     details: |
-      #       🌐 API URL: https://api.ludora.app
-      #       ❤️ Health Check: https://api.ludora.app/health
-      #       📊 Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-prod
+      - name: Notify deployment success
+        if: success()
+        uses: ./.github/actions/telegram-notify
+        continue-on-error: true
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          status: 'success'
+          service: 'API (Heroku)'
+          commit-message: ${{ steps.commit.outputs.message }}
+          details: |
+            🌐 API URL: https://api.ludora.app
+            ❤️ Health Check: https://api.ludora.app/health
+            📊 Heroku Dashboard: https://dashboard.heroku.com/apps/ludora-api-prod
 
-      # TODO: Fix Telegram bot configuration
-      # - name: Notify deployment failure
-      #   if: failure()
-      #   uses: ./.github/actions/telegram-notify
-      #   with:
-      #     bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      #     chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
-      #     status: 'failed'
-      #     service: 'API (Heroku)'
-      #     commit-message: ${{ steps.commit.outputs.message }}
-      #     details: |
-      #       ⚠️ שלב כושל: ${{ job.status }}
-      #       🔍 בדוק את הלוגים לפרטים נוספים
+      - name: Notify deployment failure
+        if: failure()
+        uses: ./.github/actions/telegram-notify
+        continue-on-error: true
+        with:
+          bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          status: 'failed'
+          service: 'API (Heroku)'
+          commit-message: ${{ steps.commit.outputs.message }}
+          details: |
+            ⚠️ שלב כושל: ${{ job.status }}
+            🔍 בדוק את הלוגים לפרטים נוספים

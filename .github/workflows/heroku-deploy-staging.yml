@@ -33,6 +33,7 @@ jobs:
 
       - name: Notify deployment started
         uses: ./.github/actions/telegram-notify
+        continue-on-error: true
         with:
           bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -144,6 +145,7 @@ jobs:
       - name: Notify deployment success
         if: success()
         uses: ./.github/actions/telegram-notify
+        continue-on-error: true
         with:
           bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -159,6 +161,7 @@ jobs:
       - name: Notify deployment failure
         if: failure()
         uses: ./.github/actions/telegram-notify
+        continue-on-error: true
         with:
           bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
