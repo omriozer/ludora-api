@@ -4,10 +4,20 @@ import dotenv from 'dotenv';
 // Load environment files with proper cascading: base .env first, then environment-specific overrides
 const env = process.env.ENVIRONMENT || 'production';
 
-// Load base .env file first (defaults)
+// For cloud deployments (Heroku, etc.), .env files might not exist but environment variables are set
+// This is normal and expected behavior
+const isCloudDeployment = process.env.PORT && process.env.DATABASE_URL;
+
+// Load base .env file first (defaults) - only warn if missing in local development
 const baseResult = dotenv.config({ path: '.env' });
 if (baseResult.error) {
-  console.warn(`⚠️  Failed to load base .env:`, baseResult.error);
+  if (isCloudDeployment) {
+    console.log(`ℹ️ No .env file found - using environment variables from cloud platform (${env})`);
+  } else {
+    console.warn(`⚠️  Failed to load base .env:`, baseResult.error);
+  }
+} else {
+  console.log(`✅ Loaded base .env file`);
 }
 
 // Load environment-specific .env file (overrides) - only if not production
@@ -15,13 +25,25 @@ if (env !== 'production') {
   const envFile = `.env.${env}`;
   const envResult = dotenv.config({ path: envFile });
   if (envResult.error) {
-    console.error(`❌ Failed to load ${envFile}:`, envResult.error);
+    if (isCloudDeployment) {
+      console.log(`ℹ️ No ${envFile} file found - using environment variables from cloud platform`);
+    } else {
+      console.warn(`⚠️  Failed to load ${envFile}:`, envResult.error);
+    }
   } else {
     console.log(`✅ Loaded environment configuration: .env + ${envFile}`);
   }
-} else {
-  console.log(`✅ Loaded environment configuration: .env (production)`);
 }
+
+// Validate critical environment variables are available
+const criticalVars = ['JWT_SECRET'];
+const missingVars = criticalVars.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  console.error(`❌ Critical environment variables missing: ${missingVars.join(', ')}`);
+  throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+}
+
+console.log(`✅ Environment initialized for ${env} (critical variables validated)`);
 
 // Now import other modules after environment is loaded
 import express from 'express';
@@ -78,6 +100,7 @@ import publicApisRoutes from './routes/publicApis.js';
 import gamesRoutes from './routes/games.js';
 import productsRoutes from './routes/products.js';
 import svgSlidesRoutes from './routes/svgSlides.js';
+import systemTemplatesRoutes from './routes/system-templates.js';
 
 const app = express();
 
