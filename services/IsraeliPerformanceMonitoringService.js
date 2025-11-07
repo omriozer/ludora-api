@@ -770,6 +770,333 @@ class IsraeliPerformanceMonitoringService extends EventEmitter {
   }
 
   /**
+   * Generate health recommendations based on check results
+   */
+  generateHealthRecommendations(checks) {
+    const recommendations = [];
+
+    // S3 connectivity recommendations
+    if (checks.s3Connectivity?.status !== 'healthy') {
+      recommendations.push({
+        category: 's3_connectivity',
+        priority: 'high',
+        title: 'S3 Connection Issues Detected',
+        description: 'File storage connectivity problems affecting Israeli users',
+        actions: ['Check S3 endpoint health', 'Verify AWS region configuration', 'Review network routing']
+      });
+    }
+
+    // CDN performance recommendations
+    if (checks.cdnPerformance?.status !== 'healthy') {
+      recommendations.push({
+        category: 'cdn_performance',
+        priority: 'high',
+        title: 'CDN Performance Degradation',
+        description: 'Content delivery network issues impacting Israeli user experience',
+        actions: ['Review CDN cache hit rates', 'Check geographic routing', 'Optimize for Middle East region']
+      });
+    }
+
+    // API response time recommendations
+    if (checks.apiResponseTime?.status !== 'healthy') {
+      recommendations.push({
+        category: 'api_performance',
+        priority: 'high',
+        title: 'API Response Time Issues',
+        description: 'Server response times affecting Israeli user experience',
+        actions: ['Scale server resources', 'Optimize database queries', 'Implement caching']
+      });
+    }
+
+    // Database connectivity recommendations
+    if (checks.databaseConnectivity?.status !== 'healthy') {
+      recommendations.push({
+        category: 'database_connectivity',
+        priority: 'critical',
+        title: 'Database Connection Problems',
+        description: 'Database connectivity issues requiring immediate attention',
+        actions: ['Check database server status', 'Review connection pool', 'Verify network connectivity']
+      });
+    }
+
+    // Israeli routing recommendations
+    if (checks.israeliRouting?.status !== 'optimal') {
+      recommendations.push({
+        category: 'israeli_routing',
+        priority: 'medium',
+        title: 'Network Routing Optimization',
+        description: 'Network routing to Israel can be optimized',
+        actions: ['Review ISP peering agreements', 'Consider Israeli CDN presence', 'Optimize for major Israeli ISPs']
+      });
+    }
+
+    // Hebrew content delivery recommendations
+    if (checks.hebrewContentDelivery?.status !== 'optimal') {
+      recommendations.push({
+        category: 'hebrew_content',
+        priority: 'medium',
+        title: 'Hebrew Content Optimization',
+        description: 'Hebrew content delivery can be improved',
+        actions: ['Optimize Hebrew text compression', 'Review RTL layout performance', 'Improve font loading']
+      });
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * Analyze peak hours impact on performance
+   */
+  analyzePeakHoursImpact(metrics) {
+    const impact = {
+      isPeakTime: false,
+      currentLoad: 'normal',
+      performance: 'stable',
+      recommendations: []
+    };
+
+    if (metrics.length === 0) return impact;
+
+    const israelTime = moment().tz(this.timezone);
+    const currentHour = israelTime.hour();
+
+    // Determine if we're in peak hours
+    impact.isPeakTime = this.isPeakHours(israelTime);
+
+    // Calculate current load based on request volume
+    const currentLoad = this.estimateCurrentLoad(metrics);
+    impact.currentLoad = currentLoad;
+
+    // Analyze performance during peak hours
+    if (impact.isPeakTime) {
+      const avgResponseTime = this.calculateAverage(metrics, 'responseTime');
+      const errorRate = this.calculateErrorRate(metrics);
+
+      // Performance assessment
+      if (avgResponseTime > 3000 || errorRate > 5) {
+        impact.performance = 'degraded';
+        impact.recommendations.push({
+          type: 'peak_hours_optimization',
+          priority: 'high',
+          description: 'Performance degraded during Israeli peak hours',
+          actions: ['Scale server resources', 'Implement load balancing', 'Optimize caching']
+        });
+      } else if (avgResponseTime > 2000 || errorRate > 2) {
+        impact.performance = 'stressed';
+        impact.recommendations.push({
+          type: 'peak_hours_monitoring',
+          priority: 'medium',
+          description: 'Performance stressed during peak hours',
+          actions: ['Monitor resource usage', 'Prepare for scaling', 'Review caching strategy']
+        });
+      }
+
+      // Peak time specific recommendations
+      if (currentHour >= 18 && currentHour <= 21) {
+        impact.recommendations.push({
+          type: 'evening_peak_optimization',
+          priority: 'medium',
+          description: 'Evening peak hours in Israel - highest usage period',
+          actions: ['Ensure maximum server capacity', 'Monitor educational content delivery', 'Optimize for family usage']
+        });
+      } else if (currentHour >= 15 && currentHour <= 17) {
+        impact.recommendations.push({
+          type: 'school_peak_optimization',
+          priority: 'medium',
+          description: 'School hours peak - high educational content usage',
+          actions: ['Optimize educational content delivery', 'Prioritize homework/assignment features', 'Monitor student usage patterns']
+        });
+      }
+    }
+
+    // Load-based recommendations
+    if (currentLoad === 'high') {
+      impact.recommendations.push({
+        type: 'high_load_response',
+        priority: 'high',
+        description: 'High load detected - proactive scaling needed',
+        actions: ['Scale server resources immediately', 'Activate load balancing', 'Monitor system health']
+      });
+    } else if (currentLoad === 'moderate') {
+      impact.recommendations.push({
+        type: 'moderate_load_monitoring',
+        priority: 'medium',
+        description: 'Moderate load - prepare for potential scaling',
+        actions: ['Monitor trends closely', 'Prepare scaling resources', 'Review performance metrics']
+      });
+    }
+
+    return impact;
+  }
+
+  /**
+   * Estimate current system load based on metrics
+   */
+  estimateCurrentLoad(metrics) {
+    if (metrics.length === 0) return 'low';
+
+    const recentMinutes = 5;
+    const recentMetrics = this.getRecentMetrics(recentMinutes);
+    const requestRate = recentMetrics.length / recentMinutes; // requests per minute
+    const avgResponseTime = this.calculateAverage(recentMetrics, 'responseTime');
+    const errorRate = this.calculateErrorRate(recentMetrics);
+
+    // Load assessment based on multiple factors
+    if (requestRate > 50 || avgResponseTime > 3000 || errorRate > 5) {
+      return 'high';
+    } else if (requestRate > 20 || avgResponseTime > 2000 || errorRate > 2) {
+      return 'moderate';
+    } else {
+      return 'low';
+    }
+  }
+
+  /**
+   * Analyze device performance breakdown (mobile vs desktop vs tablet)
+   */
+  analyzeDevicePerformance(metrics) {
+    const devicePerformance = {
+      mobile: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 },
+      desktop: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 },
+      tablet: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 },
+      unknown: { requestCount: 0, averageResponseTime: 0, averageLoadTime: 0, errorRate: 0 }
+    };
+
+    if (metrics.length === 0) return devicePerformance;
+
+    // Group metrics by device type
+    const deviceMetrics = { mobile: [], desktop: [], tablet: [], unknown: [] };
+    metrics.forEach(metric => {
+      const deviceType = metric.deviceType || 'unknown';
+      if (deviceMetrics[deviceType]) {
+        deviceMetrics[deviceType].push(metric);
+      }
+    });
+
+    // Calculate performance for each device type
+    Object.keys(deviceMetrics).forEach(deviceType => {
+      const deviceData = deviceMetrics[deviceType];
+      const performance = devicePerformance[deviceType];
+
+      performance.requestCount = deviceData.length;
+      performance.averageResponseTime = this.calculateAverage(deviceData, 'responseTime');
+      performance.averageLoadTime = this.calculateAverage(deviceData, 'loadTime');
+      performance.errorRate = this.calculateErrorRate(deviceData);
+    });
+
+    return devicePerformance;
+  }
+
+  /**
+   * Calculate CDN hit rate from metrics
+   */
+  calculateCDNHitRate(metrics) {
+    if (metrics.length === 0) return 0;
+    const cdnHits = metrics.filter(m => m.cdnHit).length;
+    return (cdnHits / metrics.length) * 100;
+  }
+
+  /**
+   * Analyze Hebrew content performance
+   */
+  analyzeHebrewContentPerformance(metrics) {
+    const hebrewMetrics = metrics.filter(m => m.hasHebrewContent);
+    const nonHebrewMetrics = metrics.filter(m => !m.hasHebrewContent);
+
+    return {
+      hebrewContentRequests: hebrewMetrics.length,
+      hebrewAverageResponseTime: this.calculateAverage(hebrewMetrics, 'responseTime'),
+      hebrewAverageLoadTime: this.calculateAverage(hebrewMetrics, 'loadTime'),
+      nonHebrewAverageResponseTime: this.calculateAverage(nonHebrewMetrics, 'responseTime'),
+      performance: hebrewMetrics.length > 0 ? 'measured' : 'no_hebrew_content'
+    };
+  }
+
+  /**
+   * Assess overall quality from metrics
+   */
+  assessOverallQuality(metrics) {
+    if (metrics.length === 0) return { grade: 'insufficient_data', score: 0 };
+
+    const avgQualityScore = this.calculateAverage(metrics, 'qualityScore');
+    let grade = 'poor';
+
+    if (avgQualityScore >= 90) grade = 'excellent';
+    else if (avgQualityScore >= 80) grade = 'good';
+    else if (avgQualityScore >= 70) grade = 'fair';
+
+    return { grade, score: avgQualityScore };
+  }
+
+  /**
+   * Check for performance alerts
+   */
+  checkPerformanceAlerts(metrics) {
+    const alerts = [];
+
+    if (metrics.length === 0) return alerts;
+
+    const avgResponseTime = this.calculateAverage(metrics, 'responseTime');
+    const errorRate = this.calculateErrorRate(metrics);
+
+    if (avgResponseTime > 5000) {
+      alerts.push({ type: 'high_response_time', severity: 'critical', value: avgResponseTime });
+    } else if (avgResponseTime > 3000) {
+      alerts.push({ type: 'elevated_response_time', severity: 'warning', value: avgResponseTime });
+    }
+
+    if (errorRate > 5) {
+      alerts.push({ type: 'high_error_rate', severity: 'critical', value: errorRate });
+    } else if (errorRate > 2) {
+      alerts.push({ type: 'elevated_error_rate', severity: 'warning', value: errorRate });
+    }
+
+    return alerts;
+  }
+
+  /**
+   * Store realtime metrics (stub implementation)
+   */
+  storeRealtimeMetrics(aggregated) {
+    // Stub implementation - in production might store in database/cache
+    console.log('📊 Realtime metrics collected:', {
+      timestamp: aggregated.israelTime,
+      requests: aggregated.totalRequests,
+      avgResponseTime: Math.round(aggregated.averageResponseTime),
+      errorRate: aggregated.errorRate
+    });
+  }
+
+  /**
+   * Calculate success rate from metrics
+   */
+  calculateSuccessRate(metrics) {
+    if (metrics.length === 0) return 100;
+    const successfulRequests = metrics.filter(m => m.statusCode < 400).length;
+    return (successfulRequests / metrics.length) * 100;
+  }
+
+  /**
+   * Calculate user satisfaction score
+   */
+  calculateUserSatisfactionScore(metrics) {
+    if (metrics.length === 0) return 0;
+    const avgResponseTime = this.calculateAverage(metrics, 'responseTime');
+    const errorRate = this.calculateErrorRate(metrics);
+
+    let score = 100;
+    // Response time impact
+    if (avgResponseTime > 3000) score -= 40;
+    else if (avgResponseTime > 2000) score -= 20;
+    else if (avgResponseTime > 1000) score -= 10;
+
+    // Error rate impact
+    score -= (errorRate * 10); // Each 1% error rate reduces score by 10 points
+
+    return Math.max(score, 0);
+  }
+
+  /**
    * Generate health alert for critical issues
    */
   generateHealthAlert(healthCheck) {
