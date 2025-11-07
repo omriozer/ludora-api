@@ -420,6 +420,39 @@ class IsraeliPerformanceMonitoringService extends EventEmitter {
   }
 
   /**
+   * Assess user experience impact for Israeli users
+   */
+  assessUserExperienceImpact(requestData) {
+    let impact = 'excellent';
+
+    // Response time impact
+    if (requestData.responseTime > 5000) {
+      impact = 'critical';
+    } else if (requestData.responseTime > 3000) {
+      impact = 'poor';
+    } else if (requestData.responseTime > 2000) {
+      impact = 'moderate';
+    } else if (requestData.responseTime > 1000) {
+      impact = 'minor';
+    }
+
+    // Error impact (overrides response time if errors)
+    if (requestData.statusCode >= 500) {
+      impact = 'critical';
+    } else if (requestData.statusCode >= 400) {
+      impact = 'poor';
+    }
+
+    // Content size impact for mobile users
+    const isMobile = this.detectDeviceType(requestData.userAgent) === 'mobile';
+    if (isMobile && requestData.contentSize > 1000000) { // 1MB
+      impact = impact === 'excellent' ? 'minor' : impact;
+    }
+
+    return impact;
+  }
+
+  /**
    * Check if current time is during Israeli peak hours
    */
   isPeakHours(time) {
