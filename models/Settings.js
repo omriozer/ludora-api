@@ -89,7 +89,6 @@ export default function(sequelize) {
     allow_content_creator_games: { type: DataTypes.BOOLEAN, allowNull: true },
     allow_content_creator_lesson_plans: { type: DataTypes.BOOLEAN, allowNull: true },
     copyright_footer_text: { type: DataTypes.TEXT, allowNull: true },
-    footer_settings: { type: DataTypes.JSONB, allowNull: true },
     available_dashboard_widgets: { type: DataTypes.JSONB, allowNull: true, comment: 'Available widgets for user dashboards' },
     available_specializations: { type: DataTypes.JSONB, allowNull: true, comment: 'Available specializations for teacher onboarding' },
     available_grade_levels: { type: DataTypes.JSONB, allowNull: true, comment: 'Available grade levels for classroom creation' },
