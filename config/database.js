@@ -21,7 +21,23 @@ export default {
       idle: 10000,
     },
   },
-  staging: {
+  staging: process.env.DATABASE_URL ? {
+    use_env_variable: 'DATABASE_URL',
+    dialect: 'postgres',
+    logging: false,
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    },
+    pool: {
+      max: 10,
+      min: 0,
+      acquire: 30000,
+      idle: 10000,
+    },
+  } : {
     username: process.env.DB_USER || 'ludora_user',
     password: process.env.DB_PASSWORD || 'ludora_staging_pass',
     database: process.env.DB_NAME || 'ludora_staging',
