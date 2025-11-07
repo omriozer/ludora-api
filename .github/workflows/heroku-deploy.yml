@@ -44,6 +44,18 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Install Heroku CLI
+        run: |
+          curl https://cli-assets.heroku.com/install.sh | sh
+          echo "Heroku CLI installed successfully"
+
+      - name: Authenticate Heroku CLI
+        run: |
+          echo "${{ secrets.HEROKU_API_KEY }}" | heroku auth:token
+          heroku auth:whoami
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
       - name: Check for dependency changes
         id: deps-check
         run: |
@@ -64,18 +76,6 @@ jobs:
           usedocker: false
           dontautocreate: true
           branch: "main"
-
-      - name: Install Heroku CLI
-        run: |
-          curl https://cli-assets.heroku.com/install.sh | sh
-          echo "Heroku CLI installed successfully"
-
-      - name: Authenticate Heroku CLI
-        run: |
-          echo "${{ secrets.HEROKU_API_KEY }}" | heroku auth:token
-          heroku auth:whoami
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
       - name: Wait for deployment
         run: |
