@@ -456,8 +456,13 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       if (query.allow_preview !== undefined) {
         query.allow_preview = query.allow_preview === 'true' || query.allow_preview === true;
       }
+      if (query.add_branding !== undefined) {
+        query.add_branding = query.add_branding === 'true' || query.add_branding === true;
+      }
+      // Legacy support for old column name
       if (query.add_copyrights_footer !== undefined) {
-        query.add_copyrights_footer = query.add_copyrights_footer === 'true' || query.add_copyrights_footer === true;
+        query.add_branding = query.add_copyrights_footer === 'true' || query.add_copyrights_footer === true;
+        delete query.add_copyrights_footer;
       }
     }
 
@@ -1412,7 +1417,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       file_type: fileType,
       is_asset_only: true,
       allow_preview: false,
-      add_copyrights_footer: false,
+      add_branding: false,
       creator_user_id: req.user.uid
     };
 

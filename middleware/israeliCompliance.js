@@ -20,22 +20,24 @@ export function israeliComplianceHeaders() {
   return (req, res, next) => {
     const israelTime = moment().tz('Asia/Jerusalem');
 
-    // Add Israeli compliance headers
-    res.setHeader('X-Israeli-Compliance', 'enabled');
-    res.setHeader('X-Israel-Time', israelTime.format('YYYY-MM-DD HH:mm:ss z'));
-    res.setHeader('X-Data-Residency', 'EU-compliant');
-    res.setHeader('X-Hebrew-Support', 'available');
-    res.setHeader('X-Timezone', 'Asia/Jerusalem');
+    // Add Israeli compliance headers (only if headers haven't been sent)
+    if (!res.headersSent) {
+      res.setHeader('X-Israeli-Compliance', 'enabled');
+      res.setHeader('X-Israel-Time', israelTime.format('YYYY-MM-DD HH:mm:ss z'));
+      res.setHeader('X-Data-Residency', 'EU-compliant');
+      res.setHeader('X-Hebrew-Support', 'available');
+      res.setHeader('X-Timezone', 'Asia/Jerusalem');
 
-    // Privacy compliance headers
-    res.setHeader('X-Privacy-Policy', '/privacy-policy-israel');
-    res.setHeader('X-Cookie-Policy', '/cookie-policy-israel');
-    res.setHeader('X-GDPR-Compliant', 'true');
+      // Privacy compliance headers
+      res.setHeader('X-Privacy-Policy', '/privacy-policy-israel');
+      res.setHeader('X-Cookie-Policy', '/cookie-policy-israel');
+      res.setHeader('X-GDPR-Compliant', 'true');
 
-    // Security compliance headers for Israeli standards
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      // Security compliance headers for Israeli standards
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    }
 
     next();
   };
@@ -79,7 +81,7 @@ export function israeliPrivacyCompliance() {
         });
       }
 
-      if (compliance.actions.includes('refresh_consent')) {
+      if (compliance.actions.includes('refresh_consent') && !res.headersSent) {
         // Add consent refresh header
         res.setHeader('X-Consent-Refresh-Required', 'true');
         res.setHeader('X-Consent-Refresh-URL', '/consent-refresh');
@@ -130,9 +132,11 @@ export function israeliDataResidencyCompliance() {
         dataResidency: residencyCheck
       };
 
-      // Add data residency headers
-      res.setHeader('X-Data-Region', currentRegion);
-      res.setHeader('X-Data-Compliance', residencyCheck.compliant ? 'true' : 'false');
+      // Add data residency headers (only if headers haven't been sent)
+      if (!res.headersSent) {
+        res.setHeader('X-Data-Region', currentRegion);
+        res.setHeader('X-Data-Compliance', residencyCheck.compliant ? 'true' : 'false');
+      }
 
       if (!residencyCheck.compliant && residencyCheck.issues.length > 0) {
         console.warn('Israeli data residency compliance issue:', residencyCheck);
@@ -175,16 +179,16 @@ export function israeliHebrewContentCompliance() {
 
         const hebrewCompliance = complianceService.validateHebrewContentCompliance(content);
 
-        // Add Hebrew compliance headers
-        if (hebrewCompliance.hebrewPresent) {
+        // Add Hebrew compliance headers (only if headers haven't been sent)
+        if (hebrewCompliance.hebrewPresent && !this.headersSent) {
           this.setHeader('X-Hebrew-Content', 'detected');
           this.setHeader('X-RTL-Formatted', hebrewCompliance.rtlFormatting ? 'true' : 'false');
           this.setHeader('Content-Language', 'he-IL');
           this.setHeader('Direction', 'rtl');
         }
 
-        // Add accessibility headers
-        if (hebrewCompliance.recommendations.length > 0) {
+        // Add accessibility headers (only if headers haven't been sent)
+        if (hebrewCompliance.recommendations.length > 0 && !this.headersSent) {
           this.setHeader('X-Accessibility-Recommendations', hebrewCompliance.recommendations.join('; '));
         }
 
@@ -229,9 +233,11 @@ export function israeliTimezoneCompliance() {
       };
     }
 
-    // Add timezone headers
-    res.setHeader('X-Server-Timezone', 'Asia/Jerusalem');
-    res.setHeader('X-Server-Time', moment().tz('Asia/Jerusalem').toISOString());
+    // Add timezone headers (only if headers haven't been sent)
+    if (!res.headersSent) {
+      res.setHeader('X-Server-Timezone', 'Asia/Jerusalem');
+      res.setHeader('X-Server-Time', moment().tz('Asia/Jerusalem').toISOString());
+    }
 
     next();
   };
@@ -336,9 +342,11 @@ export function israeliMaintenanceCompliance() {
         });
       }
 
-      // Add scheduling info to headers
-      res.setHeader('X-Israeli-Schedule-Check', 'approved');
-      res.setHeader('X-Israeli-Time', schedulingCheck.israelTime);
+      // Add scheduling info to headers (only if headers haven't been sent)
+      if (!res.headersSent) {
+        res.setHeader('X-Israeli-Schedule-Check', 'approved');
+        res.setHeader('X-Israeli-Time', schedulingCheck.israelTime);
+      }
     }
 
     next();

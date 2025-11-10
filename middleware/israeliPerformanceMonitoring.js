@@ -105,19 +105,21 @@ export function israeliPerformanceTracker() {
       try {
         const metric = performanceService.trackIsraeliRequest(performanceData);
 
-        // Add performance ID to response headers for debugging
-        res.setHeader('X-Performance-ID', metric.requestId);
-        res.setHeader('X-Response-Time', responseTime.toString());
-        res.setHeader('X-Quality-Score', metric.qualityScore.toString());
+        // Add performance ID to response headers for debugging (only if headers haven't been sent)
+        if (!res.headersSent) {
+          res.setHeader('X-Performance-ID', metric.requestId);
+          res.setHeader('X-Response-Time', responseTime.toString());
+          res.setHeader('X-Quality-Score', metric.qualityScore.toString());
 
-        // Add Israeli timezone info
-        res.setHeader('X-Monitored-At', moment().tz('Asia/Jerusalem').format());
+          // Add Israeli timezone info
+          res.setHeader('X-Monitored-At', moment().tz('Asia/Jerusalem').format());
 
-        // Performance insights headers for development
-        if (process.env.ENVIRONMENT === 'development') {
-          res.setHeader('X-ISP-Estimate', metric.estimatedISP);
-          res.setHeader('X-Device-Type', metric.deviceType);
-          res.setHeader('X-Peak-Hours', metric.isPeakHours ? 'true' : 'false');
+          // Performance insights headers for development
+          if (process.env.ENVIRONMENT === 'development') {
+            res.setHeader('X-ISP-Estimate', metric.estimatedISP);
+            res.setHeader('X-Device-Type', metric.deviceType);
+            res.setHeader('X-Peak-Hours', metric.isPeakHours ? 'true' : 'false');
+          }
         }
 
       } catch (error) {
@@ -194,9 +196,11 @@ export function israeliHebrewContentPerformanceTracker() {
           rtlOptimized: res.getHeader('X-RTL-Formatted') === 'true'
         };
 
-        // Add Hebrew content performance headers
-        res.setHeader('X-Hebrew-Performance', 'tracked');
-        res.setHeader('X-Hebrew-Chars', hebrewPerformanceData.hebrewCharCount.toString());
+        // Add Hebrew content performance headers (only if headers haven't been sent)
+        if (!res.headersSent) {
+          res.setHeader('X-Hebrew-Performance', 'tracked');
+          res.setHeader('X-Hebrew-Chars', hebrewPerformanceData.hebrewCharCount.toString());
+        }
 
         // Store for main performance tracker
         req.hebrewContentData = hebrewPerformanceData;
@@ -239,14 +243,16 @@ export function israeliPeakHoursPerformanceTracker() {
       isWeekend: israelTime.day() === 5 || israelTime.day() === 6
     };
 
-    // Add performance monitoring headers based on time
-    res.setHeader('X-Israeli-Time-Context', isPeakHours ? 'peak' : 'normal');
-    res.setHeader('X-School-Hours', isSchoolHours ? 'true' : 'false');
+    // Add performance monitoring headers based on time (only if headers haven't been sent)
+    if (!res.headersSent) {
+      res.setHeader('X-Israeli-Time-Context', isPeakHours ? 'peak' : 'normal');
+      res.setHeader('X-School-Hours', isSchoolHours ? 'true' : 'false');
 
-    // Adjust monitoring sensitivity during peak hours
-    if (isPeakHours) {
-      req.performanceMonitoringMode = 'enhanced';
-      res.setHeader('X-Monitoring-Mode', 'enhanced');
+      // Adjust monitoring sensitivity during peak hours
+      if (isPeakHours) {
+        req.performanceMonitoringMode = 'enhanced';
+        res.setHeader('X-Monitoring-Mode', 'enhanced');
+      }
     }
 
     next();

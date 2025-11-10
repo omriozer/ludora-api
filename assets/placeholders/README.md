@@ -5,13 +5,22 @@ This directory contains static placeholder files used in the selective access co
 ## Files
 
 ### `preview-not-available.pdf` (1.45 KB)
-- **Usage**: Replaces individual PDF pages that are not accessible in preview mode
+- **Usage**: Replaces individual PDF pages that are not accessible in preview mode (Portrait A4)
 - **Content**: Professional "Content Restricted" page with lock icon and Ludora branding
 - **Features**:
   - Clear messaging about content restrictions
   - Upgrade call-to-action
   - Consistent with brand styling
   - Lightweight (< 2 KB)
+
+### `preview-not-available-landscape.pdf` (1.55 KB)
+- **Usage**: Template editor placeholder for landscape PDF template design (A4 Landscape)
+- **Content**: Professional template preview page optimized for landscape format
+- **Features**:
+  - Template editing guidance and visual indicators
+  - Header and footer area markers for better template design
+  - Landscape A4 format (842 × 595 pt)
+  - Consistent with brand styling
 
 ### `preview-not-available.svg` (2.38 KB)
 - **Usage**: Replaces individual lesson plan slides that are not accessible in preview mode

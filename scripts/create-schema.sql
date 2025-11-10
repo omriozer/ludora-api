@@ -2367,7 +2367,6 @@ CREATE TABLE public."user" (
     full_name character varying(255),
     disabled character varying(255),
     is_verified boolean,
-    _app_role character varying(255),
     role character varying(255) DEFAULT 'user'::character varying NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),

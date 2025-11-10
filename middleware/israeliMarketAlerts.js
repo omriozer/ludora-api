@@ -253,8 +253,8 @@ export function israeliRealtimeMarketMonitor() {
         responseTimeThreshold: israelTime.hour() >= 8 && israelTime.hour() <= 18 ? 2000 : 3000
       };
 
-      // Add monitoring headers for debugging
-      if (process.env.ENVIRONMENT === 'development') {
+      // Add monitoring headers for debugging (only if headers haven't been sent)
+      if (process.env.ENVIRONMENT === 'development' && !res.headersSent) {
         res.setHeader('X-Israeli-Monitoring', 'active');
         res.setHeader('X-Israeli-Time', israelTime.format('HH:mm:ss'));
         res.setHeader('X-Peak-Hours', alertsService.isIsraeliPeakHours(israelTime) ? 'true' : 'false');

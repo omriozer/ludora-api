@@ -83,18 +83,18 @@ function validateWatermarkTemplateData(templateData) {
 }
 
 /**
- * Get all system templates or filter by type
- * GET /api/system-templates?type=footer&category=landscape
+ * Get all system templates or filter by type and format
+ * GET /api/system-templates?type=footer&format=pdf-a4-landscape
  */
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { type, category, include_inactive } = req.query;
+    const { type, format, include_inactive } = req.query;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'sysadmin';
 
     clog('SystemTemplates: Getting templates', {
       userId: req.user.uid,
       type,
-      category,
+      format,
       include_inactive,
       isAdmin
     });
@@ -106,8 +106,8 @@ router.get('/', authenticateToken, async (req, res) => {
       whereClause.template_type = type;
     }
 
-    if (category) {
-      whereClause.category = category;
+    if (format) {
+      whereClause.target_format = format;
     }
 
     // Non-admins can only see active templates (when we add active field later)
@@ -115,7 +115,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const templates = await models.SystemTemplate.findAll({
       where: whereClause,
-      order: [['is_default', 'DESC'], ['category', 'ASC'], ['created_at', 'ASC']],
+      order: [['is_default', 'DESC'], ['target_format', 'ASC'], ['created_at', 'ASC']],
       include: isAdmin ? [] : [] // Can include File associations later if needed
     });
 
@@ -125,7 +125,7 @@ router.get('/', authenticateToken, async (req, res) => {
       meta: {
         total: templates.length,
         type: type || 'all',
-        category: category || 'all'
+        format: format || 'all'
       }
     });
 
@@ -136,23 +136,62 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 /**
- * Get templates by type (convenience endpoint)
- * GET /api/system-templates/footer
- * GET /api/system-templates/header
+ * Get single template by ID
+ * GET /api/system-templates/:id
  */
-router.get('/:templateType', authenticateToken, async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    clog('SystemTemplates: Getting template by ID', {
+      userId: req.user.uid,
+      templateId: id
+    });
+
+    // Check if this looks like a template type request rather than ID
+    const validTypes = ['branding', 'watermark'];
+    if (validTypes.includes(id)) {
+      // This is actually a template type request, redirect to by-type endpoint
+      return res.status(400).json({
+        error: `Use /api/system-templates/type/${id} for template type requests`
+      });
+    }
+
+    const template = await models.SystemTemplate.findByPk(id);
+
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    res.json({
+      success: true,
+      data: template
+    });
+
+  } catch (error) {
+    cerror('SystemTemplates: Error getting template by ID:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get templates by type (convenience endpoint)
+ * GET /api/system-templates/type/footer?format=pdf-a4-landscape
+ * GET /api/system-templates/type/header?format=svg-lessonplan
+ */
+router.get('/type/:templateType', authenticateToken, async (req, res) => {
   try {
     const { templateType } = req.params;
-    const { category } = req.query;
+    const { format } = req.query;
 
     clog('SystemTemplates: Getting templates by type', {
       userId: req.user.uid,
       templateType,
-      category
+      format
     });
 
     // Validate template type
-    const validTypes = ['footer', 'header', 'watermark'];
+    const validTypes = ['branding', 'watermark'];
     if (!validTypes.includes(templateType)) {
       return res.status(400).json({
         error: `Invalid template type. Must be one of: ${validTypes.join(', ')}`
@@ -161,25 +200,25 @@ router.get('/:templateType', authenticateToken, async (req, res) => {
 
     const whereClause = { template_type: templateType };
 
-    if (category) {
-      whereClause.category = category;
+    if (format) {
+      whereClause.target_format = format;
     }
 
     const templates = await models.SystemTemplate.findByType(templateType, {
-      where: category ? { category } : {}
+      where: format ? { target_format: format } : {}
     });
 
-    // Get the default template
-    const defaultTemplate = templates.find(t => t.is_default);
+    // Get the default template(s)
+    const defaultTemplates = templates.filter(t => t.is_default);
 
     res.json({
       success: true,
       data: templates,
       meta: {
         total: templates.length,
-        default_template: defaultTemplate ? defaultTemplate.id : null,
+        default_templates: defaultTemplates.map(t => ({ id: t.id, format: t.target_format })),
         type: templateType,
-        category: category || 'all'
+        format: format || 'all'
       }
     });
 
@@ -227,49 +266,57 @@ router.get('/default/:templateType', authenticateToken, async (req, res) => {
  */
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { name, description, template_type, category, template_data, is_default } = req.body;
+    const { name, description, template_type, target_format, template_data, is_default } = req.body;
     const createdBy = req.user.email;
 
     clog('SystemTemplates: Creating new template', {
       name,
       template_type,
-      category,
+      target_format,
       is_default,
       createdBy
     });
 
     // Validation
-    if (!name || !template_type || !template_data) {
+    if (!name || !template_type || !target_format || !template_data) {
       return res.status(400).json({
-        error: 'name, template_type, and template_data are required'
+        error: 'name, template_type, target_format, and template_data are required'
       });
     }
 
     // Validate template type
-    const validTypes = ['footer', 'header', 'watermark'];
+    const validTypes = ['branding', 'watermark'];
     if (!validTypes.includes(template_type)) {
       return res.status(400).json({
         error: `Invalid template type. Must be one of: ${validTypes.join(', ')}`
       });
     }
 
+    // Validate target format
+    const validFormats = ['pdf-a4-landscape', 'pdf-a4-portrait', 'svg-lessonplan'];
+    if (!validFormats.includes(target_format)) {
+      return res.status(400).json({
+        error: `Invalid target format. Must be one of: ${validFormats.join(', ')}`
+      });
+    }
+
     // Validate template data based on type
-    if (template_type === 'footer') {
+    if (template_type === 'branding') {
       const template = models.SystemTemplate.build({
         name,
         description,
         template_type,
-        category,
+        target_format,
         template_data,
         is_default: false, // Validate first, then set default if needed
         created_by: createdBy
       });
 
       try {
-        template.validateFooterTemplateData();
+        template.validateBrandingTemplateData();
       } catch (validationError) {
         return res.status(400).json({
-          error: `Invalid footer template data: ${validationError.message}`
+          error: `Invalid branding template data: ${validationError.message}`
         });
       }
     } else if (template_type === 'watermark') {
@@ -287,7 +334,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
       name,
       description,
       template_type,
-      category,
+      target_format,
       template_data,
       is_default: !!is_default,
       created_by: createdBy
@@ -331,12 +378,12 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, category, template_data, is_default } = req.body;
+    const { name, description, target_format, template_data, is_default } = req.body;
 
     clog('SystemTemplates: Updating template', {
       templateId: id,
       name,
-      category,
+      target_format,
       is_default
     });
 
@@ -348,17 +395,17 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
     // Validate template_data if being updated
     if (template_data) {
-      if (template.template_type === 'footer') {
+      if (template.template_type === 'branding') {
         const testTemplate = models.SystemTemplate.build({
           ...template.toJSON(),
           template_data
         });
 
         try {
-          testTemplate.validateFooterTemplateData();
+          testTemplate.validateBrandingTemplateData();
         } catch (validationError) {
           return res.status(400).json({
-            error: `Invalid footer template data: ${validationError.message}`
+            error: `Invalid branding template data: ${validationError.message}`
           });
         }
       } else if (template.template_type === 'watermark') {
@@ -376,7 +423,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     const updatedData = {};
     if (name !== undefined) updatedData.name = name;
     if (description !== undefined) updatedData.description = description;
-    if (category !== undefined) updatedData.category = category;
+    if (target_format !== undefined) updatedData.target_format = target_format;
     if (template_data !== undefined) updatedData.template_data = template_data;
 
     await template.update(updatedData);
@@ -442,12 +489,24 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
     // Check if template is being used by any files
     const filesUsingTemplate = await models.File.count({
-      where: { footer_template_id: id }
+      where: {
+        [models.Sequelize.Op.or]: [
+          { branding_template_id: id },
+          { watermark_template_id: id }
+        ]
+      }
     });
 
     if (filesUsingTemplate > 0) {
       return res.status(409).json({
         error: `Cannot delete template - it is being used by ${filesUsingTemplate} file(s)`
+      });
+    }
+
+    // Prevent deletion of system-created default templates
+    if (template.is_default && template.created_by === 'system_migration') {
+      return res.status(403).json({
+        error: 'Cannot delete system default templates. System default templates can be edited but not deleted.'
       });
     }
 
@@ -548,7 +607,7 @@ router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) 
       name: newName,
       description: sourceTemplate.description,
       template_type: sourceTemplate.template_type,
-      category: sourceTemplate.category,
+      target_format: sourceTemplate.target_format,
       template_data: sourceTemplate.template_data,
       is_default: false, // Duplicated templates are never default
       created_by: createdBy
@@ -579,13 +638,13 @@ router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) 
 router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { fileId } = req.params;
-    const { name, description, category } = req.body;
+    const { name, description, target_format } = req.body;
     const createdBy = req.user.email;
 
     clog('SystemTemplates: Saving file footer as template', {
       fileId,
       name,
-      category
+      target_format
     });
 
     // Get the file with its footer configuration
@@ -627,7 +686,7 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
       name,
       description: description || `Template created from file: ${file.title}`,
       template_type: 'footer',
-      category: category || 'custom',
+      target_format: target_format || 'pdf-a4-portrait',
       template_data: footerData,
       is_default: false,
       created_by: createdBy
@@ -906,7 +965,7 @@ router.get('/:id/export', authenticateToken, requireAdmin, async (req, res) => {
         name: template.name,
         description: template.description,
         template_type: template.template_type,
-        category: template.category,
+        target_format: template.target_format,
         template_data: template.template_data
       }
     };
@@ -967,7 +1026,7 @@ router.post('/import', authenticateToken, requireAdmin, async (req, res) => {
       name: templateName,
       description: templateData.description || 'Imported watermark template',
       template_type: templateData.template_type,
-      category: templateData.category || 'imported',
+      target_format: templateData.target_format || 'pdf-a4-portrait',
       template_data: templateData.template_data,
       is_default: false, // Imported templates are never default
       created_by: createdBy

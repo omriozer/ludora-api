@@ -269,6 +269,7 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/public', publicApisRoutes);
 app.use('/api/games', gamesRoutes);
 app.use('/api/svg-slides', svgSlidesRoutes);
+app.use('/api/system-templates', systemTemplatesRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
@@ -313,7 +314,8 @@ app.get('/api', (req, res) => {
       subscriptions: '/api/subscriptions',
       public: '/api/public',
       games: '/api/games',
-      'svg-slides': '/api/svg-slides'
+      'svg-slides': '/api/svg-slides',
+      'system-templates': '/api/system-templates'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
   });

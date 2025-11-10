@@ -378,6 +378,14 @@ class IsraeliCostOptimizationService extends EventEmitter {
   }
 
   /**
+   * Helper function to calculate transfer costs (S3 data transfer)
+   */
+  calculateTransferCost(sizeInBytes) {
+    const sizeInGB = sizeInBytes / (1024 * 1024 * 1024);
+    return sizeInGB * this.israeliCostFactors.bandwidthEU;
+  }
+
+  /**
    * Helper function to calculate bandwidth costs
    */
   calculateBandwidthCost(sizeInBytes) {

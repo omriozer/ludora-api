@@ -74,36 +74,83 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter
       skipFooter,
       userId: user?.id,
       hasSelectiveAccess: !!(fileEntity.accessible_pages),
-      hasWatermarkTemplate: !!(fileEntity.watermark_template_id)
+      hasWatermarkTemplate: !!(fileEntity.watermark_template_id),
+      allowPreview: fileEntity.allow_preview,
+      addBranding: fileEntity.add_branding
     });
 
     // Check if we need to use the new selective access system
     const needsSelectiveAccess = !hasAccess && fileEntity.allow_preview && fileEntity.accessible_pages;
     const needsWatermarks = !hasAccess && fileEntity.allow_preview;
-    const shouldMergeFooter = fileEntity.add_copyrights_footer && !skipFooter;
+    const shouldMergeFooter = fileEntity.add_branding && !skipFooter;
 
-    // If selective access is configured, use the new PdfPageReplacementService
-    if (needsSelectiveAccess || (needsWatermarks && fileEntity.watermark_template_id)) {
-      console.log('📄 Using enhanced PDF processing with selective access/templates');
+    // Check if we should use template-based watermarks (instead of legacy hardcoded ones)
+    const shouldUseTemplateWatermarks = needsWatermarks && (
+      fileEntity.watermark_template_id ||  // Has specific watermark template
+      // OR if there's a default watermark template available (we'll check this in processing)
+      true // Always try to use template system for consistency
+    );
 
-      // Get watermark template if configured
+    // Log processing decision
+    console.log('🔍 PDF Processing Decision:', {
+      needsSelectiveAccess: `${needsSelectiveAccess} = !hasAccess(${!hasAccess}) && allow_preview(${fileEntity.allow_preview}) && accessible_pages(${!!fileEntity.accessible_pages})`,
+      needsWatermarks: `${needsWatermarks} = !hasAccess(${!hasAccess}) && allow_preview(${fileEntity.allow_preview})`,
+      shouldUseTemplateWatermarks: `${shouldUseTemplateWatermarks} = needsWatermarks(${needsWatermarks}) && template_available`,
+      shouldMergeFooter: `${shouldMergeFooter} = add_branding(${fileEntity.add_branding}) && !skipFooter(${!skipFooter})`,
+      processingPath: (needsSelectiveAccess || shouldUseTemplateWatermarks) ? 'ENHANCED (template-based)' : 'LEGACY (hardcoded watermarks)'
+    });
+
+    // Use enhanced processing if selective access, template watermarks, OR branding templates are needed
+    if (needsSelectiveAccess || shouldUseTemplateWatermarks) {
+      console.log('📄 ✅ Using enhanced PDF processing with template system');
+
+      // Get watermark template (configured or default)
       let watermarkTemplate = null;
-      if (fileEntity.watermark_template_id) {
+      if (needsWatermarks) {
         try {
           const { SystemTemplate } = db;
-          const template = await SystemTemplate.findOne({
-            where: {
-              id: fileEntity.watermark_template_id,
-              template_type: 'watermark',
-              is_active: true
-            }
-          });
+          let template = null;
+
+          // Try to get the configured watermark template
+          if (fileEntity.watermark_template_id) {
+            template = await SystemTemplate.findOne({
+              where: {
+                id: fileEntity.watermark_template_id,
+                template_type: 'watermark'
+              }
+            });
+            console.log(`🔍 Looking for configured watermark template: ${fileEntity.watermark_template_id}`);
+          }
+
+          // If no configured template or not found, try to get default template
+          if (!template) {
+            template = await SystemTemplate.findOne({
+              where: {
+                template_type: 'watermark',
+                target_format: 'pdf-a4-portrait', // TODO: Auto-detect format
+                is_default: true
+              }
+            });
+            console.log(`🔍 Looking for default watermark template for pdf-a4-portrait`);
+          }
 
           if (template) {
             watermarkTemplate = template.template_data;
-            console.log(`✅ Found watermark template: ${template.name}`);
+            console.log(`✅ Found watermark template: ${template.name} (${template.is_default ? 'default' : 'configured'})`);
+
+            // Override with custom watermark settings if available
+            if (fileEntity.watermark_settings) {
+              watermarkTemplate = fileEntity.watermark_settings;
+              console.log(`🎨 Using custom watermark settings (overriding template)`);
+            }
           } else {
-            console.warn(`⚠️ Watermark template ${fileEntity.watermark_template_id} not found or inactive`);
+            // Check for custom watermark settings even if no template
+            if (fileEntity.watermark_settings) {
+              watermarkTemplate = fileEntity.watermark_settings;
+              console.log(`🎨 Using custom watermark settings (no template, custom only)`);
+            } else {
+              console.warn(`⚠️ No watermark template found - will skip watermarks`);
+            }
           }
         } catch (templateError) {
           console.error('❌ Error fetching watermark template:', templateError);
@@ -158,7 +205,7 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter
     }
 
     // Fall back to legacy processing for backward compatibility
-    console.log('📄 Using legacy PDF processing (no selective access/templates)');
+    console.log('📄 ⚠️ Using LEGACY PDF processing (hardcoded watermarks) - this should rarely happen');
 
     const shouldAddWatermarks = !hasAccess && fileEntity.allow_preview;
     let finalPdfBuffer = pdfBuffer;
@@ -174,7 +221,7 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipFooter
       fileName: fileEntity.file_name,
       hasAccess,
       skipFooter,
-      add_copyrights_footer: fileEntity.add_copyrights_footer,
+      add_branding: fileEntity.add_branding,
       allow_preview: fileEntity.allow_preview,
       shouldMergeFooter,
       shouldAddWatermarks,
@@ -1752,7 +1799,7 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
       fileName: fileEntity.file_name,
       fileCreatorId: fileEntity.is_asset_only ? 'N/A (asset-only)' : (fileEntity.creator_user_id || 'N/A'),
       allowPreview: fileEntity.allow_preview,
-      addCopyrightsFooter: fileEntity.add_copyrights_footer,
+      addBranding: fileEntity.add_branding,
       hasAccess,
       isPreviewRequest,
       isAssetOnly: fileEntity.is_asset_only
@@ -1791,7 +1838,7 @@ router.get('/download/:entityType/:entityId', optionalAuth, async (req, res) => 
 
     // Check if PDF processing is needed
     const isPdf = fileEntity.file_type === 'pdf' || fileEntity.file_name.toLowerCase().endsWith('.pdf');
-    const needsPdfProcessing = isPdf && (fileEntity.add_copyrights_footer || (!hasAccess && fileEntity.allow_preview));
+    const needsPdfProcessing = isPdf && (fileEntity.add_branding || (!hasAccess && fileEntity.allow_preview));
 
     try {
       // Get file metadata first to check existence
@@ -2550,6 +2597,119 @@ router.get('/metadata/:entityType/:entityId', authenticateToken, async (req, res
 });
 
 // REMOVED: PPTX conversion endpoint - replaced with SVG slide system
+
+/**
+ * Serve Placeholder Assets
+ *
+ * Serves static placeholder files (PDF, SVG, etc.) for preview and template modes.
+ * These are publicly accessible placeholder assets used when actual content
+ * is not available or in template creation mode.
+ *
+ * @route GET /api/assets/placeholders/:filename
+ * @access Public (no authentication required)
+ *
+ * @param {string} filename - Name of the placeholder file to serve
+ *
+ * @returns {200} Binary file stream with appropriate content type
+ * @returns {404} Placeholder file not found
+ * @returns {500} Server error
+ *
+ * @example Get Placeholder PDF
+ * GET /api/assets/placeholders/preview-not-available.pdf
+ *
+ * Response:
+ * Content-Type: application/pdf
+ * [Binary PDF data]
+ *
+ * @example Get Placeholder SVG
+ * GET /api/assets/placeholders/preview-not-available.svg
+ *
+ * Response:
+ * Content-Type: image/svg+xml
+ * [SVG content]
+ */
+router.get('/placeholders/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+
+    // Security: Only allow specific filename patterns to prevent directory traversal
+    if (!/^[a-zA-Z0-9._-]+\.(pdf|svg|png|jpg|jpeg)$/i.test(filename)) {
+      return res.status(400).json(createErrorResponse(
+        'Invalid filename',
+        'Only placeholder files with safe names and extensions are allowed',
+        {
+          filename,
+          allowedExtensions: ['pdf', 'svg', 'png', 'jpg', 'jpeg'],
+          pattern: 'alphanumeric with dots, hyphens, underscores only'
+        }
+      ));
+    }
+
+    const placeholderPath = path.join(process.cwd(), 'assets', 'placeholders', filename);
+
+    // Check if file exists
+    if (!fs.existsSync(placeholderPath)) {
+      return res.status(404).json(createErrorResponse(
+        'Placeholder not found',
+        `Placeholder file ${filename} not found`,
+        {
+          filename,
+          path: 'assets/placeholders/' + filename
+        }
+      ));
+    }
+
+    // Determine content type based on file extension
+    const ext = path.extname(filename).toLowerCase();
+    let contentType = 'application/octet-stream';
+
+    switch (ext) {
+      case '.pdf':
+        contentType = 'application/pdf';
+        break;
+      case '.svg':
+        contentType = 'image/svg+xml';
+        break;
+      case '.png':
+        contentType = 'image/png';
+        break;
+      case '.jpg':
+      case '.jpeg':
+        contentType = 'image/jpeg';
+        break;
+    }
+
+    // Set headers for caching (placeholders change rarely)
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // 24 hours
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+
+    console.log(`📄 Serving placeholder: ${filename} (${contentType})`);
+
+    // Stream the file
+    const stream = fs.createReadStream(placeholderPath);
+    stream.pipe(res);
+
+    stream.on('error', (error) => {
+      console.error('❌ Placeholder stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json(createErrorResponse(
+          'Stream error',
+          'Failed to stream placeholder file',
+          { filename, error: error.message }
+        ));
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Placeholder serving error:', error);
+    res.status(500).json(createErrorResponse(
+      'Failed to serve placeholder',
+      'Error serving placeholder file',
+      { details: error.message }
+    ));
+  }
+});
 
 // Error handling middleware for multer errors
 router.use((error, _req, res, next) => {

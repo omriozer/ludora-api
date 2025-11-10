@@ -18,41 +18,17 @@ export default function(sequelize) {
       type: DataTypes.STRING(100),
       allowNull: false,
       validate: {
-        isIn: [['footer', 'header', 'watermark']] // Extensible for future template types
+        isIn: [['branding', 'watermark']] // Simplified: only branding and watermark types
       },
-      comment: 'Type of template (footer, header, watermark, etc.)'
+      comment: 'Type of template (branding, watermark)'
     },
-    target_file_types: {
-      type: DataTypes.ARRAY(DataTypes.STRING),
-      allowNull: true,
-      defaultValue: null,
+    target_format: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
       validate: {
-        isValidFileTypes(value) {
-          if (value === null || value === undefined) return; // Allow null for footer/header templates
-
-          if (!Array.isArray(value)) {
-            throw new Error('target_file_types must be an array');
-          }
-
-          const validTypes = ['pdf', 'svg', 'both'];
-          const invalidTypes = value.filter(type => !validTypes.includes(type));
-          if (invalidTypes.length > 0) {
-            throw new Error(`Invalid file types: ${invalidTypes.join(', ')}. Valid types: ${validTypes.join(', ')}`);
-          }
-
-          // Ensure no duplicates
-          const uniqueTypes = [...new Set(value)];
-          if (uniqueTypes.length !== value.length) {
-            throw new Error('target_file_types cannot contain duplicates');
-          }
-        }
+        isIn: [['pdf-a4-landscape', 'pdf-a4-portrait', 'svg-lessonplan']]
       },
-      comment: 'Array of file types this template applies to: [pdf, svg, both] - null for footer/header templates'
-    },
-    category: {
-      type: DataTypes.STRING(100),
-      allowNull: true,
-      comment: 'Template category (landscape, portrait, minimal, logo-only, corporate, etc.)'
+      comment: 'Target format: pdf-a4-landscape, pdf-a4-portrait, or svg-lessonplan'
     },
     is_default: {
       type: DataTypes.BOOLEAN,
@@ -79,8 +55,8 @@ export default function(sequelize) {
         name: 'idx_system_templates_type'
       },
       {
-        fields: ['category'],
-        name: 'idx_system_templates_category'
+        fields: ['target_format'],
+        name: 'idx_system_templates_format'
       },
       {
         fields: ['is_default'],
@@ -91,17 +67,17 @@ export default function(sequelize) {
         name: 'idx_system_templates_type_default'
       },
       {
+        fields: ['template_type', 'target_format'],
+        name: 'idx_system_templates_type_format'
+      },
+      {
         fields: ['created_by'],
         name: 'idx_system_templates_created_by'
       },
       {
-        fields: ['target_file_types'],
-        name: 'idx_system_templates_file_types'
-      },
-      {
         unique: true,
-        fields: ['template_type', 'is_default'],
-        name: 'unique_default_per_type',
+        fields: ['template_type', 'target_format', 'is_default'],
+        name: 'unique_default_per_type_format',
         where: {
           is_default: true
         }
@@ -110,10 +86,10 @@ export default function(sequelize) {
   });
 
   SystemTemplate.associate = function(models) {
-    // Files can reference system templates for footer configuration
+    // Files can reference system templates for branding configuration
     SystemTemplate.hasMany(models.File, {
-      foreignKey: 'footer_template_id',
-      as: 'files_using_footer_template'
+      foreignKey: 'branding_template_id',
+      as: 'files_using_branding_template'
     });
 
     // Files can reference system templates for watermark configuration
@@ -130,12 +106,8 @@ export default function(sequelize) {
   };
 
   // Validation methods
-  SystemTemplate.prototype.isFooterTemplate = function() {
-    return this.template_type === 'footer';
-  };
-
-  SystemTemplate.prototype.isHeaderTemplate = function() {
-    return this.template_type === 'header';
+  SystemTemplate.prototype.isBrandingTemplate = function() {
+    return this.template_type === 'branding';
   };
 
   SystemTemplate.prototype.isWatermarkTemplate = function() {
@@ -146,29 +118,29 @@ export default function(sequelize) {
     return this.is_default === true;
   };
 
-  // Footer-specific template data validation
-  SystemTemplate.prototype.validateFooterTemplateData = function() {
-    if (!this.isFooterTemplate()) {
-      throw new Error('Template is not a footer template');
+  // Branding-specific template data validation
+  SystemTemplate.prototype.validateBrandingTemplateData = function() {
+    if (!this.isBrandingTemplate()) {
+      throw new Error('Template is not a branding template');
     }
 
     const data = this.template_data;
     if (!data || typeof data !== 'object') {
-      throw new Error('Footer template data must be a valid object');
+      throw new Error('Branding template data must be a valid object');
     }
 
-    // Validate required footer structure
+    // Validate required branding structure
     const requiredElements = ['logo', 'text', 'url'];
     for (const element of requiredElements) {
       if (!data[element] || typeof data[element] !== 'object') {
-        throw new Error(`Footer template missing required element: ${element}`);
+        throw new Error(`Branding template missing required element: ${element}`);
       }
 
       const elementData = data[element];
 
       // Check for required fields
       if (typeof elementData.visible !== 'boolean') {
-        throw new Error(`Footer template ${element} missing required 'visible' boolean`);
+        throw new Error(`Branding template ${element} missing required 'visible' boolean`);
       }
 
       if (typeof elementData.hidden !== 'boolean') {
@@ -180,15 +152,15 @@ export default function(sequelize) {
       }
 
       if (!elementData.position || typeof elementData.position !== 'object') {
-        throw new Error(`Footer template ${element} missing required 'position' object`);
+        throw new Error(`Branding template ${element} missing required 'position' object`);
       }
 
       if (typeof elementData.position.x !== 'number' || typeof elementData.position.y !== 'number') {
-        throw new Error(`Footer template ${element} position must have numeric x and y values`);
+        throw new Error(`Branding template ${element} position must have numeric x and y values`);
       }
 
       if (!elementData.style || typeof elementData.style !== 'object') {
-        throw new Error(`Footer template ${element} missing required 'style' object`);
+        throw new Error(`Branding template ${element} missing required 'style' object`);
       }
     }
 
@@ -291,8 +263,8 @@ export default function(sequelize) {
 
   SystemTemplate.prototype.updateTemplateData = function(newData) {
     this.template_data = { ...this.template_data, ...newData };
-    if (this.isFooterTemplate()) {
-      this.validateFooterTemplateData();
+    if (this.isBrandingTemplate()) {
+      this.validateBrandingTemplateData();
     } else if (this.isWatermarkTemplate()) {
       this.validateWatermarkTemplateData();
     }
@@ -311,22 +283,28 @@ export default function(sequelize) {
     });
   };
 
-  SystemTemplate.findDefaultByType = function(templateType) {
+  SystemTemplate.findDefaultByType = function(templateType, targetFormat = null) {
+    const whereClause = {
+      template_type: templateType,
+      is_default: true
+    };
+
+    if (targetFormat) {
+      whereClause.target_format = targetFormat;
+    }
+
     return this.findOne({
-      where: {
-        template_type: templateType,
-        is_default: true
-      }
+      where: whereClause
     });
   };
 
-  SystemTemplate.findByCategory = function(templateType, category, options = {}) {
+  SystemTemplate.findByFormat = function(templateType, targetFormat, options = {}) {
     return this.findAll({
       ...options,
       where: {
         ...options.where,
         template_type: templateType,
-        category: category
+        target_format: targetFormat
       },
       order: [['is_default', 'DESC'], ['created_at', 'ASC']]
     });
@@ -343,12 +321,13 @@ export default function(sequelize) {
     const transaction = await sequelize.transaction();
 
     try {
-      // Clear existing default for this template type
+      // Clear existing default for this template type and target format
       await this.update(
         { is_default: false },
         {
           where: {
             template_type: template.template_type,
+            target_format: template.target_format,
             is_default: true
           },
           transaction
@@ -369,14 +348,14 @@ export default function(sequelize) {
     }
   };
 
-  // Helper method to create footer template with validation
-  SystemTemplate.createFooterTemplate = function(data) {
+  // Helper method to create branding template with validation
+  SystemTemplate.createBrandingTemplate = function(data) {
     const template = this.build({
       ...data,
-      template_type: 'footer'
+      template_type: 'branding'
     });
 
-    template.validateFooterTemplateData();
+    template.validateBrandingTemplateData();
     return template.save();
   };
 
@@ -391,45 +370,14 @@ export default function(sequelize) {
     return template.save();
   };
 
-  // Static method to find watermark templates by file type
-  SystemTemplate.findWatermarksByFileType = function(fileType, options = {}) {
-    return this.findAll({
-      ...options,
-      where: {
-        ...options.where,
-        template_type: 'watermark',
-        [Op.or]: [
-          { target_file_types: { [Op.contains]: [fileType] } },
-          { target_file_types: { [Op.contains]: ['both'] } },
-          { target_file_types: null } // Include templates that apply to all file types
-        ]
-      },
-      order: [['is_default', 'DESC'], ['created_at', 'ASC']]
-    });
+  // Method to check if template supports specific format
+  SystemTemplate.prototype.supportsFormat = function(targetFormat) {
+    return this.target_format === targetFormat;
   };
 
-  // Static method to find default watermark template by file type
-  SystemTemplate.findDefaultWatermarkByFileType = function(fileType) {
-    return this.findOne({
-      where: {
-        template_type: 'watermark',
-        is_default: true,
-        [Op.or]: [
-          { target_file_types: { [Op.contains]: [fileType] } },
-          { target_file_types: { [Op.contains]: ['both'] } },
-          { target_file_types: null }
-        ]
-      }
-    });
-  };
-
-  // Method to check if template supports specific file type
-  SystemTemplate.prototype.supportsFileType = function(fileType) {
-    if (!this.target_file_types || this.target_file_types.length === 0) {
-      return true; // null means supports all file types
-    }
-
-    return this.target_file_types.includes(fileType) || this.target_file_types.includes('both');
+  // Method to get format type (pdf or svg)
+  SystemTemplate.prototype.getFormatType = function() {
+    return this.target_format.startsWith('pdf') ? 'pdf' : 'svg';
   };
 
   return SystemTemplate;

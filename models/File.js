@@ -27,25 +27,25 @@ export default function(sequelize) {
       allowNull: false,
       defaultValue: true
     },
-    add_copyrights_footer: {
+    add_branding: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true
     },
-    footer_settings: {
+    branding_settings: {
       type: DataTypes.JSONB,
       allowNull: true,
-      comment: 'DEPRECATED: Use footer_overrides instead. Complete footer config now in Settings. Kept for backward compatibility.'
+      comment: 'DEPRECATED: Use branding_overrides instead. Complete branding config now in Settings. Kept for backward compatibility.'
     },
-    footer_overrides: {
+    branding_overrides: {
       type: DataTypes.JSONB,
       allowNull: true,
-      comment: 'File-specific footer overrides (positioning, styling). Content comes from SystemTemplate.'
+      comment: 'File-specific branding overrides (positioning, styling). Content comes from SystemTemplate.'
     },
-    footer_template_id: {
+    branding_template_id: {
       type: DataTypes.STRING,
       allowNull: true,
-      comment: 'Reference to system_templates for footer configuration'
+      comment: 'Reference to system_templates for branding configuration'
     },
     accessible_pages: {
       type: DataTypes.JSONB,
@@ -57,6 +57,11 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: true,
       comment: 'Reference to system_templates for watermark configuration'
+    },
+    watermark_settings: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Custom watermark settings in JSONB format, overrides watermark template when present'
     },
     is_asset_only: {
       type: DataTypes.BOOLEAN,
@@ -75,12 +80,12 @@ export default function(sequelize) {
         fields: ['is_asset_only'],
       },
       {
-        fields: ['footer_overrides'],
-        name: 'idx_file_footer_overrides'
+        fields: ['branding_overrides'],
+        name: 'idx_file_branding_overrides'
       },
       {
-        fields: ['footer_template_id'],
-        name: 'idx_file_footer_template_id'
+        fields: ['branding_template_id'],
+        name: 'idx_file_branding_template_id'
       },
       {
         fields: ['accessible_pages'],
@@ -97,10 +102,10 @@ export default function(sequelize) {
     // Note: Purchases will reference this via polymorphic relation
     // Product references this via polymorphic association (product_type + entity_id)
 
-    // SystemTemplate association for footer configuration
+    // SystemTemplate association for branding configuration
     File.belongsTo(models.SystemTemplate, {
-      foreignKey: 'footer_template_id',
-      as: 'footerTemplate'
+      foreignKey: 'branding_template_id',
+      as: 'brandingTemplate'
     });
 
     // SystemTemplate association for watermark configuration
@@ -144,49 +149,66 @@ export default function(sequelize) {
     });
   };
 
-  // Footer settings standardization methods
-  File.prototype.hasFooterOverrides = function() {
-    return !!(this.footer_overrides && Object.keys(this.footer_overrides).length > 0);
+  // Branding settings standardization methods
+  File.prototype.hasBrandingOverrides = function() {
+    return !!(this.branding_overrides && Object.keys(this.branding_overrides).length > 0);
   };
 
-  File.prototype.getFooterOverrides = function() {
+  File.prototype.getBrandingOverrides = function() {
     // Use standardized field if available
-    if (this.footer_overrides) {
-      return this.footer_overrides;
+    if (this.branding_overrides) {
+      return this.branding_overrides;
     }
     return null;
   };
 
+  File.prototype.shouldAddBranding = function() {
+    // Check the add_branding flag
+    return this.add_branding === true;
+  };
+
+  // Legacy method names for backward compatibility
+  File.prototype.hasFooterOverrides = function() {
+    return this.hasBrandingOverrides();
+  };
+
+  File.prototype.getFooterOverrides = function() {
+    return this.getBrandingOverrides();
+  };
+
   File.prototype.shouldAddFooter = function() {
-    // Check the add_copyrights_footer flag
-    return this.add_copyrights_footer === true;
+    return this.shouldAddBranding();
   };
 
   // Legacy compatibility method with deprecation warning
-  File.prototype.getLegacyFooterSettings = function() {
-    if (this.footer_settings) {
-      DeprecationWarnings.warnDirectUsage('file', 'footer_settings', {
+  File.prototype.getLegacyBrandingSettings = function() {
+    if (this.branding_settings) {
+      DeprecationWarnings.warnDirectUsage('file', 'branding_settings', {
         fileId: this.id,
-        location: 'File.getLegacyFooterSettings',
-        message: 'Use footer_overrides with Settings.footer_settings merge instead'
+        location: 'File.getLegacyBrandingSettings',
+        message: 'Use branding_overrides with Settings.branding_settings merge instead'
       });
     }
-    return this.footer_settings;
+    return this.branding_settings;
   };
 
-  // Footer merge helper (for use with Settings footer_settings)
-  File.prototype.mergeWithSystemFooterSettings = function(systemFooterSettings) {
-    if (!systemFooterSettings) {
-      return this.footer_overrides || {};
+  File.prototype.getLegacyFooterSettings = function() {
+    return this.getLegacyBrandingSettings();
+  };
+
+  // Branding merge helper (for use with Settings branding_settings)
+  File.prototype.mergeWithSystemBrandingSettings = function(systemBrandingSettings) {
+    if (!systemBrandingSettings) {
+      return this.branding_overrides || {};
     }
 
-    if (!this.hasFooterOverrides()) {
-      return systemFooterSettings;
+    if (!this.hasBrandingOverrides()) {
+      return systemBrandingSettings;
     }
 
     // Deep merge system settings with file overrides
-    const merged = JSON.parse(JSON.stringify(systemFooterSettings));
-    const overrides = this.footer_overrides;
+    const merged = JSON.parse(JSON.stringify(systemBrandingSettings));
+    const overrides = this.branding_overrides;
 
     if (overrides.logo) {
       merged.logo = { ...merged.logo, ...overrides.logo };
@@ -204,28 +226,42 @@ export default function(sequelize) {
     return merged;
   };
 
+  // Legacy method for backward compatibility
+  File.prototype.mergeWithSystemFooterSettings = function(systemFooterSettings) {
+    return this.mergeWithSystemBrandingSettings(systemFooterSettings);
+  };
+
   // SystemTemplate-related methods
+  File.prototype.hasBrandingTemplate = function() {
+    return !!(this.branding_template_id);
+  };
+
+  File.prototype.getBrandingTemplateId = function() {
+    return this.branding_template_id;
+  };
+
+  // Legacy methods for backward compatibility
   File.prototype.hasFooterTemplate = function() {
-    return !!(this.footer_template_id);
+    return this.hasBrandingTemplate();
   };
 
   File.prototype.getFooterTemplateId = function() {
-    return this.footer_template_id;
+    return this.getBrandingTemplateId();
   };
 
-  // Enhanced footer merge helper for SystemTemplate integration
+  // Enhanced branding merge helper for SystemTemplate integration
   File.prototype.mergeWithTemplateData = function(templateData) {
     if (!templateData) {
-      return this.footer_overrides || {};
+      return this.branding_overrides || {};
     }
 
-    if (!this.hasFooterOverrides()) {
+    if (!this.hasBrandingOverrides()) {
       return templateData;
     }
 
     // Deep merge template data with file overrides
     const merged = JSON.parse(JSON.stringify(templateData));
-    const overrides = this.footer_overrides;
+    const overrides = this.branding_overrides;
 
     if (overrides.logo) {
       merged.logo = { ...merged.logo, ...overrides.logo };
@@ -243,16 +279,25 @@ export default function(sequelize) {
     return merged;
   };
 
-  // Set footer template for this file
-  File.prototype.setFooterTemplate = function(templateId) {
-    this.footer_template_id = templateId;
+  // Set branding template for this file
+  File.prototype.setBrandingTemplate = function(templateId) {
+    this.branding_template_id = templateId;
     return this.save();
   };
 
-  // Clear footer template (will use default)
-  File.prototype.clearFooterTemplate = function() {
-    this.footer_template_id = null;
+  // Clear branding template (will use default)
+  File.prototype.clearBrandingTemplate = function() {
+    this.branding_template_id = null;
     return this.save();
+  };
+
+  // Legacy methods for backward compatibility
+  File.prototype.setFooterTemplate = function(templateId) {
+    return this.setBrandingTemplate(templateId);
+  };
+
+  File.prototype.clearFooterTemplate = function() {
+    return this.clearBrandingTemplate();
   };
 
   // Accessible pages management methods
@@ -333,6 +378,36 @@ export default function(sequelize) {
     return this.save();
   };
 
+  // Watermark settings methods
+  File.prototype.hasWatermarkSettings = function() {
+    return !!(this.watermark_settings && Object.keys(this.watermark_settings).length > 0);
+  };
+
+  File.prototype.getWatermarkSettings = function() {
+    return this.watermark_settings;
+  };
+
+  File.prototype.setWatermarkSettings = function(settings) {
+    this.watermark_settings = settings;
+    return this.save();
+  };
+
+  File.prototype.clearWatermarkSettings = function() {
+    this.watermark_settings = null;
+    return this.save();
+  };
+
+  // Combined watermark template/settings helper
+  File.prototype.getEffectiveWatermarkConfig = function() {
+    if (this.hasWatermarkSettings()) {
+      return { type: 'custom', data: this.watermark_settings };
+    } else if (this.hasWatermarkTemplate()) {
+      return { type: 'template', templateId: this.watermark_template_id };
+    } else {
+      return { type: 'default', data: null };
+    }
+  };
+
   // Preview mode check combining allow_preview and accessible_pages
   File.prototype.supportsPreviewMode = function() {
     return this.allow_preview === true;
@@ -348,7 +423,9 @@ export default function(sequelize) {
       hasPageRestrictions: this.hasAccessiblePagesRestriction(),
       accessiblePages: this.getAccessiblePages(),
       hasWatermarkTemplate: this.hasWatermarkTemplate(),
-      watermarkTemplateId: this.getWatermarkTemplateId()
+      watermarkTemplateId: this.getWatermarkTemplateId(),
+      hasWatermarkSettings: this.hasWatermarkSettings(),
+      watermarkConfig: this.getEffectiveWatermarkConfig()
     };
   };
 

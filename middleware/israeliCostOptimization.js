@@ -86,8 +86,8 @@ export function israeliS3CostTracker() {
         try {
           const costMetric = costOptimizationService.trackS3OperationCost(s3Operation);
 
-          // Add cost tracking headers for debugging
-          if (process.env.ENVIRONMENT === 'development') {
+          // Add cost tracking headers for debugging (only if headers haven't been sent)
+          if (process.env.ENVIRONMENT === 'development' && !res.headersSent) {
             res.setHeader('X-S3-Cost-Tracking', 'enabled');
             res.setHeader('X-Estimated-Cost', (costMetric.netCost || costMetric.transferCost || 0).toFixed(6));
           }
@@ -155,8 +155,8 @@ export function israeliBandwidthCostTracker() {
       try {
         const costMetric = costOptimizationService.trackBandwidthCost(bandwidthRequest);
 
-        // Add cost headers
-        if (process.env.ENVIRONMENT === 'development') {
+        // Add cost headers (only if headers haven't been sent)
+        if (process.env.ENVIRONMENT === 'development' && !res.headersSent) {
           res.setHeader('X-Bandwidth-Cost-Tracking', 'enabled');
           res.setHeader('X-Net-Cost', costMetric.netCost.toFixed(6));
           res.setHeader('X-Cache-Savings', costMetric.cacheSavings.toFixed(6));
@@ -206,13 +206,15 @@ export function israeliHebrewContentCostTracker() {
           try {
             const hebrewCostMetric = costOptimizationService.trackHebrewContentCosts(hebrewContentData);
 
-            // Add Hebrew cost tracking headers
-            res.setHeader('X-Hebrew-Cost-Tracking', 'enabled');
-            res.setHeader('X-Hebrew-Chars', hebrewContentData.hebrewCharCount.toString());
+            // Add Hebrew cost tracking headers (only if headers haven't been sent)
+            if (!res.headersSent) {
+              res.setHeader('X-Hebrew-Cost-Tracking', 'enabled');
+              res.setHeader('X-Hebrew-Chars', hebrewContentData.hebrewCharCount.toString());
 
-            if (process.env.ENVIRONMENT === 'development') {
-              res.setHeader('X-Hebrew-Cost', hebrewCostMetric.netCost.toFixed(6));
-              res.setHeader('X-Hebrew-Compression-Savings', hebrewCostMetric.compressionSavings.toFixed(6));
+              if (process.env.ENVIRONMENT === 'development') {
+                res.setHeader('X-Hebrew-Cost', hebrewCostMetric.netCost.toFixed(6));
+                res.setHeader('X-Hebrew-Compression-Savings', hebrewCostMetric.compressionSavings.toFixed(6));
+              }
             }
 
           } catch (error) {

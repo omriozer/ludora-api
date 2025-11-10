@@ -220,8 +220,8 @@ export function createIsraeliCompressionMiddleware(options = {}) {
       // Get optimal compression settings for this request
       const settings = getIsraeliCompressionSettings(req, contentType, chunk);
 
-      // Apply Israeli-optimized compression settings
-      if (res.headersSent === false) {
+      // Apply Israeli-optimized compression settings (only if headers haven't been sent)
+      if (!res.headersSent) {
         // Add Israeli-specific headers
         res.setHeader('X-Israeli-Compression', 'enabled');
         res.setHeader('X-Compression-Level', settings.level);
