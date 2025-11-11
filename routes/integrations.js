@@ -2,7 +2,6 @@ import express from 'express';
 import multer from 'multer';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas, customValidators } from '../middleware/validation.js';
-import LLMService from '../services/LLMService.js';
 import EmailService from '../services/EmailService.js';
 import FileService from '../services/FileService.js';
 import models from '../models/index.js';
@@ -180,7 +179,6 @@ router.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     integrations: {
-      llm: 'available',
       email: 'available',
       fileUpload: 'available',
       imageGeneration: 'available',
