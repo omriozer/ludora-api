@@ -128,21 +128,6 @@ export const schemas = {
     })
   }),
 
-  // LLM Integration
-  llmRequest: Joi.object({
-    prompt: Joi.string().min(1).max(100000).required().messages({
-      'string.min': 'Prompt cannot be empty',
-      'string.max': 'Prompt cannot exceed 100,000 characters'
-    }),
-    model: Joi.string().valid(
-      'gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview',
-      'claude-3-sonnet-20240229', 'claude-3-haiku-20240307', 'claude-3-opus-20240229'
-    ).optional(),
-    maxTokens: Joi.number().integer().min(1).max(8192).default(1000),
-    temperature: Joi.number().min(0).max(2).default(0.7),
-    systemPrompt: Joi.string().max(10000).optional()
-  }),
-
   // Email
   sendEmail: Joi.object({
     to: Joi.alternatives().try(
@@ -435,17 +420,6 @@ export const rateLimiters = {
     legacyHeaders: false,
     // Note: onLimitReached was deprecated in express-rate-limit v7
     // Rate limit violations are now logged via middleware instead
-  }),
-
-  // LLM endpoints (more restrictive)
-  llm: rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 100, // 100 LLM calls per hour
-    message: {
-      error: 'LLM rate limit exceeded, please try again later'
-    },
-    standardHeaders: true,
-    legacyHeaders: false
   }),
 
   // File upload endpoints

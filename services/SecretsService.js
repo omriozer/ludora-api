@@ -43,7 +43,6 @@ class SecretsService {
 
     const optionalSecrets = [
       'AWS_SECRET_ACCESS_KEY',
-      'OPENAI_API_KEY',
       'ANTHROPIC_API_KEY',
       'EMAIL_PASSWORD'
     ];
@@ -82,7 +81,6 @@ class SecretsService {
 
     const optionalSecrets = [
       'AWS_SECRET_ACCESS_KEY',
-      'OPENAI_API_KEY',
       'ANTHROPIC_API_KEY',
       'EMAIL_PASSWORD'
     ];

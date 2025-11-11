@@ -286,11 +286,7 @@ export async function healthCheckErrorHandler(req, res) {
       health.services = {
         database: 'checking...',
         email: process.env.EMAIL_HOST ? 'configured' : 'not_configured',
-        storage: 's3',
-        llm: {
-          openai: process.env.OPENAI_API_KEY ? 'configured' : 'not_configured',
-          anthropic: process.env.ANTHROPIC_API_KEY ? 'configured' : 'not_configured'
-        }
+        storage: 's3'
       };
     } else {
       // In production, only expose minimal service status

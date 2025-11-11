@@ -39,7 +39,7 @@ The Ludora API has been enhanced with comprehensive security measures to protect
 
 ### 5. Rate Limiting
 
-- **Tiered Limits**: Different limits for auth, general, LLM, and upload endpoints
+- **Tiered Limits**: Different limits for auth, general, and upload endpoints
 - **Production Enforcement**: Stricter limits in production environments
 - **Violation Logging**: Security alerts for rate limit violations
 - **Bypass Detection**: Monitors for IP header manipulation attempts
@@ -87,7 +87,6 @@ FIREBASE_SERVICE_ACCOUNT=your-firebase-service-account-json
 AWS_SECRET_ACCESS_KEY=your-aws-secret
 
 # External APIs
-OPENAI_API_KEY=your-openai-key
 ANTHROPIC_API_KEY=your-anthropic-key
 
 # Email
