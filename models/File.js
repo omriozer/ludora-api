@@ -69,6 +69,14 @@ export default function(sequelize) {
       defaultValue: false,
       comment: 'true = asset only (not standalone product), false = can be standalone product'
     },
+    target_format: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isIn: [['pdf-a4-portrait', 'pdf-a4-landscape', 'svg-lessonplan', 'unknown']]
+      },
+      comment: 'File format orientation matching system_templates.target_format for template filtering'
+    },
   }, {
     ...baseOptions,
     tableName: 'file',
@@ -94,6 +102,10 @@ export default function(sequelize) {
       {
         fields: ['watermark_template_id'],
         name: 'idx_file_watermark_template_id'
+      },
+      {
+        fields: ['target_format'],
+        name: 'idx_file_target_format'
       },
     ],
   });
@@ -289,6 +301,37 @@ export default function(sequelize) {
   File.prototype.clearBrandingTemplate = function() {
     this.branding_template_id = null;
     return this.save();
+  };
+
+  // Target format management methods
+  File.prototype.getTargetFormat = function() {
+    return this.target_format || 'unknown';
+  };
+
+  File.prototype.setTargetFormat = function(targetFormat) {
+    const validFormats = ['pdf-a4-portrait', 'pdf-a4-landscape', 'svg-lessonplan', 'unknown'];
+    if (validFormats.includes(targetFormat)) {
+      this.target_format = targetFormat;
+      return this.save();
+    } else {
+      throw new Error(`Invalid target format: ${targetFormat}. Must be one of: ${validFormats.join(', ')}`);
+    }
+  };
+
+  File.prototype.isPortrait = function() {
+    return this.target_format === 'pdf-a4-portrait';
+  };
+
+  File.prototype.isLandscape = function() {
+    return this.target_format === 'pdf-a4-landscape';
+  };
+
+  File.prototype.isSVG = function() {
+    return this.target_format === 'svg-lessonplan';
+  };
+
+  File.prototype.hasKnownFormat = function() {
+    return this.target_format && this.target_format !== 'unknown';
   };
 
   // Legacy methods for backward compatibility

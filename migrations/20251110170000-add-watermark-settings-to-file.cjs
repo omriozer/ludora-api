@@ -5,6 +5,13 @@ module.exports = {
     try {
       console.log('📄 Adding watermark_settings column to file table...');
 
+      // Check if column already exists
+      const tableInfo = await queryInterface.describeTable('file');
+      if (tableInfo.watermark_settings) {
+        console.log('⚠️ watermark_settings column already exists, skipping...');
+        return;
+      }
+
       // Add watermark_settings column to file table
       await queryInterface.addColumn('file', 'watermark_settings', {
         type: Sequelize.JSONB,

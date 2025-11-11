@@ -7,6 +7,7 @@
 
 import crypto from 'crypto';
 import sharp from 'sharp';
+import { PDFDocument } from 'pdf-lib';
 import { createErrorResponse } from './fileOperationLogger.js';
 
 /**
@@ -127,10 +128,10 @@ class FileMetadataEnhancer {
    * @param {Buffer} buffer - Document buffer
    * @param {string} mimeType - MIME type
    * @param {string} filename - Original filename
-   * @returns {Object} Document metadata
+   * @returns {Promise<Object>} Document metadata
    */
-  extractDocumentMetadata(buffer, mimeType, filename) {
-    this.logger?.info('Document metadata extraction (basic)', {
+  async extractDocumentMetadata(buffer, mimeType, filename) {
+    this.logger?.info('Document metadata extraction', {
       mimeType,
       filename,
       bufferSize: buffer.length
@@ -138,16 +139,75 @@ class FileMetadataEnhancer {
 
     const fileExtension = filename.toLowerCase().match(/\.([^.]+)$/)?.[1];
 
-    return {
+    // Base metadata
+    const baseMetadata = {
       type: 'document',
       metadata: {
         format: mimeType,
         extension: fileExtension,
-        pageCount: null, // Would require PDF parsing for actual count
-        note: 'Enhanced document metadata requires specialized parsers'
+        pageCount: null,
+        target_format: 'unknown'
       },
       extractedAt: new Date().toISOString()
     };
+
+    // Enhanced PDF analysis
+    if (mimeType === 'application/pdf' || fileExtension === 'pdf') {
+      try {
+        const pdfDoc = await PDFDocument.load(buffer);
+        const pageCount = pdfDoc.getPageCount();
+
+        // Get dimensions of first page for orientation detection
+        let target_format = 'unknown';
+        if (pageCount > 0) {
+          const firstPage = pdfDoc.getPage(0);
+          const { width, height } = firstPage.getSize();
+
+          this.logger?.info('PDF page dimensions detected', {
+            width,
+            height,
+            aspectRatio: (width / height).toFixed(2)
+          });
+
+          // Determine orientation based on dimensions
+          // Portrait: height > width
+          // Landscape: width > height
+          if (height > width) {
+            target_format = 'pdf-a4-portrait';
+          } else if (width > height) {
+            target_format = 'pdf-a4-landscape';
+          }
+          // If width ≈ height, we'll leave it as 'unknown' and let user choose
+        }
+
+        baseMetadata.metadata = {
+          ...baseMetadata.metadata,
+          pageCount,
+          target_format,
+          dimensions: pageCount > 0 ? {
+            width: pdfDoc.getPage(0).getSize().width,
+            height: pdfDoc.getPage(0).getSize().height
+          } : null,
+          note: 'PDF metadata extracted using pdf-lib'
+        };
+
+        this.logger?.info('PDF orientation detected', {
+          pageCount,
+          target_format,
+          filename
+        });
+
+      } catch (pdfError) {
+        this.logger?.warn('PDF parsing failed, using basic metadata', {
+          error: pdfError.message,
+          filename
+        });
+
+        baseMetadata.metadata.note = `PDF parsing failed: ${pdfError.message}`;
+      }
+    }
+
+    return baseMetadata;
   }
 
   /**
@@ -179,7 +239,7 @@ class FileMetadataEnhancer {
       } else if (file.mimetype.startsWith('video/')) {
         contentMetadata = this.extractVideoMetadata(buffer, file.mimetype);
       } else if (file.mimetype.includes('pdf') || file.mimetype.includes('document') || file.mimetype.includes('word')) {
-        contentMetadata = this.extractDocumentMetadata(buffer, file.mimetype, file.originalname);
+        contentMetadata = await this.extractDocumentMetadata(buffer, file.mimetype, file.originalname);
       } else {
         contentMetadata = {
           type: 'other',

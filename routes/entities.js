@@ -1445,10 +1445,20 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     uploadedS3Key = uploadResult.s3Key;
     console.log(`✅ File uploaded successfully: ${uploadedS3Key}`);
 
-    // Update file entity with S3 information
+    // Extract target_format from file analysis
+    let targetFormat = 'unknown';
+    if (uploadResult.analysis?.success && uploadResult.analysis?.contentMetadata?.target_format) {
+      targetFormat = uploadResult.analysis.contentMetadata.target_format;
+      console.log(`📄 PDF orientation detected: ${targetFormat}`);
+    } else {
+      console.log(`⚠️ PDF orientation detection failed, using default: ${targetFormat}`);
+    }
+
+    // Update file entity with S3 information and detected target_format
     await fileEntity.update({
       file_name: fileName,
-      file_size: req.file.size
+      file_size: req.file.size,
+      target_format: targetFormat
     }, { transaction });
 
     // 3. TODO: SVG slide handling will be implemented here
