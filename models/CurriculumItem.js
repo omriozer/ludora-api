@@ -17,11 +17,6 @@ export default function(sequelize) {
       allowNull: false,
       comment: 'Main study topic'
     },
-    content_topic: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      comment: 'Specific content topic within study topic'
-    },
     is_mandatory: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
@@ -63,9 +58,6 @@ export default function(sequelize) {
       },
       {
         fields: ['study_topic']
-      },
-      {
-        fields: ['content_topic']
       },
       {
         fields: ['is_mandatory']
@@ -117,7 +109,19 @@ export default function(sequelize) {
   };
 
   CurriculumItem.prototype.getFullTopicName = function() {
-    return `${this.study_topic} - ${this.content_topic}`;
+    // Content topics now come through products → contentTopic
+    if (this.products && this.products.length > 0) {
+      const topicNames = [];
+      this.products.forEach(product => {
+        if (product.contentTopic) {
+          topicNames.push(product.contentTopic.name);
+        }
+      });
+      if (topicNames.length > 0) {
+        return `${this.study_topic} - ${topicNames.join(', ')}`;
+      }
+    }
+    return this.study_topic;
   };
 
   // Class methods

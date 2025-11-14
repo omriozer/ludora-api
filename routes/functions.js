@@ -30,7 +30,6 @@ router.post('/getApplicableCoupons', authenticateToken, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error getting applicable coupons:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -56,7 +55,6 @@ router.post('/getBestCoupon', authenticateToken, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error getting best coupon:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -87,7 +85,6 @@ router.post('/validateCouponStacking', authenticateToken, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error validating coupon stacking:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -122,7 +119,6 @@ router.post('/generateCouponCodes', authenticateToken, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error generating coupon codes:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -139,7 +135,6 @@ router.post('/validateCouponPattern', authenticateToken, async (req, res) => {
     const validation = CouponCodeGenerator.validatePattern(pattern);
     res.json(validation);
   } catch (error) {
-    console.error('Error validating coupon pattern:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -172,7 +167,6 @@ router.get('/getCouponPresetPatterns', authenticateToken, async (req, res) => {
 
     res.json({ presets });
   } catch (error) {
-    console.error('Error getting preset patterns:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -189,7 +183,6 @@ router.get('/getCouponPatternStats', authenticateToken, async (req, res) => {
     const stats = await CouponCodeGenerator.getPatternStatistics(pattern);
     res.json(stats);
   } catch (error) {
-    console.error('Error getting pattern statistics:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -206,7 +199,6 @@ router.post('/deactivateCouponsByPattern', authenticateToken, async (req, res) =
     const result = await CouponCodeGenerator.deactivateCouponsByPattern(pattern);
     res.json(result);
   } catch (error) {
-    console.error('Error deactivating coupons by pattern:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -218,7 +210,6 @@ router.post('/sendRegistrationEmail', authenticateToken, async (req, res) => {
     const result = await EmailService.sendRegistrationEmail(req.body);
     res.json(result);
   } catch (error) {
-    console.error('Error sending registration email:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -229,7 +220,6 @@ router.post('/processEmailTriggers', authenticateToken, async (req, res) => {
     const result = await EmailService.processEmailTriggers(req.body);
     res.json(result);
   } catch (error) {
-    console.error('Error processing email triggers:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -257,7 +247,6 @@ router.post('/scheduleEmailProcessor', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error scheduling email processor:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -291,7 +280,6 @@ router.post('/triggerEmailAutomation', authenticateToken, async (req, res) => {
       data: { automationId, triggered: true, result }
     });
   } catch (error) {
-    console.error('Error triggering email automation:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -301,7 +289,6 @@ router.post('/sendInvitationEmails', authenticateToken, async (req, res) => {
     const result = await EmailService.sendInvitationEmails(req.body);
     res.json(result);
   } catch (error) {
-    console.error('Error sending invitation emails:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -336,7 +323,6 @@ router.post('/updateExistingGames', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error updating games:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -368,7 +354,6 @@ router.post('/uploadVerbsBulk', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error uploading verbs:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -411,7 +396,6 @@ router.post('/deleteFile', authenticateToken, async (req, res) => {
           });
         }
       } catch (error) {
-        console.error('Error deleting file from storage:', error);
         res.status(500).json({
           error: 'Failed to delete file from storage',
           details: error.message
@@ -421,7 +405,6 @@ router.post('/deleteFile', authenticateToken, async (req, res) => {
       res.status(400).json({ error: 'Either fileId with entityType or filePath is required' });
     }
   } catch (error) {
-    console.error('Error deleting file:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -454,7 +437,6 @@ router.post('/createSignedUrl', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error creating signed URL:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -465,7 +447,6 @@ router.post('/initializeSystemEmailTemplates', authenticateToken, async (req, re
     const result = await EmailService.initializeSystemEmailTemplates();
     res.json(result);
   } catch (error) {
-    console.error('Error initializing email templates:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -499,7 +480,6 @@ router.post('/updateSystemEmailTemplates', authenticateToken, async (req, res) =
       }
     });
   } catch (error) {
-    console.error('Error updating email templates:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -515,7 +495,6 @@ router.post('/testCallback', authenticateToken, async (req, res) => {
       data: { received: testData, timestamp: new Date().toISOString() }
     });
   } catch (error) {
-    console.error('Error processing test callback:', error);
     res.status(500).json({ error: error.message });
   }
 });

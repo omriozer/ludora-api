@@ -2,6 +2,7 @@ import AWS from 'aws-sdk';
 import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
+import { clog, cerror } from '../lib/utils.js';
 
 /**
  * DirectSlideService - Handle SVG slides without Files table
@@ -33,9 +34,7 @@ class DirectSlideService {
       });
 
       this.s3 = new AWS.S3();
-      console.log('✅ DirectSlideService S3 initialized successfully');
     } catch (error) {
-      console.error('❌ Error initializing S3 for DirectSlideService:', error);
       throw new Error('S3 initialization failed');
     }
   }
@@ -143,7 +142,6 @@ class DirectSlideService {
         fileName: file?.originalname,
         error: error.message
       });
-      console.error('Error in uploadSlide:', error);
       throw error;
     }
   }
@@ -277,7 +275,6 @@ class DirectSlideService {
         slideId,
         error: error.message
       });
-      console.error('Error in deleteSlide:', error);
       throw error;
     }
   }
@@ -306,7 +303,6 @@ class DirectSlideService {
       };
 
     } catch (error) {
-      console.error('Error getting slides:', error);
       throw error;
     }
   }
@@ -344,7 +340,7 @@ class DirectSlideService {
       };
 
     } catch (error) {
-      console.error('Error reordering slides:', error);
+      cerror('Error reordering slides:', error);
       throw error;
     }
   }
@@ -374,7 +370,7 @@ class DirectSlideService {
       throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
     }
 
-    console.log(`✅ SVG file validation passed: ${file.originalname} (${file.buffer.length} bytes)`);
+    clog(`✅ SVG file validation passed: ${file.originalname} (${file.buffer.length} bytes)`);
   }
 
   /**

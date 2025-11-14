@@ -32,15 +32,8 @@ const verifyWebhookSignature = (provider) => {
                        req.headers['x-stripe-signature'];
 
       if (!signature) {
-        console.warn('⚠️ Webhook received without signature:', {
-          provider,
-          ip: req.ip,
-          timestamp: new Date().toISOString()
-        });
-
         // In development, allow unsigned webhooks with warning
         if (process.env.ENVIRONMENT === 'development') {
-          console.warn('🚨 DEVELOPMENT: Allowing unsigned webhook');
           return next();
         }
 
@@ -48,12 +41,9 @@ const verifyWebhookSignature = (provider) => {
       }
 
       // TODO: Implement actual signature verification based on provider
-      // For now, just log the signature for debugging
-      console.log(`📨 Webhook signature received: ${signature.substring(0, 20)}...`);
 
       next();
     } catch (error) {
-      console.error('❌ Webhook signature verification failed:', error);
       res.status(401).json({ error: 'Invalid webhook signature' });
     }
   };
@@ -66,7 +56,6 @@ router.post('/github',
   verifyWebhookSignature('github'),
   asyncHandler(async (req, res) => {
     const event = req.headers['x-github-event'];
-    console.log(`📨 GitHub webhook received: ${event}`);
 
     // TODO: Implement GitHub webhook handling
     res.status(200).json({ message: 'GitHub webhook received', event });
@@ -78,7 +67,6 @@ router.post('/stripe',
   verifyWebhookSignature('stripe'),
   asyncHandler(async (req, res) => {
     const event = req.body;
-    console.log(`📨 Stripe webhook received: ${event.type}`);
 
     // TODO: Implement Stripe webhook handling
     res.status(200).json({ message: 'Stripe webhook received', type: event.type });
@@ -90,7 +78,6 @@ router.post('/paypal',
   verifyWebhookSignature('paypal'),
   asyncHandler(async (req, res) => {
     const event = req.body;
-    console.log(`📨 PayPal webhook received: ${event.event_type}`);
 
     // TODO: Implement PayPal webhook handling
     res.status(200).json({ message: 'PayPal webhook received', type: event.event_type });
@@ -130,13 +117,6 @@ router.post('/payplus',
       secure: req.secure
     };
 
-    console.log(`📨 PayPlus webhook received:`, {
-      page_request_uid: webhookData.page_request_uid,
-      status: webhookData.status,
-      transaction_type: webhookData.transaction_type,
-      sender_ip: senderInfo.ip,
-      user_agent: senderInfo.userAgent
-    });
 
     let webhookLog = null;
 
@@ -233,11 +213,9 @@ router.post('/payplus',
             await SubscriptionPaymentService.handlePaymentSuccess(subscription, webhookData);
 
             webhookLog.addProcessLog(`Subscription ${subscriptionId} activated successfully`);
-            console.log(`✅ PayPlus webhook: Subscription ${subscriptionId} payment completed successfully`);
 
           } catch (error) {
             webhookLog.addProcessLog(`Failed to process subscription payment: ${error.message}`);
-            console.error(`❌ PayPlus webhook: Failed to process subscription payment ${subscriptionId}:`, error);
             // Don't throw error - log it but continue webhook processing
           }
 
@@ -255,11 +233,8 @@ router.post('/payplus',
               webhookLog.addProcessLog(`Purchase ${purchase.id} completed successfully`);
             }
 
-            console.log(`✅ PayPlus webhook: Completed ${purchases.length} purchases`);
-
           } catch (error) {
             webhookLog.addProcessLog(`Failed to complete purchases: ${error.message}`);
-            console.error(`❌ PayPlus webhook: Failed to complete purchases:`, error);
             // Don't throw error - log it but continue webhook processing
           }
         }
@@ -300,11 +275,9 @@ router.post('/payplus',
             await SubscriptionPaymentService.handlePaymentFailure(subscription, webhookData);
 
             webhookLog.addProcessLog(`Subscription ${subscriptionId} payment failure handled successfully`);
-            console.log(`✅ PayPlus webhook: Subscription ${subscriptionId} payment failure handled`);
 
           } catch (error) {
             webhookLog.addProcessLog(`Failed to handle subscription payment failure: ${error.message}`);
-            console.error(`❌ PayPlus webhook: Failed to handle subscription payment failure ${subscriptionId}:`, error);
           }
         } else {
           // For purchases, we mainly just mark them as failed in the transaction
@@ -312,7 +285,6 @@ router.post('/payplus',
         }
 
         await webhookLog.completeProcessing(startTime, 'Payment failure processing completed');
-        console.log(`❌ PayPlus webhook: Payment failed for transaction ${transaction.id}`);
 
       } else {
         // Handle other statuses (pending, processing, etc.)
@@ -328,7 +300,6 @@ router.post('/payplus',
         });
 
         await webhookLog.completeProcessing(startTime, `Webhook status ${webhookData.status} processed`);
-        console.log(`ℹ️ PayPlus webhook: Updated transaction ${transaction.id} with status ${webhookData.status}`);
       }
 
       // Prepare successful response data
@@ -347,7 +318,6 @@ router.post('/payplus',
       res.status(200).json(responseData);
 
     } catch (error) {
-      console.error('❌ PayPlus webhook processing error:', error);
 
       const errorResponse = {
         message: 'PayPlus webhook received but processing failed',
@@ -363,7 +333,6 @@ router.post('/payplus',
           await webhookLog.update({ response_data: errorResponse });
         }
       } catch (logError) {
-        console.error('❌ Failed to update webhook log:', logError);
       }
 
       // Still respond with success to prevent PayPlus retries
@@ -377,11 +346,6 @@ router.post('/generic/:provider',
   verifyWebhookSignature('generic'),
   asyncHandler(async (req, res) => {
     const provider = req.params.provider;
-    console.log(`📨 Generic webhook received from: ${provider}`);
-
-    // Log webhook data for debugging
-    console.log('Webhook headers:', JSON.stringify(req.headers, null, 2));
-    console.log('Webhook body:', JSON.stringify(req.body, null, 2));
 
     // TODO: Implement generic webhook handling
     res.status(200).json({

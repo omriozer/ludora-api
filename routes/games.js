@@ -56,7 +56,6 @@ router.get('/', async (req, res) => {
 
     res.json(gamesWithProducts);
   } catch (error) {
-    console.error('Error fetching games for management:', error);
     res.status(500).json({
       error: 'Failed to fetch games',
       message: error.message
@@ -106,7 +105,6 @@ router.get('/:id', async (req, res) => {
       product: product ? product.toJSON() : null
     });
   } catch (error) {
-    console.error('Error fetching game:', error);
     res.status(500).json({
       error: 'Failed to fetch game',
       message: error.message
@@ -140,7 +138,6 @@ router.post('/', async (req, res) => {
       product: null // New games don't have products yet
     });
   } catch (error) {
-    console.error('Error creating game:', error);
     res.status(500).json({
       error: 'Failed to create game',
       message: error.message
@@ -197,7 +194,6 @@ router.put('/:id', async (req, res) => {
       product: product ? product.toJSON() : null
     });
   } catch (error) {
-    console.error('Error updating game:', error);
     res.status(500).json({
       error: 'Failed to update game',
       message: error.message
@@ -230,7 +226,6 @@ router.delete('/:id', async (req, res) => {
 
     res.json({ message: 'Game deleted successfully' });
   } catch (error) {
-    console.error('Error deleting game:', error);
     res.status(500).json({
       error: 'Failed to delete game',
       message: error.message
@@ -288,7 +283,6 @@ router.get('/:id/memory-pairs', async (req, res) => {
       // Sequelize returns [results, metadata] - we want the results
       relationLinksResult = Array.isArray(queryResponse) ? queryResponse : queryResponse;
     } catch (queryError) {
-      console.error('SQL query error:', queryError);
       return res.status(500).json({
         error: 'Failed to fetch memory pairs',
         message: queryError.message
@@ -367,7 +361,6 @@ router.get('/:id/memory-pairs', async (req, res) => {
 
     res.json(memoryPairs);
   } catch (error) {
-    console.error('Error fetching memory pairs:', error);
     res.status(500).json({
       error: 'Failed to fetch memory pairs',
       message: error.message
@@ -520,7 +513,6 @@ router.post('/:id/memory-pairs', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error creating memory pair:', error);
     res.status(500).json({
       error: 'Failed to create memory pair',
       message: error.message
@@ -663,7 +655,6 @@ router.put('/:id/memory-pairs/:relationId', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error updating memory pair:', error);
     res.status(500).json({
       error: 'Failed to update memory pair',
       message: error.message
@@ -706,7 +697,6 @@ router.delete('/:id/memory-pairs/:relationId', async (req, res) => {
 
     res.json({ message: 'Memory pair removed from game successfully' });
   } catch (error) {
-    console.error('Error removing memory pair:', error);
     res.status(500).json({
       error: 'Failed to remove memory pair',
       message: error.message
@@ -778,7 +768,6 @@ router.get('/memory-pairs/library', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching memory pairs library:', error);
     res.status(500).json({
       error: 'Failed to fetch memory pairs library',
       message: error.message

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { admin } from '../config/firebase.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
+import { clog } from '../lib/utils.js';
 
 class AuthService {
   constructor() {
@@ -83,7 +84,6 @@ class AuthService {
         }
       };
     } catch (error) {
-      console.error('Login error:', error);
       throw error;
     }
   }
@@ -141,7 +141,6 @@ class AuthService {
         }
       };
     } catch (error) {
-      console.error('Registration error:', error);
       throw error;
     }
   }
@@ -149,9 +148,10 @@ class AuthService {
   // Verify token (supports both JWT and Firebase)
   async verifyToken(token) {
     try {
+
       // Development token support - ONLY in development environment
       if (token.startsWith('token_') && process.env.ENVIRONMENT === 'development') {
-        console.warn('🚨 DEVELOPMENT TOKEN USED - This should NEVER happen in production!');
+        clog('🚨 DEVELOPMENT TOKEN USED - This should NEVER happen in production!');
         return {
           uid: `dev_user_${Date.now()}`,
           email: 'dev@example.com',
@@ -172,12 +172,6 @@ class AuthService {
 
           // Get fresh user data
           const user = await models.User.findByPk(payload.uid);
-          console.log('JWT Token Verification Debug:', {
-            payload_uid: payload.uid,
-            user_found: !!user,
-            user_active: user?.is_active,
-            user_email: user?.email
-          });
 
           if (!user || !user.is_active) {
             throw new Error('User not found or inactive');
@@ -236,7 +230,6 @@ class AuthService {
 
       throw new Error('Invalid token format');
     } catch (error) {
-      console.error('Token verification error:', error);
       throw error;
     }
   }
@@ -253,7 +246,6 @@ class AuthService {
 
       return user;
     } catch (error) {
-      console.error('Error getting user by token:', error);
       throw error;
     }
   }
@@ -283,7 +275,7 @@ class AuthService {
         try {
           await admin.auth().setCustomUserClaims(targetUserId, claims);
         } catch (firebaseError) {
-          console.warn('Firebase custom claims update failed:', firebaseError);
+          // Firebase custom claims update failed - continue without throwing
         }
       }
 
@@ -294,7 +286,6 @@ class AuthService {
         claims
       };
     } catch (error) {
-      console.error('Error setting custom claims:', error);
       throw error;
     }
   }
@@ -345,7 +336,6 @@ class AuthService {
         expiresIn: '1h'
       };
     } catch (error) {
-      console.error('Error generating password reset token:', error);
       throw error;
     }
   }
@@ -379,7 +369,6 @@ class AuthService {
         message: 'Password reset successfully'
       };
     } catch (error) {
-      console.error('Error resetting password:', error);
       throw error;
     }
   }

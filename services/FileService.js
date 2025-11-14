@@ -29,11 +29,9 @@ class FileService {
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
         region: process.env.AWS_REGION || 'us-east-1'
       });
-      
+
       this.s3 = new AWS.S3();
-      console.log('✅ S3 initialized successfully');
     } catch (error) {
-      console.error('❌ Error initializing S3:', error);
       this.useS3 = false;
     }
   }
@@ -44,9 +42,8 @@ class FileService {
       if (!fs.existsSync(this.localStoragePath)) {
         fs.mkdirSync(this.localStoragePath, { recursive: true });
       }
-      console.log(`✅ Local storage initialized: ${this.localStoragePath}`);
     } catch (error) {
-      console.error('❌ Error creating local storage directory:', error);
+      // Fail silently for local storage directory creation
     }
   }
 
@@ -101,7 +98,6 @@ class FileService {
         }
       };
     } catch (error) {
-      console.error('Error extracting data from file:', error);
       throw error;
     }
   }
@@ -177,9 +173,6 @@ class FileService {
       throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
     }
 
-    // Debug logging for file validation
-    console.log(`🔍 FileService validation - File mimetype: "${file.mimetype}", originalname: "${file.originalname}"`);
-
     // Check file type
     const allowedTypes = [
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -197,11 +190,8 @@ class FileService {
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
-      console.error(`❌ File type "${file.mimetype}" not in allowed types:`, allowedTypes);
       throw new Error(`File type ${file.mimetype} not allowed`);
     }
-
-    console.log(`✅ File validation passed for ${file.mimetype}`);
   }
 
   // Get file extension from filename
@@ -236,7 +226,6 @@ class FileService {
         data: { fileId, deleted: true }
       };
     } catch (error) {
-      console.error('Error deleting file:', error);
       throw error;
     }
   }
@@ -261,7 +250,6 @@ class FileService {
       // Return the S3 stream object
       return this.s3.getObject(params).createReadStream();
     } catch (error) {
-      console.error('Error creating S3 stream:', error);
       throw error;
     }
   }
@@ -281,7 +269,6 @@ class FileService {
       const data = await this.s3.getObject(params).promise();
       return data.Body; // Returns Buffer
     } catch (error) {
-      console.error('Error downloading to buffer:', error);
       throw error;
     }
   }
@@ -309,7 +296,6 @@ class FileService {
         }
       };
     } catch (error) {
-      console.error('Error getting S3 object metadata:', error);
       throw error;
     }
   }
@@ -482,7 +468,6 @@ class FileService {
 
     } catch (error) {
       logger?.error('Asset upload failed', { error: error.message, assetType });
-      console.error('Error in uploadAsset:', error);
       throw error;
     }
   }
@@ -587,7 +572,6 @@ class FileService {
         errorCode: error.code
       });
 
-      console.error('Error uploading to S3:', error);
       return {
         success: false,
         error: error.message,
@@ -754,7 +738,6 @@ class FileService {
         assetType,
         error: error.message
       });
-      console.error('Error in deleteAsset:', error);
       throw error;
     }
   }
@@ -831,7 +814,6 @@ class FileService {
         errorCode: error.code
       });
 
-      console.error(`❌ Error deleting S3 object ${key}:`, error);
       return {
         success: false,
         error: error.message,
@@ -843,7 +825,6 @@ class FileService {
 
   // Delete S3 object (Legacy method - Use deleteS3ObjectWithTransaction instead)
   async deleteS3Object(s3Key) {
-    console.warn('⚠️  deleteS3Object() is deprecated. Use deleteS3ObjectWithTransaction() instead.');
     const result = await this.deleteS3ObjectWithTransaction({ key: s3Key });
     return result;
   }

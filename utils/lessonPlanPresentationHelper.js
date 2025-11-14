@@ -12,15 +12,12 @@ import { clog, cerror } from '../lib/utils.js';
  */
 export async function getLessonPlanPresentationFiles(lessonPlanId) {
   try {
-    clog(`📊 Getting presentation files for lesson plan: ${lessonPlanId}`);
-
     const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
     if (!lessonPlan) {
       throw new Error(`Lesson plan ${lessonPlanId} not found`);
     }
 
     if (!lessonPlan.file_configs || !lessonPlan.file_configs.files) {
-      clog(`📊 No file configs found for lesson plan: ${lessonPlanId}`);
       return {
         opening: [],
         body: [],
@@ -65,14 +62,6 @@ export async function getLessonPlanPresentationFiles(lessonPlanId) {
 
     const hasPresentation = enrichedOpeningFiles.length > 0 || enrichedBodyFiles.length > 0;
 
-    clog(`📊 Found presentation files:`, {
-      lessonPlanId,
-      openingFiles: enrichedOpeningFiles.length,
-      bodyFiles: enrichedBodyFiles.length,
-      totalSlides,
-      hasPresentation
-    });
-
     return {
       opening: enrichedOpeningFiles,
       body: enrichedBodyFiles,
@@ -109,13 +98,6 @@ export async function checkLessonPlanAccess(userId, lessonPlanId) {
         purchasable_id: lessonPlanId,
         payment_status: 'completed'
       }
-    });
-
-    clog(`🔐 Lesson plan access check:`, {
-      userId,
-      lessonPlanId,
-      hasPurchase: !!purchase,
-      purchaseId: purchase?.id
     });
 
     return !!purchase;

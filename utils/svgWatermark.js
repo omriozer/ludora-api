@@ -8,6 +8,9 @@
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import fs from 'fs';
 import path from 'path';
+import { getCanvasDimensions } from './canvasDimensions.js';
+import { substituteVariables } from './variableSubstitution.js';
+import { clog, cerror } from '../lib/utils.js';
 
 /**
  * SVG Watermark Processor Class
@@ -23,9 +26,10 @@ class SvgWatermarkProcessor {
    * @param {string} svgContent - Original SVG content
    * @param {Object} watermarkTemplate - Template data with textElements and logoElements
    * @param {Object} variables - Variables to substitute in text content (e.g., {{filename}})
+   * @param {string} targetFormat - Target format for canvas dimensions (e.g., 'svg-lessonplan')
    * @returns {Promise<string>} - Watermarked SVG content
    */
-  async applyWatermarks(svgContent, watermarkTemplate, variables = {}) {
+  async applyWatermarks(svgContent, watermarkTemplate, variables = {}, targetFormat = 'svg-lessonplan') {
     try {
       // Parse SVG content
       const svgDoc = this.parser.parseFromString(svgContent, 'image/svg+xml');
@@ -36,7 +40,7 @@ class SvgWatermarkProcessor {
       }
 
       // Get SVG dimensions and viewBox
-      const svgDimensions = this.extractSvgDimensions(svgElement);
+      const svgDimensions = this.extractSvgDimensions(svgElement, targetFormat);
 
       // Create watermark group
       const watermarkGroup = this.createWatermarkGroup(svgDoc, watermarkTemplate.globalSettings);
@@ -44,7 +48,8 @@ class SvgWatermarkProcessor {
       // Process text elements
       if (watermarkTemplate.textElements) {
         for (const textElement of watermarkTemplate.textElements) {
-          if (textElement.visible) {
+          // Use consistent visibility logic: render unless explicitly hidden
+          if (textElement.visible !== false && !textElement.hidden) {
             await this.addTextWatermarks(svgDoc, watermarkGroup, textElement, svgDimensions, variables);
           }
         }
@@ -53,7 +58,8 @@ class SvgWatermarkProcessor {
       // Process logo elements
       if (watermarkTemplate.logoElements) {
         for (const logoElement of watermarkTemplate.logoElements) {
-          if (logoElement.visible) {
+          // Use consistent visibility logic: render unless explicitly hidden
+          if (logoElement.visible !== false && !logoElement.hidden) {
             await this.addLogoWatermarks(svgDoc, watermarkGroup, logoElement, svgDimensions);
           }
         }
@@ -67,7 +73,7 @@ class SvgWatermarkProcessor {
       return this.serializer.serializeToString(svgDoc);
 
     } catch (error) {
-      console.error('Error applying SVG watermarks:', error);
+      cerror('Error applying SVG watermarks:', error);
       throw new Error(`SVG watermark processing failed: ${error.message}`);
     }
   }
@@ -75,11 +81,14 @@ class SvgWatermarkProcessor {
   /**
    * Extract SVG dimensions and viewBox information
    * @param {Element} svgElement - SVG root element
+   * @param {string} targetFormat - Target format for fallback dimensions
    * @returns {Object} - Dimensions and scaling info
    */
-  extractSvgDimensions(svgElement) {
-    const width = parseFloat(svgElement.getAttribute('width')) || 800;
-    const height = parseFloat(svgElement.getAttribute('height')) || 600;
+  extractSvgDimensions(svgElement, targetFormat = 'svg-lessonplan') {
+    // Get fallback dimensions from centralized configuration
+    const fallbackDimensions = getCanvasDimensions(targetFormat);
+    const width = parseFloat(svgElement.getAttribute('width')) || fallbackDimensions.width;
+    const height = parseFloat(svgElement.getAttribute('height')) || fallbackDimensions.height;
 
     let viewBox = svgElement.getAttribute('viewBox');
     let viewBoxData = { x: 0, y: 0, width, height };
@@ -132,7 +141,7 @@ class SvgWatermarkProcessor {
    * @param {Object} variables - Variables for text substitution
    */
   async addTextWatermarks(svgDoc, watermarkGroup, textElement, svgDimensions, variables) {
-    const content = this.substituteVariables(textElement.content, variables);
+    const content = substituteVariables(textElement.content, variables);
     const positions = this.calculateElementPositions(textElement, svgDimensions);
 
     for (const position of positions) {
@@ -321,7 +330,7 @@ class SvgWatermarkProcessor {
       return imageEl;
 
     } catch (error) {
-      console.error('Error creating logo element:', error);
+      cerror('Error creating logo element:', error);
       return null; // Return null if logo creation fails
     }
   }
@@ -345,7 +354,7 @@ class SvgWatermarkProcessor {
       return '/api/assets/image/settings/logo.png';
 
     } catch (error) {
-      console.error('Error resolving system logo:', error);
+      cerror('Error resolving system logo:', error);
       return '/api/assets/image/settings/logo.png'; // Fallback
     }
   }
@@ -364,32 +373,6 @@ class SvgWatermarkProcessor {
     }
   }
 
-  /**
-   * Substitute variables in text content
-   * @param {string} content - Text content with variable placeholders
-   * @param {Object} variables - Variable values
-   * @returns {string} - Content with substituted variables
-   */
-  substituteVariables(content, variables = {}) {
-    let result = content;
-
-    // Default variables
-    const defaultVars = {
-      date: new Date().toLocaleDateString(),
-      time: new Date().toLocaleTimeString(),
-      year: new Date().getFullYear()
-    };
-
-    const allVariables = { ...defaultVars, ...variables };
-
-    // Replace {{variable}} patterns
-    for (const [key, value] of Object.entries(allVariables)) {
-      const pattern = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-      result = result.replace(pattern, String(value));
-    }
-
-    return result;
-  }
 
   /**
    * Validate watermark template structure
@@ -433,20 +416,21 @@ class SvgWatermarkProcessor {
 }
 
 /**
- * Convenience function to apply watermarks to SVG content
+ * Apply template elements to SVG content (watermarks, branding, etc.)
  * @param {string} svgContent - Original SVG content
- * @param {Object} watermarkTemplate - Watermark template
+ * @param {Object} template - Template configuration
  * @param {Object} variables - Variables for substitution
- * @returns {Promise<string>} - Watermarked SVG content
+ * @param {string} targetFormat - Target format for canvas dimensions
+ * @returns {Promise<string>} - SVG content with template applied
  */
-export async function applyWatermarksToSvg(svgContent, watermarkTemplate, variables = {}) {
+export async function applySvgTemplate(svgContent, template, variables = {}, targetFormat = 'svg-lessonplan') {
   const processor = new SvgWatermarkProcessor();
 
-  if (!processor.validateTemplate(watermarkTemplate)) {
-    throw new Error('Invalid watermark template structure');
+  if (!processor.validateTemplate(template)) {
+    throw new Error('Invalid template structure');
   }
 
-  return await processor.applyWatermarks(svgContent, watermarkTemplate, variables);
+  return await processor.applyWatermarks(svgContent, template, variables, targetFormat);
 }
 
 /**
@@ -454,9 +438,10 @@ export async function applyWatermarksToSvg(svgContent, watermarkTemplate, variab
  * @param {string} svgContent - Original SVG content
  * @param {string} text - Watermark text
  * @param {Object} options - Styling options
+ * @param {string} targetFormat - Target format for canvas dimensions
  * @returns {Promise<string>} - Watermarked SVG content
  */
-export async function addSimpleTextWatermark(svgContent, text = 'PREVIEW ONLY', options = {}) {
+export async function addSimpleTextWatermark(svgContent, text = 'PREVIEW ONLY', options = {}, targetFormat = 'svg-lessonplan') {
   const template = {
     textElements: [{
       id: 'simple-watermark',
@@ -477,8 +462,11 @@ export async function addSimpleTextWatermark(svgContent, text = 'PREVIEW ONLY', 
     }
   };
 
-  return await applyWatermarksToSvg(svgContent, template, options.variables || {});
+  return await applySvgTemplate(svgContent, template, options.variables || {}, targetFormat);
 }
+
+// Legacy export for backwards compatibility
+export const applyWatermarksToSvg = applySvgTemplate;
 
 export { SvgWatermarkProcessor };
 export default SvgWatermarkProcessor;

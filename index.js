@@ -11,13 +11,9 @@ const isCloudDeployment = process.env.PORT && process.env.DATABASE_URL;
 // Load base .env file first (defaults) - only warn if missing in local development
 const baseResult = dotenv.config({ path: '.env' });
 if (baseResult.error) {
-  if (isCloudDeployment) {
-    console.log(`ℹ️ No .env file found - using environment variables from cloud platform (${env})`);
-  } else {
+  if (!isCloudDeployment) {
     console.warn(`⚠️  Failed to load base .env:`, baseResult.error);
   }
-} else {
-  console.log(`✅ Loaded base .env file`);
 }
 
 // Load environment-specific .env file (overrides) - only if not production
@@ -25,13 +21,9 @@ if (env !== 'production') {
   const envFile = `.env.${env}`;
   const envResult = dotenv.config({ path: envFile });
   if (envResult.error) {
-    if (isCloudDeployment) {
-      console.log(`ℹ️ No ${envFile} file found - using environment variables from cloud platform`);
-    } else {
+    if (!isCloudDeployment) {
       console.warn(`⚠️  Failed to load ${envFile}:`, envResult.error);
     }
-  } else {
-    console.log(`✅ Loaded environment configuration: .env + ${envFile}`);
   }
 }
 
@@ -43,7 +35,6 @@ if (missingVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
 }
 
-console.log(`✅ Environment initialized for ${env} (critical variables validated)`);
 
 // Now import other modules after environment is loaded
 import express from 'express';
@@ -72,51 +63,14 @@ import { dynamicCors } from './middleware/cors.js';
 // Import compression optimization
 import { israeliCompressionMiddleware, hebrewContentCompressionMiddleware } from './middleware/israeliCompression.js';
 
-// Import Israeli compliance middleware
-import {
-  israeliComplianceHeaders,
-  israeliTimezoneCompliance,
-  israeliDataResidencyCompliance,
-  israeliPrivacyCompliance,
-  israeliHebrewContentCompliance,
-  israeliComplianceAuditLogger,
-  israeliComplianceReport,
-  israeliMaintenanceCompliance
-} from './middleware/israeliCompliance.js';
+// Import Israeli compliance middleware (reduced)
+import { israeliPrivacyCompliance } from './middleware/israeliCompliance.js';
 
-// Import Israeli performance monitoring middleware
-import {
-  israeliPerformanceTracker,
-  israeliS3PerformanceTracker,
-  israeliHebrewContentPerformanceTracker,
-  israeliPeakHoursPerformanceTracker,
-  israeliPerformanceDashboard,
-  israeliPerformanceAlerts,
-  cleanupIsraeliPerformanceMonitoring
-} from './middleware/israeliPerformanceMonitoring.js';
+// REMOVED: Israeli performance monitoring middleware - files deleted
 
-// Import Israeli cost optimization middleware
-import {
-  israeliS3CostTracker,
-  israeliBandwidthCostTracker,
-  israeliHebrewContentCostTracker,
-  israeliCostOptimizationDashboard,
-  israeliCostAlerts,
-  israeliRealtimeCostMonitor,
-  cleanupIsraeliCostOptimization
-} from './middleware/israeliCostOptimization.js';
+// REMOVED: Israeli cost optimization middleware - files deleted
 
-// Import Israeli market alerts middleware
-import {
-  israeliPerformanceAlertsMonitor,
-  israeliHebrewContentAlertsMonitor,
-  israeliEducationalAlertsMonitor,
-  israeliRealtimeMarketMonitor,
-  israeliMarketAlertsDashboard,
-  israeliSystemHealthMonitor,
-  israeliMarketAlertsWebhook,
-  cleanupIsraeliMarketAlerts
-} from './middleware/israeliMarketAlerts.js';
+// REMOVED: Israeli market alerts middleware - files deleted
 
 // Import error handling and validation middleware
 import {
@@ -193,34 +147,14 @@ app.use(secureCookies);
 // 12. API-specific security headers
 app.use('/api', apiSecurityHeaders);
 
-// 13. Israeli compliance middleware stack
-app.use(israeliComplianceHeaders());
-app.use(israeliTimezoneCompliance());
-app.use('/api', israeliDataResidencyCompliance());
+// 13. Israeli compliance - REDUCED to only child protection
 app.use('/api', israeliPrivacyCompliance());
-app.use(israeliHebrewContentCompliance());
-app.use('/api', israeliMaintenanceCompliance());
 
-// 14. Israeli performance monitoring middleware stack
-app.use(israeliPerformanceTracker());
-app.use(israeliS3PerformanceTracker());
-app.use(israeliHebrewContentPerformanceTracker());
-app.use(israeliPeakHoursPerformanceTracker());
-app.use(israeliPerformanceAlerts());
+// REMOVED: Israeli performance monitoring middleware - deleted
 
-// 15. Israeli cost optimization middleware stack
-app.use(israeliS3CostTracker());
-app.use(israeliBandwidthCostTracker());
-app.use(israeliHebrewContentCostTracker());
-app.use(israeliCostAlerts());
-app.use(israeliRealtimeCostMonitor());
+// REMOVED: Israeli cost optimization middleware - deleted
 
-// 16. Israeli market alerts and monitoring middleware stack
-app.use(israeliPerformanceAlertsMonitor());
-app.use(israeliHebrewContentAlertsMonitor());
-app.use(israeliEducationalAlertsMonitor());
-app.use(israeliRealtimeMarketMonitor());
-app.use(israeliSystemHealthMonitor());
+// REMOVED: Israeli market alerts middleware - deleted
 
 // Body parsing middleware
 app.use(express.json({
@@ -238,17 +172,7 @@ app.use('/api/entities', hebrewContentCompressionMiddleware);
 app.use('/api/products', hebrewContentCompressionMiddleware);
 app.use('/api/dashboard', hebrewContentCompressionMiddleware);
 
-// Israeli compliance report endpoint (before other routes)
-app.use(israeliComplianceReport());
-
-// Israeli performance dashboard endpoints (admin-only routes)
-app.use(israeliPerformanceDashboard());
-
-// Israeli cost optimization dashboard endpoints (admin-only routes)
-app.use(israeliCostOptimizationDashboard());
-
-// Israeli market alerts dashboard endpoints (admin-only routes)
-app.use(israeliMarketAlertsDashboard());
+// REMOVED: All Israeli dashboard endpoints - middleware deleted
 
 app.use('/api/auth', authRoutes);
 app.use('/api/entities', entityRoutes);
@@ -274,8 +198,7 @@ app.use('/api/system-templates', systemTemplatesRoutes);
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
 
-// Israeli market alerts webhook
-app.use(israeliMarketAlertsWebhook());
+// REMOVED: Israeli market alerts webhook - middleware deleted
 
 // Health check endpoints
 app.get('/', (req, res) => {
@@ -324,8 +247,7 @@ app.get('/api', (req, res) => {
 // Static file serving for local uploads
 app.use('/uploads', express.static('./uploads'));
 
-// Israeli compliance audit logging (after all routes)
-app.use(israeliComplianceAuditLogger());
+// REMOVED: Israeli compliance audit logging - middleware deleted
 
 // 404 handler (must come before global error handler)
 app.use(notFoundHandler);
@@ -343,14 +265,13 @@ async function startServer() {
     await DatabaseInitService.default.initialize();
 
     const server = app.listen(PORT, () => {
-      console.log(`Ludora API Server running on port ${PORT} (${env}) ${new Date().toISOString()}`);
+      console.log(`Ludora API Server running on port ${PORT} (${env})`);
     });
 
     // Start background services
     try {
 
     } catch (error) {
-      console.error('⚠️  Failed to start background services:', error);
       // Don't fail server startup if background services fail
     }
 
@@ -373,14 +294,9 @@ process.on('SIGTERM', async () => {
 
   // Stop background services
   try {
-    // Stop Israeli performance monitoring
-    cleanupIsraeliPerformanceMonitoring();
-    // Stop Israeli cost optimization tracking
-    cleanupIsraeliCostOptimization();
-    // Stop Israeli market alerts monitoring
-    cleanupIsraeliMarketAlerts();
+    // No background services to stop - Israeli middleware removed
   } catch (error) {
-    console.error('⚠️  Error stopping background services:', error);
+    // Log critical shutdown errors only
   }
 
   server.close(() => {
@@ -393,14 +309,9 @@ process.on('SIGINT', async () => {
 
   // Stop background services
   try {
-    // Stop Israeli performance monitoring
-    cleanupIsraeliPerformanceMonitoring();
-    // Stop Israeli cost optimization tracking
-    cleanupIsraeliCostOptimization();
-    // Stop Israeli market alerts monitoring
-    cleanupIsraeliMarketAlerts();
+    // No background services to stop - Israeli middleware removed
   } catch (error) {
-    console.error('⚠️  Error stopping background services:', error);
+    // Log critical shutdown errors only
   }
 
   server.close(() => {

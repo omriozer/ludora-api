@@ -15,8 +15,6 @@ router.get('/user', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.uid;
 
-    clog('Subscriptions: Getting user subscription data', { userId });
-
     // Get user's subscription history
     const subscriptions = await SubscriptionService.getUserSubscriptionHistory(userId, {
       limit: 50,
@@ -62,8 +60,6 @@ router.get('/current', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.uid;
 
-    clog('Subscriptions: Getting current subscription', { userId });
-
     const activeSubscription = await SubscriptionService.getUserActiveSubscription(userId);
 
     if (!activeSubscription) {
@@ -91,8 +87,6 @@ router.get('/current', authenticateToken, async (req, res) => {
  */
 router.get('/plans', async (req, res) => {
   try {
-    clog('Subscriptions: Getting available plans');
-
     const plans = await models.SubscriptionPlan.findAll({
       where: {
         is_active: true
@@ -120,13 +114,6 @@ router.post('/create-payment', authenticateToken, async (req, res) => {
     const { subscriptionPlanId, environment = 'production', isRetry = false } = req.body;
     const userId = req.user.uid;
 
-    clog('Subscriptions: Creating subscription payment', {
-      userId,
-      subscriptionPlanId,
-      environment,
-      isRetry
-    });
-
     // Validation
     if (!subscriptionPlanId) {
       return res.status(400).json({ error: 'subscriptionPlanId is required' });
@@ -139,7 +126,6 @@ router.post('/create-payment', authenticateToken, async (req, res) => {
       if (!retryValidation.valid) {
         if (retryValidation.canCreateNew) {
           // No pending subscription found, create a new one
-          clog('Subscriptions: No pending subscription found, creating new payment instead');
         } else {
           return res.status(400).json({ error: retryValidation.error });
         }
@@ -197,8 +183,6 @@ router.post('/cancel', authenticateToken, async (req, res) => {
     const userId = req.user.uid;
     const { reason = 'user_cancelled', immediate = false } = req.body;
 
-    clog('Subscriptions: Cancelling subscription', { userId, reason, immediate });
-
     // Get user's active subscription
     const activeSubscription = await SubscriptionService.getUserActiveSubscription(userId);
 
@@ -242,8 +226,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.uid;
 
-    clog('Subscriptions: Getting subscription by ID', { id, userId });
-
     const subscription = await SubscriptionService.getSubscriptionById(id);
 
     if (!subscription) {
@@ -275,8 +257,6 @@ router.post('/validate', authenticateToken, async (req, res) => {
     const { subscriptionPlanId } = req.body;
     const userId = req.user.uid;
 
-    clog('Subscriptions: Validating subscription creation', { userId, subscriptionPlanId });
-
     if (!subscriptionPlanId) {
       return res.status(400).json({ error: 'subscriptionPlanId is required' });
     }
@@ -301,8 +281,6 @@ router.post('/validate', authenticateToken, async (req, res) => {
 router.get('/plans-with-context', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.uid;
-
-    clog('Subscriptions: Getting plans with user context', { userId });
 
     // Get available plans
     const plans = await models.SubscriptionPlan.findAll({
@@ -357,13 +335,6 @@ router.post('/change-plan', authenticateToken, async (req, res) => {
   try {
     const { subscriptionPlanId, actionType, fromPlanId } = req.body;
     const userId = req.user.uid;
-
-    clog('Subscriptions: Changing subscription plan', {
-      userId,
-      subscriptionPlanId,
-      actionType,
-      fromPlanId
-    });
 
     // Validation
     if (!subscriptionPlanId) {
@@ -422,8 +393,6 @@ router.post('/cancel-pending/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.uid;
-
-    clog('Subscriptions: Cancelling pending subscription', { id, userId });
 
     // First, get the subscription to verify ownership
     const subscription = await SubscriptionService.getSubscriptionById(id);

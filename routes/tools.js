@@ -25,7 +25,6 @@ router.get('/types', optionalAuth, (req, res) => {
       count: toolTypes.length
     });
   } catch (error) {
-    console.error('Error getting tool types:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get tool types'
@@ -54,7 +53,6 @@ router.get('/types/:key', optionalAuth, (req, res) => {
       data: toolType
     });
   } catch (error) {
-    console.error('Error getting tool type:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get tool type'
@@ -75,7 +73,6 @@ router.get('/categories', optionalAuth, (req, res) => {
       count: categories.length
     });
   } catch (error) {
-    console.error('Error getting tool categories:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get tool categories'
@@ -110,7 +107,6 @@ router.get('/categories/:category', optionalAuth, (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error getting tools by category:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get tools by category'
@@ -145,7 +141,6 @@ router.post('/validate', optionalAuth, (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error validating tool type:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to validate tool type'

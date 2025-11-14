@@ -12,7 +12,6 @@ import fontkit from './fontkit.js';
  */
 async function addPdfWatermarks(pdfBuffer, logoUrl) {
   try {
-    console.log('🔍 PDF Watermark: Processing with logoUrl:', logoUrl);
 
     // Load PDF document
     const pdfDoc = await PDFDocument.load(pdfBuffer);
@@ -29,7 +28,6 @@ async function addPdfWatermarks(pdfBuffer, logoUrl) {
     // Load logo if available
     let logoImage = null;
     if (logoUrl) {
-      console.log('🖼️ PDF Watermark: Attempting to load logo from:', logoUrl);
       try {
         let logoBytes;
 
@@ -46,19 +44,12 @@ async function addPdfWatermarks(pdfBuffer, logoUrl) {
         // Determine image type and embed
         if (logoUrl.toLowerCase().endsWith('.png')) {
           logoImage = await pdfDoc.embedPng(logoBytes);
-          console.log('✅ PDF Watermark: PNG logo embedded successfully');
         } else if (logoUrl.toLowerCase().endsWith('.jpg') || logoUrl.toLowerCase().endsWith('.jpeg')) {
           logoImage = await pdfDoc.embedJpg(logoBytes);
-          console.log('✅ PDF Watermark: JPG logo embedded successfully');
-        } else {
-          console.log('⚠️ PDF Watermark: Unsupported logo format:', logoUrl);
         }
       } catch (error) {
-        console.error('❌ PDF Watermark: Failed to load logo:', error);
         // Continue without logo
       }
-    } else {
-      console.log('ℹ️ PDF Watermark: No logo URL provided');
     }
 
     // Watermark text (using English to avoid Hebrew font encoding issues)
@@ -78,15 +69,6 @@ async function addPdfWatermarks(pdfBuffer, logoUrl) {
         const logoWidth = logoSize;
         const logoHeight = (logoImage.height / logoImage.width) * logoWidth;
 
-        console.log('🖼️ PDF Watermark: Drawing logo on page', {
-          logoSize,
-          logoWidth,
-          logoHeight,
-          centerX,
-          centerY,
-          pageWidth: width,
-          pageHeight: height
-        });
 
         page.drawImage(logoImage, {
           x: centerX - (logoWidth / 2),
@@ -96,8 +78,6 @@ async function addPdfWatermarks(pdfBuffer, logoUrl) {
           opacity: 0.15,
           rotate: { type: 'degrees', angle: 45 }
         });
-      } else {
-        console.log('⚠️ PDF Watermark: No logo to draw on this page');
       }
 
       // Draw center watermark text
@@ -188,7 +168,6 @@ async function addPdfWatermarks(pdfBuffer, logoUrl) {
     return Buffer.from(pdfBytes);
 
   } catch (error) {
-    console.error('Error adding PDF watermarks:', error);
     throw error;
   }
 }

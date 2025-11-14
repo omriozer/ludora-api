@@ -7,6 +7,7 @@ const router = express.Router();
 
 /**
  * Validate watermark template data structure
+ * Supports both legacy watermark format and unified branding format
  * @param {Object} templateData - Watermark template data to validate
  * @throws {Error} If validation fails
  */
@@ -15,9 +16,12 @@ function validateWatermarkTemplateData(templateData) {
     throw new Error('Template data must be an object');
   }
 
-  // Check for at least one element type
-  if (!templateData.textElements && !templateData.logoElements) {
-    throw new Error('Template must have at least one textElements or logoElements array');
+  // Check for unified structure (branding templates) or legacy structure (watermark templates)
+  const hasUnifiedStructure = templateData.logo || templateData.text || templateData.url || templateData.customElements;
+  const hasLegacyStructure = templateData.textElements || templateData.logoElements;
+
+  if (!hasUnifiedStructure && !hasLegacyStructure) {
+    throw new Error('Template must have at least one element (logo, text, url, customElements) or legacy elements (textElements, logoElements)');
   }
 
   // Validate text elements
@@ -84,7 +88,8 @@ function validateWatermarkTemplateData(templateData) {
 
 /**
  * Get all system templates or filter by type and format
- * GET /api/system-templates?type=footer&format=pdf-a4-landscape
+ * GET /api/system-templates?type=branding&format=pdf-a4-landscape
+ * GET /api/system-templates?type=watermark&format=svg-lessonplan
  */
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -148,6 +153,21 @@ router.get('/:id', authenticateToken, async (req, res) => {
       templateId: id
     });
 
+    // Validate ID format to prevent unnecessary database queries
+    if (!id || typeof id !== 'string') {
+      return res.status(400).json({
+        error: 'Invalid template ID format'
+      });
+    }
+
+    // Check if ID is too short (template IDs are 6+ characters)
+    if (id.length < 6) {
+      clog('SystemTemplates: Rejecting short ID that is invalid:', id);
+      return res.status(400).json({
+        error: 'Invalid template ID format - ID too short'
+      });
+    }
+
     // Check if this looks like a template type request rather than ID
     const validTypes = ['branding', 'watermark'];
     if (validTypes.includes(id)) {
@@ -160,7 +180,11 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const template = await models.SystemTemplate.findByPk(id);
 
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      clog('SystemTemplates: Template not found for ID:', id);
+      return res.status(404).json({
+        error: 'Template not found',
+        details: 'The template ID does not exist in the system'
+      });
     }
 
     res.json({
@@ -176,8 +200,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 /**
  * Get templates by type (convenience endpoint)
- * GET /api/system-templates/type/footer?format=pdf-a4-landscape
- * GET /api/system-templates/type/header?format=svg-lessonplan
+ * GET /api/system-templates/type/branding?format=pdf-a4-landscape
+ * GET /api/system-templates/type/watermark?format=svg-lessonplan
  */
 router.get('/type/:templateType', authenticateToken, async (req, res) => {
   try {
@@ -230,7 +254,8 @@ router.get('/type/:templateType', authenticateToken, async (req, res) => {
 
 /**
  * Get default template for a type
- * GET /api/system-templates/default/footer
+ * GET /api/system-templates/default/branding
+ * GET /api/system-templates/default/watermark
  */
 router.get('/default/:templateType', authenticateToken, async (req, res) => {
   try {
@@ -632,7 +657,7 @@ router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) 
 });
 
 /**
- * Save file footer configuration as a new template (Admin only)
+ * Save file branding configuration as a new template (Admin only)
  * POST /api/system-templates/save-from-file/:fileId
  */
 router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (req, res) => {
@@ -641,17 +666,17 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
     const { name, description, target_format } = req.body;
     const createdBy = req.user.email;
 
-    clog('SystemTemplates: Saving file footer as template', {
+    clog('SystemTemplates: Saving file branding as template', {
       fileId,
       name,
       target_format
     });
 
-    // Get the file with its footer configuration
+    // Get the file with its branding configuration
     const file = await models.File.findByPk(fileId, {
       include: {
         model: models.SystemTemplate,
-        as: 'footerTemplate'
+        as: 'brandingTemplate'
       }
     });
 
@@ -659,20 +684,20 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
       return res.status(404).json({ error: 'File not found' });
     }
 
-    // Get the effective footer configuration for this file
-    let footerData;
+    // Get the effective branding configuration for this file
+    let brandingData;
 
-    if (file.footerTemplate) {
+    if (file.brandingTemplate) {
       // File has a template, merge with overrides
-      footerData = file.mergeWithTemplateData(file.footerTemplate.template_data);
+      brandingData = file.mergeWithTemplateData(file.brandingTemplate.template_data);
     } else {
       // File doesn't have a template, try to get default template
-      const defaultTemplate = await models.SystemTemplate.findDefaultByType('footer');
+      const defaultTemplate = await models.SystemTemplate.findDefaultByType('branding');
       if (defaultTemplate) {
-        footerData = file.mergeWithTemplateData(defaultTemplate.template_data);
+        brandingData = file.mergeWithTemplateData(defaultTemplate.template_data);
       } else {
         return res.status(400).json({
-          error: 'No footer configuration found for this file'
+          error: 'No branding configuration found for this file'
         });
       }
     }
@@ -685,14 +710,14 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
     const template = await models.SystemTemplate.create({
       name,
       description: description || `Template created from file: ${file.title}`,
-      template_type: 'footer',
+      template_type: 'branding',
       target_format: target_format || 'pdf-a4-portrait',
-      template_data: footerData,
+      template_data: brandingData,
       is_default: false,
       created_by: createdBy
     });
 
-    clog('SystemTemplates: Template created from file footer', {
+    clog('SystemTemplates: Template created from file branding', {
       templateId: template.id,
       fileId: file.id,
       name: template.name
@@ -701,11 +726,11 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
     res.status(201).json({
       success: true,
       data: template,
-      message: 'Template created successfully from file footer configuration'
+      message: 'Template created successfully from file branding configuration'
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error saving file footer as template:', error);
+    cerror('SystemTemplates: Error saving file branding as template:', error);
     res.status(500).json({ error: error.message });
   }
 });

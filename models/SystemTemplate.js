@@ -1,9 +1,13 @@
 import { DataTypes, Op } from 'sequelize';
-import { baseFields, baseOptions } from './baseModel.js';
+import { baseFields, baseOptions, generateId } from './baseModel.js';
 
 export default function(sequelize) {
   const SystemTemplate = sequelize.define('SystemTemplate', {
     ...baseFields,
+    id: {
+      ...baseFields.id,
+      defaultValue: () => generateId(),
+    },
     name: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -129,39 +133,92 @@ export default function(sequelize) {
       throw new Error('Branding template data must be a valid object');
     }
 
-    // Validate required branding structure
-    const requiredElements = ['logo', 'text', 'url'];
-    for (const element of requiredElements) {
-      if (!data[element] || typeof data[element] !== 'object') {
-        throw new Error(`Branding template missing required element: ${element}`);
+    // Support both old structure (logo, text, url at top level) and new unified structure (customElements)
+    // Check if this is actually a new structure with legacy elements included
+    const hasCustomElements = data.customElements && typeof data.customElements === 'object';
+    const hasGlobalSettings = data.globalSettings && typeof data.globalSettings === 'object';
+    const hasTopLevelLegacyElements = data.logo || data.text || data.url;
+
+    // If it has customElements or globalSettings, treat it as new structure even if it has legacy elements
+    const isNewStructure = hasCustomElements || hasGlobalSettings;
+    const isOldStructure = hasTopLevelLegacyElements && !isNewStructure;
+
+    if (isOldStructure) {
+      // Validate old structure with required branding elements
+      const requiredElements = ['logo', 'text', 'url'];
+      for (const element of requiredElements) {
+        if (!data[element] || typeof data[element] !== 'object') {
+          throw new Error(`Branding template missing required element: ${element}`);
+        }
+
+        const elementData = data[element];
+
+        // Check for required fields
+        if (typeof elementData.visible !== 'boolean') {
+          throw new Error(`Branding template ${element} missing required 'visible' boolean`);
+        }
+
+        if (typeof elementData.hidden !== 'boolean') {
+          elementData.hidden = false; // Default if missing
+        }
+
+        if (typeof elementData.rotation !== 'number') {
+          elementData.rotation = 0; // Default if missing
+        }
+
+        if (!elementData.position || typeof elementData.position !== 'object') {
+          throw new Error(`Branding template ${element} missing required 'position' object`);
+        }
+
+        if (typeof elementData.position.x !== 'number' || typeof elementData.position.y !== 'number') {
+          throw new Error(`Branding template ${element} position must have numeric x and y values`);
+        }
+
+        if (!elementData.style || typeof elementData.style !== 'object') {
+          throw new Error(`Branding template ${element} missing required 'style' object`);
+        }
+      }
+    } else if (isNewStructure) {
+      // Validate new unified structure
+      if (data.customElements && typeof data.customElements !== 'object') {
+        throw new Error('Branding template customElements must be an object');
       }
 
-      const elementData = data[element];
-
-      // Check for required fields
-      if (typeof elementData.visible !== 'boolean') {
-        throw new Error(`Branding template ${element} missing required 'visible' boolean`);
+      if (data.globalSettings && typeof data.globalSettings !== 'object') {
+        throw new Error('Branding template globalSettings must be an object');
       }
 
-      if (typeof elementData.hidden !== 'boolean') {
-        elementData.hidden = false; // Default if missing
-      }
+      // Validate custom elements if they exist
+      if (data.customElements) {
+        Object.entries(data.customElements).forEach(([elementId, element]) => {
+          if (!element || typeof element !== 'object') {
+            throw new Error(`Custom element ${elementId} must be an object`);
+          }
 
-      if (typeof elementData.rotation !== 'number') {
-        elementData.rotation = 0; // Default if missing
-      }
+          if (typeof element.type !== 'string') {
+            throw new Error(`Custom element ${elementId} missing required 'type' string`);
+          }
 
-      if (!elementData.position || typeof elementData.position !== 'object') {
-        throw new Error(`Branding template ${element} missing required 'position' object`);
-      }
+          if (typeof element.visible !== 'boolean') {
+            element.visible = true; // Default if missing
+          }
 
-      if (typeof elementData.position.x !== 'number' || typeof elementData.position.y !== 'number') {
-        throw new Error(`Branding template ${element} position must have numeric x and y values`);
-      }
+          if (!element.position || typeof element.position !== 'object') {
+            throw new Error(`Custom element ${elementId} missing required 'position' object`);
+          }
 
-      if (!elementData.style || typeof elementData.style !== 'object') {
-        throw new Error(`Branding template ${element} missing required 'style' object`);
+          if (typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
+            throw new Error(`Custom element ${elementId} position must have numeric x and y values`);
+          }
+
+          if (element.style && typeof element.style !== 'object') {
+            throw new Error(`Custom element ${elementId} style must be an object if provided`);
+          }
+        });
       }
+    } else {
+      // Neither structure detected - create minimal valid structure
+      throw new Error('Branding template must have either legacy structure (logo, text, url) or unified structure (customElements, globalSettings)');
     }
 
     return true;

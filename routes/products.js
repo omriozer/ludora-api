@@ -50,7 +50,6 @@ async function checkContentCreatorPermissions(user, entityType) {
 
       return { allowed: true };
     } catch (error) {
-      console.error('Error checking content creator permissions:', error);
       return { allowed: false, message: 'Error checking permissions' };
     }
   }
@@ -63,8 +62,6 @@ async function checkContentCreatorPermissions(user, entityType) {
 router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (req, res) => {
   const { product_type, ...productData } = req.body;
 
-  console.log(`Creating product of type ${product_type} with data:`, JSON.stringify(req.body, null, 2));
-  console.log(`User ID: ${req.user.uid}`);
 
   try {
     // Validate product_type is provided
@@ -109,11 +106,8 @@ router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (r
       ...productData
     }, createdBy);
 
-    console.log('✅ Product created successfully:', result);
     res.status(201).json(result);
   } catch (error) {
-    console.error('Error creating product:', error);
-    console.error('Full error details:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -124,7 +118,6 @@ router.get('/', async (req, res) => {
     // Redirect to existing products list endpoint
     res.redirect('/api/entities/products/list');
   } catch (error) {
-    console.error('Error listing products:', error);
     res.status(500).json({ error: error.message });
   }
 });

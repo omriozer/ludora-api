@@ -14,11 +14,6 @@ class SubscriptionService {
    */
   static async validateSubscriptionCreation(userId, subscriptionPlanId) {
     try {
-      clog('SubscriptionService: Validating subscription creation', {
-        userId,
-        subscriptionPlanId
-      });
-
       // Check if user already has an active subscription
       const activeSubscription = await this.getUserActiveSubscription(userId);
 
@@ -155,12 +150,6 @@ class SubscriptionService {
     } = options;
 
     try {
-      clog('SubscriptionService: Creating subscription', {
-        userId,
-        subscriptionPlanId,
-        transactionId
-      });
-
       // Get subscription plan details
       let planObject = subscriptionPlan;
 
@@ -184,13 +173,6 @@ class SubscriptionService {
       // Calculate pricing with discounts
       const pricingInfo = calcSubscriptionPlanPrice(planObject);
       const finalPrice = pricingInfo.finalPrice;
-
-      clog('SubscriptionService: Calculated subscription pricing', {
-        originalPrice: pricingInfo.originalPrice,
-        discountAmount: pricingInfo.discountAmount,
-        finalPrice,
-        isDiscounted: pricingInfo.isDiscounted
-      });
 
       // Generate subscription ID
       const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
@@ -238,12 +220,6 @@ class SubscriptionService {
       };
 
       const subscription = await models.Subscription.create(subscriptionData);
-
-      clog('SubscriptionService: Subscription created successfully', {
-        subscriptionId: subscription.id,
-        status: subscription.status,
-        startDate: subscription.start_date
-      });
 
       return subscription;
 
@@ -325,8 +301,6 @@ class SubscriptionService {
    */
   static async activateSubscription(subscriptionId, options = {}) {
     try {
-      clog('SubscriptionService: Activating subscription', { subscriptionId });
-
       const subscription = await models.Subscription.findByPk(subscriptionId);
       if (!subscription) {
         throw new Error(`Subscription ${subscriptionId} not found`);
@@ -337,11 +311,6 @@ class SubscriptionService {
       }
 
       const activatedSubscription = await subscription.activate(options);
-
-      clog('SubscriptionService: Subscription activated successfully', {
-        subscriptionId: activatedSubscription.id,
-        status: activatedSubscription.status
-      });
 
       return activatedSubscription;
 
@@ -359,8 +328,6 @@ class SubscriptionService {
    */
   static async cancelSubscription(subscriptionId, options = {}) {
     try {
-      clog('SubscriptionService: Cancelling subscription', { subscriptionId, options });
-
       const subscription = await models.Subscription.findByPk(subscriptionId);
       if (!subscription) {
         throw new Error(`Subscription ${subscriptionId} not found`);
@@ -374,12 +341,6 @@ class SubscriptionService {
         keepActiveUntilEndDate: true, // Keep subscription active until end date
         reason: options.reason || 'user_cancelled',
         ...options
-      });
-
-      clog('SubscriptionService: Subscription cancelled successfully', {
-        subscriptionId: cancelledSubscription.id,
-        status: cancelledSubscription.status,
-        cancelledAt: cancelledSubscription.cancelled_at
       });
 
       return cancelledSubscription;
@@ -398,11 +359,6 @@ class SubscriptionService {
    */
   static async updateSubscriptionFromPayPlus(payplusSubscriptionUid, payplusData) {
     try {
-      clog('SubscriptionService: Updating subscription from PayPlus', {
-        payplusSubscriptionUid,
-        status: payplusData.status
-      });
-
       const subscription = await models.Subscription.findOne({
         where: {
           payplus_subscription_uid: payplusSubscriptionUid
@@ -418,11 +374,6 @@ class SubscriptionService {
 
       const updatedSubscription = await subscription.updateFromPayPlus(payplusData);
 
-      clog('SubscriptionService: Subscription updated from PayPlus successfully', {
-        subscriptionId: updatedSubscription.id,
-        status: updatedSubscription.status
-      });
-
       return updatedSubscription;
 
     } catch (error) {
@@ -437,8 +388,6 @@ class SubscriptionService {
    */
   static async processExpiredSubscriptions() {
     try {
-      clog('SubscriptionService: Processing expired subscriptions');
-
       const expiredSubscriptions = await models.Subscription.findAll({
         where: {
           status: 'active',
@@ -457,9 +406,6 @@ class SubscriptionService {
             updated_at: new Date()
           });
           processedIds.push(subscription.id);
-          clog('SubscriptionService: Marked subscription as expired', {
-            subscriptionId: subscription.id
-          });
         } catch (error) {
           cerror('SubscriptionService: Error marking subscription as expired:', {
             subscriptionId: subscription.id,
@@ -467,10 +413,6 @@ class SubscriptionService {
           });
         }
       }
-
-      clog('SubscriptionService: Processed expired subscriptions', {
-        processedCount: processedIds.length
-      });
 
       return processedIds;
 
@@ -543,11 +485,6 @@ class SubscriptionService {
    */
   static async updateSubscriptionPayPlusUid(subscriptionId, payplusSubscriptionUid) {
     try {
-      clog('SubscriptionService: Updating subscription PayPlus UID', {
-        subscriptionId,
-        payplusSubscriptionUid
-      });
-
       const subscription = await models.Subscription.findByPk(subscriptionId);
       if (!subscription) {
         throw new Error(`Subscription ${subscriptionId} not found`);
@@ -556,10 +493,6 @@ class SubscriptionService {
       const updatedSubscription = await subscription.update({
         payplus_subscription_uid: payplusSubscriptionUid,
         updated_at: new Date()
-      });
-
-      clog('SubscriptionService: Subscription PayPlus UID updated successfully', {
-        subscriptionId: updatedSubscription.id
       });
 
       return updatedSubscription;
@@ -612,11 +545,6 @@ class SubscriptionService {
    */
   static async validateRetryPayment(userId, subscriptionPlanId) {
     try {
-      clog('SubscriptionService: Validating retry payment', {
-        userId,
-        subscriptionPlanId
-      });
-
       // Check for pending subscription
       const pendingSubscription = await this.getUserPendingSubscription(userId, subscriptionPlanId);
 
@@ -673,16 +601,8 @@ class SubscriptionService {
     } = options;
 
     try {
-      clog('SubscriptionService: Changing subscription plan', {
-        userId,
-        subscriptionPlanId,
-        actionType,
-        fromPlanId
-      });
-
       // Get target plan
       const targetPlan = await models.SubscriptionPlan.findByPk(subscriptionPlanId);
-      clog('SubscriptionService: Target plan fetched', { targetPlan: targetPlan ? { id: targetPlan.id, name: targetPlan.name, price: targetPlan.price } : null });
 
       if (!targetPlan || !targetPlan.is_active) {
         throw new Error('Target subscription plan not found or inactive');
@@ -693,8 +613,6 @@ class SubscriptionService {
 
       // Handle CANCEL_PENDING_DOWNGRADE action type
       if (actionType === 'cancel_pending_downgrade') {
-        clog('SubscriptionService: Processing cancel pending downgrade to free plan');
-
         // Cancel any pending subscriptions for the user
         const pendingSubscriptions = await models.Subscription.findAll({
           where: {
@@ -715,7 +633,6 @@ class SubscriptionService {
               cancelledBy: 'change_plan_api'
             }
           });
-          clog('SubscriptionService: Cancelled pending subscription', { subscriptionId: pendingSub.id });
         }
       }
 
@@ -750,9 +667,6 @@ class SubscriptionService {
                 cancelledAt: new Date().toISOString(),
                 cancelledBy: 'change_plan_api'
               }
-            });
-            clog('SubscriptionService: Cancelled pending subscription for free plan change', {
-              subscriptionId: subscription.id
             });
           }
         }

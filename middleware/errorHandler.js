@@ -348,12 +348,7 @@ export function requestLogger(req, res, next) {
       requestId: req.requestId
     };
 
-    const level = res.statusCode >= 400 ? 'warn' : 'info';
-    console.log(`${level === 'warn' ? '🟡' : '🟢'} ${req.method} ${req.originalUrl} - ${res.statusCode} - ${duration}ms`);
-    
-    if (process.env.ENVIRONMENT === 'development') {
-      console.log(JSON.stringify(logData, null, 2));
-    }
+    // Request logging removed for cleaner output
   });
 
   next();

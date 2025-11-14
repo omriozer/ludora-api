@@ -45,7 +45,6 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
     const range = req.headers.range;
     
     // Log access for analytics
-    console.log(`Video access: User ${req.user.id} accessing video ${videoId} via ${req.videoAccess.reason}`);
     
     if (range) {
       // Parse the range header
@@ -85,7 +84,6 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
       
       // Handle stream errors
       stream.on('error', (error) => {
-        console.error('Video stream error:', error);
         if (!res.headersSent) {
           res.status(500).json({ error: 'Stream error', message: 'Failed to stream video content' });
         }
@@ -112,7 +110,6 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
       
       // Handle stream errors
       stream.on('error', (error) => {
-        console.error('Video stream error:', error);
         if (!res.headersSent) {
           res.status(500).json({ error: 'Stream error', message: 'Failed to stream video content' });
         }
@@ -120,7 +117,6 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
     }
     
   } catch (error) {
-    console.error('Video streaming error:', error);
     
     if (!res.headersSent) {
       res.status(500).json({
@@ -150,7 +146,6 @@ router.get('/:videoId/access', requireAuth, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error checking video access:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to check video access'
@@ -213,7 +208,6 @@ router.get('/:videoId/info', requireAuth, async (req, res) => {
     }
     
   } catch (error) {
-    console.error('Error getting video info:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       message: 'Failed to get video information'
@@ -242,7 +236,6 @@ router.get('/my-videos', requireAuth, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error listing user videos:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       message: 'Failed to list accessible videos'

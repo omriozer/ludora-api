@@ -30,7 +30,6 @@ class CORSConfig {
       urls.push('http://localhost:5173', `http://localhost:${defaultPort}`);
     }
 
-    console.log('✅ Configured frontend URLs:', urls);
     return urls;
   }
 
@@ -46,7 +45,6 @@ class CORSConfig {
       origins.push(...webhookUrls);
     }
 
-    console.log('🔗 Configured webhook origins:', origins.length > 0 ? origins : 'All origins allowed for webhooks');
     return origins;
   }
 
@@ -102,9 +100,8 @@ class CORSConfig {
   getWebhookCorsConfig() {
     return cors({
       origin: (origin, callback) => {
-        // If no webhook origins configured, allow all (with warning)
+        // If no webhook origins configured, allow all
         if (this.webhookOrigins.length === 0) {
-          console.warn('⚠️ WEBHOOK CORS: No specific origins configured, allowing all origins');
           return callback(null, true);
         }
 
@@ -202,18 +199,15 @@ class CORSConfig {
     return (req, res, next) => {
       // Development override
       if (devCors && process.env.CORS_DEV_OVERRIDE === 'true') {
-        console.log('🔧 CORS: Using DEVELOPMENT CORS for', req.method, req.path, 'from origin:', req.headers.origin);
         return devCors(req, res, next);
       }
 
       // Webhook routes
       if (req.path.startsWith('/api/webhooks/') || req.path.includes('/webhook')) {
-        console.log('🔧 CORS: Using WEBHOOK CORS for', req.method, req.path, 'from origin:', req.headers.origin);
         return webhookCors(req, res, next);
       }
 
       // Default to main CORS
-      console.log('🔧 CORS: Using MAIN CORS for', req.method, req.path, 'from origin:', req.headers.origin);
       return mainCors(req, res, next);
     };
   }
@@ -245,12 +239,9 @@ class CORSConfig {
     }
 
     if (issues.length > 0) {
-      console.warn('⚠️ CORS Configuration Issues:', issues);
       if (process.env.ENVIRONMENT === 'production') {
         throw new Error(`Critical CORS issues in production: ${issues.join(', ')}`);
       }
-    } else {
-      console.log('✅ CORS configuration validated successfully');
     }
 
     return issues;

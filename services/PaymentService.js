@@ -17,8 +17,6 @@ class PaymentService {
     const { paymentMethod = 'free', transactionData = {} } = options;
 
     try {
-      clog(`PaymentService: Completing purchase ${purchaseId} with method ${paymentMethod}`);
-
       // Find the purchase
       const purchase = await models.Purchase.findByPk(purchaseId);
       if (!purchase) {
@@ -27,7 +25,6 @@ class PaymentService {
 
       // Validate that the purchase can be completed
       if (purchase.payment_status === 'completed') {
-        clog(`PaymentService: Purchase ${purchaseId} already completed`);
         return purchase;
       }
 
@@ -59,7 +56,6 @@ class PaymentService {
           updated_at: new Date()
         });
         transactionId = transaction.id;
-        clog(`PaymentService: Created transaction ${transactionId} for purchase ${purchaseId}`);
       }
 
       // Update the purchase
@@ -70,7 +66,6 @@ class PaymentService {
         updated_at: new Date()
       });
 
-      clog(`PaymentService: Purchase ${purchaseId} completed successfully`);
       return updatedPurchase;
 
     } catch (error) {
@@ -215,15 +210,6 @@ class PaymentService {
       const hasSubscriptions = purchaseItems.some(item => item.purchasable_type === 'subscription');
       const transactionType = hasSubscriptions ? 'recurring' : 'one-time';
 
-      clog('PaymentService: Creating/updating PayPlus transaction', {
-        userId,
-        amount,
-        environment,
-        transactionType,
-        pageRequestUid: pageRequestUid?.substring(0, 8) + '...',
-        purchaseCount: purchaseItems.length
-      });
-
       // Check for existing pending transaction of the same type for this user
       const existingTransaction = await models.Transaction.findOne({
         where: {
@@ -239,8 +225,6 @@ class PaymentService {
 
       if (existingTransaction) {
         // Update existing transaction with new PayPlus data
-        clog(`PaymentService: Found existing pending ${transactionType} transaction ${existingTransaction.id}, updating it`);
-
         transaction = await existingTransaction.update({
           amount: amount,
           environment: dbEnvironment,
@@ -255,8 +239,6 @@ class PaymentService {
           },
           updated_at: new Date()
         });
-
-        clog(`PaymentService: Updated existing transaction ${transaction.id} with new PayPlus data`);
 
       } else {
         // Create new transaction
@@ -281,8 +263,6 @@ class PaymentService {
           created_at: new Date(),
           updated_at: new Date()
         });
-
-        clog(`PaymentService: Created new ${transactionType} transaction ${transaction.id}`);
       }
 
       // Update all purchases with this transaction ID
@@ -300,11 +280,8 @@ class PaymentService {
             }
           }
         );
-
-        clog(`PaymentService: Updated ${purchaseIds.length} purchases with transaction ID ${transaction.id}`);
       }
 
-      clog(`PaymentService: ${existingTransaction ? 'Updated' : 'Created'} ${transactionType} transaction ${transaction.id} successfully`);
       return transaction;
 
     } catch (error) {
@@ -381,8 +358,6 @@ class PaymentService {
    */
   static getPayPlusCredentials(environment = 'production') {
     try {
-      clog(`PaymentService: Getting PayPlus credentials for environment: ${environment}`);
-
       // Normalize environment for PayPlus credentials (test -> staging)
       const normalizedEnv = environment === 'test' ? 'staging' : environment;
       const isProd = normalizedEnv === 'production';
@@ -422,14 +397,6 @@ class PaymentService {
 
         throw new Error(`Missing PayPlus ${normalizedEnv} credentials: ${missingEnvVars.join(', ')}`);
       }
-
-      clog('PaymentService: PayPlus credentials loaded successfully', {
-        environment,
-        payplusUrl: credentials.payplusUrl,
-        hasPageUid: !!credentials.payment_page_uid,
-        hasApiKey: !!credentials.payment_api_key,
-        hasSecretKey: !!credentials.payment_secret_key
-      });
 
       return credentials;
 

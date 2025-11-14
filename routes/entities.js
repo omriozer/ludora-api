@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import Joi from 'joi';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
 import EntityService from '../services/EntityService.js';
@@ -8,13 +9,15 @@ import models from '../models/index.js';
 import { sequelize } from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
-import { extractCopyrightText, updateFooterTextContent } from '../utils/footerSettingsHelper.js';
+// Note: No longer importing deprecated helper functions since we use SystemTemplate now
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
 import fileService from '../services/FileService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
 import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
 import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCountingUtils.js';
 import { GAME_TYPES } from '../config/gameTypes.js';
+import { clog, cerror } from '../lib/utils.js';
+import { generateId } from '../models/baseModel.js';
 
 const router = express.Router();
 
@@ -28,20 +31,15 @@ const fileUpload = multer({
   preservePath: false,
   // Ensure proper encoding handling for Hebrew filenames
   fileFilter: (req, file, cb) => {
-    // Log original filename encoding issue
-    console.log(`📤 Original filename from multer: "${file.originalname}"`);
-    console.log(`📤 Filename buffer: ${Buffer.from(file.originalname, 'latin1').toString('utf8')}`);
-
     // Try to fix encoding if it's corrupted
     try {
       // If filename looks corrupted (contains replacement characters), try to fix it
       if (file.originalname.includes('�') || file.originalname.includes('×')) {
         const fixedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
         file.originalname = fixedName;
-        console.log(`📤 Fixed filename: "${fixedName}"`);
       }
     } catch (error) {
-      console.log(`📤 Could not fix filename encoding: ${error.message}`);
+      cerror(`📤 Could not fix filename encoding: ${error.message}`);
     }
 
     cb(null, true);
@@ -60,6 +58,71 @@ function getFileTypeFromExtension(extension) {
     // File model only allows: ['pdf', 'docx', 'zip', 'other']
     default: return 'other';
   }
+}
+
+// Helper function to get default study topics for a subject and grade range
+function getDefaultStudyTopicsForSubject(subject, gradeFrom, gradeTo) {
+  const topics = [];
+
+  // Define default topics based on subject
+  const topicTemplates = {
+    'hebrew_language': [
+      { topic: 'קריאה והבנת הנקרא', description: 'פיתוח כישורי קריאה והבנת טקסטים' },
+      { topic: 'כתיבה יצירתית', description: 'כתיבת סיפורים ויצירות מקוריות' },
+      { topic: 'דקדוק ותחביר', description: 'חוקי הדקדוק והתחביר בעברית' },
+      { topic: 'אוצר מילים', description: 'הרחבת אוצר המילים העברי' },
+      { topic: 'ביטוי בעל פה', description: 'פיתוח כישורי דיבור והצגה' }
+    ],
+    'mathematics': [
+      { topic: 'מספרים וחשבון', description: 'פעולות חשבון בסיסיות ומספרים' },
+      { topic: 'גיאומטריה', description: 'צורות גיאומטריות ומדידות' },
+      { topic: 'אלגברה בסיסית', description: 'משוואות ופונקציות פשוטות' },
+      { topic: 'חשיבה מתמטית', description: 'פתרון בעיות וחשיבה לוגית' },
+      { topic: 'סטטיסטיקה והסתברות', description: 'איסוף וניתוח נתונים' }
+    ],
+    'science': [
+      { topic: 'חקר הטבע', description: 'התבוננות וחקירה במערכות טבע' },
+      { topic: 'כימיה בסיסית', description: 'תכונות החומר ותגובות כימיות' },
+      { topic: 'פיזיקה יסודית', description: 'כוח, תנועה ואנרגיה' },
+      { topic: 'ביולוגיה', description: 'מערכות חיות וסביבה' },
+      { topic: 'טכנולוגיה ומדע', description: 'יישומים טכנולוגיים של מדע' }
+    ],
+    'english': [
+      { topic: 'Reading Comprehension', description: 'Understanding English texts' },
+      { topic: 'Vocabulary Building', description: 'Learning new English words' },
+      { topic: 'Grammar and Writing', description: 'English grammar rules and writing skills' },
+      { topic: 'Listening Skills', description: 'Understanding spoken English' },
+      { topic: 'Speaking Practice', description: 'Developing oral communication' }
+    ],
+    'history': [
+      { topic: 'תולדות עם ישראל', description: 'היסטוריה של העם היהודי' },
+      { topic: 'תולדות ארץ ישראל', description: 'היסטוריה של ארץ ישראל' },
+      { topic: 'תולדות העולם', description: 'אירועים חשובים בהיסטוריה העולמית' },
+      { topic: 'מקורות היסטוריים', description: 'עבודה עם מסמכים היסטוריים' },
+      { topic: 'חשיבה היסטורית', description: 'ניתוח גורמים ותוצאות בהיסטוריה' }
+    ],
+    'geography': [
+      { topic: 'גיאוגרפיה פיזית', description: 'הבנת נופים וצורות קרקע' },
+      { topic: 'גיאוגרפיה אנושית', description: 'התנחלות ופיתוח אזורים' },
+      { topic: 'מפות וכיוונים', description: 'קריאת מפות וניווט' },
+      { topic: 'אקלים וסביבה', description: 'מזג אוויר ותנאי סביבה' },
+      { topic: 'משאבי טבע', description: 'שימוש ושימור משאבים טבעיים' }
+    ]
+  };
+
+  // Get templates for the subject (fallback to general topics if subject not found)
+  const subjectTopics = topicTemplates[subject] || [
+    { topic: 'נושא 1', description: `נושא בסיסי ב${subject}` },
+    { topic: 'נושא 2', description: `נושא מתקדם ב${subject}` },
+    { topic: 'נושא 3', description: `נושא מעמיק ב${subject}` }
+  ];
+
+  // Adjust number of topics based on grade range
+  const rangeSize = gradeTo - gradeFrom + 1;
+  const topicsPerGrade = Math.max(2, Math.min(4, Math.ceil(subjectTopics.length / rangeSize)));
+  const selectedTopics = subjectTopics.slice(0, Math.min(topicsPerGrade * rangeSize, subjectTopics.length));
+
+  return selectedTopics;
 }
 
 // Helper function to check content creator permissions
@@ -110,7 +173,6 @@ async function checkContentCreatorPermissions(user, entityType, entityData = {})
 
       return { allowed: true };
     } catch (error) {
-      console.error('Error checking content creator permissions:', error);
       return { allowed: false, message: 'Error checking permissions' };
     }
   }
@@ -179,7 +241,6 @@ async function getFullProduct(product, userId = null, includeGameDetails = false
     try {
       gameDetails = await GameDetailsService.getGameDetails(product.entity_id, entity.game_type);
     } catch (error) {
-      console.error(`Error calculating game details for game ${product.entity_id}:`, error);
       // Don't fail the entire request if game details calculation fails
       gameDetails = null;
     }
@@ -252,7 +313,6 @@ router.get('/products/list', optionalAuth, async (req, res) => {
 
     res.json(fullProducts);
   } catch (error) {
-    console.error('Error fetching products list:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -278,7 +338,6 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
     const fullProduct = await getFullProduct(product, userId, includeGameDetails);
     res.json(fullProduct);
   } catch (error) {
-    console.error('Error fetching product details:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -287,7 +346,6 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
 // MUST be before generic /:type route to match correctly
 router.get('/curriculum/available-combinations', optionalAuth, async (req, res) => {
   try {
-    console.log('🔍 Loading available curriculum combinations...');
 
     // Single optimized query to get all curricula with their items count
     const query = `
@@ -310,8 +368,6 @@ router.get('/curriculum/available-combinations', optionalAuth, async (req, res) 
     const results = await sequelize.query(query, {
       type: sequelize.QueryTypes.SELECT
     });
-
-    console.log(`🔍 Found ${results.length} curricula with items`);
 
     // Process results to create a lightweight mapping
     const combinations = {};
@@ -345,8 +401,6 @@ router.get('/curriculum/available-combinations', optionalAuth, async (req, res) 
       combinations[subject].sort((a, b) => a - b);
     });
 
-    console.log('🔍 Available combinations:', combinations);
-
     res.json({
       combinations,
       total_subjects: Object.keys(combinations).length,
@@ -354,7 +408,6 @@ router.get('/curriculum/available-combinations', optionalAuth, async (req, res) 
     });
 
   } catch (error) {
-    console.error('Error fetching available curriculum combinations:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -406,15 +459,7 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       }
 
       // Special handling for grade range queries
-      console.log('🔍 Checking find_by_grade condition:', {
-        find_by_grade: query.find_by_grade,
-        isNaN: isNaN(parseInt(query.find_by_grade)),
-        parseInt: parseInt(query.find_by_grade),
-        subject: query.subject
-      });
-
       if (query.find_by_grade && !isNaN(parseInt(query.find_by_grade))) {
-        console.log('✅ Using special grade-based filtering');
         const targetGrade = parseInt(query.find_by_grade);
         // Remove the helper parameter from the query
         delete query.find_by_grade;
@@ -432,7 +477,6 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
 
         return res.json(results);
       } else {
-        console.log('❌ NOT using special grade-based filtering, falling back to regular EntityService.find');
       }
     }
 
@@ -473,12 +517,8 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       const enhancedResults = results.map(setting => {
         const settingData = setting.toJSON ? setting.toJSON() : setting;
 
-        // Extract copyright_footer_text from footer_settings for backwards compatibility
-        const copyright_footer_text = extractCopyrightText(settingData.footer_settings) || settingData.copyright_footer_text;
-
         return {
           ...settingData,
-          copyright_footer_text, // Backwards compatibility
           file_types_config: getFileTypesForFrontend(),
           study_subjects: STUDY_SUBJECTS,
           audiance_targets: AUDIANCE_TARGETS,
@@ -513,7 +553,6 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
 
     res.json(results);
   } catch (error) {
-    console.error('Error finding entities:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -524,7 +563,8 @@ router.get('/:type/:id', optionalAuth, customValidators.validateEntityType, asyn
   const id = req.params.id;
 
   try {
-    const entity = await EntityService.findById(entityType, id);
+    const include = req.query.include;
+    const entity = await EntityService.findById(entityType, id, include);
 
     // Apply S3 URL transformation for GameContent images and complete cards
     if (entityType === 'gamecontent' && entity && (entity.semantic_type === 'image' || entity.semantic_type === 'complete_card') && entity.value) {
@@ -543,7 +583,6 @@ router.get('/:type/:id', optionalAuth, customValidators.validateEntityType, asyn
     if (error.message.includes('not found')) {
       return res.status(404).json({ error: error.message });
     }
-    console.error('Error finding entity by ID:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -569,8 +608,6 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
 }, async (req, res) => {
   const entityType = req.params.type;
 
-  console.log(`Creating ${entityType} with data:`, JSON.stringify(req.body, null, 2));
-  console.log(`User ID: ${req.user.uid}`);
 
   try {
     // Get user information
@@ -602,8 +639,6 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
     const entity = await EntityService.create(entityType, req.body, createdBy);
     res.status(201).json(entity);
   } catch (error) {
-    console.error('Error creating entity:', error);
-    console.error('Full error details:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -632,7 +667,7 @@ function sanitizeNumericFields(data, entityType) {
   const enumFieldsToSanitize = enumFields[entityType] || [];
   const allFieldsToSanitize = [...numericFieldsToSanitize, ...enumFieldsToSanitize];
 
-  console.log('🧹 Sanitizing fields:', {
+  clog('🧹 Sanitizing fields:', {
     entityType,
     numericFields: numericFieldsToSanitize,
     enumFields: enumFieldsToSanitize,
@@ -645,11 +680,9 @@ function sanitizeNumericFields(data, entityType) {
   // Handle numeric fields
   numericFieldsToSanitize.forEach(field => {
     if (sanitizedData[field] === '' || sanitizedData[field] === undefined) {
-      console.log(`🧹 Converting numeric ${field} from '${sanitizedData[field]}' to null`);
       sanitizedData[field] = null;
     } else if (sanitizedData[field] !== null && !isNaN(sanitizedData[field])) {
       // Convert string numbers to proper numbers
-      console.log(`🧹 Converting numeric ${field} from '${sanitizedData[field]}' to number`);
       sanitizedData[field] = Number(sanitizedData[field]);
     }
   });
@@ -657,15 +690,10 @@ function sanitizeNumericFields(data, entityType) {
   // Handle enum fields
   enumFieldsToSanitize.forEach(field => {
     if (sanitizedData[field] === '' || sanitizedData[field] === undefined) {
-      console.log(`🧹 Converting enum ${field} from '${sanitizedData[field]}' to null`);
       sanitizedData[field] = null;
     }
   });
 
-  console.log('🧹 After sanitization:', allFieldsToSanitize.reduce((acc, field) => {
-    acc[field] = sanitizedData[field];
-    return acc;
-  }, {}));
 
   return sanitizedData;
 }
@@ -695,45 +723,18 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
   try {
     // Sanitize numeric fields before processing
     req.body = sanitizeNumericFields(req.body, entityType);
-    // For settings updates, handle footer_settings and copyright_footer_text synchronization
+    // Handle legacy field name mappings for settings
     if (entityType === 'settings') {
-      if (req.body.footer_settings) {
-        // If footer_settings provided, extract copyright text for backwards compatibility
-        const copyrightText = extractCopyrightText(req.body.footer_settings);
-        if (copyrightText) {
-          req.body.copyright_footer_text = copyrightText;
-        }
-      } else if (req.body.copyright_footer_text) {
-        // If only copyright_footer_text provided, update footer_settings.text.content
-        // Get current settings to preserve other footer settings
-        const currentSettings = await models.Settings.findByPk(id);
-        if (currentSettings) {
-          req.body.footer_settings = updateFooterTextContent(
-            currentSettings.footer_settings,
-            req.body.copyright_footer_text
-          );
-        }
+      // Map legacy field name to new field name
+      if (req.body.copyright_footer_text !== undefined) {
+        req.body.copyright_text = req.body.copyright_footer_text;
+        delete req.body.copyright_footer_text;
       }
     }
 
-    console.log('📝 Backend received update data:', req.body);
-    console.log('📝 Video fields received:', {
-      marketing_video_type: req.body.marketing_video_type,
-      marketing_video_id: req.body.marketing_video_id,
-      marketing_video_title: req.body.marketing_video_title,
-      marketing_video_duration: req.body.marketing_video_duration,
-      video_file_url: req.body.video_file_url
-    });
 
     // Special handling for product updates
     if (entityType === 'product') {
-      console.log('🔍 Product update debug:');
-      console.log('   req.body.short_description:', req.body.short_description);
-      console.log('   req.body.is_published:', req.body.is_published);
-      console.log('   req.body.tags:', req.body.tags);
-      console.log('   req.body.creator_user_id:', req.body.creator_user_id);
-      console.log('   req.body.is_ludora_creator:', req.body.is_ludora_creator);
-      console.log('   req.body.marketing_video_title:', req.body.marketing_video_title);
 
       // Handle is_ludora_creator flag (transform to creator_user_id)
       if (req.body.hasOwnProperty('is_ludora_creator')) {
@@ -742,12 +743,9 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
         if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
           // Non-admin trying to change Ludora creator status - ignore it
           delete req.body.is_ludora_creator;
-          console.log('🚫 Non-admin user tried to change is_ludora_creator - ignored');
         } else {
           // Admin user - transform is_ludora_creator to creator_user_id
-          console.log('✅ Admin user updating is_ludora_creator:', req.body.is_ludora_creator);
           req.body.creator_user_id = req.body.is_ludora_creator ? null : req.user.uid;
-          console.log('✅ Transformed to creator_user_id:', req.body.creator_user_id);
           delete req.body.is_ludora_creator; // Remove the flag after transformation
         }
       }
@@ -759,19 +757,19 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
         if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
           // Non-admin trying to change creator_user_id - remove it from update
           delete req.body.creator_user_id;
-          console.log('🚫 Non-admin user tried to change creator_user_id - ignored');
+          // Non-admin user tried to change creator_user_id - ignored
         } else {
-          console.log('✅ Admin user updating creator_user_id');
+          // Admin user updating creator_user_id
         }
       }
     }
     const entity = await EntityService.update(entityType, id, req.body, req.user.uid);
+
     res.json(entity);
   } catch (error) {
     if (error.message.includes('not found')) {
       return res.status(404).json({ error: error.message });
     }
-    console.error('Error updating entity:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -788,7 +786,6 @@ router.delete('/:type/:id', authenticateToken, customValidators.validateEntityTy
     if (error.message.includes('not found')) {
       return res.status(404).json({ error: error.message });
     }
-    console.error('Error deleting entity:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -821,7 +818,6 @@ router.post('/:type/bulk', authenticateToken, customValidators.validateEntityTyp
     
     res.json({ results, count: results.length });
   } catch (error) {
-    console.error('Error in bulk operation:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -834,7 +830,6 @@ router.get('/:type/count', optionalAuth, customValidators.validateEntityType, as
     const count = await EntityService.count(entityType, req.query);
     res.json({ count });
   } catch (error) {
-    console.error('Error counting entities:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -873,22 +868,19 @@ router.get('/purchase/check-product-purchases/:productId', authenticateToken, as
       isFree: product.price === 0 || product.is_free === true
     });
   } catch (error) {
-    console.error('Error checking product purchases:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // POST /entities/curriculum/create-range - Create a new grade range curriculum
-router.post('/curriculum/create-range', authenticateToken, validateBody({
-  type: 'object',
-  required: ['subject', 'grade_from', 'grade_to'],
-  properties: {
-    subject: { type: 'string' },
-    grade_from: { type: 'integer', minimum: 1, maximum: 12 },
-    grade_to: { type: 'integer', minimum: 1, maximum: 12 },
-    description: { type: 'string' }
-  }
-}), async (req, res) => {
+router.post('/curriculum/create-range', authenticateToken, validateBody(
+  Joi.object({
+    subject: Joi.string().required(),
+    grade_from: Joi.number().integer().min(1).max(12).required(),
+    grade_to: Joi.number().integer().min(1).max(12).required(),
+    description: Joi.string().allow('').optional()
+  })
+), async (req, res) => {
   try {
     const { subject, grade_from, grade_to, description } = req.body;
     const userId = req.user.uid;
@@ -910,8 +902,8 @@ router.post('/curriculum/create-range', authenticateToken, validateBody({
     }
 
     // Check for existing curriculum with overlapping grade range
-    // Use Sequelize operators from the sequelize instance
-    const { Op } = sequelize.Sequelize;
+    // Use Sequelize operators from the models instance
+    const { Op } = models.Sequelize;
 
     const existingCurriculum = await models.Curriculum.findOne({
       where: {
@@ -950,12 +942,11 @@ router.post('/curriculum/create-range', authenticateToken, validateBody({
     }
 
     // Generate new curriculum
-    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
 
     const curriculumData = {
       id: generateId(),
       subject: subject,
-      grade: null, // No single grade for range curricula
+      grade: grade_from, // Set to first grade in range to satisfy NOT NULL constraint
       grade_from: grade_from,
       grade_to: grade_to,
       is_grade_range: true,
@@ -967,14 +958,37 @@ router.post('/curriculum/create-range', authenticateToken, validateBody({
 
     const curriculum = await models.Curriculum.create(curriculumData);
 
+    // Create default curriculum items based on the subject
+    const defaultTopics = getDefaultStudyTopicsForSubject(subject, grade_from, grade_to);
+    const createdItems = [];
+
+    for (let i = 0; i < defaultTopics.length; i++) {
+      const topicData = defaultTopics[i];
+      const itemData = {
+        id: generateId(),
+        curriculum_id: curriculum.id,
+        study_topic: topicData.topic,
+        is_mandatory: topicData.is_mandatory || true,
+        mandatory_order: i + 1,
+        description: topicData.description || null,
+        is_completed: false,
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      const curriculumItem = await models.CurriculumItem.create(itemData);
+      createdItems.push(curriculumItem);
+    }
+
     res.status(201).json({
       message: 'Grade range curriculum created successfully',
       curriculum: curriculum,
+      curriculum_items: createdItems,
+      items_count: createdItems.length,
       grade_range: `${grade_from}-${grade_to}`
     });
 
   } catch (error) {
-    console.error('Error creating grade range curriculum:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1049,7 +1063,6 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
     }
 
     // Generate new ID for the class curriculum
-    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
 
     // Copy the curriculum including grade range fields
     const classCurriculumData = {
@@ -1069,20 +1082,28 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
 
     const classCurriculum = await models.Curriculum.create(classCurriculumData);
 
-    // Get all curriculum items from the system curriculum
+    // Get all curriculum items from the system curriculum with their content topics
     const systemItems = await models.CurriculumItem.findAll({
       where: { curriculum_id: systemCurriculumId },
+      include: [
+        {
+          model: models.ContentTopic,
+          as: 'contentTopics',
+          through: {
+            attributes: []
+          }
+        }
+      ],
       order: [['mandatory_order', 'ASC'], ['custom_order', 'ASC']]
     });
 
-    // Copy all curriculum items
+    // Copy all curriculum items and their content topic associations
     const copiedItems = [];
     for (const item of systemItems) {
       const itemData = {
         id: generateId(),
         curriculum_id: classCurriculum.id,
         study_topic: item.study_topic,
-        content_topic: item.content_topic,
         is_mandatory: item.is_mandatory,
         mandatory_order: item.mandatory_order,
         custom_order: item.custom_order,
@@ -1093,6 +1114,19 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
       };
 
       const copiedItem = await models.CurriculumItem.create(itemData);
+
+      // Copy content topic associations
+      if (item.contentTopics && item.contentTopics.length > 0) {
+        for (const contentTopic of item.contentTopics) {
+          await models.CurriculumItemContentTopic.create({
+            id: generateId(),
+            curriculum_item_id: copiedItem.id,
+            content_topic_id: contentTopic.id,
+            created_at: new Date()
+          });
+        }
+      }
+
       copiedItems.push(copiedItem);
     }
 
@@ -1104,19 +1138,16 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
     });
 
   } catch (error) {
-    console.error('Error copying curriculum to class:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // PUT /entities/curriculum/:id/cascade-update - Update curriculum and all its copies
-router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody({
-  type: 'object',
-  required: ['is_active'],
-  properties: {
-    is_active: { type: 'boolean' }
-  }
-}), async (req, res) => {
+router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody(
+  Joi.object({
+    is_active: Joi.boolean().required()
+  })
+), async (req, res) => {
   try {
     const curriculumId = req.params.id;
     const { is_active } = req.body;
@@ -1181,7 +1212,6 @@ router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody({
     });
 
   } catch (error) {
-    console.error('Error performing cascade update:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1251,7 +1281,6 @@ router.get('/curriculum/:id/products', optionalAuth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching curriculum products:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1328,7 +1357,6 @@ router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) =>
     });
 
   } catch (error) {
-    console.error('Error checking curriculum copy status:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1341,7 +1369,6 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
   let uploadedS3Key = null;
 
   try {
-    console.log(`📤 Starting atomic lesson plan file upload for lesson plan ${lessonPlanId}`);
 
     // Get user information
     const user = await models.User.findOne({ where: { id: req.user.uid } });
@@ -1381,17 +1408,15 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
         const decodedName = decodeURIComponent(escape(fileName));
         if (decodedName !== fileName && decodedName.length > 0) {
           fileName = decodedName;
-          console.log(`📤 Decoded filename from "${req.file.originalname}" to "${fileName}"`);
         }
       }
     } catch (error) {
-      console.log(`📤 Filename decoding failed, using original: ${error.message}`);
+      // Filename decoding failed, continue with original
     }
 
     const fileExtension = fileName.split('.').pop().toLowerCase();
     const fileType = getFileTypeFromExtension(fileExtension);
 
-    console.log(`📤 Processing file: ${fileName}, role: ${file_role}, extension: ${fileExtension}`);
 
     // TODO: SVG validation will be added here for new presentation upload system
 
@@ -1399,7 +1424,6 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     if (file_role === 'audio') {
       const allowedExtensions = ['mp3', 'wav', 'm4a'];
       if (!allowedExtensions.includes(fileExtension)) {
-        console.log(`❌ Invalid file type for ${file_role}: ${fileExtension}. Only audio files allowed.`);
         return res.status(400).json({
           error: `Only audio files (.mp3, .wav, .m4a) are allowed for ${file_role} sections`,
           details: `Received file type: .${fileExtension}. Expected: ${allowedExtensions.join(', ')}`
@@ -1408,7 +1432,6 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     }
 
     // Generate ID for the File entity
-    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
 
     // 1. Create File entity within transaction
     const fileData = {
@@ -1421,11 +1444,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       creator_user_id: req.user.uid
     };
 
-    console.log(`📤 Creating File entity with data:`, fileData);
     const fileEntity = await models.File.create(fileData, { transaction });
-    console.log(`✅ File entity created: ${fileEntity.id}`);
-
-    console.log(`📤 Original filename: ${fileName}`);
 
     // 2. Upload file using unified asset upload method
     const uploadResult = await fileService.uploadAsset({
@@ -1443,15 +1462,13 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     }
 
     uploadedS3Key = uploadResult.s3Key;
-    console.log(`✅ File uploaded successfully: ${uploadedS3Key}`);
 
     // Extract target_format from file analysis
     let targetFormat = 'unknown';
     if (uploadResult.analysis?.success && uploadResult.analysis?.contentMetadata?.target_format) {
       targetFormat = uploadResult.analysis.contentMetadata.target_format;
-      console.log(`📄 PDF orientation detected: ${targetFormat}`);
     } else {
-      console.log(`⚠️ PDF orientation detection failed, using default: ${targetFormat}`);
+      // PDF orientation detection failed, using default
     }
 
     // Update file entity with S3 information and detected target_format
@@ -1491,11 +1508,9 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
         }
 
         // For published products, allow replacement by removing the existing file first
-        console.log(`📤 Published lesson plan - replacing existing ${file_role} file`);
 
         // Remove the existing file from configs and delete the File entity if it's asset-only
         const existingFileConfig = existingFilesInRole[0];
-        console.log(`📤 Removing existing file:`, existingFileConfig);
 
         // Remove from current configs
         const indexToRemove = currentConfigs.files.findIndex(f => f.file_id === existingFileConfig.file_id);
@@ -1508,17 +1523,13 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
           try {
             const existingFileEntity = await models.File.findByPk(existingFileConfig.file_id, { transaction });
             if (existingFileEntity) {
-              console.log(`📤 Deleting existing asset-only File entity: ${existingFileEntity.id}`);
               await existingFileEntity.destroy({ transaction });
-              console.log(`✅ Existing File entity deleted during replacement`);
             }
           } catch (deleteError) {
-            console.warn(`⚠️ Failed to delete existing File entity during replacement:`, deleteError.message);
             // Continue with replacement even if deletion fails
           }
         }
 
-        console.log(`✅ Existing ${file_role} file removed, proceeding with replacement`);
       }
     }
 
@@ -1542,11 +1553,8 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     // 5. TODO: SVG slide counting will be implemented here
     const newTotalSlides = currentConfigs.files.length; // Simple count for now
-    console.log(`📊 Total files count: ${newTotalSlides}`);
 
     // Update lesson plan with new file configs and total slides
-    console.log(`📤 Updating lesson plan with file configs:`, JSON.stringify(currentConfigs, null, 2));
-    console.log(`📤 Before update - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
     // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
     lessonPlan.file_configs = currentConfigs;
@@ -1554,28 +1562,20 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     // Update total_slides field if it has changed
     if (lessonPlan.total_slides !== newTotalSlides) {
-      console.log(`📊 Updating total_slides from ${lessonPlan.total_slides} to ${newTotalSlides}`);
       lessonPlan.total_slides = newTotalSlides;
     }
 
     const updateResult = await lessonPlan.save({ transaction });
 
-    console.log(`📤 Update result:`, updateResult.dataValues?.file_configs ? 'has dataValues' : 'no dataValues in result');
 
     // Force reload to check if update actually persisted
     await lessonPlan.reload({ transaction });
-    console.log(`📤 After reload within transaction - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
     // Commit transaction - everything succeeded
-    console.log(`📤 Attempting to commit transaction...`);
     await transaction.commit();
-    console.log(`✅ Transaction committed successfully`);
 
     // Verify the update persisted after commit by checking fresh DB query
     const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
-    console.log(`📤 Post-commit verification - fresh query file_configs:`, JSON.stringify(verifyLessonPlan?.file_configs, null, 2));
-
-    console.log(`🎉 Atomic file upload completed successfully`);
 
     res.status(201).json({
       message: 'File uploaded successfully',
@@ -1594,7 +1594,6 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     });
 
   } catch (error) {
-    console.error('❌ Atomic file upload failed:', error);
 
     // Rollback database transaction
     await transaction.rollback();
@@ -1603,9 +1602,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     if (uploadedS3Key) {
       try {
         await fileService.deleteS3Object(uploadedS3Key);
-        console.log(`🧹 Cleaned up S3 file: ${uploadedS3Key}`);
       } catch (s3Error) {
-        console.error('Failed to clean up S3 file:', s3Error);
       }
     }
 
@@ -1622,7 +1619,6 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
   const transaction = await sequelize.transaction();
 
   try {
-    console.log(`🔗 Starting File product linking for lesson plan ${lessonPlanId}`);
 
     // Get user information
     const user = await models.User.findOne({ where: { id: req.user.uid } });
@@ -1689,11 +1685,9 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
         }
 
         // For published products, allow replacement by removing the existing file first
-        console.log(`🔗 Published lesson plan - replacing existing ${file_role} file during linking`);
 
         // Remove the existing file from configs (don't delete File entities when unlinking)
         const existingFileConfig = existingFilesInRole[0];
-        console.log(`🔗 Removing existing file config:`, existingFileConfig);
 
         // Remove from current configs
         const indexToRemove = currentConfigs.files.findIndex(f => f.file_id === existingFileConfig.file_id);
@@ -1706,17 +1700,13 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
           try {
             const existingFileEntity = await models.File.findByPk(existingFileConfig.file_id, { transaction });
             if (existingFileEntity) {
-              console.log(`🔗 Deleting existing asset-only File entity during linking: ${existingFileEntity.id}`);
               await existingFileEntity.destroy({ transaction });
-              console.log(`✅ Existing asset-only File entity deleted during linking replacement`);
             }
           } catch (deleteError) {
-            console.warn(`⚠️ Failed to delete existing File entity during linking replacement:`, deleteError.message);
             // Continue with replacement even if deletion fails
           }
         }
 
-        console.log(`✅ Existing ${file_role} file removed, proceeding with File product linking`);
       }
 
       // For opening/body sections, only allow PPT File products
@@ -1747,14 +1737,11 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
     if ((file_role === 'opening' || file_role === 'body') && (file_type === 'ppt')) {
       const fileEntity = await models.File.findByPk(fileProduct.entity_id);
       if (fileEntity && fileEntity.file_name) {
-        console.log(`📊 Attempting to count slides for linked PowerPoint file: ${fileEntity.file_name}`);
         try {
           // For linked files, we need to download from S3 to count slides
           const fileBuffer = await fileService.downloadToBuffer(fileEntity.s3_key || fileEntity.file_name);
           slideCount = await countSlidesInPowerPoint(fileBuffer, fileEntity.file_name);
-          console.log(`📊 Detected ${slideCount} slides in linked file ${fileEntity.file_name}`);
         } catch (slideError) {
-          console.warn(`⚠️ Failed to count slides in linked file ${fileEntity.file_name}:`, slideError.message);
           // Continue with slideCount = 0, don't fail the linking
         }
       }
@@ -1778,10 +1765,8 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
 
     // Calculate total slides from opening and body files and update lesson plan
     const newTotalSlides = calculateTotalSlides(currentConfigs);
-    console.log(`📊 Calculated total slides after linking: ${newTotalSlides}`);
 
     // Update lesson plan with new file configs
-    console.log(`🔗 Updating lesson plan with file configs:`, JSON.stringify(currentConfigs, null, 2));
 
     // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
     lessonPlan.file_configs = currentConfigs;
@@ -1789,27 +1774,19 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
 
     // Update total_slides field if it has changed
     if (lessonPlan.total_slides !== newTotalSlides) {
-      console.log(`📊 Updating total_slides from ${lessonPlan.total_slides} to ${newTotalSlides}`);
       lessonPlan.total_slides = newTotalSlides;
     }
 
     const updateResult = await lessonPlan.save({ transaction });
-    console.log(`🔗 Lesson plan file_configs updated`);
 
     // Force reload to verify update persisted
     await lessonPlan.reload({ transaction });
-    console.log(`🔗 After reload - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
     // Commit transaction - everything succeeded
-    console.log(`🔗 Attempting to commit transaction...`);
     await transaction.commit();
-    console.log(`✅ File product linking transaction committed successfully`);
 
     // Verify the update persisted after commit
     const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
-    console.log(`🔗 Post-commit verification - file_configs length:`, verifyLessonPlan?.file_configs?.files?.length || 0);
-
-    console.log(`🎉 File product linking completed successfully`);
 
     res.status(201).json({
       message: 'File product linked successfully',
@@ -1825,7 +1802,6 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
     });
 
   } catch (error) {
-    console.error('❌ File product linking failed:', error);
 
     // Rollback database transaction
     await transaction.rollback();
@@ -1844,7 +1820,6 @@ router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenti
   const transaction = await sequelize.transaction();
 
   try {
-    console.log(`🔗❌ Starting File product unlinking for lesson plan ${lessonPlanId}, file ${fileId}`);
 
     // Get user information
     const user = await models.User.findOne({ where: { id: req.user.uid } });
@@ -1880,7 +1855,6 @@ router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenti
     }
 
     const fileConfig = currentConfigs.files[fileIndex];
-    console.log(`🔗❌ Found file config:`, fileConfig);
 
     // Only allow unlinking File products (not asset-only files)
     if (fileConfig.is_asset_only === true) {
@@ -1891,33 +1865,24 @@ router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenti
     }
 
     // Remove file from lesson plan configs (the File product itself remains untouched)
-    console.log(`🔗❌ Removing File product link from lesson plan configs (index ${fileIndex})`);
     currentConfigs.files.splice(fileIndex, 1);
 
     // Update lesson plan with new file configs
-    console.log(`🔗❌ Updating lesson plan with updated file configs:`, JSON.stringify(currentConfigs, null, 2));
 
     // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
     lessonPlan.file_configs = currentConfigs;
     lessonPlan.changed('file_configs', true);
 
     const updateResult = await lessonPlan.save({ transaction });
-    console.log(`🔗❌ Lesson plan file_configs updated`);
 
     // Force reload to verify update persisted
     await lessonPlan.reload({ transaction });
-    console.log(`🔗❌ After reload - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
     // Commit transaction - everything succeeded
-    console.log(`🔗❌ Attempting to commit transaction...`);
     await transaction.commit();
-    console.log(`✅ File product unlinking transaction committed successfully`);
 
     // Verify the update persisted after commit
     const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
-    console.log(`🔗❌ Post-commit verification - file_configs length:`, verifyLessonPlan?.file_configs?.files?.length || 0);
-
-    console.log(`🎉 File product unlinking completed successfully`);
 
     res.json({
       message: 'File product unlinked successfully',
@@ -1932,7 +1897,6 @@ router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenti
     });
 
   } catch (error) {
-    console.error('❌ File product unlinking failed:', error);
 
     // Rollback database transaction
     await transaction.rollback();
@@ -1951,7 +1915,6 @@ router.delete('/lesson-plan/:lessonPlanId/file/:fileId', authenticateToken, asyn
   const transaction = await sequelize.transaction();
 
   try {
-    console.log(`🗑️ Starting lesson plan file deletion for lesson plan ${lessonPlanId}, file ${fileId}`);
 
     // Get user information
     const user = await models.User.findOne({ where: { id: req.user.uid } });
@@ -1987,49 +1950,36 @@ router.delete('/lesson-plan/:lessonPlanId/file/:fileId', authenticateToken, asyn
     }
 
     const fileConfig = currentConfigs.files[fileIndex];
-    console.log(`🗑️ Found file config:`, fileConfig);
 
     // 1. Get the File entity
     const fileEntity = await models.File.findByPk(fileId, { transaction });
     if (!fileEntity) {
-      console.log(`⚠️ File entity ${fileId} not found, continuing with config removal`);
     }
 
     // 2. Delete the File entity (this should also clean up S3 via hooks/triggers)
     if (fileEntity) {
-      console.log(`🗑️ Deleting File entity: ${fileEntity.id}`);
       await fileEntity.destroy({ transaction });
-      console.log(`✅ File entity deleted`);
     }
 
     // 3. Remove file from lesson plan configs
-    console.log(`🗑️ Removing file from lesson plan configs (index ${fileIndex})`);
     currentConfigs.files.splice(fileIndex, 1);
 
     // 4. Update lesson plan with new file configs
-    console.log(`🗑️ Updating lesson plan with updated file configs:`, JSON.stringify(currentConfigs, null, 2));
 
     // CRITICAL: Mark the JSONB field as changed so Sequelize persists the update
     lessonPlan.file_configs = currentConfigs;
     lessonPlan.changed('file_configs', true);
 
     const updateResult = await lessonPlan.save({ transaction });
-    console.log(`🗑️ Lesson plan file_configs updated`);
 
     // Force reload to verify update persisted
     await lessonPlan.reload({ transaction });
-    console.log(`🗑️ After reload - lessonPlan.file_configs:`, JSON.stringify(lessonPlan.file_configs, null, 2));
 
     // Commit transaction - everything succeeded
-    console.log(`🗑️ Attempting to commit transaction...`);
     await transaction.commit();
-    console.log(`✅ File deletion transaction committed successfully`);
 
     // Verify the update persisted after commit
     const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
-    console.log(`🗑️ Post-commit verification - file_configs length:`, verifyLessonPlan?.file_configs?.files?.length || 0);
-
-    console.log(`🎉 File deletion completed successfully`);
 
     res.json({
       message: 'File deleted successfully',
@@ -2043,7 +1993,6 @@ router.delete('/lesson-plan/:lessonPlanId/file/:fileId', authenticateToken, asyn
     });
 
   } catch (error) {
-    console.error('❌ File deletion failed:', error);
 
     // Rollback database transaction
     await transaction.rollback();
@@ -2098,13 +2047,12 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
           action_type: 'onboarding_selection'  // Only remove onboarding test selections
         }
       });
-      console.log(`✅ Cleared test subscription history for user ${targetUser.email}`);
     } catch (subscriptionError) {
-      console.warn('Could not clear subscription history:', subscriptionError);
+      // Could not clear subscription history - not critical
       // Don't fail the reset if subscription cleanup fails
     }
 
-    console.log(`✅ Admin ${requestingUser.email} reset onboarding for user ${targetUser.email}`);
+    clog(`✅ Admin ${requestingUser.email} reset onboarding for user ${targetUser.email}`);
 
     res.json({
       message: 'User onboarding status reset successfully',
@@ -2117,7 +2065,6 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
     });
 
   } catch (error) {
-    console.error('Error resetting user onboarding:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2128,15 +2075,10 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
     const { lessonPlanId } = req.params;
     const userId = req.user.uid;
 
-    console.log(`🎯 Lesson plan presentation request:`, {
-      lessonPlanId,
-      userId
-    });
 
     // Check user access to the lesson plan
     const hasAccess = await checkLessonPlanAccess(userId, lessonPlanId);
     if (!hasAccess) {
-      console.log(`🚫 Access denied for user ${userId} to lesson plan ${lessonPlanId}`);
       return res.status(403).json({
         error: 'Access denied',
         message: 'You need to purchase this lesson plan to view the presentation',
@@ -2144,13 +2086,11 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
       });
     }
 
-    console.log(`✅ Access granted for user ${userId} to lesson plan ${lessonPlanId}`);
 
     // Get presentation files
     const presentationFiles = await getLessonPlanPresentationFiles(lessonPlanId);
 
     if (!presentationFiles.hasPresentation) {
-      console.log(`📋 No presentation files found for lesson plan ${lessonPlanId}`);
       return res.status(404).json({
         error: 'No presentation found',
         message: 'This lesson plan does not have any presentation files',
@@ -2161,12 +2101,6 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
     // Get ordered URLs for frontend consumption
     const orderedUrls = getOrderedPresentationUrls(presentationFiles);
 
-    console.log(`🎯 Returning presentation data for lesson plan ${lessonPlanId}:`, {
-      openingFiles: presentationFiles.opening.length,
-      bodyFiles: presentationFiles.body.length,
-      totalSlides: presentationFiles.totalSlides,
-      orderedUrls: orderedUrls.length
-    });
 
     res.json({
       success: true,
@@ -2191,7 +2125,6 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
     });
 
   } catch (error) {
-    console.error('❌ Error getting lesson plan presentation:', error);
     res.status(500).json({
       error: 'Failed to get presentation',
       message: error.message
@@ -2205,7 +2138,6 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
   let uploadedS3Key = null;
 
   try {
-    console.log('📤 Starting atomic GameContent file upload');
 
     // Get user information
     const user = await models.User.findOne({ where: { id: req.user.uid } });
@@ -2269,7 +2201,6 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
     }
 
     // Generate ID for the GameContent entity
-    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 11);
 
     // 1. Create GameContent entity within transaction
     const gameContentData = {
@@ -2280,9 +2211,7 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
       metadata: parsedMetadata
     };
 
-    console.log('📤 Creating GameContent entity with data:', gameContentData);
     const gameContentEntity = await models.GameContent.create(gameContentData, { transaction });
-    console.log('✅ GameContent entity created:', gameContentEntity.id);
 
     // Declare fileName variable for broader scope
     let fileName = null;
@@ -2299,14 +2228,12 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
           const decodedName = decodeURIComponent(escape(fileName));
           if (decodedName !== fileName && decodedName.length > 0) {
             fileName = decodedName;
-            console.log(`📤 Decoded filename from "${req.file.originalname}" to "${fileName}"`);
           }
         }
       } catch (error) {
-        console.log(`📤 Filename decoding failed, using original: ${error.message}`);
+        // Filename decoding failed, continue with original
       }
 
-      console.log(`📤 Processing file: ${fileName}, semantic_type: ${semantic_type}`);
 
       // Map semantic type to asset type for S3 upload
       const assetTypeMap = {
@@ -2320,7 +2247,6 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
 
       // Create predictable S3 path using constructS3Path
       const s3Key = constructS3Path('gamecontent', gameContentEntity.id, assetType, fileName);
-      console.log(`📤 Using predictable S3 path: ${s3Key}`);
 
       // Upload file using unified asset upload method
       const uploadResult = await fileService.uploadAsset({
@@ -2338,7 +2264,6 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
       }
 
       uploadedS3Key = uploadResult.s3Key;
-      console.log('✅ File uploaded successfully:', uploadedS3Key);
 
       // 3. Update GameContent entity with appropriate value
       let valueToStore = uploadedS3Key; // Default to S3 key for security
@@ -2351,16 +2276,10 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
       await gameContentEntity.update({
         value: valueToStore
       }, { transaction });
-
-      console.log('✅ GameContent entity updated with value:', valueToStore);
     }
 
     // Commit transaction - everything succeeded
-    console.log('📤 Attempting to commit transaction...');
     await transaction.commit();
-    console.log('✅ Transaction committed successfully');
-
-    console.log('🎉 Atomic GameContent upload completed successfully');
 
     // Prepare response with API URL for image files
     const response = {
@@ -2392,7 +2311,6 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
     res.status(201).json(response);
 
   } catch (error) {
-    console.error('❌ Atomic GameContent upload failed:', error);
 
     // Rollback database transaction
     await transaction.rollback();
@@ -2401,9 +2319,7 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
     if (uploadedS3Key) {
       try {
         await fileService.deleteS3Object(uploadedS3Key);
-        console.log(`🧹 Cleaned up S3 file: ${uploadedS3Key}`);
       } catch (s3Error) {
-        console.error('Failed to clean up S3 file:', s3Error);
       }
     }
 
@@ -2413,5 +2329,6 @@ router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'),
     });
   }
 });
+
 
 export default router;

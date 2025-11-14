@@ -58,7 +58,6 @@ router.post('/', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error creating log entry:', error);
     res.status(500).json({
       error: 'Failed to create log entry'
     });
@@ -104,7 +103,6 @@ router.get('/', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching logs:', error);
     res.status(500).json({
       error: 'Failed to fetch logs'
     });

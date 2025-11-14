@@ -29,7 +29,6 @@ class SecretsService {
       // For now, fallback to environment variables with validation
       this.loadFromEnvironmentWithValidation();
     } catch (error) {
-      console.error('❌ Failed to load secrets:', error.message);
       throw new Error('Critical security error: Cannot initialize without proper secrets');
     }
   }
@@ -64,7 +63,6 @@ class SecretsService {
       }
     }
 
-    console.log('✅ Secrets loaded from environment');
   }
 
   loadFromEnvironmentForStaging() {
@@ -100,7 +98,6 @@ class SecretsService {
       if (condition !== false && !value && required !== false) {
         if (key === 'DB_PASSWORD' && process.env.DATABASE_URL_SSL) {
           // Skip DB_PASSWORD if using DATABASE_URL_SSL
-          console.log(`ℹ️ Skipping ${key} - using DATABASE_URL_SSL`);
           continue;
         }
         throw new Error(`Required secret ${key} is not set for staging`);
@@ -118,7 +115,6 @@ class SecretsService {
       }
     }
 
-    console.log('✅ Secrets loaded for staging environment');
   }
 
   loadFromEnvironmentWithValidation() {
@@ -146,7 +142,6 @@ class SecretsService {
       throw new Error('JWT_SECRET does not meet security requirements');
     }
 
-    console.log('✅ Secrets loaded and validated for production');
   }
 
   // Check if a secret meets security requirements
@@ -178,7 +173,6 @@ class SecretsService {
   get(key) {
     const value = this.secrets.get(key);
     if (!value) {
-      console.warn(`⚠️ Secret ${key} not found`);
       return null;
     }
     return value;
@@ -262,14 +256,12 @@ class SecretsService {
           parsedAccount.private_key_id === 'staging-placeholder';
 
         if (isPlaceholder) {
-          console.warn('⚠️ Firebase service account contains placeholder values - skipping Firebase initialization');
           return null;
         }
       }
 
       return parsedAccount;
     } catch (error) {
-      console.error('Failed to parse Firebase service account:', error);
       return null;
     }
   }
@@ -289,7 +281,6 @@ class SecretsService {
       throw new Error(`Missing required secrets: ${missing.join(', ')}`);
     }
 
-    console.log('✅ All required secrets are present and validated');
     return true;
   }
 

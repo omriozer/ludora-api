@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import db from '../models/index.js';
+import { cerror } from '../lib/utils.js';
 
 /**
  * Video Access Control Service
@@ -55,7 +56,7 @@ export async function checkVideoAccess(userId, videoId) {
     };
 
   } catch (error) {
-    console.error('Error checking video access:', error);
+    cerror('Error checking video access:', error);
     return {
       hasAccess: false,
       reason: 'error',
@@ -377,7 +378,7 @@ export async function videoAccessMiddleware(req, res, next) {
     
     next();
   } catch (error) {
-    console.error('Video access middleware error:', error);
+    cerror('Video access middleware error:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to verify video access'

@@ -11,7 +11,6 @@ const router = express.Router();
  */
 router.get('/israeli-cities', async (req, res) => {
   try {
-    console.log('🏛️ PublicAPI: Fetching Israeli cities from data.gov.il via backend proxy');
 
     const options = {
       hostname: 'data.gov.il',
@@ -71,7 +70,6 @@ router.get('/israeli-cities', async (req, res) => {
       }, [])
       .sort((a, b) => a.localeCompare(b, 'he'));
 
-    console.log(`✅ PublicAPI: Successfully fetched ${cities.length} Israeli cities`);
 
     res.json({
       success: true,
@@ -82,7 +80,6 @@ router.get('/israeli-cities', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ PublicAPI: Error fetching Israeli cities:', error);
 
     // Return fallback list of major Israeli cities
     const fallbackCities = [
@@ -98,7 +95,6 @@ router.get('/israeli-cities', async (req, res) => {
       'קלנסווה', 'שפרעם', 'הוד השרון', 'ביתר עילית', 'אפרתה'
     ].sort((a, b) => a.localeCompare(b, 'he'));
 
-    console.log(`🔄 PublicAPI: Using fallback cities list (${fallbackCities.length} cities)`);
 
     res.json({
       success: true,
@@ -119,7 +115,6 @@ router.get('/data-gov-il/:resourceId', async (req, res) => {
     const { resourceId } = req.params;
     const { limit = 1000 } = req.query;
 
-    console.log(`🏛️ PublicAPI: Fetching data.gov.il resource: ${resourceId}`);
 
     const options = {
       hostname: 'data.gov.il',
@@ -164,7 +159,6 @@ router.get('/data-gov-il/:resourceId', async (req, res) => {
       throw new Error('Invalid response format from data.gov.il');
     }
 
-    console.log(`✅ PublicAPI: Successfully fetched ${data.result.records?.length || 0} records`);
 
     res.json({
       success: true,
@@ -173,7 +167,6 @@ router.get('/data-gov-il/:resourceId', async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`❌ PublicAPI: Error fetching resource ${req.params.resourceId}:`, error);
 
     res.status(500).json({
       success: false,

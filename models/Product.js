@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import { generateId } from './baseModel.js';
 import DeprecationWarnings from '../utils/deprecationWarnings.js';
+import { clog } from '../lib/utils.js';
 
 export default (sequelize) => {
   const Product = sequelize.define('Product', {
@@ -119,7 +120,7 @@ export default (sequelize) => {
 
   // Hook to auto-set is_published=false for File products without documents
   Product.addHook('beforeSave', async (product, options) => {
-    console.log('🔍 Product beforeSave hook triggered:', {
+    clog('🔍 Product beforeSave hook triggered:', {
       id: product.id,
       product_type: product.product_type,
       is_published: product.is_published,
@@ -132,7 +133,7 @@ export default (sequelize) => {
       const models = sequelize.models;
       const fileEntity = await models.File.findByPk(product.entity_id);
 
-      console.log('🔍 File entity check:', {
+      clog('🔍 File entity check:', {
         entity_id: product.entity_id,
         fileEntity: !!fileEntity,
         file_name: fileEntity?.file_name
@@ -141,7 +142,7 @@ export default (sequelize) => {
       // If File has no file_name, force is_published to false
       if (!fileEntity || !fileEntity.file_name) {
         product.is_published = false;
-        console.log(`⚠️ Auto-set is_published=false for Product ${product.id} - File entity has no document`);
+        clog(`⚠️ Auto-set is_published=false for Product ${product.id} - File entity has no document`);
       }
     }
   });
@@ -150,6 +151,15 @@ export default (sequelize) => {
     Product.belongsTo(models.User, {
       foreignKey: 'creator_user_id',
       as: 'creator'
+    });
+
+    // Legacy relationship - many-to-many with CurriculumItem through junction table
+    // This is kept for backward compatibility if needed
+    Product.belongsToMany(models.CurriculumItem, {
+      through: 'curriculum_product',
+      foreignKey: 'product_id',
+      otherKey: 'curriculum_item_id',
+      as: 'curriculumItems'
     });
 
     // Store models reference for polymorphic lookups

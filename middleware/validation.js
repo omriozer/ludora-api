@@ -5,22 +5,16 @@ import { GAME_TYPE_KEYS } from '../config/gameTypes.js';
 // Generic validation middleware
 export function validateBody(schema) {
   return (req, res, next) => {
-    console.log('Validating request body:', JSON.stringify(req.body, null, 2));
-    
     const { error, value } = schema.validate(req.body, { abortEarly: false });
-    
+
     if (error) {
       const errorMessages = error.details.map(detail => detail.message);
-      console.log('Validation errors:', errorMessages);
-      console.log('Full error details:', error.details);
-      
       return res.status(400).json({
         error: 'Validation failed',
         details: errorMessages
       });
     }
-    
-    console.log('Validation passed, sanitized body:', JSON.stringify(value, null, 2));
+
     req.body = value; // Use sanitized values
     next();
   };
@@ -451,12 +445,12 @@ export const customValidators = {
   validateEntityType: (req, res, next) => {
     const validEntityTypes = [
       'user', 'settings', 'registration', 'emailtemplate', 'category',
-      'coupon', 'supportmessage', 'notification', 'sitetext', 'product',
+      'coupon', 'supportmessage', 'notification', 'product',
       'purchase', 'workshop', 'course', 'file', 'tool', 'emaillog',
       'game', 'gamecontent', 'audiofile', 'gameaudiosettings', 'word', 'worden', 'image',
       'qa', 'grammar', 'contentlist', 'contentrelationship', 'subscriptionplan',
       'webhooklog', 'pendingsubscription', 'subscriptionhistory', 'gamesession',
-      'attribute', 'gamecontenttag', 'contenttag',
+      'attribute', 'gamecontenttag', 'contenttag', 'contenttopic',
       'school', 'classroom', 'studentinvitation', 'parentconsent',
       'classroommembership', 'curriculum', 'curriculumitem', 'curriculumproduct',
       'lessonplan'

@@ -16,7 +16,6 @@ class EntityService {
   get models() {
     if (!this._models) {
       this._models = models;
-      console.log('🔍 DEBUG: EntityService lazy-loaded models:', Object.keys(this._models));
     }
     return this._models;
   }
@@ -69,7 +68,6 @@ class EntityService {
       // Default fallback
       return [['created_at', 'DESC']];
     } catch (error) {
-      console.warn('Error processing sort parameter:', error);
       return [['created_at', 'DESC']];
     }
   }
@@ -107,7 +105,6 @@ class EntityService {
 
       return s3Key;
     } catch (error) {
-      console.warn(`Failed to parse S3 URL: ${fileUrl}`, error);
       return null;
     }
   }
@@ -151,15 +148,24 @@ class EntityService {
       .replace(/^[a-z]/, char => char.toUpperCase());
   }
 
+  // Handle entity includes for specific entity types
+  handleEntityIncludes(entityType, include, queryOptions) {
+    const includeValue = Array.isArray(include) ? include : [include];
+
+
+
+    return false; // Include parameter not handled
+  }
+
   // Find entities with query filtering
   async find(entityType, query = {}, options = {}) {
     try {
       const Model = this.getModel(entityType);
 
-      // Extract sort parameter from query if it exists
-      const { sort, ...whereQuery } = query;
+      // Extract special parameters from query
+      const { sort, include, ...whereQuery } = query;
 
-      // Build where clause from query parameters (excluding sort)
+      // Build where clause from query parameters (excluding special params)
       const where = this.buildWhereClause(whereQuery, entityType);
 
       // Handle sort parameter
@@ -174,17 +180,26 @@ class EntityService {
         order,
         ...options
       };
-      
+
+      // Handle include parameter for entity associations
+      if (include && this.handleEntityIncludes(entityType, include, queryOptions)) {
+        // Include was handled by handleEntityIncludes
+      }
+
       // Include creator information for entities that have creator relationships
       const entitiesWithCreators = PRODUCT_TYPES_WITH_CREATORS;
       // Exclude curriculum entities as they use teacher_user_id instead of creator_user_id
       if (entitiesWithCreators.includes(entityType) && !['curriculum', 'curriculumitem'].includes(entityType)) {
-        queryOptions.include = [{
+        if (!queryOptions.include) {
+          queryOptions.include = [];
+        }
+
+        queryOptions.include.push({
           model: this.models.User,
           as: 'creator',
           attributes: ['id', 'full_name', 'email'],
           required: false // LEFT JOIN to include entities even without creators
-        }];
+        });
 
         // Product entities use polymorphic associations via entity_id + product_type
         // No direct associations to include here
@@ -193,7 +208,7 @@ class EntityService {
         // Product references entities via polymorphic association
         // Use separate methods to get product data when needed
       }
-      
+
       // Allow options to override the order if explicitly provided
       if (options.order) {
         queryOptions.order = options.order;
@@ -227,13 +242,12 @@ class EntityService {
 
       return results;
     } catch (error) {
-      console.error(`Error finding ${entityType}:`, error);
       throw new Error(`Failed to find ${entityType}: ${error.message}`);
     }
   }
 
   // Find single entity by ID
-  async findById(entityType, id) {
+  async findById(entityType, id, include = null) {
     if (entityType === 'game') {
       return await this.findGameById(id);
     }
@@ -246,14 +260,22 @@ class EntityService {
       const queryOptions = { where: { id } };
       const entitiesWithCreators = PRODUCT_TYPES_WITH_CREATORS;
 
+      // Handle include parameter for entity associations
+      if (include && this.handleEntityIncludes(entityType, include, queryOptions)) {
+        // Include was handled by handleEntityIncludes
+      }
+
       // Exclude curriculum entities as they use teacher_user_id instead of creator_user_id
       if (entitiesWithCreators.includes(entityType) && !['curriculum', 'curriculumitem'].includes(entityType)) {
-        queryOptions.include = [{
+        if (!queryOptions.include) {
+          queryOptions.include = [];
+        }
+        queryOptions.include.push({
           model: this.models.User,
           as: 'creator',
           attributes: ['id', 'full_name', 'email'],
           required: false // LEFT JOIN to include entities even without creators
-        }];
+        });
       }
 
       const entity = await Model.findOne(queryOptions);
@@ -278,7 +300,6 @@ class EntityService {
 
       return entity;
     } catch (error) {
-      console.error(`Error finding ${entityType} by ID:`, error);
       throw error;
     }
   }
@@ -320,7 +341,6 @@ class EntityService {
       const entity = await Model.create(entityData);
       return entity;
     } catch (error) {
-      console.error(`Error creating ${entityType}:`, error);
       throw new Error(`Failed to create ${entityType}: ${error.message}`);
     }
   }
@@ -350,7 +370,6 @@ class EntityService {
 
         // If this product references a normalized entity type, route to updateProductTypeEntity
         if (NORMALIZED_PRODUCT_TYPES.includes(product.product_type)) {
-          console.log(`🔄 Routing Product update to updateProductTypeEntity for ${product.product_type} entity`);
           return await this.updateProductTypeEntity(product.product_type, product.entity_id, data, updatedBy);
         }
         // Otherwise, fall through to regular product update
@@ -374,27 +393,10 @@ class EntityService {
       delete updateData.created_at;
       // Note: creator_user_id is allowed to be updated for admin users (handled in routes)
 
-      console.log(`📝 EntityService updating ${entityType} with data:`, updateData);
-      console.log('📝 Video fields in EntityService:', {
-        marketing_video_type: updateData.marketing_video_type,
-        marketing_video_id: updateData.marketing_video_id,
-        marketing_video_title: updateData.marketing_video_title,
-        marketing_video_duration: updateData.marketing_video_duration,
-        video_file_url: updateData.video_file_url
-      });
-
-      // Debug logging for product update issues
-      if (entityType === 'product') {
-        console.log('🔍 EntityService Product update debug:');
-        console.log('   updateData.short_description:', updateData.short_description);
-        console.log('   updateData.is_published:', updateData.is_published);
-        console.log('   updateData.tags:', updateData.tags);
-      }
 
       await entity.update(updateData);
       return entity;
     } catch (error) {
-      console.error(`Error updating ${entityType}:`, error);
       throw error;
     }
   }
@@ -417,7 +419,6 @@ class EntityService {
       const results = await Model.bulkCreate(entities);
       return results;
     } catch (error) {
-      console.error(`Error bulk creating ${entityType}:`, error);
       throw new Error(`Failed to bulk create ${entityType}: ${error.message}`);
     }
   }
@@ -436,10 +437,8 @@ class EntityService {
         // Clean up S3 assets for each file
         for (const fileId of ids) {
           try {
-            const result = await deleteAllFileAssets(fileId);
-            console.log(`🧹 Bulk delete - cleaned up file assets for ${fileId}:`, result);
+            await deleteAllFileAssets(fileId);
           } catch (cleanupError) {
-            console.error(`❌ Bulk delete - failed to cleanup assets for file ${fileId}:`, cleanupError);
             // Continue with other files even if one cleanup fails
           }
         }
@@ -451,12 +450,8 @@ class EntityService {
           try {
             const marketingVideoKey = constructS3Path(entityType, entityId, 'marketing-video', 'video.mp4');
             await fileService.deleteS3Object(marketingVideoKey);
-            console.log(`🧹 Bulk delete - deleted marketing video for ${entityType} ${entityId}`);
           } catch (videoError) {
             // Marketing video might not exist, which is okay
-            if (videoError.code !== 'NoSuchKey' && videoError.code !== 'NotFound') {
-              console.error(`❌ Bulk delete - failed to delete marketing video for ${entityType} ${entityId}:`, videoError);
-            }
             // Continue with other entities even if one video cleanup fails
           }
         }
@@ -482,14 +477,10 @@ class EntityService {
               const s3Key = this.extractS3KeyFromUrl(audioFile.file_url);
               if (s3Key) {
                 await fileService.deleteS3Object(s3Key);
-                console.log(`🧹 Bulk delete - deleted audio file S3 object for AudioFile ${audioFile.id}: ${s3Key}`);
               }
             }
           } catch (audioError) {
             // Audio file might not exist in S3, which is okay
-            if (audioError.code !== 'NoSuchKey' && audioError.code !== 'NotFound') {
-              console.error(`❌ Bulk delete - failed to delete audio file for AudioFile ${audioFile.id}:`, audioError);
-            }
             // Continue with other audio files even if one cleanup fails
           }
         }
@@ -519,7 +510,6 @@ class EntityService {
         }
 
         if (allFileIds.size > 0) {
-          console.log(`🧹 Bulk delete - cleaning up ${allFileIds.size} files referenced by ${lessonPlans.length} lesson plans`);
 
           // Delete each referenced File entity (this will trigger their S3 cleanup)
           for (const fileId of allFileIds) {
@@ -534,15 +524,11 @@ class EntityService {
 
                 // Then delete the File entity
                 await fileEntity.destroy({ transaction });
-                console.log(`🧹 Bulk delete - deleted File entity ${fileId} and its assets`);
               }
             } catch (fileError) {
-              console.error(`❌ Bulk delete - failed to delete File entity ${fileId}:`, fileError);
               // Continue with other files even if one fails
             }
           }
-        } else {
-          console.log(`ℹ️ No files to cleanup for lesson plans: ${ids.join(', ')}`);
         }
       }
 
@@ -558,7 +544,6 @@ class EntityService {
           },
           transaction
         });
-        console.log(`🧹 Bulk delete - cleaned up ${entityType} product references`);
       }
 
       // Delete the entities
@@ -572,7 +557,6 @@ class EntityService {
       });
 
       await transaction.commit();
-      console.log(`✅ Bulk deleted ${deletedCount} ${entityType} entities with proper cleanup`);
 
       return {
         deletedCount,
@@ -580,7 +564,6 @@ class EntityService {
       };
     } catch (error) {
       await transaction.rollback();
-      console.error(`❌ Error bulk deleting ${entityType}:`, error);
       throw new Error(`Failed to bulk delete ${entityType}: ${error.message}`);
     }
   }
@@ -607,8 +590,8 @@ class EntityService {
     const where = {};
 
     Object.entries(query).forEach(([key, value]) => {
-      // Skip pagination parameters
-      if (["limit", "offset", "order"].includes(key)) {
+      // Skip special parameters that are handled separately
+      if (["limit", "offset", "order", "sort", "include"].includes(key)) {
         return;
       }
 
@@ -693,9 +676,6 @@ class EntityService {
   // Get all available entity types
   getAvailableEntityTypes() {
     const availableTypes = Object.keys(this.models);
-    console.log('🔍 DEBUG: EntityService.getAvailableEntityTypes():', availableTypes);
-    console.log('🔍 DEBUG: LessonPlan in models?:', 'LessonPlan' in this.models);
-    console.log('🔍 DEBUG: lessonplan toPascalCase result:', this.toPascalCase('lessonplan'));
     return availableTypes;
   }
 
@@ -707,7 +687,6 @@ class EntityService {
 
       return await Model.count({ where });
     } catch (error) {
-      console.error(`Error counting ${entityType}:`, error);
       throw new Error(`Failed to count ${entityType}: ${error.message}`);
     }
   }
@@ -741,18 +720,14 @@ class EntityService {
       // Create game-type-specific settings if provided
       if (game.game_type && data[`${game.game_type.replace('_game', '')}_settings`]) {
         const typeSettings = data[`${game.game_type.replace('_game', '')}_settings`];
-        console.log(`Attempting to create ${game.game_type} settings:`, typeSettings);
 
         // Skip type settings creation for drafts or if method doesn't exist
         if (typeof game.createTypeSettings === 'function') {
           try {
             await game.createTypeSettings(typeSettings);
           } catch (typeError) {
-            console.warn(`Failed to create type settings, continuing without them:`, typeError.message);
             // Continue without type settings for drafts
           }
-        } else {
-          console.log('createTypeSettings method not found, skipping type settings');
         }
       }
 
@@ -767,10 +742,9 @@ class EntityService {
         try {
           await transaction.rollback();
         } catch (rollbackError) {
-          console.error('Error rolling back transaction:', rollbackError);
+          // Rollback error - transaction may already be rolled back
         }
       }
-      console.error('Error creating game:', error);
       throw new Error(`Failed to create game: ${error.message}`);
     }
   }
@@ -825,7 +799,6 @@ class EntityService {
       return await this.findById('game', id);
     } catch (error) {
       await transaction.rollback();
-      console.error('Error updating game:', error);
       throw error;
     }
   }
@@ -844,7 +817,6 @@ class EntityService {
 
       return game;
     } catch (error) {
-      console.error('Error finding game by ID:', error);
       throw error;
     }
   }
@@ -939,7 +911,6 @@ class EntityService {
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`Error creating ${entityType} with product:`, error);
       throw new Error(`Failed to create ${entityType}: ${error.message}`);
     }
   }
@@ -1037,28 +1008,12 @@ class EntityService {
       delete entityFields.id;
       delete entityFields.created_at;
 
-      console.log(`📝 Updating Product for ${entityType}:`, productFields);
-      console.log(`📝 Updating ${entityType} entity:`, entityFields);
-
-      // Special debugging for file_configs
-      if (entityType === 'lesson_plan' && entityFields.file_configs) {
-        console.log(`🔍 LESSON PLAN file_configs DEBUG:`);
-        console.log(`   - file_configs type:`, typeof entityFields.file_configs);
-        console.log(`   - file_configs value:`, JSON.stringify(entityFields.file_configs, null, 2));
-        console.log(`   - files array length:`, entityFields.file_configs?.files?.length || 'no files array');
-      }
 
       // Update both Product and Entity
       await product.update(productFields, { transaction });
 
-      // Enhanced logging for lesson plan entity update
-      if (entityType === 'lesson_plan') {
-        console.log(`🔍 BEFORE lesson plan update - current file_configs:`, JSON.stringify(entity.file_configs, null, 2));
-        await entity.update(entityFields, { transaction });
-        console.log(`🔍 AFTER lesson plan update - new file_configs:`, JSON.stringify(entity.file_configs, null, 2));
-      } else {
-        await entity.update(entityFields, { transaction });
-      }
+      // Update entity
+      await entity.update(entityFields, { transaction });
 
       await transaction.commit();
 
@@ -1070,7 +1025,6 @@ class EntityService {
 
     } catch (error) {
       await transaction.rollback();
-      console.error(`Error updating ${entityType} with product:`, error);
       throw error;
     }
   }
@@ -1104,7 +1058,6 @@ class EntityService {
         [entityType]: entity.toJSON()
       };
     } catch (error) {
-      console.error(`Error finding ${entityType} with product:`, error);
       throw error;
     }
   }
@@ -1137,7 +1090,6 @@ class EntityService {
       return { id: productId, deleted: true, entityDeleted: !!entity };
     } catch (error) {
       await transaction.rollback();
-      console.error(`Error deleting product with cascade:`, error);
       throw error;
     }
   }
@@ -1178,10 +1130,9 @@ class EntityService {
         if (entityType === 'file') {
           try {
             const { deleteAllFileAssets } = await import('../routes/assets.js');
-            const result = await deleteAllFileAssets(id);
-            console.log(`Successfully deleted file assets for entity ${id}:`, result);
+            await deleteAllFileAssets(id);
           } catch (fileError) {
-            console.error(`Error deleting file assets for entity ${id}:`, fileError);
+            // Continue with deletion even if file cleanup fails
           }
         }
 
@@ -1190,14 +1141,8 @@ class EntityService {
           try {
             const marketingVideoKey = constructS3Path(entityType, id, 'marketing-video', 'video.mp4');
             await fileService.deleteS3Object(marketingVideoKey);
-            console.log(`✅ Deleted marketing video for ${entityType} ${id}`);
           } catch (videoError) {
             // Marketing video might not exist, which is okay
-            if (videoError.code !== 'NoSuchKey' && videoError.code !== 'NotFound') {
-              console.error(`❌ Failed to delete marketing video for ${entityType} ${id}:`, videoError);
-            } else {
-              console.log(`ℹ️ No marketing video found for ${entityType} ${id} (expected)`);
-            }
           }
         }
 
@@ -1210,18 +1155,10 @@ class EntityService {
               const s3Key = this.extractS3KeyFromUrl(entity.file_url);
               if (s3Key) {
                 await fileService.deleteS3Object(s3Key);
-                console.log(`✅ Deleted audio file S3 object for AudioFile ${id}: ${s3Key}`);
               }
-            } else {
-              console.log(`ℹ️ No file_url found for AudioFile ${id}`);
             }
           } catch (audioError) {
             // Audio file might not exist in S3, which is okay
-            if (audioError.code !== 'NoSuchKey' && audioError.code !== 'NotFound') {
-              console.error(`❌ Failed to delete audio file for AudioFile ${id}:`, audioError);
-            } else {
-              console.log(`ℹ️ No audio file found in S3 for AudioFile ${id} (expected)`);
-            }
           }
         }
 
@@ -1234,7 +1171,6 @@ class EntityService {
             const fileIds = files.map(file => file.file_id).filter(Boolean);
 
             if (fileIds.length > 0) {
-              console.log(`🧹 Cleaning up ${fileIds.length} files referenced by LessonPlan ${id}`);
 
               // Delete each referenced File entity (this will trigger their S3 cleanup)
               for (const fileId of fileIds) {
@@ -1249,20 +1185,14 @@ class EntityService {
 
                     // Then delete the File entity
                     await fileEntity.destroy({ transaction });
-                    console.log(`✅ Deleted File entity ${fileId} and its assets`);
-                  } else {
-                    console.log(`ℹ️ File entity ${fileId} not found (may have been deleted already)`);
                   }
                 } catch (fileError) {
-                  console.error(`❌ Failed to delete File entity ${fileId}:`, fileError);
                   // Continue with other files even if one fails
                 }
               }
-            } else {
-              console.log(`ℹ️ No files to cleanup for LessonPlan ${id}`);
             }
           } catch (lessonPlanError) {
-            console.error(`❌ Failed to cleanup files for LessonPlan ${id}:`, lessonPlanError);
+            // Continue with entity deletion even if file cleanup fails
           }
         }
 
@@ -1291,19 +1221,15 @@ class EntityService {
       if (entityType === 'file') {
         try {
           const { deleteFileFromStorage } = await import('../routes/media.js');
-          const fileDeleted = await deleteFileFromStorage(id, entity.creator_user_id);
-          if (fileDeleted) {
-            console.log(`Successfully deleted file storage for entity ${id}`);
-          }
+          await deleteFileFromStorage(id, entity.creator_user_id);
         } catch (fileError) {
-          console.error(`Error deleting file storage for entity ${id}:`, fileError);
+          // Continue with entity deletion even if file storage cleanup fails
         }
       }
 
       await entity.destroy();
       return { id, deleted: true };
     } catch (error) {
-      console.error(`Error deleting ${entityType}:`, error);
       throw error;
     }
   }
@@ -1332,7 +1258,6 @@ class EntityService {
         });
 
         if (recentDuplicate) {
-          console.log('🚫 Prevented rapid duplicate purchase (within 30s):', recentDuplicate.id);
           return recentDuplicate;
         }
       }
@@ -1350,11 +1275,9 @@ class EntityService {
       };
 
       const purchase = await PurchaseModel.create(purchaseData);
-      console.log('✅ Created new purchase:', purchase.id);
       return purchase;
 
     } catch (error) {
-      console.error('Error creating purchase with duplicate check:', error);
       throw new Error(`Failed to create purchase: ${error.message}`);
     }
   }

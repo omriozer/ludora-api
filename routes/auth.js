@@ -6,6 +6,7 @@ import AuthService from '../services/AuthService.js';
 
 const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
+import { clog, cerror } from '../lib/utils.js';
 
 const router = express.Router();
 
@@ -15,7 +16,6 @@ router.post('/login', rateLimiters.auth, validateBody(schemas.login), async (req
     const result = await authService.loginWithEmailPassword(req.body);
     res.json(result);
   } catch (error) {
-    console.error('Login error:', error);
     res.status(401).json({ error: error.message });
   }
 });
@@ -35,12 +35,11 @@ router.post('/register', rateLimiters.auth, validateBody(schemas.register), asyn
         }
       });
     } catch (emailError) {
-      console.warn('Failed to send registration email:', emailError);
+      clog('Failed to send registration email:', emailError);
     }
 
     res.status(201).json(result);
   } catch (error) {
-    console.error('Registration error:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -51,7 +50,6 @@ router.post('/logout', (req, res) => {
     // In production, you might want to invalidate the token
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
-    console.error('Logout error:', error);
     res.status(500).json({ error: 'Logout failed' });
   }
 });
@@ -88,7 +86,6 @@ router.get('/me', authenticateToken, async (req, res) => {
       disabled: !user.is_active, // @deprecated - use is_active
     });
   } catch (error) {
-    console.error('Error fetching user:', error);
     res.status(500).json({ error: 'Failed to fetch user information' });
   }
 });
@@ -156,7 +153,6 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       disabled: !user.is_active,
     });
   } catch (error) {
-    console.error('Error updating user profile:', error);
     res.status(500).json({ error: 'Failed to update user profile' });
   }
 });
@@ -176,7 +172,6 @@ router.post('/custom-token', async (req, res) => {
         const customToken = await admin.auth().createCustomToken(uid, claims);
         return res.json({ customToken });
       } catch (firebaseError) {
-        console.warn('Firebase custom token creation failed:', firebaseError);
       }
     }
 
@@ -196,7 +191,6 @@ router.post('/custom-token', async (req, res) => {
     
     res.json({ customToken });
   } catch (error) {
-    console.error('Error creating custom token:', error);
     res.status(500).json({ error: 'Failed to create custom token' });
   }
 });
@@ -218,7 +212,6 @@ router.post('/set-claims', authenticateToken, async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('Error setting custom claims:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -254,7 +247,6 @@ router.post('/verify', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Token verification error:', error);
     res.status(401).json({
       valid: false,
       error: error.message || 'Invalid or expired token'
@@ -275,7 +267,7 @@ router.post('/forgot-password', rateLimiters.auth, validateBody(schemas.password
         expiresIn: result.expiresIn
       });
     } catch (emailError) {
-      console.warn('Failed to send password reset email:', emailError);
+      clog('Failed to send password reset email:', emailError);
     }
 
     res.json({
@@ -283,7 +275,6 @@ router.post('/forgot-password', rateLimiters.auth, validateBody(schemas.password
       message: 'Password reset instructions sent to your email'
     });
   } catch (error) {
-    console.error('Password reset error:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -294,7 +285,6 @@ router.post('/reset-password', rateLimiters.auth, validateBody(schemas.newPasswo
     const result = await authService.resetPassword(req.body);
     res.json(result);
   } catch (error) {
-    console.error('Password reset error:', error);
     res.status(400).json({ error: error.message });
   }
 });

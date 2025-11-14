@@ -35,12 +35,7 @@ export default function(sequelize) {
     branding_settings: {
       type: DataTypes.JSONB,
       allowNull: true,
-      comment: 'DEPRECATED: Use branding_overrides instead. Complete branding config now in Settings. Kept for backward compatibility.'
-    },
-    branding_overrides: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-      comment: 'File-specific branding overrides (positioning, styling). Content comes from SystemTemplate.'
+      comment: 'File-specific branding settings (positioning, styling). Content comes from SystemTemplate.'
     },
     branding_template_id: {
       type: DataTypes.STRING,
@@ -88,8 +83,8 @@ export default function(sequelize) {
         fields: ['is_asset_only'],
       },
       {
-        fields: ['branding_overrides'],
-        name: 'idx_file_branding_overrides'
+        fields: ['branding_settings'],
+        name: 'idx_file_branding_settings'
       },
       {
         fields: ['branding_template_id'],
@@ -162,14 +157,14 @@ export default function(sequelize) {
   };
 
   // Branding settings standardization methods
-  File.prototype.hasBrandingOverrides = function() {
-    return !!(this.branding_overrides && Object.keys(this.branding_overrides).length > 0);
+  File.prototype.hasBrandingSettings = function() {
+    return !!(this.branding_settings && Object.keys(this.branding_settings).length > 0);
   };
 
-  File.prototype.getBrandingOverrides = function() {
+  File.prototype.getBrandingSettings = function() {
     // Use standardized field if available
-    if (this.branding_overrides) {
-      return this.branding_overrides;
+    if (this.branding_settings) {
+      return this.branding_settings;
     }
     return null;
   };
@@ -181,11 +176,20 @@ export default function(sequelize) {
 
   // Legacy method names for backward compatibility
   File.prototype.hasFooterOverrides = function() {
-    return this.hasBrandingOverrides();
+    return this.hasBrandingSettings();
   };
 
   File.prototype.getFooterOverrides = function() {
-    return this.getBrandingOverrides();
+    return this.getBrandingSettings();
+  };
+
+  // Additional legacy aliases
+  File.prototype.hasBrandingOverrides = function() {
+    return this.hasBrandingSettings();
+  };
+
+  File.prototype.getBrandingOverrides = function() {
+    return this.getBrandingSettings();
   };
 
   File.prototype.shouldAddFooter = function() {
@@ -198,7 +202,7 @@ export default function(sequelize) {
       DeprecationWarnings.warnDirectUsage('file', 'branding_settings', {
         fileId: this.id,
         location: 'File.getLegacyBrandingSettings',
-        message: 'Use branding_overrides with Settings.branding_settings merge instead'
+        message: 'Use branding_settings with Settings.branding_settings merge instead'
       });
     }
     return this.branding_settings;
@@ -211,16 +215,16 @@ export default function(sequelize) {
   // Branding merge helper (for use with Settings branding_settings)
   File.prototype.mergeWithSystemBrandingSettings = function(systemBrandingSettings) {
     if (!systemBrandingSettings) {
-      return this.branding_overrides || {};
+      return this.branding_settings || {};
     }
 
-    if (!this.hasBrandingOverrides()) {
+    if (!this.hasBrandingSettings()) {
       return systemBrandingSettings;
     }
 
     // Deep merge system settings with file overrides
     const merged = JSON.parse(JSON.stringify(systemBrandingSettings));
-    const overrides = this.branding_overrides;
+    const overrides = this.branding_settings;
 
     if (overrides.logo) {
       merged.logo = { ...merged.logo, ...overrides.logo };
@@ -264,16 +268,16 @@ export default function(sequelize) {
   // Enhanced branding merge helper for SystemTemplate integration
   File.prototype.mergeWithTemplateData = function(templateData) {
     if (!templateData) {
-      return this.branding_overrides || {};
+      return this.branding_settings || {};
     }
 
-    if (!this.hasBrandingOverrides()) {
+    if (!this.hasBrandingSettings()) {
       return templateData;
     }
 
     // Deep merge template data with file overrides
     const merged = JSON.parse(JSON.stringify(templateData));
-    const overrides = this.branding_overrides;
+    const overrides = this.branding_settings;
 
     if (overrides.logo) {
       merged.logo = { ...merged.logo, ...overrides.logo };

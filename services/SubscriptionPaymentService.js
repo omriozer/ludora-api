@@ -26,12 +26,6 @@ class SubscriptionPaymentService {
     } = options;
 
     try {
-      clog('SubscriptionPaymentService: Creating subscription payment', {
-        userId,
-        subscriptionPlanId,
-        environment
-      });
-
       // Import services to avoid circular dependencies
       const SubscriptionService = (await import('./SubscriptionService.js')).default;
       const PaymentService = (await import('./PaymentService.js')).default;
@@ -48,14 +42,6 @@ class SubscriptionPaymentService {
       // Calculate pricing with discounts
       const pricingInfo = calcSubscriptionPlanPrice(subscriptionPlan);
       const finalPrice = pricingInfo.finalPrice;
-
-      clog('SubscriptionPaymentService: Calculated subscription pricing', {
-        subscriptionPlanId,
-        originalPrice: pricingInfo.originalPrice,
-        discountAmount: pricingInfo.discountAmount,
-        finalPrice,
-        isDiscounted: pricingInfo.isDiscounted
-      });
 
       if (finalPrice === 0) {
         // Free subscription - create and activate immediately
@@ -137,12 +123,6 @@ class SubscriptionPaymentService {
         updated_at: new Date()
       });
 
-      clog('SubscriptionPaymentService: Subscription payment created successfully', {
-        subscriptionId: subscription.id,
-        transactionId: transaction.id,
-        environment: paymentResult.environment
-      });
-
       return {
         success: true,
         message: 'Subscription payment page created',
@@ -181,12 +161,6 @@ class SubscriptionPaymentService {
       // Get PayPlus credentials for the environment
       const { payplusUrl, payment_page_uid, payment_api_key, payment_secret_key } = PaymentService.getPayPlusCredentials(environment);
       const payplusPaymentPageUrl = `${payplusUrl}PaymentPages/generateLink`;
-
-      clog('SubscriptionPaymentService: Creating PayPlus payment page', {
-        subscriptionId: subscription.id,
-        environment,
-        amount: pricingInfo.finalPrice
-      });
 
       // Determine recurring settings based on billing period
       const recurringSettings = this.getRecurringSettings(subscriptionPlan);
@@ -251,8 +225,6 @@ class SubscriptionPaymentService {
         payments: 1,
       };
 
-      clog('SubscriptionPaymentService: Sending request to PayPlus paymentRequest: ', paymentRequest);
-
       // Make request to PayPlus API
       const response = await fetch(payplusPaymentPageUrl, {
         method: 'POST',
@@ -305,13 +277,6 @@ class SubscriptionPaymentService {
         });
         throw new Error(errorMsg);
       }
-
-      clog('SubscriptionPaymentService: PayPlus payment page created successfully', {
-        subscriptionId: subscription.id,
-        pageRequestUid: pageRequestUid.substring(0, 8) + '...',
-        hasPaymentPageLink: !!paymentPageLink,
-        environment
-      });
 
       return {
         success: true,
@@ -376,11 +341,6 @@ class SubscriptionPaymentService {
    */
   static async handlePaymentSuccess(subscription, webhookData) {
     try {
-      clog('SubscriptionPaymentService: Handling payment success', {
-        subscriptionId: subscription.id,
-        payplusSubscriptionUid: webhookData.subscription_uid
-      });
-
       // Import SubscriptionService
       const SubscriptionService = (await import('./SubscriptionService.js')).default;
 
@@ -400,11 +360,6 @@ class SubscriptionPaymentService {
         await SubscriptionService.updateSubscriptionPayPlusUid(subscription.id, webhookData.subscription_uid);
       }
 
-      clog('SubscriptionPaymentService: Subscription payment completed successfully', {
-        subscriptionId: activatedSubscription.id,
-        status: activatedSubscription.status
-      });
-
       return activatedSubscription;
 
     } catch (error) {
@@ -421,11 +376,6 @@ class SubscriptionPaymentService {
    */
   static async handlePaymentFailure(subscription, webhookData) {
     try {
-      clog('SubscriptionPaymentService: Handling payment failure', {
-        subscriptionId: subscription.id,
-        reason: webhookData.reason
-      });
-
       // Update subscription status to failed
       const updatedSubscription = await subscription.update({
         status: 'failed',
@@ -436,11 +386,6 @@ class SubscriptionPaymentService {
           payplusWebhookData: webhookData
         },
         updated_at: new Date()
-      });
-
-      clog('SubscriptionPaymentService: Subscription payment failure handled', {
-        subscriptionId: updatedSubscription.id,
-        status: updatedSubscription.status
       });
 
       return updatedSubscription;
@@ -471,13 +416,6 @@ class SubscriptionPaymentService {
     } = options;
 
     try {
-      clog('SubscriptionPaymentService: Creating retry payment', {
-        userId,
-        subscriptionId: pendingSubscription.id,
-        subscriptionPlanId: subscriptionPlan.id,
-        environment
-      });
-
       // Import services to avoid circular dependencies
       const PaymentService = (await import('./PaymentService.js')).default;
 
@@ -494,12 +432,6 @@ class SubscriptionPaymentService {
       } else {
         pricingInfo = calcSubscriptionPlanPrice(subscriptionPlan);
       }
-
-      clog('SubscriptionPaymentService: Using pricing for retry payment', {
-        subscriptionId: pendingSubscription.id,
-        originalPrice: pricingInfo.originalPrice,
-        finalPrice: pricingInfo.finalPrice
-      });
 
       // Create new PayPlus payment page for the existing subscription
       const paymentResult = await this.createPayPlusSubscriptionPayment({
@@ -545,13 +477,6 @@ class SubscriptionPaymentService {
           retryMetadata: metadata
         },
         updated_at: new Date()
-      });
-
-      clog('SubscriptionPaymentService: Retry payment created successfully', {
-        subscriptionId: pendingSubscription.id,
-        transactionId: transaction.id,
-        retryCount,
-        environment: paymentResult.environment
       });
 
       return {

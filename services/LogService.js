@@ -1,5 +1,6 @@
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
+import { cerror } from '../lib/utils.js';
 
 class LogService {
 
@@ -25,7 +26,7 @@ class LogService {
 
       return logEntry;
     } catch (error) {
-      console.error('Error creating log entry:', error);
+      cerror('Error creating log entry:', error);
       throw new Error('Failed to create log entry');
     }
   }
@@ -80,7 +81,7 @@ class LogService {
 
       return logs;
     } catch (error) {
-      console.error('Error fetching logs:', error);
+      cerror('Error fetching logs:', error);
       throw new Error('Failed to fetch logs');
     }
   }
@@ -119,7 +120,7 @@ class LogService {
       const count = await models.Logs.count({ where });
       return count;
     } catch (error) {
-      console.error('Error counting logs:', error);
+      cerror('Error counting logs:', error);
       throw new Error('Failed to count logs');
     }
   }
@@ -142,7 +143,7 @@ class LogService {
 
       return deletedCount;
     } catch (error) {
-      console.error('Error deleting old logs:', error);
+      cerror('Error deleting old logs:', error);
       throw new Error('Failed to delete old logs');
     }
   }

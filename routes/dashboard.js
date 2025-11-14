@@ -41,7 +41,6 @@ router.get('/widgets', async (req, res) => {
       message: 'Available widgets retrieved successfully'
     });
   } catch (error) {
-    console.error('Error fetching available widgets:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch available widgets',
@@ -79,7 +78,6 @@ router.get('/config', async (req, res) => {
       message: 'Dashboard configuration retrieved successfully'
     });
   } catch (error) {
-    console.error('Error fetching dashboard config:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dashboard configuration',
@@ -143,7 +141,6 @@ router.put('/config', async (req, res) => {
       message: 'Dashboard configuration updated successfully'
     });
   } catch (error) {
-    console.error('Error updating dashboard config:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update dashboard configuration',
@@ -225,7 +222,6 @@ router.post('/widgets', async (req, res) => {
       message: 'Widget added successfully'
     });
   } catch (error) {
-    console.error('Error adding widget:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to add widget',
@@ -295,7 +291,6 @@ router.delete('/widgets/:widgetId', async (req, res) => {
       message: 'Widget removed successfully'
     });
   } catch (error) {
-    console.error('Error removing widget:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to remove widget',
@@ -374,7 +369,6 @@ router.put('/widgets/:widgetId', async (req, res) => {
       message: 'Widget updated successfully'
     });
   } catch (error) {
-    console.error('Error updating widget:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update widget',

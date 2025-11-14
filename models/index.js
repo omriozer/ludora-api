@@ -1,5 +1,6 @@
 import { Sequelize } from 'sequelize';
 import databaseConfig from '../config/database.js';
+import { clog, cerror } from '../lib/utils.js';
 
 const env = process.env.ENVIRONMENT || 'development';
 const config = databaseConfig[env];
@@ -98,16 +99,16 @@ Object.keys(models).forEach(modelName => {
 const testDBConnection = async () => {
   try {
     await sequelize.authenticate();
-    console.log(new Date().toISOString(), ' ✅ Database connection has been established successfully.');
+    clog(new Date().toISOString(), ' ✅ Database connection has been established successfully.');
   } catch (error) {
-    console.error(new Date().toISOString(), ' ❌ Unable to connect to the database:', error);
+    cerror(new Date().toISOString(), ' ❌ Unable to connect to the database:', error);
   }
 };
 
 testDBConnection();
 
 // Debug: Log all loaded models
-console.log('🔍 DEBUG: Available models in index.js:', Object.keys(models));
+clog('🔍 DEBUG: Available models in index.js:', Object.keys(models));
 
 export { sequelize };
 export default models;

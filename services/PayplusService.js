@@ -27,31 +27,12 @@ class PayplusService {
     } = options;
 
     try {
-      clog('🎯 PayplusService: Opening PayPlus payment page', {
-        frontendOrigin,
-        purchaseItemsCount: purchaseItems.length,
-        environment,
-        hasCustomer: !!customer.email
-      });
-
       // Get PayPlus credentials for the environment
       const {payplusUrl, payment_page_uid, payment_api_key, payment_secret_key} = PaymentService.getPayPlusCredentials(environment);
       const payplusPaymentPageUrl = `${payplusUrl}PaymentPages/generateLink`;
 
-      // Debug credentials (without revealing sensitive data)
-      clog('🔑 PayplusService: Using credentials', {
-        environment,
-        payplusUrl,
-        hasPageUid: !!payment_page_uid,
-        hasApiKey: !!payment_api_key,
-        hasSecretKey: !!payment_secret_key,
-        pageUidLength: payment_page_uid?.length,
-        apiKeyLength: payment_api_key?.length
-      });
-
       // Determine charge method based on frontend origin and purchase items
       const chargeMethod = this.determineChargeMethod(frontendOrigin, purchaseItems);
-      clog('🔍 PayplusService: Determined charge method', { chargeMethod, frontendOrigin });
 
       // Calculate total amount
       const totalAmount = this.calculateTotalAmount(purchaseItems);
@@ -89,13 +70,6 @@ class PayplusService {
         // Additional settings based on charge method
         ...this.getAdditionalSettings(chargeMethod, frontendOrigin, purchaseItems)
       };
-
-      clog('🚀 PayplusService: Sending request to PayPlus', {
-        url: payplusPaymentPageUrl,
-        method: chargeMethod,
-        amount: totalAmount,
-        purchaseItemsCount: paymentRequest.items.length
-      });
 
       // Make request to PayPlus API
       const response = await fetch(payplusPaymentPageUrl, {
@@ -151,12 +125,6 @@ class PayplusService {
         });
         throw new Error(errorMsg);
       }
-
-      clog('✅ PayplusService: PayPlus payment page created successfully', {
-        pageRequestUid: pageRequestUid.substring(0, 8) + '...',
-        hasPaymentPageLink: !!paymentPageLink,
-        environment
-      });
 
       return {
         success: true,

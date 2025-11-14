@@ -22,7 +22,6 @@ const router = express.Router();
  */
 function shouldOpenPayplusPage(cartItems) {
   if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
-    clog('❌ shouldOpenPayplusPage: No cart items provided');
     return false;
   }
 
@@ -32,22 +31,10 @@ function shouldOpenPayplusPage(cartItems) {
     return amount > 0;
   });
 
-  clog('🔍 shouldOpenPayplusPage: Cart analysis', {
-    itemCount: cartItems.length,
-    hasPaidItems,
-    amounts: cartItems.map(item => ({
-      id: item.id,
-      amount: item.payment_amount,
-      type: item.purchasable_type
-    }))
-  });
-
   if (!hasPaidItems) {
-    clog('❌ shouldOpenPayplusPage: No paid items found - all items are free');
     return false;
   }
 
-  clog('✅ shouldOpenPayplusPage: Found paid items - proceeding with PayPlus');
   return true;
 }
 
@@ -113,11 +100,6 @@ router.post('/purchases', authenticateToken, async (req, res) => {
     let price = parseFloat(item.price || 0);
     if (additionalData.product_price && price === 0) {
       price = parseFloat(additionalData.product_price || 0);
-      clog('📦 Using price from additionalData:', {
-        entityPrice: item.price,
-        providedPrice: additionalData.product_price,
-        finalPrice: price
-      });
     }
 
     const isFree = price === 0;
@@ -142,14 +124,6 @@ router.post('/purchases', authenticateToken, async (req, res) => {
     };
 
     const purchase = await models.Purchase.create(purchaseData);
-
-    clog('💰 Purchase created:', {
-      id: purchase.id,
-      price,
-      isFree,
-      status: purchase.payment_status,
-      method: purchase.payment_method
-    });
 
     // Return appropriate response based on item type
     if (isFree) {
@@ -245,13 +219,6 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
     const { cartItems, environment = 'production', frontendOrigin = 'cart' } = req.body;
     const userId = req.user.uid;
 
-    clog('🎯 Payment: Creating PayPlus payment page', {
-      userId,
-      cartItemsCount: cartItems?.length || 0,
-      environment,
-      frontendOrigin
-    });
-
     // Validation
     if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
       return res.status(400).json({ error: 'cartItems are required and must be a non-empty array' });
@@ -259,7 +226,6 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
 
     // Check if we should open PayPlus payment page
     if (!shouldOpenPayplusPage(cartItems)) {
-      clog('❌ Payment: PayPlus page creation denied by shouldOpenPayplusPage');
       return res.json({
         success: false,
         message: 'No paid items found - PayPlus payment page not needed',
@@ -312,12 +278,6 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       }
     });
 
-    clog('✅ Payment: PayPlus payment page and transaction created successfully', {
-      transactionId: transaction.id,
-      purchaseCount: cartItems.length,
-      transactionType: transaction.metadata.transaction_type
-    });
-
     res.json({
       success: true,
       message: 'PayPlus payment page created',
@@ -339,12 +299,6 @@ router.post('/createSubscriptionPayment', authenticateToken, async (req, res) =>
   try {
     const { subscriptionPlanId, environment = 'production' } = req.body;
     const userId = req.user.uid;
-
-    clog('🎯 Payment: Creating subscription payment', {
-      userId,
-      subscriptionPlanId,
-      environment
-    });
 
     // Validation
     if (!subscriptionPlanId) {

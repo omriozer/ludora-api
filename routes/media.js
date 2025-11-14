@@ -65,7 +65,6 @@ async function checkVideoAccess(user, entityType, entityId) {
     }
     isFree = product ? parseFloat(product.price || 0) === 0 : false;
   } catch (error) {
-    console.error('Error checking product price:', error);
     // Default to not free if we can't determine price
     isFree = false;
   }
@@ -103,22 +102,13 @@ async function checkVideoAccess(user, entityType, entityId) {
 
         await transaction.commit();
 
-        if (created) {
-          console.log(`✅ Auto-created purchase record for free content: ${user.id} -> ${entityType}/${entityId}`);
-        } else {
-          console.log(`ℹ️ Purchase record already exists for free content: ${user.id} -> ${entityType}/${entityId}`);
-        }
 
       } catch (transactionError) {
         await transaction.rollback();
-        console.error('❌ Auto-purchase transaction failed, rolled back:', transactionError);
         // Still return true for free content access, even if purchase record creation failed
-        console.warn(`⚠️ Allowing free content access despite purchase record creation failure: ${user.id} -> ${entityType}/${entityId}`);
       }
     } catch (error) {
-      console.error('❌ Failed to create auto-access record transaction:', error);
       // Still return true for free content access
-      console.warn(`⚠️ Allowing free content access despite transaction setup failure: ${user.id} -> ${entityType}/${entityId}`);
     }
 
     return true;
@@ -209,7 +199,6 @@ router.get('/download/audiofile/:audioFileId', async (req, res) => {
     const { audioFileId } = req.params;
     const env = process.env.ENVIRONMENT || 'development';
 
-    console.log(`🎵 AudioFile download request: ${audioFileId}`);
 
     // Extract token from header or query
     const authHeader = req.headers['authorization'];
@@ -233,9 +222,7 @@ router.get('/download/audiofile/:audioFileId', async (req, res) => {
     let user;
     try {
       user = await authService.verifyToken(token);
-      console.log(`🔐 Token verified for AudioFile download: ${user.id}`);
     } catch (authError) {
-      console.error('🔐 Token verification failed for AudioFile:', authError);
       return res.status(403).json({
         error: 'Invalid or expired token',
         message: authError.message || 'Token verification failed'
@@ -261,7 +248,6 @@ router.get('/download/audiofile/:audioFileId', async (req, res) => {
     // Construct S3 path for AudioFile
     const s3Key = `${env}/private/audio/audiofile/${audioFileId}/${audioFile.file_filename}`;
 
-    console.log(`🎵 Downloading AudioFile from S3: ${s3Key}`);
 
     try {
       // Get the complete file from S3
@@ -295,10 +281,8 @@ router.get('/download/audiofile/:audioFileId', async (req, res) => {
       res.set(headers);
       res.send(fileBuffer);
 
-      console.log(`✅ AudioFile download completed: ${audioFileId} (${audioFile.file_filename})`);
 
     } catch (s3Error) {
-      console.error('❌ S3 download error for AudioFile:', s3Error);
       return res.status(404).json({
         error: 'Audio file not found in storage',
         message: `Audio file for ${audioFileId} not found in storage`,
@@ -307,7 +291,6 @@ router.get('/download/audiofile/:audioFileId', async (req, res) => {
     }
 
   } catch (error) {
-    console.error('❌ AudioFile download error:', error);
 
     if (!res.headersSent) {
       res.status(500).json({
@@ -396,7 +379,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
         const metadataResult = await fileService.getS3ObjectMetadata(marketingS3Key);
 
         if (metadataResult.success) {
-          console.log(`📺 Serving public marketing video: ${entityType}/${entityId}`);
 
           const metadata = metadataResult.data;
           const fileSize = metadata.size;
@@ -451,7 +433,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
             rangeStream.pipe(res);
 
             rangeStream.on('error', (error) => {
-              console.error('❌ Marketing video range stream error:', error);
               if (!res.headersSent) {
                 res.status(500).json({
                   error: 'Stream error',
@@ -473,7 +454,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
             stream.pipe(res);
 
             stream.on('error', (error) => {
-              console.error('❌ Marketing video stream error:', error);
               if (!res.headersSent) {
                 res.status(500).json({
                   error: 'Stream error',
@@ -487,12 +467,10 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
         }
       } catch (marketingError) {
         // Marketing video not found, continue to check for private content video
-        console.log(`ℹ️ No marketing video found, checking for private content video: ${entityType}/${entityId}`);
       }
     }
 
     // PRIVATE CONTENT VIDEO - Authentication required
-    console.log(`🔐 Checking authentication for private content video: ${entityType}/${entityId}`);
 
     // Extract token from header or query
     const authHeader = req.headers['authorization'];
@@ -516,9 +494,7 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
     let user;
     try {
       user = await authService.verifyToken(token);
-      console.log(`🔐 Token verified for user: ${user.id}`);
     } catch (authError) {
-      console.error('🔐 Token verification failed:', authError);
       return res.status(403).json({
         error: 'Invalid or expired token',
         message: authError.message || 'Token verification failed'
@@ -546,7 +522,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
     }
 
     // User has access - serve private content video
-    console.log(`✅ Video access granted: ${user.email} -> ${entityType}/${entityId}`);
 
     const privateS3Key = `${env}/private/content-video/${entityType}/${entityId}/video.mp4`;
 
@@ -623,7 +598,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
         rangeStream.pipe(res);
 
         rangeStream.on('error', (error) => {
-          console.error('❌ Private video range stream error:', error);
           if (!res.headersSent) {
             res.status(500).json({
               error: 'Stream error',
@@ -644,7 +618,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
         stream.pipe(res);
 
         stream.on('error', (error) => {
-          console.error('❌ Private video stream error:', error);
           if (!res.headersSent) {
             res.status(500).json({
               error: 'Stream error',
@@ -655,7 +628,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
       }
 
     } catch (s3Error) {
-      console.error('❌ S3 streaming error:', s3Error);
       return res.status(404).json({
         error: 'Video not found',
         message: `Video for ${entityType}/${entityId} not found in storage`,
@@ -664,7 +636,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
     }
 
   } catch (error) {
-    console.error('❌ Video streaming error:', error);
 
     if (!res.headersSent) {
       res.status(500).json({

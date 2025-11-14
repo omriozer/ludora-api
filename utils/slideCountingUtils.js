@@ -18,21 +18,14 @@ export async function countSlidesInPowerPoint(fileBuffer, fileName) {
     // This would require a library like 'officegen' or 'pptx-parser'
     // For now, return a placeholder value to prevent runtime errors
 
-    console.log(`📊 Counting slides in PowerPoint file: ${fileName}`);
-    console.warn(`⚠️ PowerPoint slide counting not yet implemented for: ${fileName}`);
-
     // Estimate based on file size (very rough approximation)
     // A typical slide in a PowerPoint file is roughly 50-200KB
     const estimatedSlides = Math.max(1, Math.floor(fileBuffer.length / (100 * 1024)));
     const cappedEstimate = Math.min(estimatedSlides, 50); // Cap at 50 slides
 
-    console.log(`📊 Estimated ${cappedEstimate} slides based on file size (${fileBuffer.length} bytes)`);
-
     return cappedEstimate;
 
   } catch (error) {
-    console.error(`❌ Error counting slides in PowerPoint file ${fileName}:`, error.message);
-    console.warn(`⚠️ Falling back to default slide count of 1 for ${fileName}`);
     return 1; // Default to 1 slide if counting fails
   }
 }
@@ -45,10 +38,7 @@ export async function countSlidesInPowerPoint(fileBuffer, fileName) {
  */
 export function calculateTotalSlides(fileConfigs) {
   try {
-    console.log(`📊 Calculating total slides from file configs:`, JSON.stringify(fileConfigs, null, 2));
-
     if (!fileConfigs || !fileConfigs.files || !Array.isArray(fileConfigs.files)) {
-      console.log(`📊 No files found in file configs, returning 0 slides`);
       return 0;
     }
 
@@ -57,27 +47,19 @@ export function calculateTotalSlides(fileConfigs) {
       file.file_role === 'opening' || file.file_role === 'body'
     );
 
-    console.log(`📊 Found ${presentationFiles.length} presentation files (opening/body)`);
-
     const totalSlides = presentationFiles.reduce((total, file) => {
       const slideCount = file.slide_count || 0;
-      console.log(`📊 File ${file.filename} (${file.file_role}): ${slideCount} slides`);
       return total + slideCount;
     }, 0);
 
-    console.log(`📊 Total calculated slides: ${totalSlides}`);
-
     // If we have presentation files but no slide count, assume at least 1 slide per file
     if (totalSlides === 0 && presentationFiles.length > 0) {
-      console.log(`📊 No slide counts available, defaulting to 1 slide per presentation file`);
       return presentationFiles.length;
     }
 
     return totalSlides;
 
   } catch (error) {
-    console.error(`❌ Error calculating total slides:`, error.message);
-    console.warn(`⚠️ Falling back to default slide count of 0`);
     return 0; // Default to 0 if calculation fails
   }
 }
@@ -90,7 +72,6 @@ export function calculateTotalSlides(fileConfigs) {
  */
 export function validateSlideCount(slideCount) {
   if (typeof slideCount !== 'number' || isNaN(slideCount) || slideCount < 0) {
-    console.warn(`⚠️ Invalid slide count: ${slideCount}, defaulting to 0`);
     return 0;
   }
 
@@ -136,7 +117,6 @@ export function getPresentationSummary(fileConfigs) {
     };
 
   } catch (error) {
-    console.error(`❌ Error getting presentation summary:`, error.message);
     return {
       totalSlides: 0,
       openingFiles: 0,

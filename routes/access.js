@@ -14,7 +14,6 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
     const accessInfo = await AccessControlService.checkAccess(userId, entityType, entityId);
     res.json(accessInfo);
   } catch (error) {
-    console.error('Error checking access:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -33,7 +32,6 @@ router.get('/my-purchases', authenticateToken, async (req, res) => {
     const purchases = await AccessControlService.getUserPurchases(userId, options);
     res.json(purchases);
   } catch (error) {
-    console.error('Error getting user purchases:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -50,7 +48,6 @@ router.get('/entity/:entityType/:entityId/users', authenticateToken, async (req,
     const users = await AccessControlService.getEntityUsers(entityType, entityId);
     res.json(users);
   } catch (error) {
-    console.error('Error getting entity users:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -67,7 +64,6 @@ router.get('/entity/:entityType/:entityId/stats', authenticateToken, async (req,
     const stats = await AccessControlService.getEntityAccessStats(entityType, entityId);
     res.json(stats);
   } catch (error) {
-    console.error('Error getting entity stats:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -112,7 +108,6 @@ router.post('/grant', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error granting access:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -150,7 +145,6 @@ router.delete('/revoke', authenticateToken, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error revoking access:', error);
     res.status(500).json({ error: error.message });
   }
 });

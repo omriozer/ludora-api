@@ -37,14 +37,6 @@ export function constructS3Path(entityType, entityId, assetType, filename) {
   // Sanitize filename using Hebrew-aware utilities for Israeli users
   const sanitizedFilename = generateHebrewSafeS3Key(filename);
 
-  // Log Hebrew filename metadata for debugging in development
-  if (process.env.ENVIRONMENT === 'development') {
-    const metadata = getHebrewFilenameMetadata(filename);
-    if (metadata.hasHebrew) {
-      console.log(`📝 Hebrew filename processed: ${filename} -> ${sanitizedFilename}`, metadata);
-    }
-  }
-
   return `${privacy}/${assetType}/${entityType}/${entityId}/${sanitizedFilename}`;
 }
 

@@ -28,7 +28,6 @@ router.post('/sendEmail', authenticateToken, rateLimiters.email, validateBody(sc
       data: result
     });
   } catch (error) {
-    console.error('Error sending email:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -82,7 +81,6 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
 
     s3UploadCompleted = true;
     s3Key = s3Path;
-    console.log(`✅ S3 upload completed: ${s3Key}`);
 
     // Extract metadata from form data
     const audioMetadata = {
@@ -112,7 +110,6 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
 
     // Commit transaction - both S3 upload and DB creation succeeded
     await transaction.commit();
-    console.log(`✅ Transaction committed for AudioFile upload: ${s3Key}`);
 
     res.json({
       success: true,
@@ -135,20 +132,16 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
   } catch (error) {
     // Rollback transaction
     await transaction.rollback();
-    console.log(`🔄 Transaction rolled back for failed AudioFile upload`);
 
     // Clean up S3 file if it was uploaded but DB operation failed
     if (s3UploadCompleted && s3Key) {
       try {
         await FileService.deleteS3Object(s3Key);
-        console.log(`🧹 Cleaned up orphaned S3 file: ${s3Key}`);
       } catch (cleanupError) {
-        console.error(`❌ Failed to cleanup S3 file ${s3Key}:`, cleanupError);
         // Continue with error response - cleanup failure shouldn't hide original error
       }
     }
 
-    console.error('❌ AudioFile upload transaction failed:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -169,7 +162,6 @@ router.post('/extractDataFromUploadedFile', authenticateToken, rateLimiters.uplo
       data: result
     });
   } catch (error) {
-    console.error('Error extracting data from file:', error);
     res.status(500).json({ error: error.message });
   }
 });

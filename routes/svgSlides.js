@@ -127,7 +127,6 @@ router.post(
       }
 
     } catch (error) {
-      console.error('Error uploading SVG slides:', error);
       res.status(500).json({
         success: false,
         message: 'Failed to upload SVG slides',
@@ -182,7 +181,6 @@ router.get(
       });
 
     } catch (error) {
-      console.error('Error fetching SVG slides:', error);
       res.status(500).json({
         success: false,
         message: 'Failed to fetch SVG slides',
@@ -255,7 +253,6 @@ router.put(
       }
 
     } catch (error) {
-      console.error('Error reordering SVG slides:', error);
       res.status(500).json({
         success: false,
         message: 'Failed to reorder SVG slides',
@@ -336,7 +333,6 @@ router.delete(
       }
 
     } catch (error) {
-      console.error('Error deleting SVG slide:', error);
       res.status(500).json({
         success: false,
         message: 'Failed to delete SVG slide',
@@ -397,7 +393,6 @@ router.get(
       });
 
     } catch (error) {
-      console.error('Error validating lesson plan slides:', error);
       res.status(500).json({
         success: false,
         message: 'Failed to validate lesson plan slides',

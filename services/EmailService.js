@@ -25,7 +25,7 @@ class EmailService {
 
       this.transporter = nodemailer.createTransport(emailConfig);
     } catch (error) {
-      console.error('Error initializing email transporter:', error);
+      // Email transporter initialization failed
     }
   }
 
@@ -45,7 +45,6 @@ class EmailService {
       if (this.transporter) {
         result = await this.transporter.sendMail(emailData);
       } else {
-        console.log('Email transporter not configured, simulating send:', emailData);
         result = { messageId: `mock_${Date.now()}` };
       }
 
@@ -74,7 +73,6 @@ class EmailService {
         }
       };
     } catch (error) {
-      console.error('Error sending email:', error);
       
       // Log failed email
       await this.models.EmailLog.create({
@@ -149,7 +147,6 @@ class EmailService {
         data: { processed: results.length, results }
       };
     } catch (error) {
-      console.error('Error processing email triggers:', error);
       throw error;
     }
   }
@@ -203,7 +200,6 @@ class EmailService {
         relatedEntityId: registrationData?.id
       });
     } catch (error) {
-      console.error('Error sending registration email:', error);
       throw error;
     }
   }
@@ -247,7 +243,6 @@ class EmailService {
         data: { sent: results.filter(r => r.status === 'sent').length, results }
       };
     } catch (error) {
-      console.error('Error sending invitation emails:', error);
       throw error;
     }
   }
@@ -331,7 +326,6 @@ class EmailService {
         }
       };
     } catch (error) {
-      console.error('Error initializing email templates:', error);
       throw error;
     }
   }
