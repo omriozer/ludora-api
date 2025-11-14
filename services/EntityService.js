@@ -128,6 +128,7 @@ class EntityService {
       'gamesession': 'GameSession',
       'gamecontenttag': 'GameContentTag',
       'contenttag': 'ContentTag',
+      'contenttopic': 'ContentTopic',
       'studentinvitation': 'StudentInvitation',
       'classroommembership': 'ClassroomMembership',
       'curriculumitem': 'CurriculumItem',
