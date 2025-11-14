@@ -101,7 +101,7 @@ jobs:
       - name: Run database migrations
         run: |
           echo "Running database migrations for staging..."
-          heroku run npm run db:migrate:staging --app ludora-api-staging
+          heroku run "ENVIRONMENT=staging npx sequelize-cli db:migrate" --app ludora-api-staging
           echo "✅ Migrations completed successfully"
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
