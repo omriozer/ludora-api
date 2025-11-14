@@ -101,7 +101,7 @@ jobs:
       - name: Run database migrations
         run: |
           echo "Running database migrations..."
-          heroku run npm run migrate:prod --app ludora-api-prod
+          heroku run npm run db:migrate:prod --app ludora-api-prod
           echo "✅ Migrations completed successfully"
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
