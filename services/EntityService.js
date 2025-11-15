@@ -202,6 +202,16 @@ class EntityService {
           required: false // LEFT JOIN to include entities even without creators
         });
 
+        // Include ContentTopic for products that have content topic associations
+        if (entityType === 'product') {
+          queryOptions.include.push({
+            model: this.models.ContentTopic,
+            as: 'contentTopic',
+            attributes: ['id', 'name', 'description'],
+            required: false // LEFT JOIN to include products even without content topics
+          });
+        }
+
         // Product entities use polymorphic associations via entity_id + product_type
         // No direct associations to include here
 
@@ -277,6 +287,16 @@ class EntityService {
           attributes: ['id', 'full_name', 'email'],
           required: false // LEFT JOIN to include entities even without creators
         });
+
+        // Include ContentTopic for products that have content topic associations
+        if (entityType === 'product') {
+          queryOptions.include.push({
+            model: this.models.ContentTopic,
+            as: 'contentTopic',
+            attributes: ['id', 'name', 'description'],
+            required: false // LEFT JOIN to include products even without content topics
+          });
+        }
       }
 
       const entity = await Model.findOne(queryOptions);
@@ -961,10 +981,12 @@ class EntityService {
         target_audience: data.target_audience,
         type_attributes: data.type_attributes,
         access_days: parseInt(data.access_days) ? parseInt(data.access_days) : null,
+        content_topic_id: data.content_topic_id,
         creator_user_id: data.creator_user_id,
         updated_at: new Date(),
         ...(updatedBy && { updated_by: updatedBy })
       };
+
 
       // Remove undefined fields from product update
       Object.keys(productFields).forEach(key => {
@@ -985,7 +1007,7 @@ class EntityService {
         'title', 'short_description', 'description', 'category', 'product_type',
         'price', 'is_published', 'image_url', 'has_image', 'image_filename',
         'marketing_video_type', 'marketing_video_id', 'marketing_video_title', 'marketing_video_duration',
-        'tags', 'target_audience', 'type_attributes', 'access_days', 'creator_user_id'
+        'tags', 'target_audience', 'type_attributes', 'access_days', 'content_topic_id', 'creator_user_id'
       ];
 
       productOnlyFields.forEach(field => delete entityFields[field]);

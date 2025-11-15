@@ -57,36 +57,64 @@ async function mergePdfTemplate(pdfBuffer, templateSettings, variables = {}) {
         FRONTEND_URL: process.env.FRONTEND_URL || 'https://ludora.app'
       };
 
-      // Apply main logo element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings.logo && templateSettings.logo.visible !== false && !templateSettings.logo.hidden) {
-        await addTemplateElement(page, 'logo', templateSettings.logo, pageVariables, width, height, standardFonts, customFonts);
-      }
+      // Support both unified array structure and legacy structure during transition
+      const hasUnifiedStructure = templateSettings.elements;
 
-      // Apply main text element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings.text && templateSettings.text.visible !== false && !templateSettings.text.hidden) {
-        await addTemplateElement(page, 'text', templateSettings.text, pageVariables, width, height, standardFonts, customFonts);
-      }
+      if (hasUnifiedStructure) {
+        // NEW UNIFIED STRUCTURE: Process all element arrays
+        console.log('🔧 Processing unified array structure');
 
-      // Apply main URL element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings.url && templateSettings.url.visible !== false && !templateSettings.url.hidden) {
-        await addTemplateElement(page, 'url', templateSettings.url, pageVariables, width, height, standardFonts, customFonts);
-      }
+        if (templateSettings.elements) {
+          for (const [elementType, elementArray] of Object.entries(templateSettings.elements)) {
+            if (Array.isArray(elementArray)) {
+              for (const element of elementArray) {
+                if (element && element.visible !== false && !element.hidden) {
+                  await addTemplateElement(page, elementType, element, pageVariables, width, height, standardFonts, customFonts);
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // LEGACY STRUCTURE: Process built-in elements and customElements
+        console.log('🔧 Processing legacy structure');
 
-      // Apply copyright-text element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings['copyright-text'] && templateSettings['copyright-text'].visible !== false && !templateSettings['copyright-text'].hidden) {
-        await addTemplateElement(page, 'copyright-text', templateSettings['copyright-text'], pageVariables, width, height, standardFonts, customFonts);
-      }
+        // Apply main logo element (if visible) - SAME LOGIC for branding AND watermark
+        if (templateSettings.logo && templateSettings.logo.visible !== false && !templateSettings.logo.hidden) {
+          console.log('🔧 LEGACY: Processing logo element');
+          await addTemplateElement(page, 'logo', templateSettings.logo, pageVariables, width, height, standardFonts, customFonts);
+        }
 
-      // Apply user-info element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings['user-info'] && templateSettings['user-info'].visible !== false && !templateSettings['user-info'].hidden) {
-        await addTemplateElement(page, 'user-info', templateSettings['user-info'], pageVariables, width, height, standardFonts, customFonts);
-      }
+        // Apply main text element (if visible) - SAME LOGIC for branding AND watermark
+        if (templateSettings.text && templateSettings.text.visible !== false && !templateSettings.text.hidden) {
+          console.log('🔧 LEGACY: Processing text element');
+          await addTemplateElement(page, 'text', templateSettings.text, pageVariables, width, height, standardFonts, customFonts);
+        }
 
-      // Apply custom elements - SAME LOGIC for branding AND watermark
-      if (templateSettings.customElements) {
-        for (const [elementId, element] of Object.entries(templateSettings.customElements)) {
-          if (element.visible !== false && !element.hidden) {
-            await addTemplateElement(page, element.type, element, pageVariables, width, height, standardFonts, customFonts);
+        // Apply main URL element (if visible) - SAME LOGIC for branding AND watermark
+        if (templateSettings.url && templateSettings.url.visible !== false && !templateSettings.url.hidden) {
+          console.log('🔧 LEGACY: Processing url element');
+          await addTemplateElement(page, 'url', templateSettings.url, pageVariables, width, height, standardFonts, customFonts);
+        }
+
+        // Apply copyright-text element (if visible) - SAME LOGIC for branding AND watermark
+        if (templateSettings['copyright-text'] && templateSettings['copyright-text'].visible !== false && !templateSettings['copyright-text'].hidden) {
+          console.log('🔧 LEGACY: Processing copyright-text element');
+          await addTemplateElement(page, 'copyright-text', templateSettings['copyright-text'], pageVariables, width, height, standardFonts, customFonts);
+        }
+
+        // Apply user-info element (if visible) - SAME LOGIC for branding AND watermark
+        if (templateSettings['user-info'] && templateSettings['user-info'].visible !== false && !templateSettings['user-info'].hidden) {
+          console.log('🔧 LEGACY: Processing user-info element');
+          await addTemplateElement(page, 'user-info', templateSettings['user-info'], pageVariables, width, height, standardFonts, customFonts);
+        }
+
+        // Apply custom elements - SAME LOGIC for branding AND watermark
+        if (templateSettings.customElements) {
+          for (const [elementId, element] of Object.entries(templateSettings.customElements)) {
+            if (element.visible !== false && !element.hidden) {
+              await addTemplateElement(page, element.type, element, pageVariables, width, height, standardFonts, customFonts);
+            }
           }
         }
       }
@@ -219,23 +247,21 @@ async function addTemplateElement(page, elementType, element, variables, width, 
     // - Visual Editor: Y=0 at TOP, Y=100 at BOTTOM (percentage from top)
     // - PDF lib: Y=0 at BOTTOM, Y=height at TOP (coordinate from bottom)
     // - Conversion: PDF_Y = height - (height * editorY% / 100)
-    //
-    // COORDINATE SYSTEM DEBUGGING:
-    // Looking at Image #2 (visual editor), I can see:
-    // - Logo appears at TOP-LEFT corner
-    // - Text appears at CENTER
-    // - User info appears at BOTTOM
-    //
-    // Database coordinates:
-    // - logo: (15%, 15%) - appears TOP-LEFT in editor
-    // - text: (50%, 45%) - appears CENTER in editor
-    // - user-info: (50%, 88%) - appears BOTTOM in editor
-    //
-    // This means: editor Y% = distance from TOP
-    // PDF conversion: PDF_Y = height - (height * editor_Y% / 100)
-    // BUT the current output shows logo at bottom, so let me test the opposite:
     const elementX = (width * elementXPercent / 100);
     const elementY = height - (height * elementYPercent / 100);
+
+    console.log(`🎯 POSITIONING DEBUG for ${elementType}:`, {
+      elementId: element.id,
+      templatePosition: { x: elementXPercent, y: elementYPercent },
+      pageSize: { width, height },
+      calculatedPdfCoords: { x: elementX, y: elementY },
+      coordinateInfo: {
+        xPercent: `${elementXPercent}% from left`,
+        yPercent: `${elementYPercent}% from top`,
+        pdfX: `${elementX.toFixed(1)} pixels from left`,
+        pdfY: `${elementY.toFixed(1)} pixels from bottom`
+      }
+    });
 
 
     // Get common style properties

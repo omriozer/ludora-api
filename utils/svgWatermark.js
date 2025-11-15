@@ -22,15 +22,56 @@ class SvgWatermarkProcessor {
   }
 
   /**
+   * Convert unified structure to legacy structure for backward compatibility
+   * @param {Object} unifiedTemplate - Unified template structure
+   * @returns {Object} - Legacy template structure
+   */
+  convertUnifiedToLegacyStructure(unifiedTemplate) {
+    // If it's already legacy structure, return as-is
+    if (unifiedTemplate.textElements || unifiedTemplate.logoElements) {
+      return unifiedTemplate;
+    }
+
+    // If it doesn't have unified structure, return as-is (might be old legacy format)
+    if (!unifiedTemplate.elements || typeof unifiedTemplate.elements !== 'object') {
+      return unifiedTemplate;
+    }
+
+    const legacyTemplate = {
+      textElements: [],
+      logoElements: [],
+      globalSettings: unifiedTemplate.globalSettings || {}
+    };
+
+    // Convert unified elements to legacy structure
+    Object.entries(unifiedTemplate.elements).forEach(([elementType, elementArray]) => {
+      if (Array.isArray(elementArray)) {
+        elementArray.forEach(element => {
+          if (['watermark-text', 'free-text'].includes(elementType)) {
+            legacyTemplate.textElements.push(element);
+          } else if (['watermark-logo', 'logo'].includes(elementType)) {
+            legacyTemplate.logoElements.push(element);
+          }
+        });
+      }
+    });
+
+    return legacyTemplate;
+  }
+
+  /**
    * Apply watermarks to SVG content based on template
    * @param {string} svgContent - Original SVG content
-   * @param {Object} watermarkTemplate - Template data with textElements and logoElements
+   * @param {Object} watermarkTemplate - Template data with unified or legacy structure
    * @param {Object} variables - Variables to substitute in text content (e.g., {{filename}})
    * @param {string} targetFormat - Target format for canvas dimensions (e.g., 'svg-lessonplan')
    * @returns {Promise<string>} - Watermarked SVG content
    */
   async applyWatermarks(svgContent, watermarkTemplate, variables = {}, targetFormat = 'svg-lessonplan') {
     try {
+      // Convert unified structure to legacy structure for backward compatibility
+      const legacyTemplate = this.convertUnifiedToLegacyStructure(watermarkTemplate);
+
       // Parse SVG content
       const svgDoc = this.parser.parseFromString(svgContent, 'image/svg+xml');
       const svgElement = svgDoc.documentElement;
@@ -43,11 +84,11 @@ class SvgWatermarkProcessor {
       const svgDimensions = this.extractSvgDimensions(svgElement, targetFormat);
 
       // Create watermark group
-      const watermarkGroup = this.createWatermarkGroup(svgDoc, watermarkTemplate.globalSettings);
+      const watermarkGroup = this.createWatermarkGroup(svgDoc, legacyTemplate.globalSettings);
 
       // Process text elements
-      if (watermarkTemplate.textElements) {
-        for (const textElement of watermarkTemplate.textElements) {
+      if (legacyTemplate.textElements) {
+        for (const textElement of legacyTemplate.textElements) {
           // Use consistent visibility logic: render unless explicitly hidden
           if (textElement.visible !== false && !textElement.hidden) {
             await this.addTextWatermarks(svgDoc, watermarkGroup, textElement, svgDimensions, variables);
@@ -56,8 +97,8 @@ class SvgWatermarkProcessor {
       }
 
       // Process logo elements
-      if (watermarkTemplate.logoElements) {
-        for (const logoElement of watermarkTemplate.logoElements) {
+      if (legacyTemplate.logoElements) {
+        for (const logoElement of legacyTemplate.logoElements) {
           // Use consistent visibility logic: render unless explicitly hidden
           if (logoElement.visible !== false && !logoElement.hidden) {
             await this.addLogoWatermarks(svgDoc, watermarkGroup, logoElement, svgDimensions);
@@ -66,7 +107,7 @@ class SvgWatermarkProcessor {
       }
 
       // Insert watermark group into SVG
-      const insertPosition = watermarkTemplate.globalSettings?.layerBehindContent ? 'first' : 'last';
+      const insertPosition = legacyTemplate.globalSettings?.layerBehindContent ? 'first' : 'last';
       this.insertWatermarkGroup(svgElement, watermarkGroup, insertPosition);
 
       // Serialize back to string

@@ -24,8 +24,10 @@ export default function(sequelize) {
   });
 
   ContentTopic.associate = function(models) {
-    // Define associations here if needed in the future
-    // Could be used to categorize content, curricula, etc.
+    ContentTopic.hasMany(models.Product, {
+      foreignKey: 'content_topic_id',
+      as: 'products'
+    });
   };
 
   return ContentTopic;

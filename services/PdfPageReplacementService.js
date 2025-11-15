@@ -320,27 +320,47 @@ class PdfPageReplacementService {
         FRONTEND_URL: process.env.FRONTEND_URL || 'https://ludora.app'
       };
 
-      // Apply main logo element
-      if (watermarkTemplate.logo && watermarkTemplate.logo.visible) {
-        await this.addWatermarkElement(page, 'logo', watermarkTemplate.logo, pageVariables, width, height);
-      }
+      // Support both unified array structure and legacy structure during transition
+      const hasUnifiedStructure = watermarkTemplate.elements;
 
-      // Apply main text element
-      if (watermarkTemplate.text && watermarkTemplate.text.visible) {
-        await this.addWatermarkElement(page, 'text', watermarkTemplate.text, pageVariables, width, height);
-      }
+      if (hasUnifiedStructure) {
+        // NEW UNIFIED STRUCTURE: Process all element arrays
+        if (watermarkTemplate.elements) {
+          for (const [elementType, elementArray] of Object.entries(watermarkTemplate.elements)) {
+            if (Array.isArray(elementArray)) {
+              for (const element of elementArray) {
+                if (element && element.visible !== false && !element.hidden) {
+                  await this.addWatermarkElement(page, elementType, element, pageVariables, width, height);
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // LEGACY STRUCTURE: Process built-in elements and customElements
 
-      // Apply main URL element
-      if (watermarkTemplate.url && watermarkTemplate.url.visible) {
-        await this.addWatermarkElement(page, 'url', watermarkTemplate.url, pageVariables, width, height);
-      }
+        // Apply main logo element
+        if (watermarkTemplate.logo && watermarkTemplate.logo.visible) {
+          await this.addWatermarkElement(page, 'logo', watermarkTemplate.logo, pageVariables, width, height);
+        }
 
-      // Apply custom elements
-      if (watermarkTemplate.customElements) {
-        for (const [elementId, element] of Object.entries(watermarkTemplate.customElements)) {
-          // Use consistent visibility logic: render unless explicitly hidden
-          if (element.visible !== false && !element.hidden) {
-            await this.addWatermarkElement(page, element.type, element, pageVariables, width, height);
+        // Apply main text element
+        if (watermarkTemplate.text && watermarkTemplate.text.visible) {
+          await this.addWatermarkElement(page, 'text', watermarkTemplate.text, pageVariables, width, height);
+        }
+
+        // Apply main URL element
+        if (watermarkTemplate.url && watermarkTemplate.url.visible) {
+          await this.addWatermarkElement(page, 'url', watermarkTemplate.url, pageVariables, width, height);
+        }
+
+        // Apply custom elements
+        if (watermarkTemplate.customElements) {
+          for (const [elementId, element] of Object.entries(watermarkTemplate.customElements)) {
+            // Use consistent visibility logic: render unless explicitly hidden
+            if (element.visible !== false && !element.hidden) {
+              await this.addWatermarkElement(page, element.type, element, pageVariables, width, height);
+            }
           }
         }
       }
