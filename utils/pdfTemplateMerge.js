@@ -1083,8 +1083,9 @@ async function processWithPageReplacement(pdfBuffer, templateSettings, variables
       .filter(page => Number.isInteger(page) && page >= 1 && page <= totalPages)
       .sort((a, b) => a - b);
 
-    // Load placeholder PDF
-    const placeholderPdf = await loadPlaceholderPdf();
+    // Detect format and load appropriate placeholder PDF
+    const detectedFormat = detectDocumentFormat(templateSettings, originalPdf, variables);
+    const placeholderPdf = await loadPlaceholderPdf(detectedFormat);
 
     // Create new PDF document
     const newPdf = await PDFDocument.create();
@@ -1118,14 +1119,77 @@ async function processWithPageReplacement(pdfBuffer, templateSettings, variables
 }
 
 /**
- * Load placeholder PDF from static file
+ * Detect document format from template settings and PDF dimensions
+ * @param {Object} templateSettings - Template settings
+ * @param {PDFDocument} originalPdf - Original PDF document
+ * @param {Object} variables - Variables (for future use)
+ * @returns {string} - Format: 'portrait-a4', 'landscape-a4', or 'svg-slide'
+ */
+function detectDocumentFormat(templateSettings, originalPdf, variables) {
+  try {
+    // Check if this is an SVG-based template (check for SVG-specific settings or variables)
+    if (templateSettings.svgTemplate || variables.isSvgTemplate || templateSettings.format === 'svg') {
+      return 'svg-slide';
+    }
+
+    // Get first page dimensions to detect PDF format
+    const firstPage = originalPdf.getPage(0);
+    const { width, height } = firstPage.getSize();
+
+    // Standard A4 dimensions in points
+    const A4_PORTRAIT_WIDTH = 595; // ~210mm
+    const A4_PORTRAIT_HEIGHT = 842; // ~297mm
+    const A4_LANDSCAPE_WIDTH = 842;
+    const A4_LANDSCAPE_HEIGHT = 595;
+
+    // Tolerance for dimension comparison (allows for slight variations)
+    const TOLERANCE = 10;
+
+    // Check for landscape A4
+    if (Math.abs(width - A4_LANDSCAPE_WIDTH) <= TOLERANCE && Math.abs(height - A4_LANDSCAPE_HEIGHT) <= TOLERANCE) {
+      return 'landscape-a4';
+    }
+
+    // Check for portrait A4
+    if (Math.abs(width - A4_PORTRAIT_WIDTH) <= TOLERANCE && Math.abs(height - A4_PORTRAIT_HEIGHT) <= TOLERANCE) {
+      return 'portrait-a4';
+    }
+
+    // Determine by aspect ratio if dimensions don't match exactly
+    const aspectRatio = width / height;
+
+    if (aspectRatio > 1.2) {
+      // Wider than tall - likely landscape
+      return 'landscape-a4';
+    } else {
+      // Taller than wide or square - default to portrait
+      return 'portrait-a4';
+    }
+
+  } catch (error) {
+    console.log('⚠️ Format detection failed, defaulting to portrait-a4:', error.message);
+    return 'portrait-a4'; // Safe fallback
+  }
+}
+
+/**
+ * Load placeholder PDF based on detected format
+ * @param {string} format - Document format: 'portrait-a4', 'landscape-a4', or 'svg-slide'
  * @returns {Promise<PDFDocument>} - Placeholder PDF document
  */
-async function loadPlaceholderPdf() {
-  const placeholderPath = path.join(process.cwd(), 'assets', 'placeholders', 'preview-not-available.pdf');
+async function loadPlaceholderPdf(format) {
+  // Map formats to placeholder files
+  const placeholderFiles = {
+    'portrait-a4': 'preview-not-available-portrait.pdf',
+    'landscape-a4': 'preview-not-available-landscape.pdf',
+    'svg-slide': 'preview-not-available-slide.pdf'
+  };
+
+  const placeholderFile = placeholderFiles[format] || placeholderFiles['portrait-a4']; // Fallback
+  const placeholderPath = path.join(process.cwd(), 'assets', 'placeholders', placeholderFile);
 
   if (!fs.existsSync(placeholderPath)) {
-    throw new Error('Placeholder PDF not found. Ensure static placeholder file exists in assets/placeholders/');
+    throw new Error(`Placeholder PDF not found for format ${format}: ${placeholderPath}. Ensure static placeholder files exist in assets/placeholders/`);
   }
 
   const placeholderBuffer = fs.readFileSync(placeholderPath);
