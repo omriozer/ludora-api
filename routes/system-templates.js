@@ -833,16 +833,16 @@ router.post('/:id/preview-watermark', authenticateToken, async (req, res) => {
     };
 
     if (contentType === 'svg') {
-      const { applyWatermarksToSvg } = await import('../utils/svgWatermark.js');
+      const { mergeSvgTemplate } = await import('../utils/svgTemplateMerge.js');
       const sampleSvg = sampleContent || `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
   <rect width="800" height="600" fill="#f0f0f0"/>
   <text x="400" y="300" text-anchor="middle" font-family="Arial" font-size="24" fill="#333">
-    Sample Content for Watermark Preview
+    Sample Content for Template Preview
   </text>
 </svg>`;
 
-      previewResult = await applyWatermarksToSvg(sampleSvg, template.template_data, defaultVariables);
+      previewResult = await mergeSvgTemplate(sampleSvg, template.template_data, defaultVariables);
     } else if (contentType === 'pdf') {
       // For PDF preview, return template data with variables substituted
       previewResult = {

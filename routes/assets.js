@@ -7,11 +7,11 @@ import fileService from '../services/FileService.js';
 import db from '../models/index.js';
 import { sequelize } from '../models/index.js';
 import { mergePdfTemplate } from '../utils/pdfTemplateMerge.js';
-import { addPdfWatermarks } from '../utils/pdfWatermark.js';
+// Removed getPreviewTemplate import - no longer applying automatic preview watermarks
 import { resolveBrandingSettingsWithFallback } from '../utils/brandingSettingsHelper.js';
 import { substituteVariables } from '../utils/variableSubstitution.js';
-import { processSelectiveAccessPdf } from '../services/PdfPageReplacementService.js';
-import { applySvgTemplate } from '../utils/svgWatermark.js';
+// Removed PdfPageReplacementService import - now using unified mergePdfTemplate
+import { mergeSvgTemplate } from '../utils/svgTemplateMerge.js';
 import AccessControlService from '../services/AccessControlService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
 import { generateIsraeliCacheHeaders, applyIsraeliCaching } from '../middleware/israeliCaching.js';
@@ -89,57 +89,10 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
       true // Always try to use template system for consistency
     );
 
-
-    // Use enhanced processing if selective access, template watermarks, OR branding templates are needed
+    // Use unified template processing for selective access, watermarks, AND/OR branding templates
     if (needsSelectiveAccess || shouldUseTemplateWatermarks || shouldMergeBranding) {
 
-      // Get watermark template (configured or default)
-      let watermarkTemplate = null;
-      if (needsWatermarks) {
-        try {
-          const { SystemTemplate } = db;
-          let template = null;
-
-          // Try to get the configured watermark template
-          if (fileEntity.watermark_template_id) {
-            template = await SystemTemplate.findOne({
-              where: {
-                id: fileEntity.watermark_template_id,
-                template_type: 'watermark'
-              }
-            });
-          }
-
-          // If no configured template or not found, try to get default template
-          if (!template) {
-            template = await SystemTemplate.findOne({
-              where: {
-                template_type: 'watermark',
-                target_format: 'pdf-a4-portrait', // TODO: Auto-detect format
-                is_default: true
-              }
-            });
-          }
-
-          if (template) {
-            watermarkTemplate = template.template_data;
-
-            // Override with custom watermark settings if available
-            if (fileEntity.watermark_settings) {
-              watermarkTemplate = fileEntity.watermark_settings;
-            }
-          } else {
-            // Check for custom watermark settings even if no template
-            if (fileEntity.watermark_settings) {
-              watermarkTemplate = fileEntity.watermark_settings;
-            }
-          }
-        } catch (templateError) {
-          // Template error - continue without watermark
-        }
-      }
-
-      // Prepare variables for watermark substitution
+      // Prepare variables for template substitution
       const variables = {
         filename: fileEntity.file_name,
         user: userEmail || user?.email || user?.name || 'User', // Prioritize userEmail parameter
@@ -148,39 +101,96 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
         time: new Date().toLocaleTimeString()
       };
 
-      // Determine accessible pages - null means all pages accessible
-      const accessiblePages = needsSelectiveAccess ? fileEntity.accessible_pages : null;
+      // Build unified template settings combining watermarks and branding
+      let unifiedTemplate = { elements: {} };
 
-
-      // Use new PdfPageReplacementService for comprehensive processing
-      let processedBuffer = await processSelectiveAccessPdf(
-        pdfBuffer,
-        accessiblePages,
-        watermarkTemplate,
-        variables,
-        {
-          applyWatermarksToAccessible: needsWatermarks,
-          preservePageStructure: true
-        }
-      );
-
-      // Apply branding if needed (after selective access processing)
-      if (shouldMergeBranding) {
+      // 1. Add watermark elements if needed
+      if (needsWatermarks) {
         try {
-          const brandingSettings = await resolveBrandingSettingsWithFallback(fileEntity, settings);
-          if (brandingSettings) {
-            processedBuffer = await mergePdfTemplate(processedBuffer, brandingSettings, variables);
+          const { SystemTemplate } = db;
+          let watermarkTemplate = null;
+
+          // Try to get the configured watermark template
+          if (fileEntity.watermark_template_id) {
+            const template = await SystemTemplate.findOne({
+              where: {
+                id: fileEntity.watermark_template_id,
+                template_type: 'watermark'
+              }
+            });
+            if (template) {
+              watermarkTemplate = template.template_data;
+            }
           }
-        } catch (brandingError) {
-          // Branding error - continue without branding
+
+          // If no configured template, try to get default watermark template
+          if (!watermarkTemplate) {
+            const defaultTemplate = await SystemTemplate.findOne({
+              where: {
+                template_type: 'watermark',
+                target_format: fileEntity.target_format || 'pdf-a4-portrait',
+                is_default: true
+              }
+            });
+            if (defaultTemplate) {
+              watermarkTemplate = defaultTemplate.template_data;
+            }
+          }
+
+          // Override with custom watermark settings if available
+          if (fileEntity.watermark_settings) {
+            watermarkTemplate = fileEntity.watermark_settings;
+          }
+
+          // Add watermark elements to unified template
+          if (watermarkTemplate && watermarkTemplate.elements) {
+            // Merge element arrays by type
+            for (const [elementType, elementArray] of Object.entries(watermarkTemplate.elements)) {
+              if (Array.isArray(elementArray)) {
+                if (!unifiedTemplate.elements[elementType]) {
+                  unifiedTemplate.elements[elementType] = [];
+                }
+                unifiedTemplate.elements[elementType].push(...elementArray);
+              }
+            }
+          }
+        } catch (templateError) {
+          // Template error - continue without watermark elements
         }
       }
 
+      // 2. Add branding elements if needed
+      if (shouldMergeBranding) {
+        try {
+          const brandingSettings = await resolveBrandingSettingsWithFallback(fileEntity, settings);
+          if (brandingSettings && brandingSettings.elements) {
+            // Merge element arrays by type
+            for (const [elementType, elementArray] of Object.entries(brandingSettings.elements)) {
+              if (Array.isArray(elementArray)) {
+                if (!unifiedTemplate.elements[elementType]) {
+                  unifiedTemplate.elements[elementType] = [];
+                }
+                unifiedTemplate.elements[elementType].push(...elementArray);
+              }
+            }
+          }
+        } catch (brandingError) {
+          // Branding error - continue without branding elements
+        }
+      }
+
+      // 3. Apply unified template with optional page replacement
+      const options = {};
+      if (needsSelectiveAccess) {
+        options.accessiblePages = fileEntity.accessible_pages;
+      }
+
+      // Use unified mergePdfTemplate for all processing
+      const processedBuffer = await mergePdfTemplate(pdfBuffer, unifiedTemplate, variables, options);
       return processedBuffer;
     }
 
     // Fall back to legacy processing for backward compatibility
-
     const shouldAddWatermarks = !hasAccess && fileEntity.allow_preview;
     let finalPdfBuffer = pdfBuffer;
 
@@ -209,17 +219,8 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
       }
     }
 
-    // Step 2: Apply legacy watermarks if needed
-    if (shouldAddWatermarks) {
-      try {
-        // Always use the backend logo file
-        const logoUrl = path.join(process.cwd(), 'assets', 'images', 'logo.png');
-
-        finalPdfBuffer = await addPdfWatermarks(finalPdfBuffer, logoUrl);
-      } catch (error) {
-        // Watermark error - continue without watermarks
-      }
-    }
+    // Step 2: Watermarks are now handled only through user's template system
+    // No automatic preview watermarks applied - user controls all watermarks via templates
 
     return finalPdfBuffer;
 
@@ -1413,8 +1414,9 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
             }
           }
 
+          // Use unified template processing for SVG (same approach as PDF)
           if (watermarkTemplate) {
-            // Prepare variables for watermark substitution
+            // Prepare variables for template substitution
             const variables = {
               filename: slide.filename,
               slideId: slideId,
@@ -1424,8 +1426,24 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
               time: new Date().toLocaleTimeString()
             };
 
-            svgContent = await applySvgTemplate(svgContent, watermarkTemplate, variables);
-          } else {
+            // Build unified template settings combining watermarks and potential branding
+            let unifiedTemplate = { elements: [] };
+
+            // Add watermark elements
+            if (watermarkTemplate && watermarkTemplate.elements) {
+              unifiedTemplate.elements.push(...watermarkTemplate.elements);
+            }
+
+            // Future: Add branding elements if lesson plans support branding
+            // if (shouldMergeBranding) {
+            //   const brandingSettings = await resolveBrandingSettingsWithFallback(lessonPlan, settings);
+            //   if (brandingSettings && brandingSettings.elements) {
+            //     unifiedTemplate.elements.push(...brandingSettings.elements);
+            //   }
+            // }
+
+            // Apply unified template using new SVG template system
+            svgContent = await mergeSvgTemplate(svgContent, unifiedTemplate, variables);
           }
         } catch (watermarkError) {
         }
@@ -1821,9 +1839,11 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
     // PDF processing needed if:
     // 1. It's a PDF file AND branding should be applied (full access or preview with add_branding)
     // 2. OR it's preview mode with accessible_pages restrictions
+    // 3. OR it's preview mode and watermarks should be applied
     const needsBranding = isPdf && fileEntity.add_branding;
     const needsPageRestriction = isPdf && isPreviewMode && fileEntity.accessible_pages && fileEntity.accessible_pages.length > 0;
-    const needsPdfProcessing = needsBranding || needsPageRestriction;
+    const needsWatermarks = isPdf && isPreviewMode && req.query.skipWatermarks !== 'true';
+    const needsPdfProcessing = needsBranding || needsPageRestriction || needsWatermarks;
 
     try {
       // Get file metadata first to check existence
