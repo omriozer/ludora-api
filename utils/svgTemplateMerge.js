@@ -34,16 +34,13 @@ import { getCanvasDimensions } from './canvasDimensions.js';
  */
 async function mergeSvgTemplate(svgContent, templateSettings, variables = {}, options = {}) {
   try {
-    console.log('🔍 mergeSvgTemplate called with:');
-    console.log('- templateSettings:', JSON.stringify(templateSettings, null, 2));
-    console.log('- variables:', JSON.stringify(variables, null, 2));
-
     if (!templateSettings || typeof templateSettings !== 'object') {
-      console.log('❌ No template settings or invalid object, returning original SVG');
       return svgContent;
     }
 
-    console.log('📄 SVG template mode - applying to SVG content');
+    if (!svgContent) {
+      return svgContent; // Return early if no content
+    }
 
     // Parse SVG content
     const parser = new DOMParser();
@@ -70,15 +67,6 @@ async function mergeSvgTemplate(svgContent, templateSettings, variables = {}, op
       pageNumber: 1,
       totalPages: 1
     };
-
-    // Use shared template processing utilities
-    await processTemplateElements(
-      templateSettings,
-      renderSvgElement,
-      pageInfo,
-      variables,
-      fontSelector
-    );
 
     // Custom render function for SVG elements
     async function renderSvgElement(elementType, element, elementInfo, pageVariables) {
@@ -118,14 +106,23 @@ async function mergeSvgTemplate(svgContent, templateSettings, variables = {}, op
             break;
 
           default:
-            console.log(`⚠️ Unknown element type: ${elementType} - skipping rendering`);
+            // Skip unknown element types silently
+            break;
         }
 
       } catch (error) {
-        console.log('❌ SVG Element render failed for type:', elementType, 'Error:', error.message);
-        console.log('🔍 Failed element details:', JSON.stringify(element, null, 2));
+        throw new Error(`Failed to render ${elementType} element: ${error.message}`);
       }
     }
+
+    // Use shared template processing utilities
+    await processTemplateElements(
+      templateSettings,
+      renderSvgElement,
+      pageInfo,
+      variables,
+      fontSelector
+    );
 
     // Insert template group into SVG
     svgElement.appendChild(templateGroup);
@@ -347,7 +344,6 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
         return; // Successfully rendered image
 
       } catch (imageError) {
-        console.log('❌ SVG Logo image rendering failed, falling back to text');
         // Fall through to text fallback
       }
     }
@@ -386,7 +382,7 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
     }
 
   } catch (error) {
-    console.log('❌ SVG Logo render failed:', error.message);
+    throw new Error(`SVG Logo render failed: ${error.message}`);
   }
 }
 

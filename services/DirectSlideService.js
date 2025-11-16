@@ -283,17 +283,43 @@ class DirectSlideService {
    * Get all slides for a lesson plan
    *
    * @param {string} lessonPlanId - ID of the lesson plan
-   * @param {Object} transaction - Optional Sequelize transaction
-   * @returns {Promise<Object>} Slides with metadata
+   * @param {Object} options - Options
+   * @param {boolean} options.includeContent - Whether to load SVG content from S3
+   * @param {Object} options.transaction - Optional Sequelize transaction
+   * @returns {Promise<Object>} Slides with metadata and optionally content
    */
-  async getSlides(lessonPlanId, transaction = null) {
+  async getSlides(lessonPlanId, options = {}) {
     try {
+      const { includeContent = false, transaction = null } = options;
+
       const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
       if (!lessonPlan) {
         throw new Error(`Lesson plan not found: ${lessonPlanId}`);
       }
 
       const slides = lessonPlan.getDirectPresentationSlides();
+
+      // Load SVG content from S3 if requested
+      if (includeContent) {
+        const slidesWithContent = await Promise.all(
+          slides.map(async (slide) => {
+            try {
+              const content = await this.getSlideContent(slide.s3_key);
+              return { ...slide, content };
+            } catch (error) {
+              console.log(`⚠️ Failed to load content for slide ${slide.id}:`, error.message);
+              return { ...slide, content: null };
+            }
+          })
+        );
+
+        return {
+          success: true,
+          slides: slidesWithContent,
+          totalSlides: slides.length,
+          lessonPlanId
+        };
+      }
 
       return {
         success: true,
@@ -304,6 +330,34 @@ class DirectSlideService {
 
     } catch (error) {
       throw error;
+    }
+  }
+
+  /**
+   * Get SVG content from S3 for a specific slide
+   *
+   * @param {string} s3Key - S3 key for the slide
+   * @returns {Promise<string>} SVG content as string
+   */
+  async getSlideContent(s3Key) {
+    try {
+      if (!this.s3) {
+        throw new Error('S3 not configured');
+      }
+
+      const params = {
+        Bucket: this.bucketName,
+        Key: s3Key
+      };
+
+      const result = await this.s3.getObject(params).promise();
+      return result.Body.toString('utf-8');
+
+    } catch (error) {
+      if (error.code === 'NoSuchKey' || error.statusCode === 404) {
+        throw new Error(`Slide content not found: ${s3Key}`);
+      }
+      throw new Error(`Failed to load slide content: ${error.message}`);
     }
   }
 

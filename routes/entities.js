@@ -266,6 +266,17 @@ async function getFullProduct(product, userId = null, includeGameDetails = false
     response.game_details = gameDetails;
   }
 
+  // Add preview metadata for lesson plan products
+  if (product.product_type === 'lesson_plan' && entity) {
+    response.preview_info = {
+      allow_slide_preview: entity.allow_slide_preview || false,
+      accessible_slides: entity.accessible_slides || null,
+      total_slides: entity.total_slides || 0,
+      watermark_template_id: entity.watermark_template_id || null,
+      has_preview_restrictions: entity.allow_slide_preview && entity.accessible_slides && entity.accessible_slides.length > 0
+    };
+  }
+
   return response;
 }
 
@@ -1469,6 +1480,12 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       targetFormat = uploadResult.analysis.contentMetadata.target_format;
     } else {
       // PDF orientation detection failed, using default
+    }
+
+    // IMPORTANT: For SVG files uploaded to lesson plans, always set target_format to 'svg-lessonplan'
+    if (fileExtension === 'svg') {
+      targetFormat = 'svg-lessonplan';
+      clog(`📊 SVG file detected for lesson plan - setting target_format to 'svg-lessonplan'`);
     }
 
     // Update file entity with S3 information and detected target_format

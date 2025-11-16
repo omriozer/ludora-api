@@ -67,6 +67,22 @@ export default (sequelize) => {
       type: DataTypes.STRING,
       allowNull: true,
       comment: 'Reference to system_templates for watermark configuration on slides'
+    },
+    branding_template_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Reference to system_templates for branding configuration on slides'
+    },
+    branding_settings: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Custom branding configuration settings for slides'
+    },
+    add_branding: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: 'Whether branding is enabled for this lesson plan'
     }
   }, {
     tableName: 'lesson_plan',
@@ -92,6 +108,14 @@ export default (sequelize) => {
       {
         fields: ['watermark_template_id'],
         name: 'idx_lesson_plan_watermark_template_id'
+      },
+      {
+        fields: ['branding_template_id'],
+        name: 'idx_lesson_plan_branding_template_id'
+      },
+      {
+        fields: ['add_branding'],
+        name: 'idx_lesson_plan_add_branding'
       }
     ]
   });
@@ -104,6 +128,12 @@ export default (sequelize) => {
     LessonPlan.belongsTo(models.SystemTemplate, {
       foreignKey: 'watermark_template_id',
       as: 'watermarkTemplate'
+    });
+
+    // SystemTemplate association for branding configuration
+    LessonPlan.belongsTo(models.SystemTemplate, {
+      foreignKey: 'branding_template_id',
+      as: 'brandingTemplate'
     });
 
     // Store models reference for dynamic file associations
@@ -538,6 +568,42 @@ export default (sequelize) => {
     return this.save();
   };
 
+  // ===== BRANDING TEMPLATE METHODS =====
+
+  // Check if lesson plan has branding template
+  LessonPlan.prototype.hasBrandingTemplate = function() {
+    return !!(this.branding_template_id);
+  };
+
+  // Get branding template ID
+  LessonPlan.prototype.getBrandingTemplateId = function() {
+    return this.branding_template_id;
+  };
+
+  // Set branding template
+  LessonPlan.prototype.setBrandingTemplate = function(templateId) {
+    this.branding_template_id = templateId;
+    return this.save();
+  };
+
+  // Clear branding template
+  LessonPlan.prototype.clearBrandingTemplate = function() {
+    this.branding_template_id = null;
+    this.branding_settings = null;
+    return this.save();
+  };
+
+  // Get branding settings
+  LessonPlan.prototype.getBrandingSettings = function() {
+    return this.branding_settings;
+  };
+
+  // Set branding settings
+  LessonPlan.prototype.setBrandingSettings = function(settings) {
+    this.branding_settings = settings;
+    return this.save();
+  };
+
   // Get comprehensive preview mode information
   LessonPlan.prototype.getPreviewModeInfo = function() {
     const directSlides = this.getDirectPresentationSlides();
@@ -551,7 +617,9 @@ export default (sequelize) => {
         ? this.getAccessibleDirectSlides().length
         : directSlides.length,
       hasWatermarkTemplate: this.hasWatermarkTemplate(),
-      watermarkTemplateId: this.getWatermarkTemplateId()
+      watermarkTemplateId: this.getWatermarkTemplateId(),
+      hasBrandingTemplate: this.hasBrandingTemplate(),
+      brandingTemplateId: this.getBrandingTemplateId()
     };
   };
 
