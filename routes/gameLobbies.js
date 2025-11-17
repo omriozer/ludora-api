@@ -329,8 +329,16 @@ router.put('/game-lobbies/:lobbyId/activate',
       const activationData = req.validatedData;
       const user = req.user;
 
-      clog(`🔄 Activating lobby ${lobbyId} with enhanced settings by user ${user.uid}`);
-      clog(`🔧 Activation data:`, activationData);
+      clog(`🔄 [ROUTE] Activating lobby ${lobbyId} with enhanced settings by user ${user.uid}`);
+      clog(`🔧 [ROUTE] Activation data:`, activationData);
+      clog(`👤 [ROUTE] User context:`, {
+        uid: user.uid,
+        role: user.role,
+        uidType: typeof user.uid,
+        fullUser: user
+      });
+      clog(`📋 [ROUTE] Validated params:`, req.validatedParams);
+      clog(`📋 [ROUTE] Validated data:`, req.validatedData);
 
       // Activate the lobby with enhanced configuration
       const updatedLobby = await GameLobbyService.activateLobby(
@@ -341,11 +349,17 @@ router.put('/game-lobbies/:lobbyId/activate',
       );
 
       await transaction.commit();
+      clog(`✅ [ROUTE] Lobby activation successful for ${lobbyId}`);
       res.status(200).json(updatedLobby);
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to activate lobby:', error);
+      cerror('❌ [ROUTE] Failed to activate lobby in route handler:', {
+        lobbyId: req.validatedParams?.lobbyId,
+        userId: req.user?.uid,
+        error: error.message,
+        stack: error.stack
+      });
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -574,6 +588,196 @@ router.post('/game-lobbies/join-by-code',
   }
 );
 
+/**
+ * POST /api/game-lobbies/:lobbyId/join
+ * Join a lobby with on-demand session creation based on invitation_type
+ */
+router.post('/game-lobbies/:lobbyId/join',
+  rateLimiters.general,
+  validateJoinByCode, // Reuse validation for participant data
+  async (req, res) => {
+    const transaction = await models.sequelize.transaction();
+    try {
+      const { lobbyId } = req.params;
+      const { participant, session_id } = req.validatedData; // session_id optional for manual_selection
+
+      clog(`🚪 Joining lobby ${lobbyId} as ${participant.display_name} with invitation logic`);
+
+      // Get lobby details with current sessions
+      const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
+      if (!lobby) {
+        await transaction.rollback();
+        return res.status(404).json({ error: 'Lobby not found' });
+      }
+
+      // Check if lobby is joinable
+      if (!lobby.canJoin || !lobby.canJoin()) {
+        const status = GameLobbyService.computeStatus(lobby);
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Lobby is not open for joining (status: ${status})`
+        });
+      }
+
+      // Check guest user restrictions
+      if (!participant.user_id && !lobby.settings.allow_guest_users) {
+        await transaction.rollback();
+        return res.status(403).json({
+          error: 'Guest users are not allowed in this lobby'
+        });
+      }
+
+      const invitationType = lobby.settings.invitation_type || 'manual_selection';
+      clog(`📍 Processing join request with invitation_type: ${invitationType}`);
+
+      let joinedSession;
+
+      // Handle different invitation types
+      switch (invitationType) {
+        case 'manual_selection':
+          if (!session_id) {
+            await transaction.rollback();
+            return res.status(400).json({
+              error: 'Session ID required for manual selection invitation type'
+            });
+          }
+          // Find the specified session
+          const targetSession = lobby.active_sessions?.find(s => s.id === session_id);
+          if (!targetSession) {
+            await transaction.rollback();
+            return res.status(404).json({ error: 'Specified session not found' });
+          }
+          // TODO: Join specific session
+          joinedSession = { id: session_id, session_number: targetSession.session_number };
+          break;
+
+        case 'teacher_assignment':
+          // TODO: Find pre-assigned session for this participant
+          await transaction.rollback();
+          return res.status(501).json({
+            error: 'Teacher assignment joining not yet implemented'
+          });
+
+        case 'random':
+          // Find session with available space randomly
+          const availableSessionsRandom = lobby.active_sessions?.filter(session => {
+            const maxPlayers = session.data?.max_players || 4; // Default from game config
+            return session.participants_count < maxPlayers;
+          }) || [];
+
+          if (availableSessionsRandom.length > 0) {
+            // Randomly pick an available session
+            const randomIndex = Math.floor(Math.random() * availableSessionsRandom.length);
+            const selectedSession = availableSessionsRandom[randomIndex];
+            joinedSession = { id: selectedSession.id, session_number: selectedSession.session_number };
+            clog(`🎲 Randomly assigned to existing session ${selectedSession.session_number}`);
+          } else {
+            // Create new session for random assignment
+            const newSession = await createSessionForJoining(lobbyId, lobby, transaction);
+            joinedSession = newSession;
+            clog(`🎲 Created new session ${newSession.session_number} for random assignment`);
+          }
+          break;
+
+        case 'order':
+          // Find first session with available space (sequential assignment)
+          const availableSessionsOrder = lobby.active_sessions?.filter(session => {
+            const maxPlayers = session.data?.max_players || 4; // Default from game config
+            return session.participants_count < maxPlayers;
+          }).sort((a, b) => a.session_number - b.session_number) || [];
+
+          if (availableSessionsOrder.length > 0) {
+            // Take the first (lowest numbered) available session
+            const firstSession = availableSessionsOrder[0];
+            joinedSession = { id: firstSession.id, session_number: firstSession.session_number };
+            clog(`📋 Assigned to session ${firstSession.session_number} in order`);
+          } else {
+            // Create new session for sequential assignment
+            const newSession = await createSessionForJoining(lobbyId, lobby, transaction);
+            joinedSession = newSession;
+            clog(`📋 Created new session ${newSession.session_number} for sequential assignment`);
+          }
+          break;
+
+        default:
+          await transaction.rollback();
+          return res.status(400).json({
+            error: `Unknown invitation type: ${invitationType}`
+          });
+      }
+
+      // TODO: Actually add participant to the session
+      // For now, just return success with session info
+
+      await transaction.commit();
+
+      res.status(200).json({
+        message: 'Successfully joined lobby',
+        lobby: {
+          id: lobby.id,
+          lobby_code: lobby.lobby_code,
+          invitation_type: invitationType
+        },
+        session: joinedSession,
+        participant: participant
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      cerror('❌ Failed to join lobby:', error);
+
+      if (error.message.includes('not open for joining')) {
+        return res.status(400).json({ error: 'Lobby is not open for joining' });
+      }
+
+      res.status(500).json({
+        error: 'Failed to join lobby',
+        message: error.message
+      });
+    }
+  }
+);
+
+// Helper method for creating sessions during joining
+async function createSessionForJoining(lobbyId, lobby, transaction) {
+  // Import session utilities
+  const { getSessionDefaults } = await import('../config/gameTypeDefaults.js');
+  const gameType = lobby.game?.game_type;
+  const sessionDefaults = getSessionDefaults(gameType);
+
+  // Find highest session number to auto-increment
+  const existingSessionNumbers = lobby.active_sessions?.map(s => s.session_number) || [];
+  const nextSessionNumber = existingSessionNumbers.length > 0
+    ? Math.max(...existingSessionNumbers) + 1
+    : 1;
+
+  // Create new session
+  const sessionCreateData = {
+    lobby_id: lobbyId,
+    session_number: nextSessionNumber,
+    participants: [], // Will add participant next
+    current_state: null,
+    expires_at: null, // Inherit from lobby
+    finished_at: null,
+    data: {
+      session_name: `${sessionDefaults.session_name} ${nextSessionNumber}`,
+      max_players: sessionDefaults.max_players || 4,
+      game_type: gameType,
+      created_automatically: true,
+      created_during_join: true,
+      creation_timestamp: new Date().toISOString()
+    }
+  };
+
+  const session = await models.GameSession.create(sessionCreateData, { transaction });
+
+  return {
+    id: session.id,
+    session_number: session.session_number,
+    created: true
+  };
+}
+
 // =============================================
 // SESSION MANAGEMENT WITHIN LOBBIES
 // =============================================
@@ -687,5 +891,41 @@ router.post('/game-lobbies/:lobbyId/sessions',
 // ADMIN/UTILITY ROUTES
 // =============================================
 
+/**
+ * GET /api/game-lobbies/:lobbyId/debug
+ * Debug lobby data for troubleshooting (requires authentication)
+ */
+router.get('/game-lobbies/:lobbyId/debug',
+  authenticateToken,
+  validateLobbyId,
+  async (req, res) => {
+    const transaction = await models.sequelize.transaction();
+    try {
+      const { lobbyId } = req.validatedParams;
+      const user = req.user;
+
+      clog(`🔍 [ROUTE] Debug request for lobby ${lobbyId} by user ${user.uid}`);
+
+      // Get debug information
+      const debugInfo = await GameLobbyService.debugLobby(lobbyId, transaction);
+
+      if (!debugInfo) {
+        await transaction.rollback();
+        return res.status(404).json({ error: 'Lobby not found' });
+      }
+
+      await transaction.commit();
+      res.status(200).json(debugInfo);
+
+    } catch (error) {
+      await transaction.rollback();
+      cerror('❌ [ROUTE] Failed to debug lobby:', error);
+      res.status(500).json({
+        error: 'Failed to debug lobby',
+        message: error.message
+      });
+    }
+  }
+);
 
 export default router;

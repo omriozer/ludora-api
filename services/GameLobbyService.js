@@ -116,7 +116,7 @@ class GameLobbyService {
         max_players: 12,
         session_time_limit: 30, // minutes
         allow_guest_users: true,
-        invitation_type: 'lobby_only', // 'lobby_only', 'session_only', 'both'
+        invitation_type: 'manual_selection', // 'manual_selection', 'teacher_assignment', 'random', 'order'
         auto_close_after: 60 // minutes of inactivity
       };
 
@@ -195,7 +195,10 @@ class GameLobbyService {
     try {
       clog(`🔄 Activating lobby ${lobbyId} with enhanced settings by user ${userId}`);
       clog(`🔧 Activation data:`, activationData);
+      clog(`👤 User ID type and value:`, { userId, typeof: typeof userId });
 
+      // Step 1: Lookup lobby
+      clog(`📍 Step 1: Looking up lobby ${lobbyId}...`);
       const lobby = await models.GameLobby.findByPk(lobbyId, {
         include: [
           {
@@ -208,70 +211,172 @@ class GameLobbyService {
       });
 
       if (!lobby) {
+        cerror(`❌ Lobby not found: ${lobbyId}`);
         throw new Error('Lobby not found');
       }
 
-      // Check permissions (owner, host, or admin)
-      if (lobby.owner_user_id !== userId && lobby.host_user_id !== userId) {
-        // Admin bypass handled by route middleware
+      clog(`✅ Lobby found:`, {
+        id: lobby.id,
+        owner_user_id: lobby.owner_user_id,
+        host_user_id: lobby.host_user_id,
+        owner_type: typeof lobby.owner_user_id,
+        host_type: typeof lobby.host_user_id,
+        game_type: lobby.game?.game_type,
+        expires_at: lobby.expires_at,
+        closed_at: lobby.closed_at
+      });
+
+      // Step 2: Check permissions with detailed logging
+      clog(`📍 Step 2: Checking permissions...`);
+      clog(`👤 Permission check details:`, {
+        userId: userId,
+        userId_type: typeof userId,
+        owner_user_id: lobby.owner_user_id,
+        owner_user_id_type: typeof lobby.owner_user_id,
+        host_user_id: lobby.host_user_id,
+        host_user_id_type: typeof lobby.host_user_id,
+        owner_match: lobby.owner_user_id === userId,
+        host_match: lobby.host_user_id === userId,
+        owner_match_string: String(lobby.owner_user_id) === String(userId),
+        host_match_string: String(lobby.host_user_id) === String(userId)
+      });
+
+      // Enhanced permission validation with comprehensive type checking
+      const ownerUserId = lobby.owner_user_id;
+      const hostUserId = lobby.host_user_id;
+
+      // Validate that required fields exist (they should per model constraint)
+      if (!ownerUserId || !hostUserId) {
+        cerror(`❌ Data integrity issue: lobby ${lobbyId} missing required user IDs`, {
+          owner_user_id: ownerUserId,
+          host_user_id: hostUserId,
+          owner_type: typeof ownerUserId,
+          host_type: typeof hostUserId
+        });
+        throw new Error('Lobby data integrity error: missing owner or host user ID');
+      }
+
+      // Use string comparison for safety and handle different data types
+      const userIdStr = String(userId);
+      const ownerIdStr = String(ownerUserId);
+      const hostIdStr = String(hostUserId);
+
+      const isOwner = ownerIdStr === userIdStr;
+      const isHost = hostIdStr === userIdStr;
+
+      clog(`🔍 String comparison results:`, {
+        userId: userIdStr,
+        ownerId: ownerIdStr,
+        hostId: hostIdStr,
+        isOwner,
+        isHost
+      });
+
+      if (!isOwner && !isHost) {
+        cerror(`❌ Access denied: user ${userIdStr} is not owner (${ownerIdStr}) or host (${hostIdStr})`);
         throw new Error('Access denied: Only lobby owner or host can activate lobby');
       }
 
-      // Import game type configuration
-      const { getGameTypeConfig, getLobbyDefaults, getSessionDefaults, calculateSessionDistribution } =
-        await import('../config/gameTypeDefaults.js');
+      clog(`✅ Permission check passed: isOwner=${isOwner}, isHost=${isHost}`);
 
-      const gameType = lobby.game.game_type;
-      const gameConfig = getGameTypeConfig(gameType);
-      const lobbyDefaults = getLobbyDefaults(gameType);
-      const sessionDefaults = getSessionDefaults(gameType);
+      // Step 3: Import game type configuration
+      clog(`📍 Step 3: Importing game type configuration...`);
+      let getGameTypeConfig, getLobbyDefaults, getSessionDefaults, calculateSessionDistribution;
+      try {
+        const configModule = await import('../config/gameTypeDefaults.js');
+        ({ getGameTypeConfig, getLobbyDefaults, getSessionDefaults, calculateSessionDistribution } = configModule);
+        clog(`✅ Config module imported successfully`);
+      } catch (configError) {
+        cerror(`❌ Failed to import game type config:`, configError);
+        throw new Error(`Configuration import failed: ${configError.message}`);
+      }
 
-      clog(`🎮 Game type: ${gameType}, defaults:`, { lobbyDefaults, sessionDefaults });
+      // Step 4: Get game type and configuration
+      clog(`📍 Step 4: Getting game type configuration...`);
+      const gameType = lobby.game?.game_type;
+      if (!gameType) {
+        cerror(`❌ No game type found for lobby ${lobbyId}, game:`, lobby.game);
+        throw new Error('Game type not found in lobby');
+      }
 
-      // Calculate expiration time
+      clog(`🎮 Game type: ${gameType}`);
+
+      let gameConfig, lobbyDefaults, sessionDefaults;
+      try {
+        gameConfig = getGameTypeConfig(gameType);
+        lobbyDefaults = getLobbyDefaults(gameType);
+        sessionDefaults = getSessionDefaults(gameType);
+        clog(`✅ Game config loaded:`, { gameConfig, lobbyDefaults, sessionDefaults });
+      } catch (gameConfigError) {
+        cerror(`❌ Failed to get game type config for ${gameType}:`, gameConfigError);
+        throw new Error(`Game configuration failed for ${gameType}: ${gameConfigError.message}`);
+      }
+
+      // Step 5: Calculate expiration time
+      clog(`📍 Step 5: Calculating expiration time...`);
       let expires_at;
       if (activationData.expires_at) {
         expires_at = new Date(activationData.expires_at);
+        clog(`⏰ Using provided expires_at: ${expires_at}`);
       } else if (activationData.duration === 'indefinite') {
         // Set to 100 years from now for indefinite
         expires_at = new Date();
         expires_at.setFullYear(expires_at.getFullYear() + 100);
+        clog(`♾️ Set indefinite expiration: ${expires_at}`);
       } else if (activationData.duration) {
         // Set specific duration
         expires_at = new Date();
         expires_at.setMinutes(expires_at.getMinutes() + activationData.duration);
+        clog(`⏱️ Set duration ${activationData.duration} minutes, expires at: ${expires_at}`);
       } else {
         // Use default duration
         expires_at = new Date();
         expires_at.setMinutes(expires_at.getMinutes() + lobbyDefaults.session_duration_minutes);
+        clog(`🔧 Using default duration ${lobbyDefaults.session_duration_minutes} minutes, expires at: ${expires_at}`);
       }
 
-      // Determine max players (use provided value or default)
+      // Step 6: Determine max players
+      clog(`📍 Step 6: Determining max players...`);
       const maxPlayers = activationData.max_players || lobbyDefaults.max_players;
+      clog(`👥 Max players: ${maxPlayers} (provided: ${activationData.max_players}, default: ${lobbyDefaults.max_players})`);
 
       // Validate max players against game type limits
       if (maxPlayers > gameConfig.lobby.max_players_max) {
+        cerror(`❌ Max players validation failed: ${maxPlayers} > ${gameConfig.lobby.max_players_max} for ${gameType}`);
         throw new Error(`Max players (${maxPlayers}) exceeds limit for ${gameType} (${gameConfig.lobby.max_players_max})`);
       }
 
-      // Update lobby settings with new max_players and expiration
+      // Step 7: Update lobby settings
+      clog(`📍 Step 7: Updating lobby settings...`);
       const updatedSettings = {
         ...lobby.settings,
         max_players: maxPlayers
       };
 
-      await lobby.update({
-        expires_at,
-        settings: updatedSettings,
-        closed_at: null // Clear manual closure when reactivating
-      }, { transaction });
+      clog(`💾 Updating lobby with:`, { expires_at, updatedSettings, closed_at: null });
 
-      // Handle session creation if configured
+      try {
+        await lobby.update({
+          expires_at,
+          settings: updatedSettings,
+          closed_at: null // Clear manual closure when reactivating
+        }, { transaction });
+        clog(`✅ Lobby update completed`);
+      } catch (updateError) {
+        cerror(`❌ Failed to update lobby:`, updateError);
+        throw new Error(`Lobby update failed: ${updateError.message}`);
+      }
+
+      // Handle session creation based on invitation_type
       const sessionConfig = activationData.session_config || {};
-      const autoCreateSessions = sessionConfig.auto_create_sessions !== false; // Default true
+      const invitationType = updatedSettings.invitation_type || 'manual_selection'; // Default to manual_selection
+      const autoCreateSessions = invitationType === 'teacher_assignment'; // Sessions are only pre-created for teacher assignment
 
       let createdSessions = [];
-      if (autoCreateSessions) {
+
+      // Only pre-create sessions for teacher_assignment type
+      if (invitationType === 'teacher_assignment') {
+        clog(`📍 Pre-creating sessions for teacher_assignment invitation type...`);
         createdSessions = await this.createInitialSessions(
           lobbyId,
           gameType,
@@ -280,6 +385,8 @@ class GameLobbyService {
           userId,
           transaction
         );
+      } else {
+        clog(`📍 Skipping session pre-creation for invitation_type: ${invitationType} (sessions will be created on-demand when students join)`);
       }
 
       // Return updated lobby with details and sessions
@@ -298,7 +405,20 @@ class GameLobbyService {
       };
 
     } catch (error) {
-      cerror('❌ Failed to activate lobby:', error);
+      cerror('❌ Failed to activate lobby:', {
+        lobbyId,
+        userId,
+        activationData,
+        error: error.message,
+        stack: error.stack,
+        errorName: error.name
+      });
+
+      // Re-throw with more context if it's a generic error
+      if (error.message === 'Validation error' || error.message.includes('Validation')) {
+        throw new Error(`Lobby activation validation failed for lobby ${lobbyId}: ${error.message}`);
+      }
+
       throw error;
     }
   }
@@ -333,16 +453,16 @@ class GameLobbyService {
         expires_at: now
       }, { transaction });
 
-      // Also close all active sessions by setting their expires_at to current time
+      // Close all sessions by setting their expires_at to current time (but keep finished_at null - only set when game actually ends)
       await models.GameSession.update(
         {
-          finished_at: now,
           expires_at: now
+          // NOTE: finished_at should only be set when the game actually ends, not when lobby closes
         },
         {
           where: {
-            lobby_id: lobbyId,
-            finished_at: null
+            lobby_id: lobbyId
+            // Remove finished_at: null filter - update all sessions in this lobby
           },
           transaction
         }
@@ -362,85 +482,161 @@ class GameLobbyService {
 
   /**
    * Create initial sessions for a lobby based on configuration
+   * Reuses existing empty sessions and auto-increments session numbers
    * @param {string} lobbyId - Lobby ID
    * @param {string} gameType - Game type for defaults
    * @param {Object} sessionConfig - Session configuration
    * @param {number} maxPlayers - Maximum players in lobby
    * @param {string} userId - User creating sessions
    * @param {Object|null} transaction - Optional database transaction
-   * @returns {Promise<Array>} Created sessions
+   * @returns {Promise<Array>} Created/reused sessions
    */
   static async createInitialSessions(lobbyId, gameType, sessionConfig, maxPlayers, userId, transaction = null) {
     try {
-      clog(`🎮 Creating initial sessions for lobby ${lobbyId}, game type: ${gameType}`);
+      clog(`🎮 Creating/managing sessions for lobby ${lobbyId}, game type: ${gameType}`);
+
+      // Step 1: Get all existing sessions for this lobby
+      clog(`📍 Step 1: Getting existing sessions for lobby ${lobbyId}...`);
+      const existingSessions = await models.GameSession.findAll({
+        where: { lobby_id: lobbyId },
+        order: [['session_number', 'ASC']],
+        transaction
+      });
+
+      clog(`📋 Found ${existingSessions.length} existing sessions:`, existingSessions.map(s => ({
+        session_number: s.session_number,
+        participants_count: s.participants ? s.participants.length : 0,
+        finished_at: s.finished_at
+      })));
 
       // Import session utilities
       const { getSessionDefaults, calculateSessionDistribution } = await import('../config/gameTypeDefaults.js');
-
       const sessionDefaults = getSessionDefaults(gameType);
 
-      // Determine session count and player distribution
-      let sessionCount, playersPerSession;
+      // Step 2: Determine how many sessions we need
+      let requiredSessionCount, playersPerSession;
 
       if (sessionConfig.session_count && sessionConfig.players_per_session) {
         // Explicit configuration provided
-        sessionCount = sessionConfig.session_count;
+        requiredSessionCount = sessionConfig.session_count;
         playersPerSession = sessionConfig.players_per_session;
 
-        // Validate total capacity
-        if (sessionCount * playersPerSession < maxPlayers) {
-          clog(`⚠️ Warning: Total session capacity (${sessionCount * playersPerSession}) less than max players (${maxPlayers})`);
+        if (requiredSessionCount * playersPerSession < maxPlayers) {
+          clog(`⚠️ Warning: Total session capacity (${requiredSessionCount * playersPerSession}) less than max players (${maxPlayers})`);
         }
       } else {
         // Calculate optimal distribution
         const distribution = calculateSessionDistribution(maxPlayers, gameType);
-        sessionCount = distribution.recommended_sessions;
+        requiredSessionCount = distribution.recommended_sessions;
         playersPerSession = distribution.players_per_session;
 
         clog(`📊 Calculated distribution:`, distribution);
       }
 
-      // Create sessions
+      clog(`🎯 Target: ${requiredSessionCount} sessions with ${playersPerSession} players each`);
+
+      // Step 3: Reuse existing empty sessions and create new ones as needed
+      const reusedSessions = [];
       const createdSessions = [];
       const sessionNames = sessionConfig.session_names || [];
 
-      for (let i = 1; i <= sessionCount; i++) {
-        const sessionName = sessionNames[i - 1] || `${sessionDefaults.session_name} ${i}`;
+      // Find empty sessions that can be reused
+      const emptySessions = existingSessions.filter(session =>
+        !session.participants || session.participants.length === 0
+      );
 
-        const sessionCreateData = {
-          lobby_id: lobbyId,
-          session_number: i,
-          participants: [], // Empty initially
-          current_state: null, // No state until started
-          expires_at: null, // Will inherit from lobby when activated
-          finished_at: null,
-          // Session metadata in data field
+      clog(`♻️ Found ${emptySessions.length} empty sessions that can be reused`);
+
+      // Reuse empty sessions first
+      for (let i = 0; i < Math.min(requiredSessionCount, emptySessions.length); i++) {
+        const session = emptySessions[i];
+        const sessionName = sessionNames[i] || `${sessionDefaults.session_name} ${session.session_number}`;
+
+        // Update the session with new configuration
+        await session.update({
+          expires_at: null, // Reset expiration
+          finished_at: null, // Ensure it's not finished
           data: {
             session_name: sessionName,
             max_players: playersPerSession,
             game_type: gameType,
             created_automatically: true,
             created_by: userId,
-            creation_timestamp: new Date().toISOString()
+            creation_timestamp: new Date().toISOString(),
+            reused: true
           }
-        };
+        }, { transaction });
 
-        const session = await models.GameSession.create(sessionCreateData, { transaction });
-        createdSessions.push({
+        reusedSessions.push({
           id: session.id,
           session_number: session.session_number,
           session_name: sessionName,
-          max_players: playersPerSession
+          max_players: playersPerSession,
+          reused: true
         });
 
-        clog(`✅ Created session ${session.id}: "${sessionName}" (${playersPerSession} players max)`);
+        clog(`♻️ Reused session ${session.session_number}: "${sessionName}"`);
       }
 
-      clog(`✅ Created ${createdSessions.length} initial sessions for lobby ${lobbyId}`);
-      return createdSessions;
+      // Step 4: Create additional sessions if needed
+      const sessionsNeeded = requiredSessionCount - reusedSessions.length;
+      if (sessionsNeeded > 0) {
+        clog(`➕ Creating ${sessionsNeeded} additional sessions...`);
+
+        // Find the highest session number to auto-increment from
+        const maxSessionNumber = existingSessions.length > 0
+          ? Math.max(...existingSessions.map(s => s.session_number))
+          : 0;
+
+        for (let i = 0; i < sessionsNeeded; i++) {
+          const newSessionNumber = maxSessionNumber + 1 + i;
+          const sessionNameIndex = reusedSessions.length + i;
+          const sessionName = sessionNames[sessionNameIndex] || `${sessionDefaults.session_name} ${newSessionNumber}`;
+
+          const sessionCreateData = {
+            lobby_id: lobbyId,
+            session_number: newSessionNumber,
+            participants: [], // Empty initially
+            current_state: null, // No state until started
+            expires_at: null, // Will inherit from lobby when activated
+            finished_at: null,
+            data: {
+              session_name: sessionName,
+              max_players: playersPerSession,
+              game_type: gameType,
+              created_automatically: true,
+              created_by: userId,
+              creation_timestamp: new Date().toISOString(),
+              new: true
+            }
+          };
+
+          const session = await models.GameSession.create(sessionCreateData, { transaction });
+          createdSessions.push({
+            id: session.id,
+            session_number: session.session_number,
+            session_name: sessionName,
+            max_players: playersPerSession,
+            new: true
+          });
+
+          clog(`✅ Created new session ${session.session_number}: "${sessionName}"`);
+        }
+      }
+
+      const allManagedSessions = [...reusedSessions, ...createdSessions];
+
+      clog(`✅ Session management complete for lobby ${lobbyId}:`, {
+        reused: reusedSessions.length,
+        created: createdSessions.length,
+        total: allManagedSessions.length,
+        required: requiredSessionCount
+      });
+
+      return allManagedSessions;
 
     } catch (error) {
-      cerror('❌ Failed to create initial sessions:', error);
+      cerror('❌ Failed to create/manage sessions:', error);
       throw error;
     }
   }
@@ -521,17 +717,10 @@ class GameLobbyService {
           {
             model: models.GameSession,
             as: 'sessions',
-            where: {
-              [Op.or]: [
-                { expires_at: null }, // pending sessions
-                {
-                  expires_at: { [Op.gt]: new Date() }, // not expired
-                  finished_at: null // not finished
-                }
-              ]
-            },
+            // Get ALL sessions (no filter) - let frontend decide what to show
             required: false,
-            attributes: ['id', 'session_number', 'expires_at', 'participants', 'started_at', 'finished_at']
+            attributes: ['id', 'session_number', 'expires_at', 'participants', 'started_at', 'finished_at'],
+            order: [['session_number', 'ASC']]
           }
         ],
         transaction
@@ -716,6 +905,90 @@ class GameLobbyService {
       authenticated_users: authenticatedUsers,
       guest_users: guestUsers
     };
+  }
+
+  /**
+   * Debug method to inspect lobby data
+   * @param {string} lobbyId - Lobby ID
+   * @param {Object|null} transaction - Optional database transaction
+   * @returns {Promise<Object>} Detailed lobby information for debugging
+   */
+  static async debugLobby(lobbyId, transaction = null) {
+    try {
+      clog(`🔍 [DEBUG] Inspecting lobby ${lobbyId}...`);
+
+      const lobby = await models.GameLobby.findByPk(lobbyId, {
+        include: [
+          {
+            model: models.Game,
+            as: 'game',
+            attributes: ['id', 'game_type', 'digital']
+          },
+          {
+            model: models.User,
+            as: 'owner',
+            attributes: ['id', 'full_name']
+          },
+          {
+            model: models.User,
+            as: 'host',
+            attributes: ['id', 'full_name']
+          }
+        ],
+        transaction
+      });
+
+      if (!lobby) {
+        cerror(`❌ [DEBUG] Lobby ${lobbyId} not found`);
+        return null;
+      }
+
+      const debugInfo = {
+        lobby: {
+          id: lobby.id,
+          game_id: lobby.game_id,
+          owner_user_id: lobby.owner_user_id,
+          host_user_id: lobby.host_user_id,
+          lobby_code: lobby.lobby_code,
+          settings: lobby.settings,
+          expires_at: lobby.expires_at,
+          closed_at: lobby.closed_at,
+          created_at: lobby.created_at,
+          updated_at: lobby.updated_at
+        },
+        types: {
+          owner_user_id_type: typeof lobby.owner_user_id,
+          host_user_id_type: typeof lobby.host_user_id,
+          game_id_type: typeof lobby.game_id
+        },
+        associations: {
+          game: lobby.game ? {
+            id: lobby.game.id,
+            game_type: lobby.game.game_type,
+            digital: lobby.game.digital
+          } : null,
+          owner: lobby.owner ? {
+            id: lobby.owner.id,
+            full_name: lobby.owner.full_name
+          } : null,
+          host: lobby.host ? {
+            id: lobby.host.id,
+            full_name: lobby.host.full_name
+          } : null
+        },
+        computed: {
+          status: this.computeStatus(lobby),
+          is_active: lobby.isActive ? lobby.isActive() : 'method_not_available'
+        }
+      };
+
+      clog(`🔍 [DEBUG] Lobby ${lobbyId} details:`, debugInfo);
+      return debugInfo;
+
+    } catch (error) {
+      cerror(`❌ [DEBUG] Failed to inspect lobby ${lobbyId}:`, error);
+      throw error;
+    }
   }
 
   /**

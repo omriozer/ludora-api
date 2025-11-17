@@ -47,8 +47,8 @@ export default function(sequelize) {
             throw new Error('settings must be a valid JSON object');
           }
           // Validate invitation_type if present
-          if (value.invitation_type && !['lobby_only', 'session_only', 'both'].includes(value.invitation_type)) {
-            throw new Error('invitation_type must be lobby_only, session_only, or both');
+          if (value.invitation_type && !['manual_selection', 'teacher_assignment', 'random', 'order'].includes(value.invitation_type)) {
+            throw new Error('invitation_type must be manual_selection, teacher_assignment, random, or order');
           }
         }
       },

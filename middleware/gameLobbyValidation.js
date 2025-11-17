@@ -25,10 +25,10 @@ const lobbySettingsSchema = Joi.object({
   allow_guest_users: Joi.boolean().default(true),
 
   invitation_type: Joi.string()
-    .valid('lobby_only', 'session_only', 'both')
-    .default('lobby_only')
+    .valid('manual_selection', 'teacher_assignment', 'random', 'order')
+    .default('manual_selection')
     .messages({
-      'any.only': 'Invitation type must be one of: lobby_only, session_only, both'
+      'any.only': 'Invitation type must be one of: manual_selection, teacher_assignment, random, order'
     }),
 
   auto_close_after: Joi.number().integer().min(10).max(1440).default(60)
@@ -153,11 +153,17 @@ const joinByCodeSchema = Joi.object({
   lobby_code: Joi.string()
     .length(6)
     .pattern(/^[A-Z0-9]+$/)
-    .required()
+    .optional() // Made optional for direct lobby join
     .messages({
       'string.length': 'Lobby code must be exactly 6 characters',
-      'string.pattern.base': 'Lobby code must contain only uppercase letters and numbers',
-      'any.required': 'Lobby code is required'
+      'string.pattern.base': 'Lobby code must contain only uppercase letters and numbers'
+    }),
+
+  session_id: Joi.string()
+    .uuid()
+    .optional()
+    .messages({
+      'string.guid': 'Session ID must be a valid UUID'
     }),
 
   participant: Joi.object({
