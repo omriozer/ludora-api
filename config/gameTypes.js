@@ -26,7 +26,6 @@ export const GAME_TYPES = {
 		allowContentCreator: false,
 		showInCatalog: false,
 		allowedContentTypes: ['Word', 'WordEN', 'ContentList'],
-		requiredFields: ['game_settings'],
 		validationRules: {},
 	},
 	sharp_and_smooth: {
@@ -48,7 +47,6 @@ export const GAME_TYPES = {
 		allowContentCreator: false,
 		showInCatalog: false,
 		allowedContentTypes: ['Word', 'WordEN', 'QA', 'ContentList'],
-		requiredFields: ['game_settings'],
 		validationRules: {},
 	},
 	memory_game: {
@@ -69,126 +67,7 @@ export const GAME_TYPES = {
 		allowContentCreator: false,
 		showInCatalog: false,
 		allowedContentTypes: ['Word', 'WordEN', 'Image', 'ContentList'],
-		requiredFields: ['game_settings'],
 		validationRules: {},
-		settings: {
-			digital: {
-				min_cards: {
-					type: 'number',
-					label: 'מספר קלפים מינימלי',
-					defaultValue: 8,
-					min: 4,
-					max: 30,
-					step: 2,
-					description: 'מספר הקלפים המינימלי במשחק (זוגות)',
-					validation: {
-						required: true,
-						min: 4,
-						max: 30,
-						message: 'מספר הקלפים חייב להיות בין 4 ל-30'
-					}
-				},
-				max_cards: {
-					type: 'number',
-					label: 'מספר קלפים מקסימלי',
-					defaultValue: 16,
-					min: 4,
-					max: 30,
-					step: 2,
-					description: 'מספר הקלפים המקסימלי במשחק (זוגות)',
-					validation: {
-						required: true,
-						min: 4,
-						max: 30,
-						message: 'מספר הקלפים חייב להיות בין 4 ל-30'
-					}
-				},
-				semanticTypeSetA: {
-					type: 'text',
-					label: 'סוג תוכן קבוצה א\'',
-					defaultValue: 'מילה',
-					maxLength: 50,
-					description: 'תיאור סוג התוכן של קבוצת הקלפים הראשונה',
-					validation: {
-						required: true,
-						maxLength: 50,
-						message: 'תיאור סוג התוכן חייב להיות עד 50 תווים'
-					}
-				},
-				semanticTypeSetB: {
-					type: 'text',
-					label: 'סוג תוכן קבוצה ב\'',
-					defaultValue: 'מילה',
-					maxLength: 50,
-					description: 'תיאור סוג התוכן של קבוצת הקלפים השנייה',
-					validation: {
-						required: true,
-						maxLength: 50,
-						message: 'תיאור סוג התוכן חייב להיות עד 50 תווים'
-					}
-				},
-				semanticTypeSetA: {
-					type: 'select',
-					label: 'סוג תוכן קבוצה א\'',
-					defaultValue: 'word',
-					options: [
-						{ value: 'word', label: 'מילים' },
-						{ value: 'question', label: 'שאלות' },
-						{ value: 'name', label: 'שמות' },
-						{ value: 'place', label: 'מקומות' },
-						{ value: 'text', label: 'טקסטים' },
-						{ value: 'image', label: 'תמונות' },
-						{ value: 'audio', label: 'קבצי שמע' },
-						{ value: 'video', label: 'סרטונים' }
-					],
-					description: 'בחר סוג התוכן של קבוצת הקלפים הראשונה',
-					validation: {
-						required: true,
-						isIn: [['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video']],
-						message: 'בחר סוג תוכן תקין'
-					}
-				},
-				semanticTypeSetB: {
-					type: 'select',
-					label: 'סוג תוכן קבוצה ב\'',
-					defaultValue: 'image',
-					options: [
-						{ value: 'word', label: 'מילים' },
-						{ value: 'question', label: 'שאלות' },
-						{ value: 'name', label: 'שמות' },
-						{ value: 'place', label: 'מקומות' },
-						{ value: 'text', label: 'טקסטים' },
-						{ value: 'image', label: 'תמונות' },
-						{ value: 'audio', label: 'קבצי שמע' },
-						{ value: 'video', label: 'סרטונים' }
-					],
-					description: 'בחר סוג התוכן של קבוצת הקלפים השנייה',
-					validation: {
-						required: true,
-						isIn: [['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video']],
-						message: 'בחר סוג תוכן תקין'
-					}
-				},
-				time_limit: {
-					type: 'number',
-					label: 'הגבלת זמן (דקות)',
-					defaultValue: null,
-					min: 1,
-					max: 60,
-					nullable: true,
-					description: 'זמן מקסימלי למשחק בדקות (ריק = ללא הגבלה)',
-					validation: {
-						required: false,
-						min: 1,
-						max: 60,
-						message: 'הגבלת הזמן חייבת להיות בין 1-60 דקות'
-					}
-				}
-			},
-			offline: {
-				// Offline settings will be added later
-			}
-		}
 	},
 	ar_up_there: {
 		key: 'ar_up_there',
@@ -209,7 +88,6 @@ export const GAME_TYPES = {
 		allowContentCreator: true,
 		showInCatalog: false,
 		allowedContentTypes: ['Word', 'WordEN', 'QA', 'Image', 'ContentList'],
-		requiredFields: ['game_settings'],
 		validationRules: {},
 	},
 };
@@ -260,20 +138,12 @@ export const validateGameTypeData = (gameTypeKey, gameData) => {
 		return { isValid: false, errors: [`Invalid game type: ${gameTypeKey}`] };
 	}
 
-	const errors = [];
-
-	// Check required fields
-	gameType.requiredFields.forEach((field) => {
-		if (!gameData[field]) {
-			errors.push(`Missing required field: ${field}`);
-		}
-	});
-
-	// Note: title, short_description, price validation is now handled at Product level
+	// No required fields validation - game_settings is now optional
+	// All validation is handled at Product level
 
 	return {
-		isValid: errors.length === 0,
-		errors,
+		isValid: true,
+		errors: [],
 	};
 };
 

@@ -118,7 +118,6 @@ class EntityService {
       'supportmessage': 'SupportMessage',
       'audiofile': 'AudioFile',
       'gameaudiosettings': 'GameAudioSettings',
-      'gamecontent': 'GameContent',
       'worden': 'WordEN',
       'qa': 'QA',
       'contentlist': 'ContentList',
@@ -600,7 +599,6 @@ class EntityService {
       'contentlist': ['name', 'description'],
       'image': ['name', 'description'],
       'attribute': ['type', 'value'],
-      'gamecontent': [] // Special handling - will use custom JSONB search
     };
 
     return searchFieldMap[entityType.toLowerCase()] || ['name', 'title', 'description'];
@@ -626,31 +624,7 @@ class EntityService {
         if (entityType) {
           const searchFields = this.getSearchFields(entityType);
 
-          // Special handling for GameContent - search both value and metadata fields
-          if (entityType.toLowerCase() === 'gamecontent') {
-            where[Op.or] = [
-              // Search in the main value field (for text content or S3 URLs)
-              {
-                value: {
-                  [Op.iLike]: `%${value}%`
-                }
-              },
-              // Search in metadata.name field using proper Sequelize JSONB syntax
-              this.models.sequelize.where(
-                this.models.sequelize.json('metadata.name'),
-                {
-                  [Op.iLike]: `%${value}%`
-                }
-              ),
-              // Search in metadata.description field using proper Sequelize JSONB syntax
-              this.models.sequelize.where(
-                this.models.sequelize.json('metadata.description'),
-                {
-                  [Op.iLike]: `%${value}%`
-                }
-              )
-            ];
-          } else if (searchFields.length > 0) {
+          if (searchFields.length > 0) {
             where[Op.or] = searchFields.map(field => ({
               [field]: {
                 [Op.iLike]: `%${value}%`

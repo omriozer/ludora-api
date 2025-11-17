@@ -770,20 +770,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
           shouldHaveImage = product.has_image === true ||
                            (product.has_image === undefined && product.image_url && product.image_url.trim().length > 0 && product.image_url !== 'HAS_IMAGE');
         }
-      } else if (entityType === 'gamecontent') {
-        // For GameContent entities, check the GameContent table for image data
-
-        const gameContent = await db.GameContent.findByPk(entityId);
-        if (gameContent && (gameContent.semantic_type === 'image' || gameContent.semantic_type === 'game_card_bg' || gameContent.semantic_type === 'complete_card')) {
-          entityData = gameContent;
-          // GameContent should have an image if it has a value field with an S3 key
-          shouldHaveImage = !!(gameContent.value && gameContent.value.trim().length > 0);
-
-        } else if (gameContent) {
-          // GameContent exists but has wrong semantic_type for image serving
-        } else {
-          // GameContent not found in database
-        }
       } else if (entityType === 'file') {
         // FIXED: For marketing images on File products, the entityId is actually the Product ID
         // We need to check if this entityId is a Product ID first, then fall back to File entity lookup
@@ -931,14 +917,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
             let retryShouldHaveImage = false;
 
             try {
-              if (entityType === 'gamecontent') {
-                // For GameContent entities, retry the same logic
-                const retryGameContent = await db.GameContent.findByPk(entityId);
-                if (retryGameContent && (retryGameContent.semantic_type === 'image' || retryGameContent.semantic_type === 'game_card_bg' || retryGameContent.semantic_type === 'complete_card')) {
-                  retryEntityData = retryGameContent;
-                  retryShouldHaveImage = !!(retryGameContent.value && retryGameContent.value.trim().length > 0);
-                }
-              } else if (entityType === 'file') {
+              if (entityType === 'file') {
                 // Same logic as above: try Product ID first, then File entity ID
                 let retryProduct = await db.Product.findByPk(entityId);
 
@@ -1123,32 +1102,10 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
       let activeS3Key = s3Key;
 
       if (!metadataResult.success) {
-        // FALLBACK: For gamecontent entities, try legacy S3 path (from when assetType was undefined)
-        let legacyS3Key = null;
-        let legacyMetadataResult = null;
+        // If metadata check failed, return 404
+        // Image should exist but doesn't - log this inconsistency
 
-        if (entityType === 'gamecontent' && (entityData?.semantic_type === 'game_card_bg' || entityData?.semantic_type === 'complete_card')) {
-          // Construct legacy S3 path: development/private/undefined/gamecontent/entityId/filename
-          const env = process.env.ENVIRONMENT || 'development';
-          legacyS3Key = `${env}/private/undefined/gamecontent/${entityId}/${filename}`;
-
-
-          try {
-            legacyMetadataResult = await fileService.getS3ObjectMetadata(legacyS3Key);
-            if (legacyMetadataResult.success) {
-              // Use the legacy S3 key for streaming
-              activeS3Key = legacyS3Key;
-              metadataResult = legacyMetadataResult;
-            }
-          } catch (legacyError) {
-          }
-        }
-
-        // If both current and legacy paths failed, return 404
-        if (!metadataResult.success) {
-          // Image should exist but doesn't - log this inconsistency
-
-          await db.Logs.create({
+        await db.Logs.create({
             level: 'warning',
             message: 'Expected image file missing from S3',
             details: JSON.stringify({
@@ -1178,7 +1135,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
             { s3Key, legacyS3Key, entityType, entityId, filename }
           ));
         }
-      }
 
       // Stream image from S3 using the active S3 key (could be original or legacy path)
       const stream = await fileService.createS3Stream(activeS3Key);

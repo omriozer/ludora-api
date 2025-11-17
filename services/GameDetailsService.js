@@ -53,115 +53,17 @@ class GameDetailsService {
    */
   static async getMemoryGameDetails(gameId) {
     try {
-      // Query to get memory pairs and their content information
-      const queryResult = await models.sequelize.query(
-        `
-        SELECT
-          COUNT(DISTINCT gcr.id) as pair_count,
-          gcri.role,
-          gc.semantic_type,
-          COUNT(gc.id) as content_count
-        FROM game_content_link gcl
-        JOIN game_content_relation gcr ON gcl.target_id = gcr.id
-        JOIN game_content_relation_items gcri ON gcr.id = gcri.relation_id
-        JOIN gamecontent gc ON gcri.content_id = gc.id
-        WHERE gcl.game_id = :gameId
-          AND gcl.link_type = 'relation'
-          AND gcri.role IN ('pair_a', 'pair_b')
-        GROUP BY gcri.role, gc.semantic_type
-        ORDER BY gcri.role, gc.semantic_type
-        `,
-        {
-          replacements: { gameId },
-          type: models.sequelize.QueryTypes.SELECT
-        }
-      );
-
-      const results = Array.isArray(queryResult) ? queryResult : queryResult[0] || [];
-
-      if (!results || results.length === 0) {
-        return {
-          game_type: 'memory_game',
-          details: {
-            pair_count: 0,
-            content_types: [],
-            content_type_combinations: []
-          }
-        };
-      }
-
-      // Calculate total unique pairs
-      const pairCount = Math.max(...results.map(r => parseInt(r.pair_count)));
-
-      // Extract unique content types
-      const contentTypes = [...new Set(results.map(r => r.semantic_type))];
-
-      // Analyze content type combinations for pairs
-      const combinationsMap = new Map();
-
-      // Group by pair to analyze combinations
-      const pairCombinationsResult = await models.sequelize.query(
-        `
-        SELECT
-          gcr.id as relation_id,
-          JSON_AGG(
-            JSON_BUILD_OBJECT(
-              'role', gcri.role,
-              'semantic_type', gc.semantic_type,
-              'data_type', gc.data_type
-            ) ORDER BY gcri.role
-          ) as pair_content
-        FROM game_content_link gcl
-        JOIN game_content_relation gcr ON gcl.target_id = gcr.id
-        JOIN game_content_relation_items gcri ON gcr.id = gcri.relation_id
-        JOIN gamecontent gc ON gcri.content_id = gc.id
-        WHERE gcl.game_id = :gameId
-          AND gcl.link_type = 'relation'
-          AND gcri.role IN ('pair_a', 'pair_b')
-        GROUP BY gcr.id
-        `,
-        {
-          replacements: { gameId },
-          type: models.sequelize.QueryTypes.SELECT
-        }
-      );
-
-      const pairCombinations = Array.isArray(pairCombinationsResult) ? pairCombinationsResult : pairCombinationsResult[0] || [];
-
-      // Analyze combinations
-      pairCombinations.forEach(pair => {
-        const content = pair.pair_content || [];
-        if (content.length === 2) {
-          const typeA = content.find(c => c.role === 'pair_a')?.semantic_type;
-          const typeB = content.find(c => c.role === 'pair_b')?.semantic_type;
-
-          if (typeA && typeB) {
-            // Normalize combination key (alphabetical order for consistency)
-            const combinationKey = [typeA, typeB].sort().join('-');
-            const existing = combinationsMap.get(combinationKey);
-
-            if (existing) {
-              existing.count++;
-            } else {
-              combinationsMap.set(combinationKey, {
-                type_a: typeA,
-                type_b: typeB,
-                count: 1
-              });
-            }
-          }
-        }
-      });
-
-      const contentTypeCombinations = Array.from(combinationsMap.values());
+      // TODO: Implement using new EduContent and EduContentUse system
+      // This is a placeholder until new API endpoints are implemented
+      // Will use EduContentUse.findByGame(gameId) with use_type: 'pair'
 
       return {
         game_type: 'memory_game',
         details: {
-          pair_count: pairCount,
-          content_types: contentTypes,
-          content_type_combinations: contentTypeCombinations,
-          total_content_items: results.reduce((sum, r) => sum + parseInt(r.content_count), 0)
+          pair_count: 0,
+          content_types: [],
+          content_type_combinations: [],
+          total_content_items: 0
         }
       };
 
