@@ -133,93 +133,81 @@ export default function(sequelize) {
       throw new Error('Branding template data must be a valid object');
     }
 
-    // Support both old structure (logo, text, url at top level) and new unified structure (customElements)
-    // Check if this is actually a new structure with legacy elements included
-    const hasCustomElements = data.customElements && typeof data.customElements === 'object';
-    const hasGlobalSettings = data.globalSettings && typeof data.globalSettings === 'object';
-    const hasTopLevelLegacyElements = data.logo || data.text || data.url;
-
-    // If it has customElements or globalSettings, treat it as new structure even if it has legacy elements
-    const isNewStructure = hasCustomElements || hasGlobalSettings;
-    const isOldStructure = hasTopLevelLegacyElements && !isNewStructure;
-
-    if (isOldStructure) {
-      // Validate old structure with required branding elements
-      const requiredElements = ['logo', 'text', 'url'];
-      for (const element of requiredElements) {
-        if (!data[element] || typeof data[element] !== 'object') {
-          throw new Error(`Branding template missing required element: ${element}`);
-        }
-
-        const elementData = data[element];
-
-        // Check for required fields
-        if (typeof elementData.visible !== 'boolean') {
-          throw new Error(`Branding template ${element} missing required 'visible' boolean`);
-        }
-
-        if (typeof elementData.hidden !== 'boolean') {
-          elementData.hidden = false; // Default if missing
-        }
-
-        if (typeof elementData.rotation !== 'number') {
-          elementData.rotation = 0; // Default if missing
-        }
-
-        if (!elementData.position || typeof elementData.position !== 'object') {
-          throw new Error(`Branding template ${element} missing required 'position' object`);
-        }
-
-        if (typeof elementData.position.x !== 'number' || typeof elementData.position.y !== 'number') {
-          throw new Error(`Branding template ${element} position must have numeric x and y values`);
-        }
-
-        if (!elementData.style || typeof elementData.style !== 'object') {
-          throw new Error(`Branding template ${element} missing required 'style' object`);
-        }
-      }
-    } else if (isNewStructure) {
-      // Validate new unified structure
-      if (data.customElements && typeof data.customElements !== 'object') {
-        throw new Error('Branding template customElements must be an object');
-      }
-
-      if (data.globalSettings && typeof data.globalSettings !== 'object') {
-        throw new Error('Branding template globalSettings must be an object');
-      }
-
-      // Validate custom elements if they exist
-      if (data.customElements) {
-        Object.entries(data.customElements).forEach(([elementId, element]) => {
-          if (!element || typeof element !== 'object') {
-            throw new Error(`Custom element ${elementId} must be an object`);
-          }
-
-          if (typeof element.type !== 'string') {
-            throw new Error(`Custom element ${elementId} missing required 'type' string`);
-          }
-
-          if (typeof element.visible !== 'boolean') {
-            element.visible = true; // Default if missing
-          }
-
-          if (!element.position || typeof element.position !== 'object') {
-            throw new Error(`Custom element ${elementId} missing required 'position' object`);
-          }
-
-          if (typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
-            throw new Error(`Custom element ${elementId} position must have numeric x and y values`);
-          }
-
-          if (element.style && typeof element.style !== 'object') {
-            throw new Error(`Custom element ${elementId} style must be an object if provided`);
-          }
-        });
-      }
-    } else {
-      // Neither structure detected - create minimal valid structure
-      throw new Error('Branding template must have either legacy structure (logo, text, url) or unified structure (customElements, globalSettings)');
+    // Only support unified structure - must have elements object
+    if (!data.elements || typeof data.elements !== 'object') {
+      throw new Error('Branding template must have a valid elements object with unified structure');
     }
+
+    // Validate globalSettings if provided
+    if (data.globalSettings && typeof data.globalSettings !== 'object') {
+      throw new Error('Branding template globalSettings must be an object');
+    }
+
+    // Validate each element type array in the elements object
+    Object.entries(data.elements).forEach(([elementType, elementArray]) => {
+      if (!Array.isArray(elementArray)) {
+        throw new Error(`Element type ${elementType} must be an array`);
+      }
+
+      elementArray.forEach((element, index) => {
+        if (!element || typeof element !== 'object') {
+          throw new Error(`Element ${elementType}[${index}] must be an object`);
+        }
+
+        // Validate required fields for all elements
+        if (!element.id || typeof element.id !== 'string') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'id' string`);
+        }
+
+        if (!element.type || typeof element.type !== 'string') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'type' string`);
+        }
+
+        if (typeof element.visible !== 'boolean') {
+          element.visible = true; // Default if missing
+        }
+
+        if (typeof element.deletable !== 'boolean') {
+          element.deletable = true; // Default if missing
+        }
+
+        if (!element.position || typeof element.position !== 'object') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'position' object`);
+        }
+
+        if (typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
+          throw new Error(`Element ${elementType}[${index}] position must have numeric x and y values`);
+        }
+
+        if (!element.style || typeof element.style !== 'object') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'style' object`);
+        }
+
+        // Validate element-type-specific properties
+        if (['url', 'copyright-text', 'free-text', 'user-info'].includes(elementType)) {
+          // Text-based elements should have content
+          if (element.content !== undefined && typeof element.content !== 'string') {
+            throw new Error(`Text element ${elementType}[${index}] content must be a string if provided`);
+          }
+        }
+
+        if (elementType === 'logo') {
+          // Logo elements should have size in style
+          if (element.style.size !== undefined && typeof element.style.size !== 'number') {
+            throw new Error(`Logo element ${elementType}[${index}] style.size must be a number if provided`);
+          }
+        }
+
+        // Validate common style properties
+        if (element.style.opacity !== undefined && (typeof element.style.opacity !== 'number' || element.style.opacity < 0 || element.style.opacity > 100)) {
+          throw new Error(`Element ${elementType}[${index}] style.opacity must be a number between 0 and 100`);
+        }
+
+        if (element.style.rotation !== undefined && typeof element.style.rotation !== 'number') {
+          throw new Error(`Element ${elementType}[${index}] style.rotation must be a number`);
+        }
+      });
+    });
 
     return true;
   };
@@ -235,6 +223,91 @@ export default function(sequelize) {
       throw new Error('Watermark template data must be a valid object');
     }
 
+    // Check for unified structure or legacy structure
+    const hasUnifiedStructure = data.elements && typeof data.elements === 'object';
+    const hasLegacyStructure = data.textElements || data.logoElements;
+
+    if (!hasUnifiedStructure && !hasLegacyStructure) {
+      throw new Error('Template must have unified structure (elements object) or legacy elements (textElements, logoElements)');
+    }
+
+    // Validate unified structure
+    if (hasUnifiedStructure) {
+      // Validate each element type array in the elements object
+      Object.entries(data.elements).forEach(([elementType, elementArray]) => {
+        if (!Array.isArray(elementArray)) {
+          throw new Error(`Element type ${elementType} must be an array`);
+        }
+
+        elementArray.forEach((element, index) => {
+          if (!element || typeof element !== 'object') {
+            throw new Error(`Element ${elementType}[${index}] must be an object`);
+          }
+
+          // Validate required fields for all elements
+          if (!element.id || typeof element.id !== 'string') {
+            throw new Error(`Element ${elementType}[${index}] missing required 'id' string`);
+          }
+
+          if (!element.type || typeof element.type !== 'string') {
+            throw new Error(`Element ${elementType}[${index}] missing required 'type' string`);
+          }
+
+          if (typeof element.visible !== 'boolean') {
+            element.visible = true; // Default if missing
+          }
+
+          if (typeof element.deletable !== 'boolean') {
+            element.deletable = true; // Default if missing
+          }
+
+          if (!element.position || typeof element.position !== 'object') {
+            throw new Error(`Element ${elementType}[${index}] missing required 'position' object`);
+          }
+
+          if (typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
+            throw new Error(`Element ${elementType}[${index}] position must have numeric x and y values`);
+          }
+
+          if (!element.style || typeof element.style !== 'object') {
+            throw new Error(`Element ${elementType}[${index}] missing required 'style' object`);
+          }
+
+          // Validate element-type-specific properties for watermark templates
+          if (['watermark-text', 'free-text'].includes(elementType)) {
+            // Text-based watermark elements should have content
+            if (element.content !== undefined && typeof element.content !== 'string') {
+              throw new Error(`Watermark text element ${elementType}[${index}] content must be a string if provided`);
+            }
+          }
+
+          if (['watermark-logo', 'logo'].includes(elementType)) {
+            // Logo watermark elements should have size in style
+            if (element.style.size !== undefined && typeof element.style.size !== 'number') {
+              throw new Error(`Watermark logo element ${elementType}[${index}] style.size must be a number if provided`);
+            }
+          }
+
+          // Validate common style properties
+          if (element.style.opacity !== undefined && (typeof element.style.opacity !== 'number' || element.style.opacity < 0 || element.style.opacity > 100)) {
+            throw new Error(`Element ${elementType}[${index}] style.opacity must be a number between 0 and 100`);
+          }
+
+          if (element.style.rotation !== undefined && typeof element.style.rotation !== 'number') {
+            throw new Error(`Element ${elementType}[${index}] style.rotation must be a number`);
+          }
+        });
+      });
+
+      // Validate globalSettings if provided
+      if (data.globalSettings && typeof data.globalSettings !== 'object') {
+        throw new Error('Watermark template globalSettings must be an object');
+      }
+
+      return true; // Exit early if unified structure is valid
+    }
+
+    // Legacy structure validation (kept for backward compatibility)
     // Validate textElements array
     if (data.textElements) {
       if (!Array.isArray(data.textElements)) {

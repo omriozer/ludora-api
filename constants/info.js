@@ -1,3 +1,5 @@
+import { LANGUAGES_STUDY_SUBJECTS } from "./langauages.js";
+
 export const STUDY_SUBJECTS = {
     civics: 'אזרחות',
     art: 'אמנות',
@@ -8,18 +10,13 @@ export const STUDY_SUBJECTS = {
     physical_education: 'חינוך גופני',
     calculation: 'חשבון',
     chemistry: 'כימיה',
-    hebrew_language: 'לשון והבעה',
     legacy: 'מורשת',
     religion: 'מחשבת ישראל',
     computers: 'מחשבים',
     music: 'מוזיקה',
     math: 'מתמטיקה',
-    spanish: 'ספרדית',
-    literature: 'ספרות',
-    arabic: 'ערבית',
-    physics: 'פיזיקה',
-    french: 'צרפתית',
     bible_studies: 'תנ"ך',
+    ...LANGUAGES_STUDY_SUBJECTS
 };
 
 export const SCHOOL_GRADES = {

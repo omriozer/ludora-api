@@ -37,14 +37,15 @@ import ClassroomMembership from './ClassroomMembership.js';
 import Curriculum from './Curriculum.js';
 import CurriculumItem from './CurriculumItem.js';
 import CurriculumProduct from './CurriculumProduct.js';
+import ContentTopic from './ContentTopic.js';
 import LessonPlan from './LessonPlan.js';
 import Logs from './Logs.js';
 import WebhookLog from './WebhookLog.js';
-import GameContent from './GameContent.js';
-import GameContentRelation from './GameContentRelation.js';
-import GameContentRelationItem from './GameContentRelationItem.js';
-import GameContentLink from './GameContentLink.js';
+import EduContent from './EduContent.js';
+import EduContentUse from './EduContentUse.js';
 import SystemTemplate from './SystemTemplate.js';
+import GameLobby from './GameLobby.js';
+import GameSession from './GameSession.js';
 
 // Initialize models
 const models = {
@@ -76,14 +77,15 @@ const models = {
   Curriculum: Curriculum(sequelize),
   CurriculumItem: CurriculumItem(sequelize),
   CurriculumProduct: CurriculumProduct(sequelize),
+  ContentTopic: ContentTopic(sequelize),
   LessonPlan: LessonPlan(sequelize),
   Logs: Logs(sequelize),
   WebhookLog: WebhookLog(sequelize),
-  GameContent: GameContent(sequelize),
-  GameContentRelation: GameContentRelation(sequelize),
-  GameContentRelationItem: GameContentRelationItem(sequelize),
-  GameContentLink: GameContentLink(sequelize),
+  EduContent: EduContent(sequelize),
+  EduContentUse: EduContentUse(sequelize),
   SystemTemplate: SystemTemplate(sequelize),
+  GameLobby: GameLobby(sequelize),
+  GameSession: GameSession(sequelize),
 };
 
 // Define associations

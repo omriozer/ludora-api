@@ -18,6 +18,7 @@ import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCou
 import { GAME_TYPES } from '../config/gameTypes.js';
 import { clog, cerror } from '../lib/utils.js';
 import { generateId } from '../models/baseModel.js';
+import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
 
 const router = express.Router();
 
@@ -264,6 +265,17 @@ async function getFullProduct(product, userId = null, includeGameDetails = false
   // Add game details if calculated
   if (gameDetails) {
     response.game_details = gameDetails;
+  }
+
+  // Add preview metadata for lesson plan products
+  if (product.product_type === 'lesson_plan' && entity) {
+    response.preview_info = {
+      allow_slide_preview: entity.allow_slide_preview || false,
+      accessible_slides: entity.accessible_slides || null,
+      total_slides: entity.total_slides || 0,
+      watermark_template_id: entity.watermark_template_id || null,
+      has_preview_restrictions: entity.allow_slide_preview && entity.accessible_slides && entity.accessible_slides.length > 0
+    };
   }
 
   return response;
@@ -523,33 +535,13 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
           study_subjects: STUDY_SUBJECTS,
           audiance_targets: AUDIANCE_TARGETS,
           school_grades: SCHOOL_GRADES,
-          game_types: GAME_TYPES
+          game_types: GAME_TYPES,
+          languade_options: LANGUAGES_OPTIONS
         };
       });
       return res.json(enhancedResults);
     }
 
-    // For GameContent entity, transform S3 keys to API URLs for security
-    if (entityType === 'gamecontent') {
-      const enhancedResults = results.map(gameContent => {
-        const gameContentData = gameContent.toJSON ? gameContent.toJSON() : gameContent;
-
-        // Transform S3 keys to API URLs for image files and complete cards
-        if ((gameContentData.semantic_type === 'image' || gameContentData.semantic_type === 'complete_card') && gameContentData.value) {
-          // Extract filename from S3 key (format: env/privacy/assetType/entityType/entityId/filename)
-          const pathParts = gameContentData.value.split('/');
-          const filename = pathParts[pathParts.length - 1];
-
-          // Check if value looks like an S3 key (not already an API URL)
-          if (gameContentData.value.includes('/') && !gameContentData.value.startsWith('/api/')) {
-            gameContentData.value = `/api/assets/image/gamecontent/${gameContentData.id}/${filename}`;
-          }
-        }
-
-        return gameContentData;
-      });
-      return res.json(enhancedResults);
-    }
 
     res.json(results);
   } catch (error) {
@@ -566,17 +558,6 @@ router.get('/:type/:id', optionalAuth, customValidators.validateEntityType, asyn
     const include = req.query.include;
     const entity = await EntityService.findById(entityType, id, include);
 
-    // Apply S3 URL transformation for GameContent images and complete cards
-    if (entityType === 'gamecontent' && entity && (entity.semantic_type === 'image' || entity.semantic_type === 'complete_card') && entity.value) {
-      // Extract filename from S3 key (format: env/privacy/assetType/entityType/entityId/filename)
-      const pathParts = entity.value.split('/');
-      const filename = pathParts[pathParts.length - 1];
-
-      // Check if value looks like an S3 key (not already an API URL)
-      if (entity.value.includes('/') && !entity.value.startsWith('/api/')) {
-        entity.value = `/api/assets/image/gamecontent/${entity.id}/${filename}`;
-      }
-    }
 
     res.json(entity);
   } catch (error) {
@@ -1471,6 +1452,12 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       // PDF orientation detection failed, using default
     }
 
+    // IMPORTANT: For SVG files uploaded to lesson plans, always set target_format to 'svg-lessonplan'
+    if (fileExtension === 'svg') {
+      targetFormat = 'svg-lessonplan';
+      clog(`📊 SVG file detected for lesson plan - setting target_format to 'svg-lessonplan'`);
+    }
+
     // Update file entity with S3 information and detected target_format
     await fileEntity.update({
       file_name: fileName,
@@ -2132,203 +2119,6 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
   }
 });
 
-// POST /entities/gamecontent/upload - Atomic file upload for GameContent
-router.post('/gamecontent/upload', authenticateToken, fileUpload.single('file'), async (req, res) => {
-  const transaction = await sequelize.transaction();
-  let uploadedS3Key = null;
-
-  try {
-
-    // Get user information
-    const user = await models.User.findOne({ where: { id: req.user.uid } });
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' });
-    }
-
-    // Get form data
-    const { semantic_type, metadata } = req.body;
-
-    // Validate semantic_type
-    const validSemanticTypes = ['word', 'question', 'name', 'place', 'text', 'image', 'audio', 'video', 'game_card_bg', 'complete_card'];
-    if (!semantic_type || !validSemanticTypes.includes(semantic_type)) {
-      return res.status(400).json({
-        error: 'Valid semantic_type is required',
-        valid_types: validSemanticTypes
-      });
-    }
-
-    // Validate file upload for file-based types
-    const fileTypes = ['image', 'audio', 'video', 'game_card_bg', 'complete_card'];
-    if (fileTypes.includes(semantic_type)) {
-      if (!req.file) {
-        return res.status(400).json({ error: 'File is required for file-based semantic types' });
-      }
-    } else {
-      if (req.file) {
-        return res.status(400).json({ error: 'Files are not allowed for text-based semantic types' });
-      }
-    }
-
-    // Parse metadata if provided
-    let parsedMetadata = {};
-    if (metadata) {
-      try {
-        parsedMetadata = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
-      } catch (error) {
-        return res.status(400).json({ error: 'Invalid metadata JSON format' });
-      }
-    }
-
-    // For text-based types, get value from metadata or request body
-    let contentValue = '';
-    let dataType = '';
-
-    if (fileTypes.includes(semantic_type)) {
-      // File-based types: value will be set to S3 URL after upload
-      if (semantic_type === 'game_card_bg' || semantic_type === 'complete_card') {
-        dataType = 'image_url'; // Background cards and complete cards use image_url data type
-      } else {
-        dataType = `${semantic_type}_url`;
-      }
-      contentValue = ''; // Will be updated with S3 URL
-    } else {
-      // Text-based types: get value from request body
-      dataType = 'string';
-      contentValue = req.body.value || '';
-      if (!contentValue.trim()) {
-        return res.status(400).json({ error: 'Value is required for text-based semantic types' });
-      }
-    }
-
-    // Generate ID for the GameContent entity
-
-    // 1. Create GameContent entity within transaction
-    const gameContentData = {
-      id: generateId(),
-      semantic_type: semantic_type,
-      data_type: dataType,
-      value: contentValue,
-      metadata: parsedMetadata
-    };
-
-    const gameContentEntity = await models.GameContent.create(gameContentData, { transaction });
-
-    // Declare fileName variable for broader scope
-    let fileName = null;
-
-    // 2. If file-based type, upload file and update entity
-    if (fileTypes.includes(semantic_type) && req.file) {
-
-      // Initialize fileName for use in response and file processing
-      fileName = req.file.originalname;
-
-      // Handle filename encoding
-      try {
-        if (fileName.includes('×') || fileName.includes('Ã')) {
-          const decodedName = decodeURIComponent(escape(fileName));
-          if (decodedName !== fileName && decodedName.length > 0) {
-            fileName = decodedName;
-          }
-        }
-      } catch (error) {
-        // Filename decoding failed, continue with original
-      }
-
-
-      // Map semantic type to asset type for S3 upload
-      const assetTypeMap = {
-        'image': 'image',
-        'audio': 'audio',
-        'video': 'video',
-        'game_card_bg': 'image',
-        'complete_card': 'image'
-      };
-      const assetType = assetTypeMap[semantic_type];
-
-      // Create predictable S3 path using constructS3Path
-      const s3Key = constructS3Path('gamecontent', gameContentEntity.id, assetType, fileName);
-
-      // Upload file using unified asset upload method
-      const uploadResult = await fileService.uploadAsset({
-        file: req.file,
-        entityType: 'gamecontent',
-        entityId: gameContentEntity.id,
-        assetType: assetType,
-        userId: req.user.uid,
-        transaction: transaction,
-        preserveOriginalName: true
-      });
-
-      if (!uploadResult.success) {
-        throw new Error('File upload failed');
-      }
-
-      uploadedS3Key = uploadResult.s3Key;
-
-      // 3. Update GameContent entity with appropriate value
-      let valueToStore = uploadedS3Key; // Default to S3 key for security
-
-      // For image-based types, store API URL for direct access
-      if (semantic_type === 'image' || semantic_type === 'game_card_bg') {
-        valueToStore = `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`;
-      }
-
-      await gameContentEntity.update({
-        value: valueToStore
-      }, { transaction });
-    }
-
-    // Commit transaction - everything succeeded
-    await transaction.commit();
-
-    // Prepare response with API URL for image files
-    const response = {
-      message: 'GameContent created successfully',
-      gamecontent: {
-        id: gameContentEntity.id,
-        semantic_type: gameContentEntity.semantic_type,
-        data_type: gameContentEntity.data_type,
-        value: fileTypes.includes(semantic_type) && (semantic_type === 'image' || semantic_type === 'game_card_bg')
-          ? `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`
-          : gameContentEntity.value,
-        metadata: gameContentEntity.metadata
-      }
-    };
-
-    // Add file info for file-based types
-    if (fileTypes.includes(semantic_type) && req.file) {
-      response.file = {
-        filename: fileName,
-        s3_key: uploadedS3Key,
-        api_url: (semantic_type === 'image' || semantic_type === 'game_card_bg')
-          ? `/api/assets/image/gamecontent/${gameContentEntity.id}/${fileName}`
-          : undefined,
-        size: req.file.size,
-        mime_type: req.file.mimetype
-      };
-    }
-
-    res.status(201).json(response);
-
-  } catch (error) {
-
-    // Rollback database transaction
-    await transaction.rollback();
-
-    // Clean up S3 file if it was uploaded
-    if (uploadedS3Key) {
-      try {
-        await fileService.deleteS3Object(uploadedS3Key);
-      } catch (s3Error) {
-      }
-    }
-
-    res.status(500).json({
-      error: 'GameContent upload failed',
-      details: error.message
-    });
-  }
-});
 
 
 export default router;

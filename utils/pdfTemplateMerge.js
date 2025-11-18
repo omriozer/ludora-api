@@ -3,31 +3,46 @@
  *
  * Applies templates (branding OR watermark - identical rendering logic) to PDF files
  * Using the same template structure and positioning as the visual editor
+ *
+ * REFACTORED: Now uses centralized utilities for better maintainability:
+ * - AssetManager for logo/font loading
+ * - CoordinateConverter for positioning calculations
+ * - FontSelector for font selection logic
+ * - Template configuration for all hardcoded values
  */
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
+import fontkit from './fontkit.js';
 import fs from 'fs';
 import path from 'path';
-import fontkit from './fontkit.js';
 import { substituteVariables } from './variableSubstitution.js';
-import { getElementRotation, debugElementRotation, getElementShadow, getPdfShadowParams } from './elementHelpers.js';
+import { getElementRotation, getElementShadow, getPdfShadowParams } from './elementHelpers.js';
+import { loadFonts, loadLogo } from './AssetManager.js';
+import { createConverter } from './CoordinateConverter.js';
+import { createFontSelector } from './FontSelector.js';
+import { getDefaultContent, getUrlConfig } from '../config/templateConfig.js';
 
 /**
  * Apply template to PDF - UNIFIED for both branding and watermark templates
+ * NOW INCLUDES: Optional page replacement for preview mode
  * @param {Buffer} pdfBuffer - Original PDF buffer
  * @param {Object} templateSettings - Template settings with logo/text/url/customElements structure
  * @param {Object} variables - Variables for text substitution
+ * @param {Object} options - Options including optional accessiblePages for page replacement
  * @returns {Promise<Buffer>} - PDF with template applied
  */
-async function mergePdfTemplate(pdfBuffer, templateSettings, variables = {}) {
+async function mergePdfTemplate(pdfBuffer, templateSettings, variables = {}, options = {}) {
   try {
-    console.log('🔍 mergePdfTemplate called with:');
-    console.log('- templateSettings:', JSON.stringify(templateSettings, null, 2));
-    console.log('- variables:', JSON.stringify(variables, null, 2));
-
     if (!templateSettings || typeof templateSettings !== 'object') {
-      console.log('❌ No template settings or invalid object, returning original PDF');
       return pdfBuffer;
+    }
+
+    // Check if page replacement is needed
+    const accessiblePages = options.accessiblePages;
+    const needsPageReplacement = accessiblePages && Array.isArray(accessiblePages);
+
+    if (needsPageReplacement) {
+      return await processWithPageReplacement(pdfBuffer, templateSettings, variables, accessiblePages);
     }
 
     // Load PDF document
@@ -37,9 +52,12 @@ async function mergePdfTemplate(pdfBuffer, templateSettings, variables = {}) {
     // Register fontkit for Hebrew font support
     pdfDoc.registerFontkit(fontkit);
 
-    // Load fonts
+    // Load fonts using AssetManager
     const standardFonts = await loadStandardFonts(pdfDoc);
-    const customFonts = await loadCustomFonts(pdfDoc);
+    const customFonts = await loadFonts(pdfDoc, ['english', 'hebrew']);
+
+    // Create font selector for intelligent font selection
+    const fontSelector = createFontSelector(standardFonts, customFonts);
 
 
     // Process each page
@@ -47,46 +65,37 @@ async function mergePdfTemplate(pdfBuffer, templateSettings, variables = {}) {
       const page = pages[pageIndex];
       const { width, height } = page.getSize();
 
+      // Create coordinate converter for this page
+      const coordinateConverter = createConverter('pdf-a4-portrait');
+      // Override with actual page dimensions if different
+      if (width !== 595 || height !== 842) {
+        coordinateConverter.pageWidth = width;
+        coordinateConverter.pageHeight = height;
+      }
 
-      // Add page number to variables
+      // Add page number and URL variables using configuration
+      const urlConfig = getUrlConfig();
       const pageVariables = {
         ...variables,
         page: pageIndex + 1,
         pageNumber: pageIndex + 1,
         totalPages: pages.length,
-        FRONTEND_URL: process.env.FRONTEND_URL || 'https://ludora.app'
+        FRONTEND_URL: urlConfig.frontend
       };
 
-      // Apply main logo element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings.logo && templateSettings.logo.visible !== false && !templateSettings.logo.hidden) {
-        await addTemplateElement(page, 'logo', templateSettings.logo, pageVariables, width, height, standardFonts, customFonts);
+      // UNIFIED STRUCTURE ONLY: Process all element arrays
+      // Ensure template has unified structure
+      if (!templateSettings.elements || typeof templateSettings.elements !== 'object') {
+        throw new Error('Template must use unified structure with "elements" object. Please update template to new format.');
       }
 
-      // Apply main text element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings.text && templateSettings.text.visible !== false && !templateSettings.text.hidden) {
-        await addTemplateElement(page, 'text', templateSettings.text, pageVariables, width, height, standardFonts, customFonts);
-      }
-
-      // Apply main URL element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings.url && templateSettings.url.visible !== false && !templateSettings.url.hidden) {
-        await addTemplateElement(page, 'url', templateSettings.url, pageVariables, width, height, standardFonts, customFonts);
-      }
-
-      // Apply copyright-text element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings['copyright-text'] && templateSettings['copyright-text'].visible !== false && !templateSettings['copyright-text'].hidden) {
-        await addTemplateElement(page, 'copyright-text', templateSettings['copyright-text'], pageVariables, width, height, standardFonts, customFonts);
-      }
-
-      // Apply user-info element (if visible) - SAME LOGIC for branding AND watermark
-      if (templateSettings['user-info'] && templateSettings['user-info'].visible !== false && !templateSettings['user-info'].hidden) {
-        await addTemplateElement(page, 'user-info', templateSettings['user-info'], pageVariables, width, height, standardFonts, customFonts);
-      }
-
-      // Apply custom elements - SAME LOGIC for branding AND watermark
-      if (templateSettings.customElements) {
-        for (const [elementId, element] of Object.entries(templateSettings.customElements)) {
-          if (element.visible !== false && !element.hidden) {
-            await addTemplateElement(page, element.type, element, pageVariables, width, height, standardFonts, customFonts);
+      // Process all element types in the unified structure
+      for (const [elementType, elementArray] of Object.entries(templateSettings.elements)) {
+        if (Array.isArray(elementArray)) {
+          for (const element of elementArray) {
+            if (element && element.visible !== false && !element.hidden) {
+              await addTemplateElement(page, elementType, element, pageVariables, coordinateConverter, fontSelector);
+            }
           }
         }
       }
@@ -119,123 +128,27 @@ async function loadStandardFonts(pdfDoc) {
   }
 }
 
-/**
- * Load custom fonts for PDF (Inter for English, NotoSansHebrew for Hebrew)
- * @param {PDFDocument} pdfDoc - PDF document
- * @returns {Object} - Custom fonts object
- */
-async function loadCustomFonts(pdfDoc) {
-  try {
-    const customFonts = {
-      english: {},
-      hebrew: {}
-    };
-
-    // Load English fonts (Inter)
-    const englishRegularPath = path.join(process.cwd(), 'fonts', 'Inter-Regular.ttf');
-    const englishBoldPath = path.join(process.cwd(), 'fonts', 'Inter-Bold.ttf');
-
-    // Load Hebrew fonts (NotoSansHebrew)
-    const hebrewRegularPath = path.join(process.cwd(), 'fonts', 'NotoSansHebrew-Regular.ttf');
-    const hebrewBoldPath = path.join(process.cwd(), 'fonts', 'NotoSansHebrew-Bold.ttf');
-    const hebrewVariablePath = path.join(process.cwd(), 'fonts', 'NotoSansHebrew-Variable.ttf');
-
-
-    // Load English fonts
-    if (fs.existsSync(englishRegularPath)) {
-      try {
-        const englishRegularBytes = fs.readFileSync(englishRegularPath);
-        customFonts.english.regular = await pdfDoc.embedFont(englishRegularBytes);
-      } catch (embedError) {
-        // Failed to embed font
-      }
-    }
-
-    if (fs.existsSync(englishBoldPath)) {
-      try {
-        const englishBoldBytes = fs.readFileSync(englishBoldPath);
-        customFonts.english.bold = await pdfDoc.embedFont(englishBoldBytes);
-      } catch (embedError) {
-        // Failed to embed font
-      }
-    }
-
-    // Load Hebrew fonts
-    if (fs.existsSync(hebrewRegularPath)) {
-      try {
-        const hebrewRegularBytes = fs.readFileSync(hebrewRegularPath);
-        customFonts.hebrew.regular = await pdfDoc.embedFont(hebrewRegularBytes);
-      } catch (embedError) {
-        // Failed to embed font
-      }
-    }
-
-    if (fs.existsSync(hebrewBoldPath)) {
-      try {
-        const hebrewBoldBytes = fs.readFileSync(hebrewBoldPath);
-        customFonts.hebrew.bold = await pdfDoc.embedFont(hebrewBoldBytes);
-      } catch (embedError) {
-        // Failed to embed font
-      }
-    }
-
-    // Load Hebrew variable font for italic and mixed styling support
-    if (fs.existsSync(hebrewVariablePath)) {
-      try {
-        const hebrewVariableBytes = fs.readFileSync(hebrewVariablePath);
-        customFonts.hebrew.variable = await pdfDoc.embedFont(hebrewVariableBytes);
-        console.log('✅ Hebrew variable font loaded successfully for italic support');
-      } catch (embedError) {
-        console.log('⚠️ Failed to load Hebrew variable font:', embedError.message);
-      }
-    }
-
-    return customFonts;
-  } catch (error) {
-    return { english: {}, hebrew: {} };
-  }
-}
+// Legacy function removed - now handled by AssetManager.loadFonts()
 
 /**
  * Add template element to PDF page - UNIFIED LOGIC for all template types
+ * REFACTORED: Now uses utilities for positioning, font selection, and asset loading
  * @param {PDFPage} page - PDF page
  * @param {string} elementType - Element type
  * @param {Object} element - Element configuration
  * @param {Object} variables - Variables for substitution
- * @param {number} width - Page width
- * @param {number} height - Page height
- * @param {Object} standardFonts - Standard fonts object
- * @param {Object} customFonts - Custom fonts object (english/hebrew)
+ * @param {CoordinateConverter} coordinateConverter - Coordinate conversion utility
+ * @param {FontSelector} fontSelector - Font selection utility
  */
-async function addTemplateElement(page, elementType, element, variables, width, height, standardFonts, customFonts) {
+async function addTemplateElement(page, elementType, element, variables, coordinateConverter, fontSelector) {
   try {
-    // Convert percentage positions to actual coordinates
-    // This MUST match the visual editor's coordinate system exactly
+    // Use CoordinateConverter for positioning calculations
     const elementXPercent = element.position?.x || 50;
     const elementYPercent = element.position?.y || 50;
 
-    // Calculate coordinates - EXACT MATCH with visual editor positioning
-    // CRITICAL COORDINATE SYSTEM ANALYSIS:
-    // - Visual Editor: Y=0 at TOP, Y=100 at BOTTOM (percentage from top)
-    // - PDF lib: Y=0 at BOTTOM, Y=height at TOP (coordinate from bottom)
-    // - Conversion: PDF_Y = height - (height * editorY% / 100)
-    //
-    // COORDINATE SYSTEM DEBUGGING:
-    // Looking at Image #2 (visual editor), I can see:
-    // - Logo appears at TOP-LEFT corner
-    // - Text appears at CENTER
-    // - User info appears at BOTTOM
-    //
-    // Database coordinates:
-    // - logo: (15%, 15%) - appears TOP-LEFT in editor
-    // - text: (50%, 45%) - appears CENTER in editor
-    // - user-info: (50%, 88%) - appears BOTTOM in editor
-    //
-    // This means: editor Y% = distance from TOP
-    // PDF conversion: PDF_Y = height - (height * editor_Y% / 100)
-    // BUT the current output shows logo at bottom, so let me test the opposite:
-    const elementX = (width * elementXPercent / 100);
-    const elementY = height - (height * elementYPercent / 100);
+    // Convert percentage positions to PDF coordinates using utility
+    const { x: elementX, y: elementY } = coordinateConverter.percentageToPdf(elementXPercent, elementYPercent);
+
 
 
     // Get common style properties
@@ -251,7 +164,7 @@ async function addTemplateElement(page, elementType, element, variables, width, 
     switch (elementType) {
       case 'logo':
       case 'watermark-logo':
-        await renderLogoElement(page, element, elementX, elementY, opacity, rotation, standardFonts, shadowParams);
+        await renderLogoElement(page, element, elementX, elementY, opacity, rotation, shadowParams);
         break;
 
       case 'text':
@@ -259,11 +172,11 @@ async function addTemplateElement(page, elementType, element, variables, width, 
       case 'free-text':
       case 'user-info':
       case 'watermark-text':
-        await renderTextElement(page, element, elementX, elementY, opacity, rotation, variables, standardFonts, customFonts, shadowParams);
+        await renderTextElement(page, element, elementX, elementY, opacity, rotation, variables, fontSelector, shadowParams);
         break;
 
       case 'url':
-        await renderUrlElement(page, element, elementX, elementY, opacity, rotation, variables, standardFonts, customFonts, shadowParams);
+        await renderUrlElement(page, element, elementX, elementY, opacity, rotation, variables, fontSelector, shadowParams);
         break;
 
       case 'box':
@@ -284,58 +197,43 @@ async function addTemplateElement(page, elementType, element, variables, width, 
     }
 
   } catch (error) {
-    console.log('❌ Element render failed for type:', elementType, 'Error:', error.message);
-    console.log('🔍 Failed element details:', JSON.stringify(element, null, 2));
+    // Element render failed - continue with other elements
   }
 }
 
 /**
  * Render logo element - UNIFIED for branding and watermark
+ * REFACTORED: Now uses AssetManager for configurable logo loading
  * @param {PDFPage} page - PDF page
  * @param {Object} element - Logo element configuration
  * @param {number} x - X coordinate
  * @param {number} y - Y coordinate
  * @param {number} opacity - Opacity (0-1)
  * @param {number} rotation - Rotation in degrees
- * @param {Object} standardFonts - Standard fonts object
  * @param {Object} shadowParams - Shadow parameters for PDF rendering
  */
-async function renderLogoElement(page, element, x, y, opacity, rotation, standardFonts, shadowParams = null) {
+async function renderLogoElement(page, element, x, y, opacity, rotation, shadowParams = null) {
   try {
     const logoSize = element.style?.size || 80;
 
-    // SIMPLIFIED: Logos always use static logo file, no URL handling at all
-    let logoImageBytes = null;
+    // Use AssetManager for configurable logo loading
+    const logoAsset = await loadLogo({
+      source: 'file', // Support for different sources: file, url, base64
+      size: logoSize
+    });
 
-    const fs = await import('fs');
-    const path = await import('path');
-
-    // Use the static logo file
-    const logoPath = path.join(process.cwd(), 'assets', 'images', 'logo.png');
-
-    try {
-      if (fs.existsSync(logoPath)) {
-        logoImageBytes = fs.readFileSync(logoPath);
-      }
-    } catch (localError) {
-      // Failed to load logo
-    }
-
-    // If we have logo image data, embed and draw it
-    if (logoImageBytes) {
+    // Handle logo rendering based on asset type
+    if (logoAsset && !logoAsset.fallback && logoAsset.data) {
       try {
         let logoImage;
-        const logoBuffer = Buffer.from(logoImageBytes);
 
-        // Detect image type and embed accordingly
-        if (logoBuffer[0] === 0x89 && logoBuffer[1] === 0x50 && logoBuffer[2] === 0x4E && logoBuffer[3] === 0x47) {
-          // PNG image
-          logoImage = await page.doc.embedPng(logoImageBytes);
-        } else if (logoBuffer[0] === 0xFF && logoBuffer[1] === 0xD8 && logoBuffer[2] === 0xFF) {
-          // JPEG image
-          logoImage = await page.doc.embedJpg(logoImageBytes);
+        // Embed image based on detected type
+        if (logoAsset.type === 'png') {
+          logoImage = await page.doc.embedPng(logoAsset.data);
+        } else if (logoAsset.type === 'jpeg') {
+          logoImage = await page.doc.embedJpg(logoAsset.data);
         } else {
-          throw new Error('Unsupported image format (only PNG and JPEG supported)');
+          throw new Error(`Unsupported image format: ${logoAsset.type}`);
         }
 
         // Scale logo to match visual editor size
@@ -386,47 +284,58 @@ async function renderLogoElement(page, element, x, y, opacity, rotation, standar
       }
     }
 
-    // Fallback: render "LOGO" text if image loading failed
-    if (standardFonts.regular) {
-      const logoText = 'LOGO';
-      const fontSize = logoSize / 4;
-      const textWidth = standardFonts.regular.widthOfTextAtSize(logoText, fontSize);
+    // Fallback: render configured fallback text if image loading failed
+    if (logoAsset && logoAsset.fallback) {
+      try {
+        // Use fallback configuration from AssetManager
+        const logoText = logoAsset.text || getDefaultContent('logo');
+        const fontSize = logoSize / 4;
 
-      // COORDINATE SYSTEM FIX: Apply same direction fix for logo text fallback
-      let finalLogoTextRotation = -rotation; // Negate to match CSS direction
+        // Load standard fonts for fallback rendering
+        const standardFonts = await loadStandardFonts(page.doc);
+        if (standardFonts.regular) {
+          const textWidth = standardFonts.regular.widthOfTextAtSize(logoText, fontSize);
 
-      // Only apply rotation if there's actually rotation to avoid precision issues
-      if (Math.abs(rotation) < 0.01) {
-        finalLogoTextRotation = 0; // Force zero for very small values
+          // COORDINATE SYSTEM FIX: Apply same direction fix for logo text fallback
+          let finalLogoTextRotation = -rotation; // Negate to match CSS direction
+
+          // Only apply rotation if there's actually rotation to avoid precision issues
+          if (Math.abs(rotation) < 0.01) {
+            finalLogoTextRotation = 0; // Force zero for very small values
+          }
+
+          // Render text shadow first (if enabled)
+          if (shadowParams) {
+            const shadowX = x + shadowParams.offsetX - (textWidth / 2);
+            const shadowY = y - shadowParams.offsetY - (fontSize / 2);
+
+            page.drawText(logoText, {
+              x: shadowX,
+              y: shadowY,
+              size: fontSize,
+              opacity: shadowParams.opacity,
+              color: rgb(shadowParams.color.r, shadowParams.color.g, shadowParams.color.b),
+              rotate: degrees(finalLogoTextRotation),
+              font: standardFonts.regular
+            });
+          }
+
+          // Render main text (on top of shadow)
+          page.drawText(logoText, {
+            x: x - (textWidth / 2), // Center horizontally
+            y: y - (fontSize / 2), // Center vertically
+            size: fontSize,
+            opacity: opacity,
+            color: rgb(logoAsset.color?.r || 0.2, logoAsset.color?.g || 0.4, logoAsset.color?.b || 0.8),
+            rotate: degrees(finalLogoTextRotation),
+            font: standardFonts.regular
+          });
+        }
+      } catch (fallbackError) {
+        // Logo fallback rendering failed
       }
-
-      // Render text shadow first (if enabled)
-      if (shadowParams) {
-        const shadowX = x + shadowParams.offsetX - (textWidth / 2);
-        const shadowY = y - shadowParams.offsetY - (fontSize / 2);
-
-        page.drawText(logoText, {
-          x: shadowX,
-          y: shadowY,
-          size: fontSize,
-          opacity: shadowParams.opacity,
-          color: rgb(shadowParams.color.r, shadowParams.color.g, shadowParams.color.b),
-          rotate: degrees(finalLogoTextRotation),
-          font: standardFonts.regular
-        });
-      }
-
-      // Render main text (on top of shadow)
-      page.drawText(logoText, {
-        x: x - (textWidth / 2), // Center horizontally
-        y: y - (fontSize / 2), // Center vertically
-        size: fontSize,
-        opacity: opacity,
-        color: rgb(0.2, 0.4, 0.8), // Blue-ish color for logo placeholder
-        rotate: degrees(finalLogoTextRotation),
-        font: standardFonts.regular
-      });
     }
+
   } catch (error) {
     // Logo render failed
   }
@@ -434,6 +343,7 @@ async function renderLogoElement(page, element, x, y, opacity, rotation, standar
 
 /**
  * Render text element with Hebrew support - UNIFIED for branding and watermark
+ * REFACTORED: Now uses FontSelector for intelligent font selection
  * @param {PDFPage} page - PDF page
  * @param {Object} element - Text element configuration
  * @param {number} x - X coordinate
@@ -441,18 +351,17 @@ async function renderLogoElement(page, element, x, y, opacity, rotation, standar
  * @param {number} opacity - Opacity (0-1)
  * @param {number} rotation - Rotation in degrees
  * @param {Object} variables - Variables for substitution
- * @param {Object} standardFonts - Standard fonts object
- * @param {Object} customFonts - Custom fonts object (english/hebrew)
+ * @param {FontSelector} fontSelector - Font selection utility
  * @param {Object} shadowParams - Shadow parameters for PDF rendering
  */
-async function renderTextElement(page, element, x, y, opacity, rotation, variables, standardFonts, customFonts, shadowParams = null) {
+async function renderTextElement(page, element, x, y, opacity, rotation, variables, fontSelector, shadowParams = null) {
   try {
     // Get content and apply variable substitution
     let content = element.content || '';
 
-    // Default content for special element types
+    // Default content for special element types using configuration
     if (element.type === 'user-info' && !content) {
-      content = 'קובץ זה נוצר עבור {{user.email}}';
+      content = getDefaultContent('user-info', 'hebrew');
     }
 
     content = substituteVariables(content, variables, {
@@ -471,58 +380,14 @@ async function renderTextElement(page, element, x, y, opacity, rotation, variabl
     const isItalic = element.style?.italic || false;
     const textWidth = element.style?.width || 300; // For multi-line text wrapping
 
-    // Check if text contains Hebrew characters
-    const hasHebrew = containsHebrew(content);
-    // Select appropriate font based on content type
-    let selectedFont = null;
+    // Use FontSelector for intelligent font selection
+    const fontInfo = fontSelector.selectFont(content, { bold: isBold, italic: isItalic });
 
-    // Mixed content detection for font selection
-    const isMixedContent = hasHebrew && content.includes('@');
-
-    if (hasHebrew) {
-      // Hebrew text: ALWAYS prioritize Hebrew character support over italic styling
-      // Hebrew fonts (NotoSansHebrew) do not support italic - disable italic for consistency
-      if (customFonts.hebrew && customFonts.hebrew.regular) {
-        // Use Hebrew fonts - prioritize character support over italic styling
-        selectedFont = isBold && customFonts.hebrew.bold ? customFonts.hebrew.bold : customFonts.hebrew.regular;
-        if (isItalic) {
-          console.log('🔤 Hebrew italic requested but disabled - Hebrew fonts do not support italic styling');
-        }
-        console.log('🔤 Using Hebrew font for Hebrew text (italic disabled for font compatibility)');
-      } else if (standardFonts.regular) {
-        // Hebrew fonts unavailable - this will likely fail for Hebrew characters, but try anyway
-        console.log('⚠️  Warning: Using Helvetica for Hebrew text - may fail to render Hebrew characters');
-        if (isBold && isItalic && standardFonts.boldItalic) {
-          selectedFont = standardFonts.boldItalic;
-        } else if (isBold && standardFonts.bold) {
-          selectedFont = standardFonts.bold;
-        } else if (isItalic && standardFonts.italic) {
-          selectedFont = standardFonts.italic;
-        } else {
-          selectedFont = standardFonts.regular;
-        }
-      } else {
-        // If no fonts available at all, skip rendering
-        return;
-      }
-    } else {
-      // English/other text: use Helvetica fonts directly (matches frontend exactly)
-      if (standardFonts.regular) {
-        if (isBold && isItalic && standardFonts.boldItalic) {
-          selectedFont = standardFonts.boldItalic;
-        } else if (isBold && standardFonts.bold) {
-          selectedFont = standardFonts.bold;
-        } else if (isItalic && standardFonts.italic) {
-          selectedFont = standardFonts.italic;
-        } else {
-          selectedFont = standardFonts.regular;
-        }
-      }
-    }
-
-    if (!selectedFont) {
+    if (!fontInfo.font) {
       return;
     }
+
+    const selectedFont = fontInfo.font;
 
     // Parse color
     const color = hexToRgb(colorHex);
@@ -631,13 +496,13 @@ async function renderTextElement(page, element, x, y, opacity, rotation, variabl
     }
 
   } catch (error) {
-    console.log('❌ Text render failed for element:', element.type || 'unknown', 'Error:', error.message);
-    console.log('🔍 Element details:', JSON.stringify(element, null, 2));
+    // Text render failed for element
   }
 }
 
 /**
  * Render URL element - UNIFIED for branding and watermark
+ * REFACTORED: Now uses FontSelector and configurable URLs
  * @param {PDFPage} page - PDF page
  * @param {Object} element - URL element configuration
  * @param {number} x - X coordinate
@@ -645,15 +510,14 @@ async function renderTextElement(page, element, x, y, opacity, rotation, variabl
  * @param {number} opacity - Opacity (0-1)
  * @param {number} rotation - Rotation in degrees
  * @param {Object} variables - Variables for substitution
- * @param {Object} standardFonts - Standard fonts object
- * @param {Object} customFonts - Custom fonts object (english/hebrew)
+ * @param {FontSelector} fontSelector - Font selection utility
  * @param {Object} shadowParams - Shadow parameters for PDF rendering
  */
-async function renderUrlElement(page, element, x, y, opacity, rotation, variables, standardFonts, customFonts, shadowParams = null) {
+async function renderUrlElement(page, element, x, y, opacity, rotation, variables, fontSelector, shadowParams = null) {
   try {
-    // Get URL and apply variable substitution
-    // CRITICAL FIX: Custom URL elements use element.content, built-in URL elements use element.href
-    const urlContent = element.content || element.href || 'https://ludora.app';
+    // Get URL and apply variable substitution using configuration
+    const urlConfig = getUrlConfig();
+    const urlContent = element.content || element.href || urlConfig.default;
     const urlHref = substituteVariables(urlContent, variables, {
       supportSystemTemplates: true,
       enableLogging: true
@@ -669,51 +533,14 @@ async function renderUrlElement(page, element, x, y, opacity, rotation, variable
     // Parse color
     const color = hexToRgb(colorHex);
 
-    // Check if URL contains Hebrew characters
-    const hasHebrew = containsHebrew(urlHref);
+    // Use FontSelector for intelligent font selection (same as text elements)
+    const fontInfo = fontSelector.selectFont(urlHref, { bold: isBold, italic: isItalic });
 
-    // Select appropriate font based on content type (same logic as text elements)
-    let selectedFont = null;
-
-    if (hasHebrew) {
-      // Hebrew text: ALWAYS prioritize Hebrew character support over italic styling
-      // Hebrew fonts (NotoSansHebrew) do not support italic - disable italic for consistency
-      if (customFonts.hebrew && customFonts.hebrew.regular) {
-        // Use Hebrew fonts - prioritize character support over italic styling
-        selectedFont = isBold && customFonts.hebrew.bold ? customFonts.hebrew.bold : customFonts.hebrew.regular;
-        if (isItalic) {
-          console.log('🔤 Hebrew italic URL requested but disabled - Hebrew fonts do not support italic styling');
-        }
-        console.log('🔤 Using Hebrew font for Hebrew URL (italic disabled for font compatibility)');
-      } else if (standardFonts.regular) {
-        // Fall back to standard fonts when Hebrew fonts unavailable
-        if (isBold && isItalic && standardFonts.boldItalic) {
-          selectedFont = standardFonts.boldItalic;
-        } else if (isBold && standardFonts.bold) {
-          selectedFont = standardFonts.bold;
-        } else if (isItalic && standardFonts.italic) {
-          selectedFont = standardFonts.italic;
-        } else {
-          selectedFont = standardFonts.regular;
-        }
-      } else {
-        // If no fonts available at all, skip rendering
-        return;
-      }
-    } else {
-      // English/other text: use Helvetica fonts directly (matches frontend exactly)
-      if (standardFonts.regular) {
-        if (isBold && isItalic && standardFonts.boldItalic) {
-          selectedFont = standardFonts.boldItalic;
-        } else if (isBold && standardFonts.bold) {
-          selectedFont = standardFonts.bold;
-        } else if (isItalic && standardFonts.italic) {
-          selectedFont = standardFonts.italic;
-        } else {
-          selectedFont = standardFonts.regular;
-        }
-      }
+    if (!fontInfo.font) {
+      return;
     }
+
+    const selectedFont = fontInfo.font;
 
     if (selectedFont) {
       // Center the URL text with proper rotation around center
@@ -807,8 +634,7 @@ async function renderUrlElement(page, element, x, y, opacity, rotation, variable
       }
     }
   } catch (error) {
-    console.log('❌ URL render failed for element:', element.type || 'url', 'Error:', error.message);
-    console.log('🔍 URL element details:', JSON.stringify(element, null, 2));
+    // URL render failed for element
   }
 }
 
@@ -960,16 +786,7 @@ async function renderMultiLineText(page, content, x, y, fontSize, font, color, o
 }
 
 
-/**
- * Check if text contains Hebrew characters
- * @param {string} text - Text to check
- * @returns {boolean} - True if contains Hebrew
- */
-function containsHebrew(text) {
-  if (!text) return false;
-  // Hebrew Unicode range: \u0590-\u05FF
-  return /[\u0590-\u05FF]/.test(text);
-}
+// Legacy function removed - now handled by FontSelector.containsHebrew()
 
 
 /**
@@ -996,49 +813,98 @@ async function renderBoxElement(page, element, x, y, opacity, rotation, shadowPa
     const boxX = x - (width / 2);
     const boxY = y - (height / 2);
 
-    // Apply rotation if needed
-    if (Math.abs(rotation) > 0.1) {
-      // For rotated rectangles, use PDF-lib's transform matrix
-      const rotationRad = (-rotation * Math.PI) / 180; // Negate for CSS direction match
+    // Apply rotation if needed - use consistent approach with other elements
+    let finalRotation = -rotation; // Negate to match CSS direction
 
-      page.pushOperators(
-        ...page.getRotationDegrees(rotation === 0 ? 0 : -rotation, x, y)
-      );
+    // Only apply rotation if there's actually rotation to avoid precision issues
+    if (Math.abs(rotation) < 0.01) {
+      finalRotation = 0; // Force zero for very small values
     }
 
-    // Draw shadow first if enabled
-    if (shadowParams) {
-      const shadowX = boxX + shadowParams.offsetX;
-      const shadowY = boxY - shadowParams.offsetY;
+    // For rectangles, pdf-lib doesn't support rotation parameter directly
+    // We need to use transformation matrix or skip rotation for boxes
+    if (Math.abs(finalRotation) > 0.1) {
+      // For rotated rectangles, save current state and apply transformation
+      page.pushOperators(
+        'q', // Save graphics state
+        ...[Math.cos(finalRotation * Math.PI / 180), Math.sin(finalRotation * Math.PI / 180),
+            -Math.sin(finalRotation * Math.PI / 180), Math.cos(finalRotation * Math.PI / 180), x, y],
+        'cm' // Concat matrix
+      );
 
-      page.drawRectangle({
-        x: shadowX,
-        y: shadowY,
+      // Draw shadow first if enabled (with relative coordinates from center)
+      if (shadowParams) {
+        const shadowX = shadowParams.offsetX - (width / 2);
+        const shadowY = -shadowParams.offsetY - (height / 2);
+
+        page.drawRectangle({
+          x: shadowX,
+          y: shadowY,
+          width: width,
+          height: height,
+          borderColor: rgb(shadowParams.color.r, shadowParams.color.g, shadowParams.color.b),
+          borderWidth: borderWidth,
+          opacity: shadowParams.opacity
+        });
+      }
+
+      // Draw main rectangle (centered at origin)
+      const rectOptions = {
+        x: -(width / 2),
+        y: -(height / 2),
         width: width,
         height: height,
-        borderColor: rgb(shadowParams.color.r, shadowParams.color.g, shadowParams.color.b),
+        borderColor: strokeColor,
         borderWidth: borderWidth,
-        opacity: shadowParams.opacity
-      });
+        opacity: opacity
+      };
+
+      // Add fill color if specified
+      if (fillColor) {
+        rectOptions.color = hexToRgb(fillColor);
+      }
+
+      page.drawRectangle(rectOptions);
+
+      // Restore graphics state
+      page.pushOperators('Q');
+    } else {
+      // No rotation - use simple approach
+
+      // Draw shadow first if enabled
+      if (shadowParams) {
+        const shadowX = boxX + shadowParams.offsetX;
+        const shadowY = boxY - shadowParams.offsetY;
+
+        page.drawRectangle({
+          x: shadowX,
+          y: shadowY,
+          width: width,
+          height: height,
+          borderColor: rgb(shadowParams.color.r, shadowParams.color.g, shadowParams.color.b),
+          borderWidth: borderWidth,
+          opacity: shadowParams.opacity
+        });
+      }
+
+      // Draw main rectangle
+      const rectOptions = {
+        x: boxX,
+        y: boxY,
+        width: width,
+        height: height,
+        borderColor: strokeColor,
+        borderWidth: borderWidth,
+        opacity: opacity
+      };
+
+      // Add fill color if specified
+      if (fillColor) {
+        rectOptions.color = hexToRgb(fillColor);
+      }
+
+      page.drawRectangle(rectOptions);
     }
-
-    // Draw main rectangle
-    const rectOptions = {
-      x: boxX,
-      y: boxY,
-      width: width,
-      height: height,
-      borderColor: strokeColor,
-      borderWidth: borderWidth,
-      opacity: opacity
-    };
-
-    // Add fill color if specified
-    if (fillColor) {
-      rectOptions.color = hexToRgb(fillColor);
-    }
-
-    page.drawRectangle(rectOptions);
 
   } catch (error) {
     // Box render failed
@@ -1196,6 +1062,268 @@ function hexToRgb(hex) {
     );
   }
   return rgb(0, 0, 0); // Fallback to black
+}
+
+/**
+ * Process PDF with page replacement for preview mode
+ * @param {Buffer} pdfBuffer - Original PDF buffer
+ * @param {Object} templateSettings - Template settings
+ * @param {Object} variables - Variables for substitution
+ * @param {Array} accessiblePages - Array of accessible page numbers (1-based)
+ * @returns {Promise<Buffer>} - Processed PDF with page replacement
+ */
+async function processWithPageReplacement(pdfBuffer, templateSettings, variables, accessiblePages) {
+  try {
+    // Load original PDF
+    const originalPdf = await PDFDocument.load(pdfBuffer);
+    const totalPages = originalPdf.getPageCount();
+
+    // Validate accessible pages
+    const validAccessiblePages = accessiblePages
+      .filter(page => Number.isInteger(page) && page >= 1 && page <= totalPages)
+      .sort((a, b) => a - b);
+
+    // Detect format and load appropriate placeholder PDF
+    const detectedFormat = detectDocumentFormat(templateSettings, originalPdf, variables);
+    const placeholderPdf = await loadPlaceholderPdf(detectedFormat);
+
+    // Create new PDF document
+    const newPdf = await PDFDocument.create();
+
+    // Register fontkit for templates
+    newPdf.registerFontkit(fontkit);
+
+    // Load fonts for template rendering
+    const standardFonts = await loadStandardFonts(newPdf);
+    const customFonts = await loadFonts(newPdf, ['english', 'hebrew']);
+    const fontSelector = createFontSelector(standardFonts, customFonts);
+
+    // Process each page
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      if (validAccessiblePages.includes(pageNum)) {
+        // Copy accessible page and apply templates
+        await copyPageWithTemplates(originalPdf, newPdf, pageNum - 1, templateSettings, variables, fontSelector);
+      } else {
+        // Copy placeholder page (no templates)
+        await copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables);
+      }
+    }
+
+    // Save and return processed PDF
+    const pdfBytes = await newPdf.save();
+    return Buffer.from(pdfBytes);
+
+  } catch (error) {
+    throw new Error(`PDF page replacement failed: ${error.message}`);
+  }
+}
+
+/**
+ * Detect document format from template settings and PDF dimensions
+ * @param {Object} templateSettings - Template settings
+ * @param {PDFDocument} originalPdf - Original PDF document
+ * @param {Object} variables - Variables (for future use)
+ * @returns {string} - Format: 'portrait-a4', 'landscape-a4', or 'svg-slide'
+ */
+function detectDocumentFormat(templateSettings, originalPdf, variables) {
+  try {
+    // Check if this is an SVG-based template (check for SVG-specific settings or variables)
+    if (templateSettings.svgTemplate || variables.isSvgTemplate || templateSettings.format === 'svg') {
+      return 'svg-slide';
+    }
+
+    // Get first page dimensions to detect PDF format
+    const firstPage = originalPdf.getPage(0);
+    const { width, height } = firstPage.getSize();
+
+    // Standard A4 dimensions in points
+    const A4_PORTRAIT_WIDTH = 595; // ~210mm
+    const A4_PORTRAIT_HEIGHT = 842; // ~297mm
+    const A4_LANDSCAPE_WIDTH = 842;
+    const A4_LANDSCAPE_HEIGHT = 595;
+
+    // Tolerance for dimension comparison (allows for slight variations)
+    const TOLERANCE = 10;
+
+    // Check for landscape A4
+    if (Math.abs(width - A4_LANDSCAPE_WIDTH) <= TOLERANCE && Math.abs(height - A4_LANDSCAPE_HEIGHT) <= TOLERANCE) {
+      return 'landscape-a4';
+    }
+
+    // Check for portrait A4
+    if (Math.abs(width - A4_PORTRAIT_WIDTH) <= TOLERANCE && Math.abs(height - A4_PORTRAIT_HEIGHT) <= TOLERANCE) {
+      return 'portrait-a4';
+    }
+
+    // Determine by aspect ratio if dimensions don't match exactly
+    const aspectRatio = width / height;
+
+    if (aspectRatio > 1.2) {
+      // Wider than tall - likely landscape
+      return 'landscape-a4';
+    } else {
+      // Taller than wide or square - default to portrait
+      return 'portrait-a4';
+    }
+
+  } catch (error) {
+    console.log('⚠️ Format detection failed, defaulting to portrait-a4:', error.message);
+    return 'portrait-a4'; // Safe fallback
+  }
+}
+
+/**
+ * Load placeholder PDF based on detected format
+ * @param {string} format - Document format: 'portrait-a4', 'landscape-a4', or 'svg-slide'
+ * @returns {Promise<PDFDocument>} - Placeholder PDF document
+ */
+async function loadPlaceholderPdf(format) {
+  // Map formats to placeholder files
+  const placeholderFiles = {
+    'portrait-a4': 'preview-not-available-portrait.pdf',
+    'landscape-a4': 'preview-not-available-landscape.pdf',
+    'svg-slide': 'preview-not-available-slide.pdf'
+  };
+
+  const placeholderFile = placeholderFiles[format] || placeholderFiles['portrait-a4']; // Fallback
+  const placeholderPath = path.join(process.cwd(), 'assets', 'placeholders', placeholderFile);
+
+  if (!fs.existsSync(placeholderPath)) {
+    throw new Error(`Placeholder PDF not found for format ${format}: ${placeholderPath}. Ensure static placeholder files exist in assets/placeholders/`);
+  }
+
+  const placeholderBuffer = fs.readFileSync(placeholderPath);
+  return await PDFDocument.load(placeholderBuffer);
+}
+
+/**
+ * Copy page from original PDF and apply templates
+ * @param {PDFDocument} originalPdf - Source PDF
+ * @param {PDFDocument} newPdf - Destination PDF
+ * @param {number} pageIndex - Page index (0-based)
+ * @param {Object} templateSettings - Template settings
+ * @param {Object} variables - Variables for substitution
+ * @param {FontSelector} fontSelector - Font selection utility
+ */
+async function copyPageWithTemplates(originalPdf, newPdf, pageIndex, templateSettings, variables, fontSelector) {
+  try {
+    // Copy page from original PDF
+    const [copiedPage] = await newPdf.copyPages(originalPdf, [pageIndex]);
+    newPdf.addPage(copiedPage);
+
+    // Apply templates to the copied page
+    await applyTemplatesToPage(copiedPage, templateSettings, variables, fontSelector, pageIndex + 1);
+
+  } catch (error) {
+    // Create fallback page
+    const fallbackPage = newPdf.addPage([612, 792]);
+    // Add simple error message
+    fallbackPage.drawText(`Page ${pageIndex + 1} - Error loading content`, {
+      x: 50,
+      y: 400,
+      size: 14,
+      color: rgb(0.5, 0.5, 0.5)
+    });
+  }
+}
+
+/**
+ * Copy placeholder page without templates
+ * @param {PDFDocument} newPdf - Destination PDF
+ * @param {PDFDocument} placeholderPdf - Placeholder PDF
+ * @param {number} pageNum - Current page number (1-based)
+ * @param {number} totalPages - Total pages in document
+ * @param {Object} variables - Variables for customization
+ */
+async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables) {
+  try {
+    // Copy placeholder page (no templates applied)
+    const [placeholderPage] = await newPdf.copyPages(placeholderPdf, [0]);
+
+    // Add page-specific information (minimal customization)
+    const { width, height } = placeholderPage.getSize();
+
+    // Add page number
+    placeholderPage.drawText(`Page ${pageNum} of ${totalPages}`, {
+      x: width - 100,
+      y: 30,
+      size: 10,
+      color: rgb(0.68, 0.71, 0.74), // Light gray
+    });
+
+    // Add filename if available
+    if (variables.filename) {
+      placeholderPage.drawText(variables.filename, {
+        x: 50,
+        y: 30,
+        size: 10,
+        color: rgb(0.68, 0.71, 0.74),
+      });
+    }
+
+    newPdf.addPage(placeholderPage);
+
+  } catch (error) {
+    // Create minimal fallback page
+    const fallbackPage = newPdf.addPage([612, 792]);
+    fallbackPage.drawRectangle({
+      x: 0,
+      y: 0,
+      width: 612,
+      height: 792,
+      color: rgb(0.98, 0.98, 0.98),
+    });
+  }
+}
+
+/**
+ * Apply templates to a specific page (extracted from main loop for reuse)
+ * @param {PDFPage} page - PDF page to apply templates to
+ * @param {Object} templateSettings - Template settings
+ * @param {Object} variables - Variables for substitution
+ * @param {FontSelector} fontSelector - Font selection utility
+ * @param {number} pageNumber - Current page number (1-based)
+ */
+async function applyTemplatesToPage(page, templateSettings, variables, fontSelector, pageNumber) {
+  try {
+    const { width, height } = page.getSize();
+
+    // Create coordinate converter for this page
+    const coordinateConverter = createConverter('pdf-a4-portrait');
+    // Override with actual page dimensions if different
+    if (width !== 595 || height !== 842) {
+      coordinateConverter.pageWidth = width;
+      coordinateConverter.pageHeight = height;
+    }
+
+    // Add page number and URL variables using configuration
+    const urlConfig = getUrlConfig();
+    const pageVariables = {
+      ...variables,
+      page: pageNumber,
+      pageNumber: pageNumber,
+      FRONTEND_URL: urlConfig.frontend
+    };
+
+    // Ensure template has unified structure
+    if (!templateSettings.elements || typeof templateSettings.elements !== 'object') {
+      return; // Skip template application for invalid structure
+    }
+
+    // Process all element types in the unified structure
+    for (const [elementType, elementArray] of Object.entries(templateSettings.elements)) {
+      if (Array.isArray(elementArray)) {
+        for (const element of elementArray) {
+          if (element && element.visible !== false && !element.hidden) {
+            await addTemplateElement(page, elementType, element, pageVariables, coordinateConverter, fontSelector);
+          }
+        }
+      }
+    }
+
+  } catch (error) {
+    // Failed to apply templates to page
+  }
 }
 
 export {

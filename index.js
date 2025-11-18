@@ -101,9 +101,12 @@ import toolRoutes from './routes/tools.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import publicApisRoutes from './routes/publicApis.js';
 import gamesRoutes from './routes/games.js';
+import gameLobbiesRoutes from './routes/gameLobbies.js';
+import gameSessionsRoutes from './routes/gameSessions.js';
 import productsRoutes from './routes/products.js';
 import svgSlidesRoutes from './routes/svgSlides.js';
 import systemTemplatesRoutes from './routes/system-templates.js';
+import eduContentRoutes from './routes/eduContent.js';
 
 const app = express();
 
@@ -192,6 +195,9 @@ app.use('/api/tools', toolRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/public', publicApisRoutes);
 app.use('/api/games', gamesRoutes);
+app.use('/api', gameLobbiesRoutes);
+app.use('/api', gameSessionsRoutes);
+app.use('/api/edu-content', eduContentRoutes);
 app.use('/api/svg-slides', svgSlidesRoutes);
 app.use('/api/system-templates', systemTemplatesRoutes);
 
@@ -237,6 +243,9 @@ app.get('/api', (req, res) => {
       subscriptions: '/api/subscriptions',
       public: '/api/public',
       games: '/api/games',
+      'game-lobbies': '/api/game-lobbies',
+      'game-sessions': '/api/game-sessions',
+      'edu-content': '/api/edu-content',
       'svg-slides': '/api/svg-slides',
       'system-templates': '/api/system-templates'
     },

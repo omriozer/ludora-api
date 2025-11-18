@@ -118,7 +118,6 @@ class EntityService {
       'supportmessage': 'SupportMessage',
       'audiofile': 'AudioFile',
       'gameaudiosettings': 'GameAudioSettings',
-      'gamecontent': 'GameContent',
       'worden': 'WordEN',
       'qa': 'QA',
       'contentlist': 'ContentList',
@@ -128,6 +127,7 @@ class EntityService {
       'gamesession': 'GameSession',
       'gamecontenttag': 'GameContentTag',
       'contenttag': 'ContentTag',
+      'contenttopic': 'ContentTopic',
       'studentinvitation': 'StudentInvitation',
       'classroommembership': 'ClassroomMembership',
       'curriculumitem': 'CurriculumItem',
@@ -200,6 +200,16 @@ class EntityService {
           attributes: ['id', 'full_name', 'email'],
           required: false // LEFT JOIN to include entities even without creators
         });
+
+        // Include ContentTopic for products that have content topic associations
+        if (entityType === 'product') {
+          queryOptions.include.push({
+            model: this.models.ContentTopic,
+            as: 'contentTopic',
+            attributes: ['id', 'name', 'description'],
+            required: false // LEFT JOIN to include products even without content topics
+          });
+        }
 
         // Product entities use polymorphic associations via entity_id + product_type
         // No direct associations to include here
@@ -276,6 +286,16 @@ class EntityService {
           attributes: ['id', 'full_name', 'email'],
           required: false // LEFT JOIN to include entities even without creators
         });
+
+        // Include ContentTopic for products that have content topic associations
+        if (entityType === 'product') {
+          queryOptions.include.push({
+            model: this.models.ContentTopic,
+            as: 'contentTopic',
+            attributes: ['id', 'name', 'description'],
+            required: false // LEFT JOIN to include products even without content topics
+          });
+        }
       }
 
       const entity = await Model.findOne(queryOptions);
@@ -579,7 +599,6 @@ class EntityService {
       'contentlist': ['name', 'description'],
       'image': ['name', 'description'],
       'attribute': ['type', 'value'],
-      'gamecontent': [] // Special handling - will use custom JSONB search
     };
 
     return searchFieldMap[entityType.toLowerCase()] || ['name', 'title', 'description'];
@@ -605,31 +624,7 @@ class EntityService {
         if (entityType) {
           const searchFields = this.getSearchFields(entityType);
 
-          // Special handling for GameContent - search both value and metadata fields
-          if (entityType.toLowerCase() === 'gamecontent') {
-            where[Op.or] = [
-              // Search in the main value field (for text content or S3 URLs)
-              {
-                value: {
-                  [Op.iLike]: `%${value}%`
-                }
-              },
-              // Search in metadata.name field using proper Sequelize JSONB syntax
-              this.models.sequelize.where(
-                this.models.sequelize.json('metadata.name'),
-                {
-                  [Op.iLike]: `%${value}%`
-                }
-              ),
-              // Search in metadata.description field using proper Sequelize JSONB syntax
-              this.models.sequelize.where(
-                this.models.sequelize.json('metadata.description'),
-                {
-                  [Op.iLike]: `%${value}%`
-                }
-              )
-            ];
-          } else if (searchFields.length > 0) {
+          if (searchFields.length > 0) {
             where[Op.or] = searchFields.map(field => ({
               [field]: {
                 [Op.iLike]: `%${value}%`
@@ -960,10 +955,12 @@ class EntityService {
         target_audience: data.target_audience,
         type_attributes: data.type_attributes,
         access_days: parseInt(data.access_days) ? parseInt(data.access_days) : null,
+        content_topic_id: data.content_topic_id,
         creator_user_id: data.creator_user_id,
         updated_at: new Date(),
         ...(updatedBy && { updated_by: updatedBy })
       };
+
 
       // Remove undefined fields from product update
       Object.keys(productFields).forEach(key => {
@@ -984,7 +981,7 @@ class EntityService {
         'title', 'short_description', 'description', 'category', 'product_type',
         'price', 'is_published', 'image_url', 'has_image', 'image_filename',
         'marketing_video_type', 'marketing_video_id', 'marketing_video_title', 'marketing_video_duration',
-        'tags', 'target_audience', 'type_attributes', 'access_days', 'creator_user_id'
+        'tags', 'target_audience', 'type_attributes', 'access_days', 'content_topic_id', 'creator_user_id'
       ];
 
       productOnlyFields.forEach(field => delete entityFields[field]);

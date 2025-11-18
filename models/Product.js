@@ -95,6 +95,14 @@ export default (sequelize) => {
     entity_id: {
       type: DataTypes.STRING,
       allowNull: false
+    },
+    content_topic_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      references: {
+        model: 'content_topic',
+        key: 'id'
+      }
     }
   }, {
     tableName: 'product',
@@ -151,6 +159,11 @@ export default (sequelize) => {
     Product.belongsTo(models.User, {
       foreignKey: 'creator_user_id',
       as: 'creator'
+    });
+
+    Product.belongsTo(models.ContentTopic, {
+      foreignKey: 'content_topic_id',
+      as: 'contentTopic'
     });
 
     // Legacy relationship - many-to-many with CurriculumItem through junction table

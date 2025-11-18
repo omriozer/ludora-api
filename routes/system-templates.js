@@ -7,7 +7,7 @@ const router = express.Router();
 
 /**
  * Validate watermark template data structure
- * Supports both legacy watermark format and unified branding format
+ * Supports unified structure (elements object) and legacy structure (textElements, logoElements)
  * @param {Object} templateData - Watermark template data to validate
  * @throws {Error} If validation fails
  */
@@ -16,12 +16,74 @@ function validateWatermarkTemplateData(templateData) {
     throw new Error('Template data must be an object');
   }
 
-  // Check for unified structure (branding templates) or legacy structure (watermark templates)
-  const hasUnifiedStructure = templateData.logo || templateData.text || templateData.url || templateData.customElements;
+  // Check for unified structure or legacy structure
+  const hasUnifiedStructure = templateData.elements && typeof templateData.elements === 'object';
   const hasLegacyStructure = templateData.textElements || templateData.logoElements;
 
   if (!hasUnifiedStructure && !hasLegacyStructure) {
-    throw new Error('Template must have at least one element (logo, text, url, customElements) or legacy elements (textElements, logoElements)');
+    throw new Error('Template must have unified structure (elements object) or legacy elements (textElements, logoElements)');
+  }
+
+  // Validate unified structure
+  if (hasUnifiedStructure) {
+    Object.entries(templateData.elements).forEach(([elementType, elementArray]) => {
+      if (!Array.isArray(elementArray)) {
+        throw new Error(`Element type ${elementType} must be an array`);
+      }
+
+      elementArray.forEach((element, index) => {
+        if (!element || typeof element !== 'object') {
+          throw new Error(`Element ${elementType}[${index}] must be an object`);
+        }
+
+        // Validate required fields
+        if (!element.id || typeof element.id !== 'string') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'id' string`);
+        }
+
+        if (!element.type || typeof element.type !== 'string') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'type' string`);
+        }
+
+        if (typeof element.visible !== 'boolean') {
+          element.visible = true; // Default if missing
+        }
+
+        if (!element.position || typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
+          throw new Error(`Element ${elementType}[${index}] position must have numeric x and y values`);
+        }
+
+        if (!element.style || typeof element.style !== 'object') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'style' object`);
+        }
+
+        // Validate element-type-specific properties
+        if (['watermark-text', 'free-text'].includes(elementType)) {
+          if (!element.content || typeof element.content !== 'string') {
+            throw new Error(`Text element ${elementType}[${index}] must have string content`);
+          }
+          if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
+            element.pattern = 'single'; // Default if missing or invalid
+          }
+        }
+
+        if (['watermark-logo', 'logo'].includes(elementType)) {
+          if (element.source && !['system-logo', 'custom-url', 'uploaded-file'].includes(element.source)) {
+            throw new Error(`Logo element ${elementType}[${index}] source must be 'system-logo', 'custom-url', or 'uploaded-file'`);
+          }
+          if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
+            element.pattern = 'single'; // Default if missing or invalid
+          }
+        }
+      });
+    });
+
+    // Validate globalSettings if present
+    if (templateData.globalSettings && typeof templateData.globalSettings !== 'object') {
+      throw new Error('globalSettings must be an object');
+    }
+
+    return; // Exit early if unified structure is valid
   }
 
   // Validate text elements
@@ -771,16 +833,16 @@ router.post('/:id/preview-watermark', authenticateToken, async (req, res) => {
     };
 
     if (contentType === 'svg') {
-      const { applyWatermarksToSvg } = await import('../utils/svgWatermark.js');
+      const { mergeSvgTemplate } = await import('../utils/svgTemplateMerge.js');
       const sampleSvg = sampleContent || `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
   <rect width="800" height="600" fill="#f0f0f0"/>
   <text x="400" y="300" text-anchor="middle" font-family="Arial" font-size="24" fill="#333">
-    Sample Content for Watermark Preview
+    Sample Content for Template Preview
   </text>
 </svg>`;
 
-      previewResult = await applyWatermarksToSvg(sampleSvg, template.template_data, defaultVariables);
+      previewResult = await mergeSvgTemplate(sampleSvg, template.template_data, defaultVariables);
     } else if (contentType === 'pdf') {
       // For PDF preview, return template data with variables substituted
       previewResult = {
