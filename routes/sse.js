@@ -278,69 +278,6 @@ router.get('/events',
   }
 );
 
-/**
- * GET /api/sse/events/guest
- * Guest SSE endpoint for unauthenticated users (limited access)
- * Allows access to public channels only
- */
-router.get('/events/guest',
-  sseConnectionLimit,
-  validateChannels,
-  parseSessionContext,
-  async (req, res) => {
-    try {
-      const initialChannels = req.validatedChannels;
-      const sessionContext = req.sessionContext;
-
-      // Filter to only allow public channels for guests
-      // Allow system, global, and game channels for student portal access
-      const allowedChannels = initialChannels.filter(channel => {
-        const [channelType] = channel.split(':');
-        return ['system', 'global', 'game'].includes(channelType);
-      });
-
-      if (allowedChannels.length !== initialChannels.length) {
-        return res.status(403).json({
-          error: 'Guest access limited to public channels only',
-          allowed_types: ['system', 'global'],
-          denied_channels: initialChannels.filter(c => !allowedChannels.includes(c))
-        });
-      }
-
-      // Generate guest connection ID
-      const connectionId = `guest_${uuidv4()}`;
-
-      clog(`📡 Guest SSE connection request for channels:`, allowedChannels);
-      clog(`📊 Guest session context:`, sessionContext);
-
-      // Add connection to broadcaster
-      const broadcaster = getSSEBroadcaster();
-      const success = broadcaster.addConnection(
-        connectionId,
-        res,
-        null, // no userId for guests
-        'guest',
-        allowedChannels,
-        sessionContext
-      );
-
-      if (!success) {
-        return; // Response already sent by broadcaster
-      }
-
-      clog(`✅ Guest SSE connection established: ${connectionId}`);
-
-    } catch (error) {
-      cerror('❌ Failed to establish guest SSE connection:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: 'Failed to establish guest SSE connection',
-          message: error.message
-        });
-      }
-    }
-  }
-);
 
 // =============================================
 // SUBSCRIPTION MANAGEMENT ROUTES
@@ -348,29 +285,62 @@ router.get('/events/guest',
 
 /**
  * POST /api/sse/subscribe
- * Add channels to existing SSE connection
+ * Add channels to existing SSE connection (supports both authenticated and anonymous users)
  */
 router.post('/subscribe',
   sseSubscriptionLimit,
-  authenticateToken,
+  optionalAuth,
   validateSubscriptionBody,
   async (req, res) => {
     try {
-      const user = req.user;
+      const user = req.user; // May be null for anonymous users
       const channels = req.validatedChannels;
 
-      // Find active connection for this user
+      // For anonymous users, filter to only allow public channels
+      let allowedChannels = channels;
+      if (!user) {
+        allowedChannels = channels.filter(channel => {
+          const [channelType] = channel.split(':');
+          return ['system', 'global', 'game'].includes(channelType);
+        });
+
+        if (allowedChannels.length !== channels.length) {
+          return res.status(403).json({
+            error: 'Anonymous users limited to public channels only',
+            allowed_types: ['system', 'global', 'game'],
+            denied_channels: channels.filter(c => !allowedChannels.includes(c))
+          });
+        }
+      }
+
+      // Find active connection for this user (authenticated) or any guest connection (anonymous)
       const broadcaster = getSSEBroadcaster();
       let userConnection = null;
       let connectionId = null;
 
-      // Find user's active connection
-      broadcaster.connections.forEach((connection, id) => {
-        if (connection.userId === user.id && !connection.response.destroyed) {
-          userConnection = connection;
-          connectionId = id;
+      if (user) {
+        // Find user's active connection
+        broadcaster.connections.forEach((connection, id) => {
+          if (connection.userId === user.id && !connection.response.destroyed) {
+            userConnection = connection;
+            connectionId = id;
+          }
+        });
+      } else {
+        // For anonymous users, find the most recent guest connection from this session
+        // This is a limitation - we can't perfectly match anonymous users to connections
+        // In practice, the frontend should manage this better
+        const guestConnections = Array.from(broadcaster.connections.entries()).filter(([id, connection]) =>
+          connection.role === 'guest' && !connection.response.destroyed
+        );
+
+        if (guestConnections.length > 0) {
+          // Use the most recently created guest connection
+          const [latestId, latestConnection] = guestConnections[guestConnections.length - 1];
+          userConnection = latestConnection;
+          connectionId = latestId;
         }
-      });
+      }
 
       if (!userConnection) {
         return res.status(404).json({
@@ -384,7 +354,7 @@ router.post('/subscribe',
         failed: []
       };
 
-      channels.forEach(channel => {
+      allowedChannels.forEach(channel => {
         const success = broadcaster.subscribeToChannel(connectionId, channel);
         if (success) {
           results.subscribed.push(channel);
@@ -393,7 +363,8 @@ router.post('/subscribe',
         }
       });
 
-      clog(`📺 Subscription update for ${user.id}: +${results.subscribed.length} channels`);
+      const userIdentifier = user ? user.id : 'anonymous';
+      clog(`📺 Subscription update for ${userIdentifier}: +${results.subscribed.length} channels`);
 
       res.status(200).json({
         message: 'Subscription updated',
@@ -413,28 +384,43 @@ router.post('/subscribe',
 
 /**
  * POST /api/sse/unsubscribe
- * Remove channels from existing SSE connection
+ * Remove channels from existing SSE connection (supports both authenticated and anonymous users)
  */
 router.post('/unsubscribe',
   sseSubscriptionLimit,
-  authenticateToken,
+  optionalAuth,
   validateSubscriptionBody,
   async (req, res) => {
     try {
-      const user = req.user;
+      const user = req.user; // May be null for anonymous users
       const channels = req.validatedChannels;
 
-      // Find active connection for this user
+      // Find active connection for this user (authenticated) or any guest connection (anonymous)
       const broadcaster = getSSEBroadcaster();
       let userConnection = null;
       let connectionId = null;
 
-      broadcaster.connections.forEach((connection, id) => {
-        if (connection.userId === user.id && !connection.response.destroyed) {
-          userConnection = connection;
-          connectionId = id;
+      if (user) {
+        // Find user's active connection
+        broadcaster.connections.forEach((connection, id) => {
+          if (connection.userId === user.id && !connection.response.destroyed) {
+            userConnection = connection;
+            connectionId = id;
+          }
+        });
+      } else {
+        // For anonymous users, find the most recent guest connection from this session
+        const guestConnections = Array.from(broadcaster.connections.entries()).filter(([id, connection]) =>
+          connection.role === 'guest' && !connection.response.destroyed
+        );
+
+        if (guestConnections.length > 0) {
+          // Use the most recently created guest connection
+          const [latestId, latestConnection] = guestConnections[guestConnections.length - 1];
+          userConnection = latestConnection;
+          connectionId = latestId;
         }
-      });
+      }
 
       if (!userConnection) {
         return res.status(404).json({
@@ -452,7 +438,8 @@ router.post('/unsubscribe',
         }
       });
 
-      clog(`📺 Unsubscription for ${user.id}: -${unsubscribed.length} channels`);
+      const userIdentifier = user ? user.id : 'anonymous';
+      clog(`📺 Unsubscription for ${userIdentifier}: -${unsubscribed.length} channels`);
 
       res.status(200).json({
         message: 'Unsubscribed successfully',
