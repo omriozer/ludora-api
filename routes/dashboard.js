@@ -55,7 +55,7 @@ router.get('/widgets', async (req, res) => {
  */
 router.get('/config', async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Get user's dashboard settings
     const user = await models.User.findByPk(userId);
@@ -92,7 +92,7 @@ router.get('/config', async (req, res) => {
  */
 router.put('/config', async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
     const { widgets } = req.body;
 
     // Validate input
@@ -155,7 +155,7 @@ router.put('/config', async (req, res) => {
  */
 router.post('/widgets', async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
     const { type, settings = {} } = req.body;
 
     if (!type) {
@@ -236,7 +236,7 @@ router.post('/widgets', async (req, res) => {
  */
 router.delete('/widgets/:widgetId', async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
     const { widgetId } = req.params;
 
     if (!widgetId) {
@@ -305,7 +305,7 @@ router.delete('/widgets/:widgetId', async (req, res) => {
  */
 router.put('/widgets/:widgetId', async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
     const { widgetId } = req.params;
     const { settings, order } = req.body;
 

@@ -3,6 +3,13 @@ import { admin } from '../config/firebase.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
 import AuthService from '../services/AuthService.js';
+import models from '../models/index.js';
+import {
+  createAccessTokenConfig,
+  createRefreshTokenConfig,
+  createClearCookieConfig,
+  logCookieConfig
+} from '../utils/cookieConfig.js';
 
 const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
@@ -10,21 +17,28 @@ import { clog, cerror } from '../lib/utils.js';
 
 const router = express.Router();
 
-// Login endpoint with validation and rate limiting
-router.post('/login', rateLimiters.auth, validateBody(schemas.login), async (req, res) => {
-  try {
-    const result = await authService.loginWithEmailPassword(req.body);
-    res.json(result);
-  } catch (error) {
-    res.status(401).json({ error: error.message });
-  }
-});
-
 // Register endpoint
 router.post('/register', rateLimiters.auth, validateBody(schemas.register), async (req, res) => {
   try {
-    const result = await authService.registerUser(req.body);
-    
+    // Collect session metadata
+    const sessionMetadata = {
+      userAgent: req.get('User-Agent') || 'Unknown',
+      ipAddress: req.ip || req.connection.remoteAddress || 'Unknown',
+      timestamp: new Date()
+    };
+
+    const result = await authService.registerUser(req.body, sessionMetadata);
+
+    // Set access token as httpOnly cookie (15 minutes) with subdomain support
+    const accessConfig = createAccessTokenConfig();
+    logCookieConfig('Register - Access Token', accessConfig);
+    res.cookie('access_token', result.accessToken, accessConfig);
+
+    // Set refresh token as httpOnly cookie (7 days) with subdomain support
+    const refreshConfig = createRefreshTokenConfig();
+    logCookieConfig('Register - Refresh Token', refreshConfig);
+    res.cookie('refresh_token', result.refreshToken, refreshConfig);
+
     // Send welcome email
     try {
       await EmailService.sendRegistrationEmail({
@@ -38,16 +52,84 @@ router.post('/register', rateLimiters.auth, validateBody(schemas.register), asyn
       clog('Failed to send registration email:', emailError);
     }
 
-    res.status(201).json(result);
+    // Return success and user data (without tokens)
+    res.status(201).json({
+      success: result.success,
+      user: result.user
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// Logout endpoint
-router.post('/logout', (req, res) => {
+// Refresh token endpoint
+router.post('/refresh', async (req, res) => {
   try {
-    // In production, you might want to invalidate the token
+    const refreshToken = req.cookies.refresh_token;
+
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Refresh token required' });
+    }
+
+    const result = await authService.refreshAccessToken(refreshToken);
+
+    // Set new access token as httpOnly cookie (15 minutes) with subdomain support
+    const accessConfig = createAccessTokenConfig();
+    logCookieConfig('Refresh - Access Token', accessConfig);
+    res.cookie('access_token', result.accessToken, accessConfig);
+
+    // Return success and user data
+    res.json({
+      success: true,
+      user: result.user
+    });
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+// Logout endpoint
+router.post('/logout', async (req, res) => {
+  try {
+    let userId = null;
+
+    // Get user ID from access token if possible
+    const accessToken = req.cookies.access_token;
+    if (accessToken) {
+      try {
+        const tokenData = await authService.verifyToken(accessToken);
+        userId = tokenData.id;
+      } catch (tokenError) {
+        // Continue with logout even if token verification fails
+      }
+    }
+
+    // Revoke refresh token if it exists
+    const refreshToken = req.cookies.refresh_token;
+    if (refreshToken) {
+      try {
+        // Extract token ID to revoke from store
+        const jwt = await import('jsonwebtoken');
+        const payload = jwt.default.verify(refreshToken, process.env.JWT_SECRET);
+        if (payload.tokenId) {
+          authService.revokeRefreshToken(payload.tokenId);
+        }
+      } catch (tokenError) {
+        // Continue with logout even if token revocation fails
+      }
+    }
+
+    // Invalidate user sessions if we have a user ID
+    if (userId) {
+      await authService.logoutUser(userId);
+    }
+
+    // Clear both httpOnly cookies with proper domain settings
+    const clearConfig = createClearCookieConfig();
+    logCookieConfig('Logout - Clear Cookies', clearConfig);
+    res.clearCookie('access_token', clearConfig);
+    res.clearCookie('refresh_token', clearConfig);
+
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Logout failed' });
@@ -57,33 +139,26 @@ router.post('/logout', (req, res) => {
 // Get current user info
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await authService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
+    const user = await authService.getUserByToken(req.cookies.access_token);
     
-    // Return clean user data - all from database, no confusing customClaims
+    // Return clean user data - all from database
     res.json({
       id: user.id,
-      uid: user.id, // For compatibility
       email: user.email,
       full_name: user.full_name,
       phone: user.phone,
       education_level: user.education_level,
-      specializations: user.specializations, // Add specializations for teacher onboarding
+      specializations: user.specializations,
       content_creator_agreement_sign_date: user.content_creator_agreement_sign_date,
       role: user.role,
       user_type: user.user_type,
       is_verified: user.is_verified,
       is_active: user.is_active,
       onboarding_completed: user.onboarding_completed,
-      birth_date: user.birth_date, // Add birth_date for onboarding
-
+      birth_date: user.birth_date,
       created_at: user.created_at,
       updated_at: user.updated_at,
-      last_login: user.last_login,
-
-      // Keep some fields for compatibility but mark deprecated
-      displayName: user.full_name, // @deprecated - use full_name
-      emailVerified: user.is_verified, // @deprecated - use is_verified
-      disabled: !user.is_active, // @deprecated - use is_active
+      last_login: user.last_login
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch user information' });
@@ -93,7 +168,7 @@ router.get('/me', authenticateToken, async (req, res) => {
 // Update current user profile
 router.put('/update-profile', authenticateToken, async (req, res) => {
   try {
-    const user = await authService.getUserByToken(req.headers.authorization?.replace('Bearer ', ''));
+    const user = await authService.getUserByToken(req.cookies.access_token);
     const {
       full_name,
       phone,
@@ -129,7 +204,6 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
     // Return updated user data
     res.json({
       id: user.id,
-      uid: user.id,
       email: user.email,
       full_name: user.full_name,
       phone: user.phone,
@@ -142,15 +216,9 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       is_active: user.is_active,
       onboarding_completed: user.onboarding_completed,
       birth_date: user.birth_date,
-
       created_at: user.created_at,
       updated_at: user.updated_at,
-      last_login: user.last_login,
-
-      // Keep some fields for compatibility
-      displayName: user.full_name,
-      emailVerified: user.is_verified,
-      disabled: !user.is_active,
+      last_login: user.last_login
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update user profile' });
@@ -182,7 +250,7 @@ router.post('/custom-token', async (req, res) => {
     }
 
     const customToken = authService.createJWTToken({
-      uid: user.id,
+      id: user.id,
       email: user.email,
       role: user.role,
       ...claims,
@@ -205,7 +273,7 @@ router.post('/set-claims', authenticateToken, async (req, res) => {
     }
 
     const result = await authService.setCustomClaims({
-      adminUserId: req.user.uid,
+      adminUserId: req.user.id,
       targetUserId: uid,
       claims
     });
@@ -220,30 +288,53 @@ router.post('/set-claims', authenticateToken, async (req, res) => {
 router.post('/verify', async (req, res) => {
   try {
     const { idToken } = req.body;
-    
+
     if (!idToken) {
       return res.status(400).json({ error: 'ID token is required' });
     }
 
     const tokenData = await authService.verifyToken(idToken);
-    
-    // Create our own JWT token for the verified user
-    const jwtToken = authService.createJWTToken({
-      uid: tokenData.uid,
-      email: tokenData.email,
-      role: tokenData.role,
-      type: 'jwt'
-    });
-    
+
+    // Get the actual user from database (like loginWithEmailPassword does)
+    const user = await models.User.findByPk(tokenData.id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Update last login (like loginWithEmailPassword does)
+    await user.update({ last_login: new Date() });
+
+    // Create user session with metadata (like loginWithEmailPassword does)
+    const sessionMetadata = {
+      userAgent: req.get('User-Agent') || 'Unknown',
+      ipAddress: req.ip || req.socket?.remoteAddress || 'Unknown',
+      timestamp: new Date(),
+      loginMethod: 'firebase_google'
+    };
+
+    authService.createSession(user.id, sessionMetadata);
+
+    // Generate proper access and refresh tokens using AuthService
+    const result = authService.generateTokenPair(user);
+
+    // Set access token as httpOnly cookie (15 minutes) with subdomain support
+    const accessConfig = createAccessTokenConfig();
+    logCookieConfig('Verify - Access Token', accessConfig);
+    res.cookie('access_token', result.accessToken, accessConfig);
+
+    // Set refresh token as httpOnly cookie (7 days) with subdomain support
+    const refreshConfig = createRefreshTokenConfig();
+    logCookieConfig('Verify - Refresh Token', refreshConfig);
+    res.cookie('refresh_token', result.refreshToken, refreshConfig);
+
     res.json({
       valid: true,
-      token: jwtToken,
       user: {
-        uid: tokenData.uid,
+        id: tokenData.id,
         email: tokenData.email,
-        displayName: tokenData.name,
+        full_name: tokenData.name,
         role: tokenData.role,
-        isVerified: tokenData.email_verified
+        is_verified: tokenData.email_verified
       }
     });
   } catch (error) {
@@ -286,6 +377,74 @@ router.post('/reset-password', rateLimiters.auth, validateBody(schemas.newPasswo
     res.json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+// =============================================
+// ADMIN SESSION MANAGEMENT ROUTES
+// =============================================
+
+// Get session statistics (admin only)
+router.get('/sessions/stats', authenticateToken, requireAdmin, async (_req, res) => {
+  try {
+    const stats = authService.getSessionStats();
+    res.json({
+      message: 'Session statistics retrieved successfully',
+      stats
+    });
+  } catch (error) {
+    cerror('Failed to get session stats:', error);
+    res.status(500).json({ error: 'Failed to retrieve session statistics' });
+  }
+});
+
+// Get user sessions (admin only)
+router.get('/sessions/user/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const userSessions = authService.getUserSessions(userId);
+    res.json({
+      message: `Sessions for user ${userId} retrieved successfully`,
+      userId,
+      sessions: userSessions,
+      count: userSessions.length
+    });
+  } catch (error) {
+    cerror('Failed to get user sessions:', error);
+    res.status(500).json({ error: 'Failed to retrieve user sessions' });
+  }
+});
+
+// Invalidate user sessions (admin only)
+router.post('/sessions/invalidate/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const invalidatedCount = authService.invalidateUserSessions(userId);
+    res.json({
+      message: `Successfully invalidated ${invalidatedCount} sessions for user ${userId}`,
+      userId,
+      invalidatedCount
+    });
+  } catch (error) {
+    cerror('Failed to invalidate user sessions:', error);
+    res.status(500).json({ error: 'Failed to invalidate user sessions' });
+  }
+});
+
+// Force cleanup of expired sessions (admin only)
+router.post('/sessions/cleanup', authenticateToken, requireAdmin, async (_req, res) => {
+  try {
+    authService.cleanupExpiredSessions();
+    authService.cleanupExpiredTokens();
+
+    const stats = authService.getSessionStats();
+    res.json({
+      message: 'Session cleanup completed successfully',
+      currentStats: stats
+    });
+  } catch (error) {
+    cerror('Failed to cleanup sessions:', error);
+    res.status(500).json({ error: 'Failed to cleanup sessions' });
   }
 });
 

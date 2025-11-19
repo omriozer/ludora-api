@@ -324,6 +324,11 @@ const contentUseCreateSchema = Joi.object({
     .messages({
       'array.min': 'contents array must have at least 1 item',
       'array.max': 'contents array must have at most 10 items'
+    }),
+  usage_metadata: Joi.object()
+    .optional()
+    .messages({
+      'object.base': 'usage_metadata must be a valid JSON object'
     })
 });
 
@@ -350,6 +355,11 @@ const contentUseUpdateSchema = Joi.object({
     .messages({
       'array.min': 'contents array must have at least 1 item',
       'array.max': 'contents array must have at most 10 items'
+    }),
+  usage_metadata: Joi.object()
+    .optional()
+    .messages({
+      'object.base': 'usage_metadata must be a valid JSON object'
     })
 });
 

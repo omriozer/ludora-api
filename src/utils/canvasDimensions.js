@@ -41,13 +41,6 @@ const CANVAS_DIMENSIONS = {
 function getCanvasDimensions(targetFormat) {
   const dimensions = CANVAS_DIMENSIONS[targetFormat] || CANVAS_DIMENSIONS.default;
 
-  console.log(`📐 Canvas dimensions for ${targetFormat}:`, {
-    width: dimensions.width,
-    height: dimensions.height,
-    aspectRatio: dimensions.aspectRatio.toFixed(2),
-    description: dimensions.description
-  });
-
   return dimensions;
 }
 

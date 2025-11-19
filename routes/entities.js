@@ -354,6 +354,170 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
   }
 });
 
+// Helper function to generate unique invitation code
+function generateInvitationCode() {
+  const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZ123456789'; // Exclude 0 and O to avoid confusion
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// POST /entities/user/:id/generate-invitation-code - Generate invitation code for teacher
+// MUST be before generic /:type routes to match correctly
+router.post('/user/:id/generate-invitation-code', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const requestingUserId = req.user.uid;
+
+    // Get requesting user information
+    const requestingUser = await models.User.findOne({ where: { id: requestingUserId } });
+    if (!requestingUser) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    // Check if user is trying to generate code for themselves or if admin
+    if (userId !== requestingUserId && requestingUser.role !== 'admin' && requestingUser.role !== 'sysadmin') {
+      return res.status(403).json({ error: 'You can only generate invitation codes for yourself' });
+    }
+
+    // Get the target user
+    const targetUser = await models.User.findByPk(userId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Only teachers can have invitation codes
+    if (targetUser.user_type !== 'teacher') {
+      return res.status(400).json({
+        error: 'Only teachers can have invitation codes',
+        current_user_type: targetUser.user_type
+      });
+    }
+
+    // Generate unique invitation code
+    let invitationCode;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    do {
+      invitationCode = generateInvitationCode();
+      attempts++;
+
+      // Check if code already exists
+      const existingUser = await models.User.findOne({
+        where: { invitation_code: invitationCode }
+      });
+
+      if (!existingUser) break;
+
+      if (attempts >= maxAttempts) {
+        return res.status(500).json({ error: 'Failed to generate unique invitation code' });
+      }
+    } while (attempts < maxAttempts);
+
+    // Update user with new invitation code
+    const updatedUser = await targetUser.update({
+      invitation_code: invitationCode
+    });
+
+    res.json({
+      message: 'Invitation code generated successfully',
+      user: {
+        id: updatedUser.id,
+        full_name: updatedUser.full_name,
+        invitation_code: updatedUser.invitation_code
+      },
+      catalog_url: `my.ludora.app/portal/${invitationCode}`
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to generate invitation code',
+      message: error.message
+    });
+  }
+});
+
+// GET /entities/teacher-catalog/:invitationCode - Get teacher's game catalog for students (public endpoint)
+// MUST be before generic /:type routes to match correctly
+router.get('/teacher-catalog/:invitationCode', async (req, res) => {
+  try {
+    const { invitationCode } = req.params;
+
+    // Find the teacher by invitation code
+    const teacher = await models.User.findOne({
+      where: {
+        invitation_code: invitationCode,
+        user_type: 'teacher' // Ensure it's a teacher
+      },
+      attributes: ['id', 'full_name', 'email', 'invitation_code']
+    });
+
+    if (!teacher) {
+      return res.status(404).json({
+        error: 'Teacher not found',
+        message: 'Invalid invitation code or teacher not found'
+      });
+    }
+
+    // Get all game products that the teacher has access to:
+    // 1. Games created by this teacher (always accessible, regardless of publication)
+    // 2. Published Ludora games (publicly accessible)
+    const games = await models.Product.findAll({
+      where: {
+        product_type: 'game',
+        [models.Sequelize.Op.or]: [
+          { creator_user_id: teacher.id }, // ALL teacher's games (no publication filter)
+          {
+            creator_user_id: null, // Ludora games
+            is_published: true     // Only published Ludora games
+          }
+        ]
+      },
+      order: [['created_at', 'DESC']]
+    });
+
+    // Get full details for each game
+    const fullGames = await Promise.all(
+      games.map(game => getFullProduct(game, null, true)) // Include game details, no user auth
+    );
+
+    // Filter out any games that might not have entities
+    const validGames = fullGames.filter(game => game.entity_id);
+
+    // Group games by creator type
+    const teacherGames = validGames.filter(game => game.creator_user_id === teacher.id);
+    const systemGames = validGames.filter(game => game.creator_user_id === null);
+
+    res.json({
+      success: true,
+      teacher: {
+        id: teacher.id,
+        name: teacher.full_name,
+        invitation_code: teacher.invitation_code
+      },
+      games: {
+        all: validGames,
+        teacher_created: teacherGames,
+        ludora_games: systemGames
+      },
+      totals: {
+        all: validGames.length,
+        teacher_created: teacherGames.length,
+        ludora_games: systemGames.length
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get teacher catalog',
+      message: error.message
+    });
+  }
+});
+
 // GET /entities/curriculum/available-combinations - Get available subject-grade combinations that have curriculum items
 // MUST be before generic /:type route to match correctly
 router.get('/curriculum/available-combinations', optionalAuth, async (req, res) => {
@@ -2055,6 +2219,7 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // GET /entities/lesson-plan/:lessonPlanId/presentation - Get lesson plan presentation files with access control
 router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (req, res) => {

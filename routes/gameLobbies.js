@@ -86,10 +86,10 @@ router.get('/games/:gameId/lobbies',
       const { limit, offset, expired } = req.validatedQuery;
       const user = req.user;
 
-      clog(`📋 Listing lobbies for game ${gameId} by user ${user.uid}`);
+      clog(`📋 Listing lobbies for game ${gameId} by user ${user.id}`);
 
       // Validate user can access this game
-      const hasAccess = await validateGameOwnership(gameId, user.uid, user.role);
+      const hasAccess = await validateGameOwnership(gameId, user.id, user.role);
       if (!hasAccess) {
         await transaction.rollback();
         return res.status(403).json({
@@ -149,16 +149,16 @@ router.post('/games/:gameId/lobbies',
       const lobbyData = req.validatedData;
       const user = req.user;
 
-      clog(`🏠 Creating lobby for game ${gameId} by user ${user.uid}`);
+      clog(`🏠 Creating lobby for game ${gameId} by user ${user.id}`);
       clog(`👤 User object:`, {
-        uid: user.uid,
+        id: user.id,
         role: user.role,
-        userId_type: typeof user.uid,
+        userId_type: typeof user.id,
         full_user: user
       });
 
       // Validate user can create lobbies for this game
-      const hasAccess = await validateGameOwnership(gameId, user.uid, user.role);
+      const hasAccess = await validateGameOwnership(gameId, user.id, user.role);
       if (!hasAccess) {
         await transaction.rollback();
         return res.status(403).json({
@@ -170,7 +170,7 @@ router.post('/games/:gameId/lobbies',
       const lobby = await GameLobbyService.createLobby(
         gameId,
         lobbyData,
-        user.uid,
+        user.id,
         transaction
       );
 
@@ -216,18 +216,18 @@ router.get('/game-lobbies/:lobbyId',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🔍 Getting lobby details for ${lobbyId} by user ${user.uid}`);
+      clog(`🔍 Getting lobby details for ${lobbyId} by user ${user.id}`);
 
       // Get lobby details
       const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
 
       // Check access permissions
       const hasAccess =
-        lobby.owner.id === user.uid ||
-        lobby.host.id === user.uid ||
+        lobby.owner.id === user.id ||
+        lobby.host.id === user.id ||
         user.role === 'admin' ||
         user.role === 'sysadmin' ||
-        await validateGameOwnership(lobby.game_id, user.uid, user.role);
+        await validateGameOwnership(lobby.game_id, user.id, user.role);
 
       if (!hasAccess) {
         await transaction.rollback();
@@ -269,7 +269,7 @@ router.put('/game-lobbies/:lobbyId',
       const updateData = req.validatedData;
       const user = req.user;
 
-      clog(`✏️ Updating lobby ${lobbyId} by user ${user.uid}`);
+      clog(`✏️ Updating lobby ${lobbyId} by user ${user.id}`);
 
       // Get current lobby to check permissions
       const currentLobby = await models.GameLobby.findByPk(lobbyId, { transaction });
@@ -280,8 +280,8 @@ router.put('/game-lobbies/:lobbyId',
 
       // Check permissions
       const canUpdate =
-        currentLobby.owner_user_id === user.uid ||
-        currentLobby.host_user_id === user.uid ||
+        currentLobby.owner_user_id === user.id ||
+        currentLobby.host_user_id === user.id ||
         user.role === 'admin' ||
         user.role === 'sysadmin';
 
@@ -329,12 +329,12 @@ router.put('/game-lobbies/:lobbyId/activate',
       const activationData = req.validatedData;
       const user = req.user;
 
-      clog(`🔄 [ROUTE] Activating lobby ${lobbyId} with enhanced settings by user ${user.uid}`);
+      clog(`🔄 [ROUTE] Activating lobby ${lobbyId} with enhanced settings by user ${user.id}`);
       clog(`🔧 [ROUTE] Activation data:`, activationData);
       clog(`👤 [ROUTE] User context:`, {
-        uid: user.uid,
+        uid: user.id,
         role: user.role,
-        uidType: typeof user.uid,
+        uidType: typeof user.id,
         fullUser: user
       });
       clog(`📋 [ROUTE] Validated params:`, req.validatedParams);
@@ -344,7 +344,7 @@ router.put('/game-lobbies/:lobbyId/activate',
       const updatedLobby = await GameLobbyService.activateLobby(
         lobbyId,
         activationData,
-        user.uid,
+        user.id,
         transaction
       );
 
@@ -356,7 +356,7 @@ router.put('/game-lobbies/:lobbyId/activate',
       await transaction.rollback();
       cerror('❌ [ROUTE] Failed to activate lobby in route handler:', {
         lobbyId: req.validatedParams?.lobbyId,
-        userId: req.user?.uid,
+        userId: req.user?.id,
         error: error.message,
         stack: error.stack
       });
@@ -392,12 +392,12 @@ router.put('/game-lobbies/:lobbyId/close',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🔄 Closing lobby ${lobbyId} by user ${user.uid}`);
+      clog(`🔄 Closing lobby ${lobbyId} by user ${user.id}`);
 
       // Close the lobby
       const updatedLobby = await GameLobbyService.closeLobby(
         lobbyId,
-        user.uid,
+        user.id,
         transaction
       );
 
@@ -437,13 +437,13 @@ router.put('/game-lobbies/:lobbyId/expiration',
       const { expires_at } = req.validatedData; // Date, 'indefinite', or null
       const user = req.user;
 
-      clog(`🔄 Setting lobby ${lobbyId} expiration to ${expires_at} by user ${user.uid}`);
+      clog(`🔄 Setting lobby ${lobbyId} expiration to ${expires_at} by user ${user.id}`);
 
       // Set lobby expiration
       const updatedLobby = await GameLobbyService.setLobbyExpiration(
         lobbyId,
         expires_at,
-        user.uid,
+        user.id,
         transaction
       );
 
@@ -482,12 +482,12 @@ router.delete('/game-lobbies/:lobbyId',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🗑️ Closing lobby ${lobbyId} by user ${user.uid}`);
+      clog(`🗑️ Closing lobby ${lobbyId} by user ${user.id}`);
 
       // Close the lobby
       const closedLobby = await GameLobbyService.closeLobby(
         lobbyId,
-        user.uid,
+        user.id,
         transaction
       );
 
@@ -795,7 +795,7 @@ router.get('/game-lobbies/:lobbyId/sessions',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`📋 Listing sessions for lobby ${lobbyId} by user ${user.uid}`);
+      clog(`📋 Listing sessions for lobby ${lobbyId} by user ${user.id}`);
 
       // Verify lobby exists and user has access
       const lobby = await models.GameLobby.findByPk(lobbyId, { transaction });
@@ -806,8 +806,8 @@ router.get('/game-lobbies/:lobbyId/sessions',
 
       // Check access permissions
       const hasAccess =
-        lobby.owner_user_id === user.uid ||
-        lobby.host_user_id === user.uid ||
+        lobby.owner_user_id === user.id ||
+        lobby.host_user_id === user.id ||
         user.role === 'admin' ||
         user.role === 'sysadmin';
 
@@ -852,13 +852,13 @@ router.post('/game-lobbies/:lobbyId/sessions',
       const sessionData = req.validatedData;
       const user = req.user;
 
-      clog(`🎮 Creating session in lobby ${lobbyId} by user ${user.uid}`);
+      clog(`🎮 Creating session in lobby ${lobbyId} by user ${user.id}`);
 
       // Create session using service
       const session = await GameSessionService.createSession(
         lobbyId,
         sessionData,
-        user.uid,
+        user.id,
         transaction
       );
 
@@ -904,7 +904,7 @@ router.get('/game-lobbies/:lobbyId/debug',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🔍 [ROUTE] Debug request for lobby ${lobbyId} by user ${user.uid}`);
+      clog(`🔍 [ROUTE] Debug request for lobby ${lobbyId} by user ${user.id}`);
 
       // Get debug information
       const debugInfo = await GameLobbyService.debugLobby(lobbyId, transaction);

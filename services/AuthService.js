@@ -13,6 +13,18 @@ class AuthService {
     }
     this.jwtSecret = process.env.JWT_SECRET;
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
+
+    // In-memory refresh token store for development
+    this.refreshTokenStore = new Map();
+
+    // In-memory session store for active user sessions
+    this.sessionStore = new Map();
+
+    // Clean up expired tokens and sessions every hour
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredTokens();
+      this.cleanupExpiredSessions();
+    }, 60 * 60 * 1000);
   }
 
   // Create JWT token
@@ -29,67 +41,273 @@ class AuthService {
     }
   }
 
-  // Hash password
-  async hashPassword(password) {
-    const saltRounds = 12;
-    return await bcrypt.hash(password, saltRounds);
+  // Create short-lived access token (15 minutes)
+  createAccessToken(payload) {
+    return jwt.sign(
+      { ...payload, type: 'access' },
+      this.jwtSecret,
+      { expiresIn: '15m' }
+    );
   }
 
-  // Compare password
-  async comparePassword(password, hash) {
-    return await bcrypt.compare(password, hash);
+  // Create long-lived refresh token (7 days)
+  createRefreshToken(userId) {
+    const refreshTokenId = generateId();
+    const refreshToken = jwt.sign(
+      {
+        id: userId,
+        tokenId: refreshTokenId,
+        type: 'refresh'
+      },
+      this.jwtSecret,
+      { expiresIn: '7d' }
+    );
+
+    // Store refresh token in memory with expiration
+    this.refreshTokenStore.set(refreshTokenId, {
+      userId,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    });
+
+    return { refreshToken, refreshTokenId };
   }
 
-  // Login with email and password
-  async loginWithEmailPassword({ email, password }) {
+  // Generate both access and refresh tokens for a user
+  generateTokenPair(user) {
+    const accessToken = this.createAccessToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    });
+
+    const { refreshToken, refreshTokenId } = this.createRefreshToken(user.id);
+
+    return {
+      accessToken,
+      refreshToken,
+      refreshTokenId
+    };
+  }
+
+  // Verify refresh token and return user
+  async verifyRefreshToken(refreshToken) {
     try {
-      if (!email || !password) {
-        throw new Error('Email and password are required');
+      const payload = jwt.verify(refreshToken, this.jwtSecret);
+
+      if (payload.type !== 'refresh') {
+        throw new Error('Invalid token type');
       }
 
-      // Find user by email
-      const user = await models.User.findOne({ where: { email } });
-      if (!user) {
-        throw new Error('Invalid credentials');
+      // Check if token exists in store
+      const tokenData = this.refreshTokenStore.get(payload.tokenId);
+      if (!tokenData) {
+        throw new Error('Refresh token not found');
       }
 
-      // Check if user is active
-      if (!user.is_active) {
-        throw new Error('Account is disabled');
+      // Check if token expired
+      if (new Date() > tokenData.expiresAt) {
+        this.refreshTokenStore.delete(payload.tokenId);
+        throw new Error('Refresh token expired');
       }
 
-      // Note: Password authentication is now handled by Firebase Auth
-      // Local password storage has been removed
+      // Get fresh user data
+      const user = await models.User.findByPk(payload.id);
+      if (!user || !user.is_active) {
+        throw new Error('User not found or inactive');
+      }
 
-      // Update last login
-      await user.update({ last_login: new Date() });
-
-      // Create JWT token
-      const token = this.createJWTToken({
-        uid: user.id,
-        email: user.email,
-        role: user.role,
-        type: 'jwt'
-      });
-
-      return {
-        success: true,
-        token,
-        user: {
-          uid: user.id,
-          email: user.email,
-          displayName: user.full_name,
-          role: user.role,
-          isVerified: user.is_verified
-        }
-      };
+      return { user, tokenId: payload.tokenId };
     } catch (error) {
-      throw error;
+      throw new Error('Invalid or expired refresh token');
+    }
+  }
+
+  // Refresh access token using refresh token
+  async refreshAccessToken(refreshToken) {
+    const { user, tokenId } = await this.verifyRefreshToken(refreshToken);
+
+    // Generate new access token
+    const newAccessToken = this.createAccessToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    });
+
+    return {
+      accessToken: newAccessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role,
+        is_verified: user.is_verified
+      }
+    };
+  }
+
+  // Revoke a refresh token
+  revokeRefreshToken(refreshTokenId) {
+    this.refreshTokenStore.delete(refreshTokenId);
+  }
+
+  // Cleanup expired refresh tokens
+  cleanupExpiredTokens() {
+    const now = new Date();
+    for (const [tokenId, tokenData] of this.refreshTokenStore.entries()) {
+      if (now > tokenData.expiresAt) {
+        this.refreshTokenStore.delete(tokenId);
+      }
+    }
+  }
+
+  // Session Management Methods
+
+  // Create a new user session
+  createSession(userId, metadata = {}) {
+    const sessionId = generateId();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 24 hours
+
+    const sessionData = {
+      sessionId,
+      userId,
+      createdAt: now,
+      lastAccessedAt: now,
+      expiresAt,
+      isActive: true,
+      // Optional metadata for tracking and analytics
+      metadata: {
+        userAgent: metadata.userAgent || 'Unknown',
+        ipAddress: metadata.ipAddress || 'Unknown',
+        loginMethod: metadata.loginMethod || 'email_password', // email_password, firebase, etc.
+        ...metadata
+      }
+    };
+
+    this.sessionStore.set(sessionId, sessionData);
+    clog(`🔐 Session created: ${sessionId} for user ${userId}`);
+
+    return sessionId;
+  }
+
+  // Validate and refresh a session
+  validateSession(sessionId) {
+    const session = this.sessionStore.get(sessionId);
+
+    if (!session) {
+      return null;
+    }
+
+    const now = new Date();
+
+    // Check if session is expired
+    if (now > session.expiresAt || !session.isActive) {
+      this.sessionStore.delete(sessionId);
+      return null;
+    }
+
+    // Update last accessed time
+    session.lastAccessedAt = now;
+    this.sessionStore.set(sessionId, session);
+
+    return session;
+  }
+
+  // Invalidate a specific session
+  invalidateSession(sessionId) {
+    const session = this.sessionStore.get(sessionId);
+    if (session) {
+      session.isActive = false;
+      this.sessionStore.set(sessionId, session);
+      clog(`🔐 Session invalidated: ${sessionId}`);
+    }
+  }
+
+  // Invalidate all sessions for a user
+  invalidateUserSessions(userId) {
+    let invalidatedCount = 0;
+    for (const [sessionId, session] of this.sessionStore.entries()) {
+      if (session.userId === userId && session.isActive) {
+        session.isActive = false;
+        this.sessionStore.set(sessionId, session);
+        invalidatedCount++;
+      }
+    }
+    clog(`🔐 Invalidated ${invalidatedCount} sessions for user ${userId}`);
+    return invalidatedCount;
+  }
+
+  // Get active sessions for a user
+  getUserSessions(userId) {
+    const userSessions = [];
+    for (const [sessionId, session] of this.sessionStore.entries()) {
+      if (session.userId === userId && session.isActive && new Date() <= session.expiresAt) {
+        userSessions.push({
+          sessionId,
+          createdAt: session.createdAt,
+          lastAccessedAt: session.lastAccessedAt,
+          expiresAt: session.expiresAt,
+          metadata: session.metadata
+        });
+      }
+    }
+    return userSessions;
+  }
+
+  // Get session statistics
+  getSessionStats() {
+    const now = new Date();
+    let activeSessions = 0;
+    let expiredSessions = 0;
+    let totalSessions = 0;
+    const userCounts = new Map();
+
+    for (const [sessionId, session] of this.sessionStore.entries()) {
+      totalSessions++;
+
+      if (!session.isActive) {
+        expiredSessions++;
+      } else if (now > session.expiresAt) {
+        expiredSessions++;
+      } else {
+        activeSessions++;
+
+        // Count sessions per user
+        const count = userCounts.get(session.userId) || 0;
+        userCounts.set(session.userId, count + 1);
+      }
+    }
+
+    return {
+      totalSessions,
+      activeSessions,
+      expiredSessions,
+      uniqueActiveUsers: userCounts.size,
+      averageSessionsPerUser: userCounts.size > 0 ? activeSessions / userCounts.size : 0,
+      timestamp: now
+    };
+  }
+
+  // Cleanup expired sessions
+  cleanupExpiredSessions() {
+    const now = new Date();
+    let cleanedCount = 0;
+
+    for (const [sessionId, session] of this.sessionStore.entries()) {
+      if (now > session.expiresAt || !session.isActive) {
+        this.sessionStore.delete(sessionId);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      clog(`🧹 Cleaned up ${cleanedCount} expired sessions`);
     }
   }
 
   // Register new user
-  async registerUser({ email, password, fullName, role = 'user' }) {
+  async registerUser({ email, password, fullName, role = 'user' }, sessionMetadata = {}) {
     try {
       // Validate input
       if (!email || !password) {
@@ -106,8 +324,7 @@ class AuthService {
         throw new Error('User already exists with this email');
       }
 
-      // Note: Password hashing is now handled by Firebase Auth
-      // Local password storage has been removed
+      // Password hashing handled by Firebase Auth
 
       // Create user
       const user = await models.User.create({
@@ -121,24 +338,49 @@ class AuthService {
         updated_at: new Date()
       });
 
-      // Create JWT token
-      const token = this.createJWTToken({
-        uid: user.id,
-        email: user.email,
-        role: user.role,
-        type: 'jwt'
+      // Create user session with metadata
+      const sessionId = this.createSession(user.id, {
+        ...sessionMetadata,
+        loginMethod: 'registration'
       });
+
+      // Generate token pair
+      const { accessToken, refreshToken } = this.generateTokenPair(user);
 
       return {
         success: true,
-        token,
+        sessionId,
+        accessToken,
+        refreshToken,
         user: {
-          uid: user.id,
+          id: user.id,
           email: user.email,
-          displayName: user.full_name,
+          full_name: user.full_name,
           role: user.role,
-          isVerified: user.is_verified
+          is_verified: user.is_verified
         }
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // Logout user and invalidate session
+  async logoutUser(userId, sessionId = null) {
+    try {
+      if (sessionId) {
+        // Invalidate specific session
+        this.invalidateSession(sessionId);
+        clog(`🚪 User ${userId} logged out from session ${sessionId}`);
+      } else {
+        // Invalidate all user sessions
+        const invalidatedCount = this.invalidateUserSessions(userId);
+        clog(`🚪 User ${userId} logged out from ${invalidatedCount} sessions`);
+      }
+
+      return {
+        success: true,
+        message: 'Successfully logged out'
       };
     } catch (error) {
       throw error;
@@ -153,7 +395,7 @@ class AuthService {
       if (token.startsWith('token_') && process.env.ENVIRONMENT === 'development') {
         clog('🚨 DEVELOPMENT TOKEN USED - This should NEVER happen in production!');
         return {
-          uid: `dev_user_${Date.now()}`,
+          id: `dev_user_${Date.now()}`,
           email: 'dev@example.com',
           role: 'user',
           type: 'development'
@@ -171,14 +413,14 @@ class AuthService {
           const payload = this.verifyJWTToken(token);
 
           // Get fresh user data
-          const user = await models.User.findByPk(payload.uid);
+          const user = await models.User.findByPk(payload.id);
 
           if (!user || !user.is_active) {
             throw new Error('User not found or inactive');
           }
 
           return {
-            uid: user.id,
+            id: user.id,
             email: user.email,
             role: user.role,
             type: 'jwt',
@@ -210,7 +452,7 @@ class AuthService {
           }
 
           return {
-            uid: user?.id || decodedToken.uid,
+            id: user?.id || decodedToken.uid,
             email: user?.email || decodedToken.email,
             role: user?.role || 'user',
             type: 'firebase',
@@ -238,8 +480,8 @@ class AuthService {
   async getUserByToken(token) {
     try {
       const tokenData = await this.verifyToken(token);
-      const user = await models.User.findByPk(tokenData.uid);
-      
+      const user = await models.User.findByPk(tokenData.id);
+
       if (!user) {
         throw new Error('User not found');
       }
@@ -325,7 +567,7 @@ class AuthService {
       }
 
       const resetToken = this.createJWTToken({
-        uid: user.id,
+        id: user.id,
         email: user.email,
         type: 'password_reset'
       });
@@ -353,13 +595,12 @@ class AuthService {
         throw new Error('Password must be at least 8 characters long');
       }
 
-      const user = await models.User.findByPk(payload.uid);
+      const user = await models.User.findByPk(payload.id);
       if (!user) {
         throw new Error('User not found');
       }
 
-      // Note: Password reset is now handled by Firebase Auth
-      // Local password storage has been removed
+      // Password reset handled by Firebase Auth
       await user.update({ 
         updated_at: new Date()
       });

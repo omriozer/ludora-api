@@ -133,7 +133,7 @@ class GameContentService {
    */
   static async createContentUse(gameId, useData, userId, transaction = null, userRole = null) {
     try {
-      const { use_type, contents } = useData;
+      const { use_type, contents, usage_metadata = {} } = useData;
 
       clog(`Creating content use for game ${gameId}: ${use_type} with ${contents.length} items`);
 
@@ -144,7 +144,7 @@ class GameContentService {
       const contentObjects = this.normalizeContentFormat(contents);
 
       // Validate content usage data
-      this.validateContentUse(use_type, contentObjects);
+      await this.validateContentUse(use_type, contentObjects);
 
       // Validate that all content items exist
       await this.validateContentExists(contentObjects);
@@ -157,7 +157,8 @@ class GameContentService {
         id: useId,
         game_id: gameId,
         use_type,
-        contents_data: contentObjects
+        contents_data: contentObjects,
+        usage_metadata
       }, { transaction });
 
       // Return with populated content using the model's loadContent method
@@ -221,7 +222,7 @@ class GameContentService {
    */
   static async updateContentUse(gameId, useId, updates, userId, transaction = null, userRole = null) {
     try {
-      const { contents } = updates;
+      const { contents, usage_metadata } = updates;
 
       clog(`Updating content use ${useId} for game ${gameId}`);
 
@@ -241,13 +242,19 @@ class GameContentService {
       const contentObjects = this.normalizeContentFormat(contents);
 
       // Validate content usage data
-      this.validateContentUse(contentUse.use_type, contentObjects);
+      await this.validateContentUse(contentUse.use_type, contentObjects);
 
       // Validate that all content items exist
       await this.validateContentExists(contentObjects);
 
+      // Prepare update data
+      const updateData = { contents_data: contentObjects };
+      if (usage_metadata !== undefined) {
+        updateData.usage_metadata = usage_metadata;
+      }
+
       // Update content usage
-      await contentUse.update({ contents_data: contentObjects }, { transaction });
+      await contentUse.update(updateData, { transaction });
 
       // Return with populated content using the model's loadContent method
       const result = contentUse.toJSON();
@@ -390,7 +397,7 @@ class GameContentService {
    * @param {Array} contentObjects - Array of content objects with { id, source }
    * @throws {Error} If validation fails
    */
-  static validateContentUse(use_type, contentObjects) {
+  static async validateContentUse(use_type, contentObjects) {
     if (!Array.isArray(contentObjects) || contentObjects.length === 0) {
       throw new Error('Content objects array is required and must not be empty');
     }
@@ -413,6 +420,8 @@ class GameContentService {
         if (contentObjects.length !== 2) {
           throw new Error('mixed_edu_contents use_type must have exactly 2 content objects');
         }
+        // Validate element types for composite cards
+        await this.validateMixedEduContents(contentObjects);
         break;
 
       case 'group':
@@ -498,6 +507,68 @@ class GameContentService {
     if (missingIds.length > 0) {
       throw new Error(`Content not found: ${missingIds.join(', ')}`);
     }
+  }
+
+  /**
+   * Validate mixed_edu_contents element types and structure
+   * @param {Array} contentObjects - Array of content objects with { id, source }
+   * @throws {Error} If mixed_edu_contents doesn't have valid playing_card_bg + data combination
+   */
+  static async validateMixedEduContents(contentObjects) {
+    if (!Array.isArray(contentObjects) || contentObjects.length !== 2) {
+      throw new Error('mixed_edu_contents must have exactly 2 content objects');
+    }
+
+    // Only validate EduContent items (ignore EduContentUse sub-pairs)
+    const eduContentObjects = contentObjects.filter(obj => obj.source === 'eduContent');
+
+    if (eduContentObjects.length === 0) {
+      // If no EduContent items, skip element type validation (sub-pairs)
+      return;
+    }
+
+    // Get element types for EduContent items
+    const eduContentIds = eduContentObjects.map(obj => obj.id);
+    const contents = await EduContent.findAll({
+      where: { id: eduContentIds },
+      attributes: ['id', 'element_type', 'content_metadata']
+    });
+
+    if (contents.length !== eduContentIds.length) {
+      const foundIds = contents.map(c => c.id);
+      const missingIds = eduContentIds.filter(id => !foundIds.includes(id));
+      throw new Error(`EduContent not found for composite card validation: ${missingIds.join(', ')}`);
+    }
+
+    // Extract element types
+    const elementTypes = contents.map(c => c.element_type);
+    const hasPlayingCardBg = elementTypes.includes('playing_card_bg');
+    const hasData = elementTypes.includes('data');
+
+    // Validate that we have exactly one playing_card_bg and one data
+    if (!hasPlayingCardBg) {
+      throw new Error('יש צורך ברקע תמונה (playing_card_bg) כדי ליצור קלף משולב');
+    }
+
+    if (!hasData) {
+      throw new Error('יש צורך בתוכן טקסט (data) כדי ליצור קלף משולב');
+    }
+
+    // Check for valid combination (no duplicates)
+    const bgCount = elementTypes.filter(type => type === 'playing_card_bg').length;
+    const dataCount = elementTypes.filter(type => type === 'data').length;
+
+    if (bgCount !== 1 || dataCount !== 1) {
+      throw new Error('קלף משולב חייב להכיל בדיוק רקע תמונה אחד ותוכן טקסט אחד');
+    }
+
+    // Validate that playing_card_bg has a file
+    const bgContent = contents.find(c => c.element_type === 'playing_card_bg');
+    if (bgContent && !bgContent.content_metadata?.file_info?.s3_key) {
+      throw new Error('רקע התמונה חייב לכלול קובץ תמונה');
+    }
+
+    clog('Mixed edu contents validation passed: playing_card_bg + data combination valid');
   }
 
   /**

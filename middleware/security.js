@@ -95,12 +95,21 @@ export function securityHeaders() {
   });
 }
 
+import { createAuthCookieConfig } from '../utils/cookieConfig.js';
+
 // Secure cookie settings middleware
 export function secureCookies(req, res, next) {
   // Override res.cookie to set secure defaults
   const originalCookie = res.cookie;
 
   res.cookie = function(name, value, options = {}) {
+    // For auth cookies, use the standardized config
+    if (name === 'access_token' || name === 'refresh_token') {
+      // Let auth routes handle their own configuration
+      return originalCookie.call(this, name, value, options);
+    }
+
+    // For other cookies, use secure defaults
     const secureOptions = {
       ...options,
       httpOnly: options.httpOnly !== false, // Default to true

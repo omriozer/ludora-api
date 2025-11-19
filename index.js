@@ -38,6 +38,7 @@ if (missingVars.length > 0) {
 
 // Now import other modules after environment is loaded
 import express from 'express';
+import cookieParser from 'cookie-parser';
 
 // Initialize secrets service (validates critical secrets)
 import SecretsService from './services/SecretsService.js';
@@ -107,6 +108,7 @@ import productsRoutes from './routes/products.js';
 import svgSlidesRoutes from './routes/svgSlides.js';
 import systemTemplatesRoutes from './routes/system-templates.js';
 import eduContentRoutes from './routes/eduContent.js';
+import sseRoutes from './routes/sse.js';
 
 const app = express();
 
@@ -169,6 +171,9 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' })); // Increased to match file upload limits
 
+// Cookie parsing middleware
+app.use(cookieParser());
+
 // API Routes (protected by frontend CORS)
 // Apply Hebrew-optimized compression for routes likely to contain Hebrew content
 app.use('/api/entities', hebrewContentCompressionMiddleware);
@@ -197,6 +202,7 @@ app.use('/api/public', publicApisRoutes);
 app.use('/api/games', gamesRoutes);
 app.use('/api', gameLobbiesRoutes);
 app.use('/api', gameSessionsRoutes);
+app.use('/api/sse', sseRoutes);
 app.use('/api/edu-content', eduContentRoutes);
 app.use('/api/svg-slides', svgSlidesRoutes);
 app.use('/api/system-templates', systemTemplatesRoutes);
@@ -245,6 +251,7 @@ app.get('/api', (req, res) => {
       games: '/api/games',
       'game-lobbies': '/api/game-lobbies',
       'game-sessions': '/api/game-sessions',
+      'sse': '/api/sse',
       'edu-content': '/api/edu-content',
       'svg-slides': '/api/svg-slides',
       'system-templates': '/api/system-templates'

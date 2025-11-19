@@ -1,20 +1,46 @@
 import AuthService from '../services/AuthService.js';
+import { createAccessTokenConfig, logCookieConfig } from '../utils/cookieConfig.js';
 
 const authService = new AuthService();
 
 // Middleware to verify tokens
 export async function authenticateToken(req, res, next) {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = req.cookies.access_token;
 
     if (!token) {
       return res.status(401).json({ error: 'Access token required' });
     }
 
-    const tokenData = await authService.verifyToken(token);
-    req.user = tokenData;
-    next();
+    try {
+      const tokenData = await authService.verifyToken(token);
+      req.user = tokenData;
+      return next();
+    } catch (tokenError) {
+      // If access token is invalid/expired, try to refresh it
+      const refreshToken = req.cookies.refresh_token;
+
+      if (!refreshToken) {
+        return res.status(401).json({ error: 'Session expired, please login again' });
+      }
+
+      try {
+        // Attempt to refresh the access token
+        const refreshResult = await authService.refreshAccessToken(refreshToken);
+
+        // Set new access token cookie with subdomain support
+        const accessConfig = createAccessTokenConfig();
+        logCookieConfig('Auth Middleware - Refresh', accessConfig);
+        res.cookie('access_token', refreshResult.accessToken, accessConfig);
+
+        // Verify the new token and continue
+        const newTokenData = await authService.verifyToken(refreshResult.accessToken);
+        req.user = newTokenData;
+        next();
+      } catch (refreshError) {
+        return res.status(401).json({ error: 'Session expired, please login again' });
+      }
+    }
   } catch (error) {
     res.status(403).json({ error: error.message || 'Invalid or expired token' });
   }
@@ -23,8 +49,7 @@ export async function authenticateToken(req, res, next) {
 // Optional auth middleware - continues if no token provided
 export async function optionalAuth(req, res, next) {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = req.cookies.access_token;
 
     if (token) {
       try {
@@ -34,7 +59,7 @@ export async function optionalAuth(req, res, next) {
         // Continue without authentication if token is invalid
       }
     }
-    
+
     next();
   } catch (error) {
     // Continue without authentication if any error occurs
@@ -51,7 +76,7 @@ export function requireRole(requiredRole = 'user') {
       }
 
       // Get user from database for fresh role information
-      const user = req.user.user || await authService.getUserByToken(req.headers['authorization']?.split(' ')[1]);
+      const user = req.user.user || await authService.getUserByToken(req.cookies.access_token);
       
       authService.validatePermissions(user, requiredRole);
       req.userRecord = user; // Attach full user record
@@ -77,7 +102,7 @@ export function requireUserType(requiredUserType) {
       }
 
       // Get user from database for fresh user_type information
-      const user = req.user.user || await authService.getUserByToken(req.headers['authorization']?.split(' ')[1]);
+      const user = req.user.user || await authService.getUserByToken(req.cookies.access_token);
       
       if (!user.user_type || user.user_type !== requiredUserType) {
         return res.status(403).json({ error: `${requiredUserType} user type required` });
@@ -113,7 +138,7 @@ export function requireOwnership(getResourceOwnerId) {
       }
 
       // Check if user owns the resource
-      if (req.user.uid !== resourceOwnerId) {
+      if (req.user.id !== resourceOwnerId) {
         return res.status(403).json({ error: 'Access denied: You can only access your own resources' });
       }
 

@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid';
 import { Op } from 'sequelize';
 import { clog, cerror } from '../lib/utils.js';
 import { generateId } from '../models/baseModel.js';
+import { broadcastLobbyEvent, SSE_EVENT_TYPES } from './SSEBroadcaster.js';
 
 /**
  * GameLobbyService - Manages lobby creation, expiration, and participant management
@@ -169,6 +170,20 @@ class GameLobbyService {
 
       // Enhance lobby with computed status information
       const enhancedLobby = this.enhanceLobbyWithStatus(lobbyWithGame);
+
+      // Emit SSE event for lobby creation
+      try {
+        broadcastLobbyEvent(SSE_EVENT_TYPES.LOBBY_CREATED, lobby.id, gameId, {
+          status: enhancedLobby.computed_status,
+          lobby_code: lobbyCode,
+          settings: enhancedLobby.settings,
+          created_by: userId
+        });
+        clog(`📡 Broadcasted LOBBY_CREATED event for lobby ${lobby.id}`);
+      } catch (sseError) {
+        cerror('❌ Failed to broadcast lobby created event:', sseError);
+        // Don't fail the creation if SSE fails
+      }
 
       clog(`✅ Created lobby ${lobby.id} with code ${lobbyCode}, status: ${enhancedLobby.computed_status}`);
       return enhancedLobby;
@@ -392,6 +407,23 @@ class GameLobbyService {
       // Return updated lobby with details and sessions
       const updatedLobby = await this.getLobbyDetails(lobbyId, transaction);
 
+      // Emit SSE event for lobby activation
+      try {
+        const status = this.computeStatus(updatedLobby);
+        broadcastLobbyEvent(SSE_EVENT_TYPES.LOBBY_ACTIVATED, lobbyId, lobby.game_id, {
+          status: status,
+          expires_at: expires_at,
+          max_players: maxPlayers,
+          sessions_count: createdSessions.length,
+          game_type: gameType,
+          activated_by: userId
+        });
+        clog(`📡 Broadcasted LOBBY_ACTIVATED event for lobby ${lobbyId}`);
+      } catch (sseError) {
+        cerror('❌ Failed to broadcast lobby activated event:', sseError);
+        // Don't fail the activation if SSE fails
+      }
+
       clog(`✅ Activated lobby ${lobbyId} with expiration ${expires_at}, max players: ${maxPlayers}, sessions: ${createdSessions.length}`);
       return {
         ...updatedLobby,
@@ -470,6 +502,19 @@ class GameLobbyService {
 
       // Return updated lobby with details
       const updatedLobby = await this.getLobbyDetails(lobbyId, transaction);
+
+      // Emit SSE event for lobby closure
+      try {
+        broadcastLobbyEvent(SSE_EVENT_TYPES.LOBBY_CLOSED, lobbyId, lobby.game_id, {
+          status: 'closed',
+          closed_at: now,
+          closed_by: userId
+        });
+        clog(`📡 Broadcasted LOBBY_CLOSED event for lobby ${lobbyId}`);
+      } catch (sseError) {
+        cerror('❌ Failed to broadcast lobby closed event:', sseError);
+        // Don't fail the closure if SSE fails
+      }
 
       clog(`✅ Closed lobby ${lobbyId} and all its sessions with expiration set to ${now}`);
       return updatedLobby;

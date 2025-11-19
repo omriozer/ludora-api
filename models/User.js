@@ -109,6 +109,12 @@ export default function(sequelize) {
       },
       comment: 'School that this user belongs to (teachers, students, headmasters)'
     },
+    invitation_code: {
+      type: DataTypes.STRING(8),
+      allowNull: true,
+      unique: true,
+      comment: 'Unique invitation code for teachers to share their catalog with students'
+    },
   }, {
     tableName: 'user', // Match Base44 table name
     timestamps: false, // We handle timestamps manually
@@ -148,6 +154,11 @@ export default function(sequelize) {
       {
         fields: ['user_type'],
         name: 'idx_user_type'
+      },
+      {
+        fields: ['invitation_code'],
+        name: 'idx_user_invitation_code',
+        unique: true
       },
     ],
   });

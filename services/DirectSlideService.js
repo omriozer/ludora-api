@@ -307,7 +307,6 @@ class DirectSlideService {
               const content = await this.getSlideContent(slide.s3_key);
               return { ...slide, content };
             } catch (error) {
-              console.log(`⚠️ Failed to load content for slide ${slide.id}:`, error.message);
               return { ...slide, content: null };
             }
           })
