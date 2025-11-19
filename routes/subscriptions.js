@@ -13,7 +13,7 @@ const router = express.Router();
  */
 router.get('/user', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Get user's subscription history
     const subscriptions = await SubscriptionService.getUserSubscriptionHistory(userId, {
@@ -58,7 +58,7 @@ router.get('/user', authenticateToken, async (req, res) => {
  */
 router.get('/current', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     const activeSubscription = await SubscriptionService.getUserActiveSubscription(userId);
 
@@ -112,7 +112,7 @@ router.get('/plans', async (req, res) => {
 router.post('/create-payment', authenticateToken, async (req, res) => {
   try {
     const { subscriptionPlanId, environment = 'production', isRetry = false } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Validation
     if (!subscriptionPlanId) {
@@ -180,7 +180,7 @@ router.post('/create-payment', authenticateToken, async (req, res) => {
  */
 router.post('/cancel', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
     const { reason = 'user_cancelled', immediate = false } = req.body;
 
     // Get user's active subscription
@@ -224,7 +224,7 @@ router.post('/cancel', authenticateToken, async (req, res) => {
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     const subscription = await SubscriptionService.getSubscriptionById(id);
 
@@ -255,7 +255,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/validate', authenticateToken, async (req, res) => {
   try {
     const { subscriptionPlanId } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     if (!subscriptionPlanId) {
       return res.status(400).json({ error: 'subscriptionPlanId is required' });
@@ -280,7 +280,7 @@ router.post('/validate', authenticateToken, async (req, res) => {
  */
 router.get('/plans-with-context', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Get available plans
     const plans = await models.SubscriptionPlan.findAll({
@@ -334,7 +334,7 @@ router.get('/plans-with-context', authenticateToken, async (req, res) => {
 router.post('/change-plan', authenticateToken, async (req, res) => {
   try {
     const { subscriptionPlanId, actionType, fromPlanId } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Validation
     if (!subscriptionPlanId) {
@@ -392,7 +392,7 @@ router.post('/change-plan', authenticateToken, async (req, res) => {
 router.post('/cancel-pending/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // First, get the subscription to verify ownership
     const subscription = await SubscriptionService.getSubscriptionById(id);

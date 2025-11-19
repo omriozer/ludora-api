@@ -44,7 +44,7 @@ function shouldOpenPayplusPage(cartItems) {
 router.post('/purchases', authenticateToken, async (req, res) => {
   try {
     const { purchasableType, purchasableId, additionalData = {} } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Validation
     if (!purchasableType || !purchasableId) {
@@ -158,7 +158,7 @@ router.post('/purchases', authenticateToken, async (req, res) => {
 router.delete('/purchases/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Find the purchase
     const purchase = await models.Purchase.findOne({
@@ -217,7 +217,7 @@ router.put('/purchases/:id', authenticateToken, async (req, res) => {
 router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => {
   try {
     const { cartItems, environment = 'production', frontendOrigin = 'cart' } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Validation
     if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
@@ -298,7 +298,7 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
 router.post('/createSubscriptionPayment', authenticateToken, async (req, res) => {
   try {
     const { subscriptionPlanId, environment = 'production' } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Validation
     if (!subscriptionPlanId) {

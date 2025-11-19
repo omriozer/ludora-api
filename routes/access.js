@@ -92,7 +92,7 @@ router.post('/grant', authenticateToken, async (req, res) => {
         accessDays,
         isLifetimeAccess: isLifetimeAccess || false,
         price: price || 0,
-        createdBy: req.user.uid
+        createdBy: req.user.id
       }
     );
 

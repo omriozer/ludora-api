@@ -1236,8 +1236,8 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
     let hasAccess = false;
     if (req.user) {
       // Ensure consistent user ID property
-      if (!req.user.id && req.user.uid) {
-        req.user.id = req.user.uid;
+      if (!req.user.id && req.user.id) {
+        req.user.id = req.user.id;
       }
 
       // Check if user has access to the lesson plan
@@ -1746,8 +1746,8 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
     let hasAccess = false;
     if (req.user) {
       // Ensure req.user has consistent id property (from either uid or id)
-      if (!req.user.id && req.user.uid) {
-        req.user.id = req.user.uid;
+      if (!req.user.id && req.user.id) {
+        req.user.id = req.user.id;
       }
       // Check access control for authenticated users
       hasAccess = await checkUserAccess(req.user, fileEntity);

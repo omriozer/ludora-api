@@ -67,7 +67,7 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
       key: s3Path,
       contentType: req.file.mimetype,
       metadata: {
-        uploadedBy: req.user.uid,
+        uploadedBy: req.user.id,
         originalName: req.file.originalname,
         entityType: 'audiofile',
         entityId: audioFileId
@@ -125,7 +125,7 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
         file_filename: fileName,
         s3Key: s3Path,
         uploadedAt: new Date().toISOString(),
-        uploadedBy: req.user.uid
+        uploadedBy: req.user.id
       }
     });
 

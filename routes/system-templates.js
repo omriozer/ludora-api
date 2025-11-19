@@ -159,7 +159,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const isAdmin = req.user.role === 'admin' || req.user.role === 'sysadmin';
 
     clog('SystemTemplates: Getting templates', {
-      userId: req.user.uid,
+      userId: req.user.id,
       type,
       format,
       include_inactive,
@@ -211,7 +211,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     clog('SystemTemplates: Getting template by ID', {
-      userId: req.user.uid,
+      userId: req.user.id,
       templateId: id
     });
 
@@ -271,7 +271,7 @@ router.get('/type/:templateType', authenticateToken, async (req, res) => {
     const { format } = req.query;
 
     clog('SystemTemplates: Getting templates by type', {
-      userId: req.user.uid,
+      userId: req.user.id,
       templateType,
       format
     });
@@ -324,7 +324,7 @@ router.get('/default/:templateType', authenticateToken, async (req, res) => {
     const { templateType } = req.params;
 
     clog('SystemTemplates: Getting default template', {
-      userId: req.user.uid,
+      userId: req.user.id,
       templateType
     });
 
@@ -809,7 +809,7 @@ router.post('/:id/preview-watermark', authenticateToken, async (req, res) => {
     clog('SystemTemplates: Previewing watermark template', {
       templateId: id,
       contentType,
-      userId: req.user.uid
+      userId: req.user.id
     });
 
     const template = await models.SystemTemplate.findByPk(id);
@@ -882,7 +882,7 @@ router.post('/test-variables', authenticateToken, async (req, res) => {
     const { template_data, variables } = req.body;
 
     clog('SystemTemplates: Testing watermark variables', {
-      userId: req.user.uid,
+      userId: req.user.id,
       variableCount: Object.keys(variables || {}).length
     });
 
@@ -961,7 +961,7 @@ router.get('/:id/usage', authenticateToken, requireAdmin, async (req, res) => {
 
     clog('SystemTemplates: Getting template usage', {
       templateId: id,
-      userId: req.user.uid
+      userId: req.user.id
     });
 
     const template = await models.SystemTemplate.findByPk(id);
@@ -1031,7 +1031,7 @@ router.get('/:id/export', authenticateToken, requireAdmin, async (req, res) => {
 
     clog('SystemTemplates: Exporting template', {
       templateId: id,
-      userId: req.user.uid
+      userId: req.user.id
     });
 
     const template = await models.SystemTemplate.findByPk(id);
@@ -1080,7 +1080,7 @@ router.post('/import', authenticateToken, requireAdmin, async (req, res) => {
 
     clog('SystemTemplates: Importing template', {
       newName: new_name,
-      userId: req.user.uid
+      userId: req.user.id
     });
 
     if (!importData || !importData.template) {

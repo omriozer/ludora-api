@@ -1,0 +1,3 @@
+Production Database State Before Migration - Wed Nov 19 13:19:20 +07 2025
+Users: 4, Products: 0, Games: 0, Files: 0, Lesson Plans: 0
+Maintenance mode: true

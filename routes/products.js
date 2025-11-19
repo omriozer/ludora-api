@@ -78,7 +78,7 @@ router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (r
     }
 
     // Get user information
-    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    const user = await models.User.findOne({ where: { id: req.user.id } });
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -90,7 +90,7 @@ router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (r
     }
 
     // Determine creator_user_id based on is_ludora_creator flag (admin-only)
-    let createdBy = req.user.uid;
+    let createdBy = req.user.id;
 
     // Only admins and sysadmins can create products without creator (Ludora products)
     if (req.body.is_ludora_creator === true) {

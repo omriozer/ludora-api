@@ -369,7 +369,7 @@ function generateInvitationCode() {
 router.post('/user/:id/generate-invitation-code', authenticateToken, async (req, res) => {
   try {
     const userId = req.params.id;
-    const requestingUserId = req.user.uid;
+    const requestingUserId = req.user.id;
 
     // Get requesting user information
     const requestingUser = await models.User.findOne({ where: { id: requestingUserId } });
@@ -603,7 +603,7 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
     // For curriculum entity, filter based on user role and handle type conversions
     if (entityType === 'curriculum') {
       // Non-admin users should only see active curricula
-      const user = req.user ? await models.User.findOne({ where: { id: req.user.uid } }) : null;
+      const user = req.user ? await models.User.findOne({ where: { id: req.user.id } }) : null;
       const isAdmin = user && (user.role === 'admin' || user.role === 'sysadmin');
 
       if (!isAdmin) {
@@ -756,7 +756,7 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
 
   try {
     // Get user information
-    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    const user = await models.User.findOne({ where: { id: req.user.id } });
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -771,7 +771,7 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
     }
 
     // Determine creator_user_id based on is_ludora_creator flag (admin-only)
-    let createdBy = req.user.uid;
+    let createdBy = req.user.id;
 
     // Only admins and sysadmins can create products without creator (Ludora products)
     if (req.body.is_ludora_creator === true) {
@@ -883,21 +883,21 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
 
       // Handle is_ludora_creator flag (transform to creator_user_id)
       if (req.body.hasOwnProperty('is_ludora_creator')) {
-        const user = await models.User.findOne({ where: { id: req.user.uid } });
+        const user = await models.User.findOne({ where: { id: req.user.id } });
 
         if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
           // Non-admin trying to change Ludora creator status - ignore it
           delete req.body.is_ludora_creator;
         } else {
           // Admin user - transform is_ludora_creator to creator_user_id
-          req.body.creator_user_id = req.body.is_ludora_creator ? null : req.user.uid;
+          req.body.creator_user_id = req.body.is_ludora_creator ? null : req.user.id;
           delete req.body.is_ludora_creator; // Remove the flag after transformation
         }
       }
 
       // Only allow admins to change creator_user_id directly
       if (req.body.hasOwnProperty('creator_user_id')) {
-        const user = await models.User.findOne({ where: { id: req.user.uid } });
+        const user = await models.User.findOne({ where: { id: req.user.id } });
 
         if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
           // Non-admin trying to change creator_user_id - remove it from update
@@ -908,7 +908,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
         }
       }
     }
-    const entity = await EntityService.update(entityType, id, req.body, req.user.uid);
+    const entity = await EntityService.update(entityType, id, req.body, req.user.id);
 
     res.json(entity);
   } catch (error) {
@@ -945,7 +945,7 @@ router.post('/:type/bulk', authenticateToken, customValidators.validateEntityTyp
     
     switch (operation) {
       case 'create':
-        results = await EntityService.bulkCreate(entityType, data, req.user.uid);
+        results = await EntityService.bulkCreate(entityType, data, req.user.id);
         break;
         
       case 'delete':
@@ -1028,7 +1028,7 @@ router.post('/curriculum/create-range', authenticateToken, validateBody(
 ), async (req, res) => {
   try {
     const { subject, grade_from, grade_to, description } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Get user information
     const user = await models.User.findOne({ where: { id: userId } });
@@ -1149,7 +1149,7 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
 }), async (req, res) => {
   try {
     const { systemCurriculumId, classId } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Get user information and verify they're a teacher
     const user = await models.User.findOne({ where: { id: userId } });
@@ -1296,7 +1296,7 @@ router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody(
   try {
     const curriculumId = req.params.id;
     const { is_active } = req.body;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Get user information
     const user = await models.User.findOne({ where: { id: userId } });
@@ -1434,7 +1434,7 @@ router.get('/curriculum/:id/products', optionalAuth, async (req, res) => {
 router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) => {
   try {
     const curriculumId = req.params.id;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
     // Get user information
     const user = await models.User.findOne({ where: { id: userId } });
@@ -1516,7 +1516,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
   try {
 
     // Get user information
-    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    const user = await models.User.findOne({ where: { id: req.user.id } });
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -1586,7 +1586,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       is_asset_only: true,
       allow_preview: false,
       add_branding: false,
-      creator_user_id: req.user.uid
+      creator_user_id: req.user.id
     };
 
     const fileEntity = await models.File.create(fileData, { transaction });
@@ -1597,7 +1597,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       entityType: 'file',
       entityId: fileEntity.id,
       assetType: 'document',
-      userId: req.user.uid,
+      userId: req.user.id,
       transaction: transaction,
       preserveOriginalName: true // Keep original filename for documents
     });
@@ -1772,7 +1772,7 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
   try {
 
     // Get user information
-    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    const user = await models.User.findOne({ where: { id: req.user.id } });
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -1973,7 +1973,7 @@ router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenti
   try {
 
     // Get user information
-    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    const user = await models.User.findOne({ where: { id: req.user.id } });
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -2068,7 +2068,7 @@ router.delete('/lesson-plan/:lessonPlanId/file/:fileId', authenticateToken, asyn
   try {
 
     // Get user information
-    const user = await models.User.findOne({ where: { id: req.user.uid } });
+    const user = await models.User.findOne({ where: { id: req.user.id } });
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
@@ -2159,7 +2159,7 @@ router.delete('/lesson-plan/:lessonPlanId/file/:fileId', authenticateToken, asyn
 router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => {
   try {
     const userId = req.params.id;
-    const requestingUserId = req.user.uid;
+    const requestingUserId = req.user.id;
 
     // Get requesting user information
     const requestingUser = await models.User.findOne({ where: { id: requestingUserId } });
@@ -2225,7 +2225,7 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
 router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (req, res) => {
   try {
     const { lessonPlanId } = req.params;
-    const userId = req.user.uid;
+    const userId = req.user.id;
 
 
     // Check user access to the lesson plan
