@@ -272,9 +272,10 @@ router.get('/events/guest',
       const sessionContext = req.sessionContext;
 
       // Filter to only allow public channels for guests
+      // Allow system, global, and game channels for student portal access
       const allowedChannels = initialChannels.filter(channel => {
         const [channelType] = channel.split(':');
-        return ['system', 'global'].includes(channelType);
+        return ['system', 'global', 'game'].includes(channelType);
       });
 
       if (allowedChannels.length !== initialChannels.length) {
