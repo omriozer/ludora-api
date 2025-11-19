@@ -156,6 +156,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       is_active: user.is_active,
       onboarding_completed: user.onboarding_completed,
       birth_date: user.birth_date,
+      invitation_code: user.invitation_code,
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login
@@ -177,7 +178,8 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       content_creator_agreement_sign_date,
       onboarding_completed,
       birth_date,
-      user_type
+      user_type,
+      invitation_code
     } = req.body;
 
     // Only allow updating specific fields
@@ -194,6 +196,7 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
     if (onboarding_completed !== undefined) updateData.onboarding_completed = onboarding_completed;
     if (birth_date !== undefined) updateData.birth_date = birth_date;
     if (user_type !== undefined) updateData.user_type = user_type;
+    if (invitation_code !== undefined) updateData.invitation_code = invitation_code;
 
     // Add updated timestamp
     updateData.updated_at = new Date();
@@ -216,6 +219,7 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       is_active: user.is_active,
       onboarding_completed: user.onboarding_completed,
       birth_date: user.birth_date,
+      invitation_code: user.invitation_code,
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login
