@@ -213,19 +213,40 @@ function parseSessionContext(req, res, next) {
  */
 router.get('/events',
   sseConnectionLimit,
-  authenticateSSE,
+  optionalAuth,
   validateChannels,
   parseSessionContext,
   async (req, res) => {
     try {
-      const user = req.user;
+      const user = req.user; // May be null for anonymous users
       const initialChannels = req.validatedChannels;
       const sessionContext = req.sessionContext;
 
-      // Generate unique connection ID
-      const connectionId = `${user.id}_${uuidv4()}`;
+      // For anonymous users, filter to only allow public channels
+      let allowedChannels = initialChannels;
+      if (!user) {
+        allowedChannels = initialChannels.filter(channel => {
+          const [channelType] = channel.split(':');
+          return ['system', 'global', 'game'].includes(channelType);
+        });
 
-      clog(`📡 SSE connection request from user ${user.id} (role: ${user.role}) for channels:`, initialChannels);
+        if (allowedChannels.length !== initialChannels.length) {
+          return res.status(403).json({
+            error: 'Anonymous access limited to public channels only',
+            allowed_types: ['system', 'global', 'game'],
+            denied_channels: initialChannels.filter(c => !allowedChannels.includes(c))
+          });
+        }
+      }
+
+      // Generate unique connection ID
+      const connectionId = user ? `${user.id}_${uuidv4()}` : `guest_${uuidv4()}`;
+
+      if (user) {
+        clog(`📡 SSE connection request from authenticated user ${user.id} (role: ${user.role}) for channels:`, allowedChannels);
+      } else {
+        clog(`📡 SSE connection request from anonymous user for channels:`, allowedChannels);
+      }
       clog(`📊 Session context:`, sessionContext);
 
       // Add connection to broadcaster
@@ -233,9 +254,9 @@ router.get('/events',
       const success = broadcaster.addConnection(
         connectionId,
         res,
-        user.id,
-        user.role,
-        initialChannels,
+        user?.id || null,
+        user?.role || 'guest',
+        allowedChannels,
         sessionContext
       );
 

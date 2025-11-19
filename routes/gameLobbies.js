@@ -21,7 +21,7 @@ import {
   validateCreateSession,
   validateLobbyId as validateLobbyIdSession
 } from '../middleware/gameSessionValidation.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { authenticateToken, optionalAuth, requireRole } from '../middleware/auth.js';
 import { rateLimiters } from '../middleware/validation.js';
 import { clog, cerror } from '../lib/utils.js';
 
@@ -73,10 +73,10 @@ async function validateGameOwnership(gameId, userId, userRole = null) {
 
 /**
  * GET /api/games/:gameId/lobbies
- * List active lobbies for a specific game
+ * List active lobbies for a specific game (supports both authenticated and anonymous access)
  */
 router.get('/games/:gameId/lobbies',
-  authenticateToken,
+  optionalAuth,
   validateGameId,
   validateLobbyListQuery,
   async (req, res) => {
@@ -84,17 +84,30 @@ router.get('/games/:gameId/lobbies',
     try {
       const { gameId } = req.validatedParams;
       const { limit, offset, expired } = req.validatedQuery;
-      const user = req.user;
+      const user = req.user; // May be null for anonymous users
 
-      clog(`📋 Listing lobbies for game ${gameId} by user ${user.id}`);
+      if (user) {
+        clog(`📋 Listing lobbies for game ${gameId} by authenticated user ${user.id}`);
+      } else {
+        clog(`📋 Listing lobbies for game ${gameId} by anonymous user`);
+      }
 
-      // Validate user can access this game
-      const hasAccess = await validateGameOwnership(gameId, user.id, user.role);
-      if (!hasAccess) {
-        await transaction.rollback();
-        return res.status(403).json({
-          error: 'Access denied: You do not own this game'
-        });
+      // For authenticated users, validate access. For anonymous users, allow public access.
+      if (user) {
+        const hasAccess = await validateGameOwnership(gameId, user.id, user.role);
+        if (!hasAccess) {
+          await transaction.rollback();
+          return res.status(403).json({
+            error: 'Access denied: You do not own this game'
+          });
+        }
+      } else {
+        // For anonymous access, just verify the game exists
+        const game = await models.Game.findByPk(gameId, { transaction });
+        if (!game) {
+          await transaction.rollback();
+          return res.status(404).json({ error: 'Game not found' });
+        }
       }
 
       // Get ALL lobbies with computed status (including closed ones)
@@ -111,10 +124,26 @@ router.get('/games/:gameId/lobbies',
       // Apply pagination
       const paginatedLobbies = filteredLobbies.slice(offset, offset + limit);
 
+      // For anonymous users, filter sensitive information
+      const responseData = user ? paginatedLobbies : paginatedLobbies.map(lobby => ({
+        id: lobby.id,
+        lobby_code: lobby.lobby_code,
+        game_id: lobby.game_id,
+        status: GameLobbyService.computeStatus(lobby),
+        created_at: lobby.created_at,
+        expires_at: lobby.expires_at,
+        settings: {
+          // Only expose safe settings for anonymous access
+          allow_guest_users: lobby.settings?.allow_guest_users,
+          max_players_per_session: lobby.settings?.max_players_per_session,
+          invitation_type: lobby.settings?.invitation_type
+        }
+      }));
+
       await transaction.commit();
 
       res.status(200).json({
-        data: paginatedLobbies,
+        data: responseData,
         pagination: {
           total: filteredLobbies.length,
           limit: limit,
@@ -516,85 +545,6 @@ router.delete('/game-lobbies/:lobbyId',
   }
 );
 
-// =============================================
-// PUBLIC LOBBY ACCESS ROUTES (for student portal)
-// =============================================
-
-/**
- * GET /api/public/games/:gameId/lobbies
- * Public endpoint to list active lobbies for student portal (no authentication required)
- */
-router.get('/public/games/:gameId/lobbies',
-  rateLimiters.general, // Use general rate limiter for public endpoint
-  validateGameId,
-  validateLobbyListQuery,
-  async (req, res) => {
-    const transaction = await models.sequelize.transaction();
-    try {
-      const { gameId } = req.validatedParams;
-      const { limit, offset, expired } = req.validatedQuery;
-
-      clog(`📋 [PUBLIC] Listing lobbies for game ${gameId} (public access)`);
-
-      // For public access, we don't validate ownership - just check if game exists
-      const game = await models.Game.findByPk(gameId, { transaction });
-      if (!game) {
-        await transaction.rollback();
-        return res.status(404).json({ error: 'Game not found' });
-      }
-
-      // Get ALL lobbies with computed status (including closed ones)
-      const lobbies = await GameLobbyService.getLobbiesByGame(gameId, transaction);
-
-      // Apply expiration filter if specified
-      const filteredLobbies = expired !== undefined
-        ? lobbies.filter(lobby => {
-            const isExpired = GameLobbyService.computeStatus(lobby) === 'closed';
-            return expired ? isExpired : !isExpired;
-          })
-        : lobbies;
-
-      // Apply pagination
-      const paginatedLobbies = filteredLobbies.slice(offset, offset + limit);
-
-      // For public access, return only safe/necessary information
-      const publicLobbies = paginatedLobbies.map(lobby => ({
-        id: lobby.id,
-        lobby_code: lobby.lobby_code,
-        game_id: lobby.game_id,
-        status: GameLobbyService.computeStatus(lobby),
-        created_at: lobby.created_at,
-        expires_at: lobby.expires_at,
-        settings: {
-          // Only expose safe settings for public access
-          allow_guest_users: lobby.settings?.allow_guest_users,
-          max_players_per_session: lobby.settings?.max_players_per_session,
-          invitation_type: lobby.settings?.invitation_type
-        }
-      }));
-
-      await transaction.commit();
-
-      res.status(200).json({
-        data: publicLobbies,
-        pagination: {
-          total: filteredLobbies.length,
-          limit: limit,
-          offset: offset,
-          has_more: offset + limit < filteredLobbies.length
-        }
-      });
-
-    } catch (error) {
-      await transaction.rollback();
-      cerror('❌ [PUBLIC] Failed to list lobbies:', error);
-      res.status(500).json({
-        error: 'Failed to fetch lobbies',
-        message: error.message
-      });
-    }
-  }
-);
 
 // =============================================
 // LOBBY JOINING & DISCOVERY ROUTES
