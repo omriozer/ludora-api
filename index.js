@@ -137,11 +137,14 @@ if (process.env.ENVIRONMENT !== 'test') {
   app.use(requestLogger);
 }
 
-// 8. Rate limiting (global with enhanced security)
-app.use(rateLimiters.general);
-
-// 9. Dynamic CORS with webhook support
+// 8. Dynamic CORS with webhook support (MUST come before rate limiting)
 app.use(dynamicCors);
+
+// 9. Rate limiting (global with enhanced security)
+// Temporarily disabled in development for testing
+if (process.env.ENVIRONMENT !== 'development') {
+  app.use(rateLimiters.general);
+}
 
 // 10. Israeli-optimized response compression
 app.use(israeliCompressionMiddleware);

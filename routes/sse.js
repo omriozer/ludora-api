@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import AuthService from '../services/AuthService.js';
-import { getSSEBroadcaster, SSE_CHANNEL_TYPES, SSE_PRIORITY_TYPES } from '../services/SSEBroadcaster.js';
+import { getSSEBroadcaster, SSE_PRIORITY_TYPES } from '../services/SSEBroadcaster.js';
 import { clog, cerror } from '../lib/utils.js';
 
 const router = express.Router();

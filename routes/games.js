@@ -1,16 +1,15 @@
 import express from 'express';
 import Joi from 'joi';
 import { authenticateToken } from '../middleware/auth.js';
+import { checkStudentsAccess } from '../middleware/studentsAccessMiddleware.js';
 import models from '../models/index.js';
 import EntityService from '../services/EntityService.js';
 import GameContentService from '../services/GameContentService.js';
+import GameLobbyService from '../services/GameLobbyService.js';
 import { clog, cerror } from '../lib/utils.js';
 const { Game, sequelize } = models;
 
 const router = express.Router();
-
-// Apply auth middleware to all routes
-router.use(authenticateToken);
 
 // Helper function to check game ownership via Product table
 async function validateGameOwnership(gameId, userId, userRole) {
@@ -86,39 +85,93 @@ async function getUserGames(userId, userRole) {
   });
 }
 
-// GET /api/games - Get games for management
+// Shared function to get games with products and lobbies for consistent response format
+async function getGamesWithProducts(userId, userRole) {
+  // Get games based on Product ownership for the target user
+  const games = await getUserGames(userId, userRole);
+
+  // For each game, find if there's an associated product and get lobby information
+  const gamesWithProductsAndLobbies = await Promise.all(games.map(async (game) => {
+    const gameData = game.toJSON();
+
+    // Find associated product
+    const product = await models.Product.findOne({
+      where: {
+        product_type: 'game',
+        entity_id: game.id
+      },
+      include: [
+        {
+          model: models.User,
+          as: 'creator',
+          attributes: ['id', 'full_name', 'email']
+        }
+      ]
+    });
+
+    // Get lobby information for this game
+    let lobbies = [];
+    try {
+      lobbies = await GameLobbyService.getLobbiesByGame(game.id);
+      clog(`📋 Found ${lobbies.length} lobbies for game ${game.id}`);
+    } catch (error) {
+      cerror(`❌ Error fetching lobbies for game ${game.id}:`, error);
+      // Continue with empty lobbies array if fetch fails
+    }
+
+    return {
+      ...gameData,
+      product: product ? product.toJSON() : null,
+      lobbies: lobbies
+    };
+  }));
+
+  return gamesWithProductsAndLobbies;
+}
+
+// Student-facing route for getting teacher games by invitation code
+// GET /api/games/teacher/:code - Get games for teacher by invitation code (with student access control)
+router.get('/teacher/:code', checkStudentsAccess, async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    // Find the teacher by invitation code
+    const teacher = await models.User.findOne({
+      where: {
+        invitation_code: code,
+        user_type: 'teacher'
+      },
+      attributes: ['id', 'role', 'full_name', 'email']
+    });
+
+    if (!teacher) {
+      return res.status(404).json({
+        error: 'Teacher not found',
+        message: 'Invalid invitation code or teacher not found'
+      });
+    }
+
+    const gamesWithProducts = await getGamesWithProducts(teacher.id, teacher.role);
+
+    res.json(gamesWithProducts);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to fetch teacher games',
+      message: error.message
+    });
+  }
+});
+
+// Apply auth middleware to all other routes
+router.use(authenticateToken);
+
+// GET /api/games - Get games for authenticated user
 // Returns user's games (or all games if admin) with associated product data
 router.get('/', async (req, res) => {
   try {
     const { user } = req;
 
-    // Get games based on Product ownership
-    const games = await getUserGames(user.id, user.role);
-
-    // For each game, find if there's an associated product
-    const gamesWithProducts = await Promise.all(games.map(async (game) => {
-      const gameData = game.toJSON();
-
-      // Find associated product
-      const product = await models.Product.findOne({
-        where: {
-          product_type: 'game',
-          entity_id: game.id
-        },
-        include: [
-          {
-            model: models.User,
-            as: 'creator',
-            attributes: ['id', 'full_name', 'email']
-          }
-        ]
-      });
-
-      return {
-        ...gameData,
-        product: product ? product.toJSON() : null
-      };
-    }));
+    const gamesWithProducts = await getGamesWithProducts(user.id, user.role);
 
     res.json(gamesWithProducts);
   } catch (error) {

@@ -39,6 +39,12 @@ export default function(sequelize) {
     },
     site_name: { type: DataTypes.STRING, allowNull: true },
     maintenance_mode: { type: DataTypes.BOOLEAN, allowNull: true },
+    students_access: {
+      type: DataTypes.ENUM('invite_only', 'authed_only', 'all'),
+      allowNull: true,
+      defaultValue: 'invite_only',
+      comment: 'Controls student portal access: invite_only (code-based), authed_only (authenticated only), all (both)'
+    },
     student_invitation_expiry_days: { type: DataTypes.DECIMAL, allowNull: true },
     parent_consent_required: { type: DataTypes.BOOLEAN, allowNull: true },
     nav_order: { type: DataTypes.JSONB, allowNull: true },
@@ -170,6 +176,15 @@ export default function(sequelize) {
   // Settings-specific utility methods
   Settings.prototype.isMaintenanceMode = function() {
     return !!this.maintenance_mode;
+  };
+
+  Settings.prototype.getStudentsAccessMode = function() {
+    return this.students_access || 'all';
+  };
+
+  Settings.prototype.isStudentsAccessEnabled = function() {
+    const mode = this.getStudentsAccessMode();
+    return mode === 'all' || mode === 'invite_only' || mode === 'authed_only';
   };
 
   Settings.prototype.getContactInfo = function() {

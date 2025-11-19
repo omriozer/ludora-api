@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { authenticateToken, optionalAuth } from '../middleware/auth.js';
+import { authenticateToken } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas, customValidators } from '../middleware/validation.js';
 import EmailService from '../services/EmailService.js';
 import FileService from '../services/FileService.js';

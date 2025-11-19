@@ -178,7 +178,7 @@ const joinByCodeSchema = Joi.object({
         'any.required': 'Display name is required'
       }),
 
-    user_id: Joi.string().uuid().optional(),
+    user_id: Joi.string().uuid().allow(null).strip(),
 
     guest_token: Joi.string()
       .pattern(/^guest_[a-zA-Z0-9]{8,}$/)

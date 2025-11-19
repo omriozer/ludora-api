@@ -14,16 +14,12 @@ import express from 'express';
 import multer from 'multer';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import fileService from '../services/FileService.js';
-import db from '../models/index.js';
 import { sequelize } from '../models/index.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
 import { createFileLogger, createErrorResponse, createSuccessResponse } from '../utils/fileOperationLogger.js';
-import { createFileVerifier } from '../utils/fileOperationVerifier.js';
 import { createPreUploadValidator } from '../utils/preUploadValidator.js';
-import { checkUserAccess, processPdf } from './assets.js';
 
 const router = express.Router();
-const { File: FileModel, Settings } = db;
 
 // Configure multer for file uploads
 const upload = multer({

@@ -14,8 +14,8 @@ import {
   validateSessionId,
   validateSessionListQuery
 } from '../middleware/gameSessionValidation.js';
-import { authenticateToken, optionalAuth, requireRole } from '../middleware/auth.js';
-import { rateLimiters } from '../middleware/validation.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
 import { clog, cerror } from '../lib/utils.js';
 
 const router = express.Router();
@@ -76,10 +76,10 @@ async function validateSessionAccess(sessionId, userId, userRole, transaction = 
 
 /**
  * GET /api/game-sessions/:sessionId
- * Get detailed session information
+ * Get detailed session information (student-facing with access control)
  */
 router.get('/game-sessions/:sessionId',
-  authenticateToken,
+  checkStudentsLobbyAccess,
   validateSessionId,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
@@ -314,11 +314,11 @@ router.get('/game-sessions/:sessionId/participants',
 
 /**
  * POST /api/game-sessions/:sessionId/participants
- * Add a participant to a session
+ * Add a participant to a session (student-facing with access control)
  */
 router.post('/game-sessions/:sessionId/participants',
   sessionRateLimit,
-  optionalAuth, // Allow both authenticated and guest users
+  checkStudentsLobbyAccess, // Student access control for joining sessions
   validateAddParticipant,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
@@ -384,10 +384,10 @@ router.post('/game-sessions/:sessionId/participants',
 
 /**
  * DELETE /api/game-sessions/:sessionId/participants/:participantId
- * Remove a participant from a session
+ * Remove a participant from a session (student-facing with access control)
  */
 router.delete('/game-sessions/:sessionId/participants/:participantId',
-  authenticateToken,
+  checkStudentsLobbyAccess,
   validateRemoveParticipant,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();

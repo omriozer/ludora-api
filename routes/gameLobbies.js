@@ -21,8 +21,8 @@ import {
   validateCreateSession,
   validateLobbyId as validateLobbyIdSession
 } from '../middleware/gameSessionValidation.js';
-import { authenticateToken, optionalAuth, requireRole } from '../middleware/auth.js';
-import { rateLimiters } from '../middleware/validation.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { checkStudentsAccess, checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
 import { clog, cerror } from '../lib/utils.js';
 
 const router = express.Router();
@@ -73,10 +73,10 @@ async function validateGameOwnership(gameId, userId, userRole = null) {
 
 /**
  * GET /api/games/:gameId/lobbies
- * List active lobbies for a specific game (supports both authenticated and anonymous access)
+ * List active lobbies for a specific game (student-facing with access control)
  */
 router.get('/games/:gameId/lobbies',
-  optionalAuth,
+  checkStudentsLobbyAccess,
   validateGameId,
   validateLobbyListQuery,
   async (req, res) => {
@@ -552,10 +552,10 @@ router.delete('/game-lobbies/:lobbyId',
 
 /**
  * POST /api/game-lobbies/join-by-code
- * Join a lobby using lobby code
+ * Join a lobby using lobby code (student-facing with access control)
  */
 router.post('/game-lobbies/join-by-code',
-  rateLimiters.general, // Use general rate limiter for public endpoint
+  checkStudentsAccess, // Student access control with rate limiting
   validateJoinByCode,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
@@ -620,10 +620,10 @@ router.post('/game-lobbies/join-by-code',
 
 /**
  * POST /api/game-lobbies/:lobbyId/join
- * Join a lobby with on-demand session creation based on invitation_type
+ * Join a lobby with on-demand session creation based on invitation_type (student-facing with access control)
  */
 router.post('/game-lobbies/:lobbyId/join',
-  rateLimiters.general,
+  checkStudentsAccess, // Student access control with rate limiting
   validateJoinByCode, // Reuse validation for participant data
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
