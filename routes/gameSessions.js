@@ -43,7 +43,7 @@ const gameStateRateLimit = rateLimit({
  */
 async function validateSessionAccess(sessionId, userId, userRole, transaction = null) {
   const session = await models.GameSession.findByPk(sessionId, {
-    include: [{ model: models.GameLobby }],
+    include: [{ model: models.GameLobby, as: 'lobby' }],
     transaction
   });
 
@@ -51,7 +51,7 @@ async function validateSessionAccess(sessionId, userId, userRole, transaction = 
     throw new Error('Session not found');
   }
 
-  const lobby = session.GameLobby;
+  const lobby = session.lobby;
 
   // Admin bypass
   if (userRole === 'admin' || userRole === 'sysadmin') {
@@ -824,10 +824,12 @@ router.get('/game-sessions/my-active',
         include: [
           {
             model: models.GameLobby,
+            as: 'lobby',
             include: [
               {
                 model: models.Game,
-                attributes: ['id', 'title', 'game_type']
+                as: 'game',
+                attributes: ['id', 'game_type']
               }
             ]
           }
@@ -843,9 +845,9 @@ router.get('/game-sessions/my-active',
         started_at: session.started_at,
         participants_count: session.participants?.length || 0,
         lobby: {
-          id: session.GameLobby.id,
-          lobby_code: session.GameLobby.lobby_code,
-          game: session.GameLobby.Game
+          id: session.lobby.id,
+          lobby_code: session.lobby.lobby_code,
+          game: session.lobby.game
         }
       }));
 

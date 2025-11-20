@@ -108,7 +108,8 @@ class GameSessionService {
         include: [
           {
             model: models.GameLobby,
-            include: [{ model: models.Game }]
+            as: 'lobby',
+            include: [{ model: models.Game, as: 'game' }]
           }
         ],
         transaction
@@ -118,7 +119,7 @@ class GameSessionService {
         throw new Error('Session not found');
       }
 
-      const lobby = session.GameLobby;
+      const lobby = session.lobby;
 
       // Check if session is joinable
       if (session.status === 'closed') {
@@ -170,7 +171,7 @@ class GameSessionService {
 
       // Emit SSE event for participant joined
       try {
-        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_PARTICIPANT_JOINED, sessionId, lobby.id, lobby.Game.id, {
+        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_PARTICIPANT_JOINED, sessionId, lobby.id, lobby.game.id, {
           participant: {
             id: newParticipant.id,
             display_name: newParticipant.display_name,
@@ -209,7 +210,7 @@ class GameSessionService {
       clog(`👤 Removing participant ${participantId} from session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
-        include: [{ model: models.GameLobby }],
+        include: [{ model: models.GameLobby, as: 'lobby' }],
         transaction
       });
 
@@ -217,7 +218,7 @@ class GameSessionService {
         throw new Error('Session not found');
       }
 
-      const lobby = session.GameLobby;
+      const lobby = session.lobby;
       const currentParticipants = session.participants || [];
 
       // Find participant to remove
@@ -290,7 +291,7 @@ class GameSessionService {
       clog(`🎮 Updating game state for session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
-        include: [{ model: models.GameLobby }],
+        include: [{ model: models.GameLobby, as: 'lobby' }],
         transaction
       });
 
@@ -303,7 +304,7 @@ class GameSessionService {
         throw new Error('Cannot update state: Session is not active');
       }
 
-      const lobby = session.GameLobby;
+      const lobby = session.lobby;
 
       // Check permissions (owner, host, or participant)
       const isParticipant = session.participants?.some(p => p.user_id === userId);
@@ -377,7 +378,7 @@ class GameSessionService {
       clog(`🏁 Finishing session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
-        include: [{ model: models.GameLobby }],
+        include: [{ model: models.GameLobby, as: 'lobby' }],
         transaction
       });
 
@@ -385,7 +386,7 @@ class GameSessionService {
         throw new Error('Session not found');
       }
 
-      const lobby = session.GameLobby;
+      const lobby = session.lobby;
 
       // Check permissions
       const canFinish =
@@ -450,10 +451,12 @@ class GameSessionService {
         include: [
           {
             model: models.GameLobby,
+            as: 'lobby',
             include: [
               {
                 model: models.Game,
-                attributes: ['id', 'title', 'game_type']
+                as: 'game',
+                attributes: ['id', 'game_type']
               }
             ]
           }
@@ -483,11 +486,11 @@ class GameSessionService {
         current_state: session.current_state || {},
         data: session.data || {},
         lobby: {
-          id: session.GameLobby.id,
-          lobby_code: session.GameLobby.lobby_code,
-          status: session.GameLobby.status,
-          settings: session.GameLobby.settings,
-          game: session.GameLobby.Game
+          id: session.lobby.id,
+          lobby_code: session.lobby.lobby_code,
+          status: session.lobby.status,
+          settings: session.lobby.settings,
+          game: session.lobby.game
         },
         started_at: session.started_at,
         finished_at: session.finished_at,
@@ -614,7 +617,7 @@ class GameSessionService {
       clog(`▶️ Starting session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
-        include: [{ model: models.GameLobby }],
+        include: [{ model: models.GameLobby, as: 'lobby' }],
         transaction
       });
 
@@ -626,7 +629,7 @@ class GameSessionService {
         throw new Error('Cannot start: Session is not pending');
       }
 
-      const lobby = session.GameLobby;
+      const lobby = session.lobby;
 
       // Check permissions
       const canStart =

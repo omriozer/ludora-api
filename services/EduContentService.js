@@ -346,7 +346,8 @@ class EduContentService {
         },
         include: [{
           model: models.Game,
-          attributes: ['id', 'title']
+          as: 'game',
+          attributes: ['id', 'game_type']
         }]
       });
 
@@ -355,7 +356,7 @@ class EduContentService {
         games: usage.rows.map(use => ({
           game_id: use.game_id,
           use_type: use.use_type,
-          game_title: use.Game?.title || 'Unknown'
+          game_type: use.game?.game_type || 'unknown'
         }))
       };
 

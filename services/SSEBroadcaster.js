@@ -716,7 +716,8 @@ export function broadcastLobbyEvent(eventType, lobbyId, gameId, data) {
   const broadcaster = getSSEBroadcaster();
   const channels = [
     `${SSE_CHANNEL_TYPES.LOBBY}:${lobbyId}`,
-    `${SSE_CHANNEL_TYPES.GAME}:${gameId}`
+    `${SSE_CHANNEL_TYPES.GAME}:${gameId}`,
+    `${SSE_CHANNEL_TYPES.LOBBY}:visible_games` // Single channel for all lobby/catalog pages
   ];
 
   return broadcaster.broadcastToChannels(eventType, {
@@ -734,7 +735,8 @@ export function broadcastSessionEvent(eventType, sessionId, lobbyId, gameId, dat
   const channels = [
     `${SSE_CHANNEL_TYPES.SESSION}:${sessionId}`,
     `${SSE_CHANNEL_TYPES.LOBBY}:${lobbyId}`,
-    `${SSE_CHANNEL_TYPES.GAME}:${gameId}`
+    `${SSE_CHANNEL_TYPES.GAME}:${gameId}`,
+    `${SSE_CHANNEL_TYPES.LOBBY}:visible_games` // Single channel for all lobby/catalog pages
   ];
 
   return broadcaster.broadcastToChannels(eventType, {

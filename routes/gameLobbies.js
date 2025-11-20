@@ -957,9 +957,19 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
     const transaction = await models.sequelize.transaction();
     try {
       const { lobbyId } = req.params;
+      const { participant } = req.body; // Extract participant data from request
       const user = req.user; // May be null for anonymous users
 
       clog(`🎮 Student creating session in lobby ${lobbyId}${user ? ` by user ${user.id}` : ' by anonymous user'}`);
+      clog(`👤 Participant data:`, participant);
+
+      // Validate participant data
+      if (!participant || !participant.display_name?.trim()) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'Participant display name is required'
+        });
+      }
 
       // Get lobby details to validate it exists and is manual_selection
       const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
@@ -982,6 +992,14 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
         await transaction.rollback();
         return res.status(400).json({
           error: 'Session creation is only allowed for manual selection lobbies'
+        });
+      }
+
+      // Check guest user restrictions
+      if (!participant.user_id && !lobby.settings.allow_guest_users) {
+        await transaction.rollback();
+        return res.status(403).json({
+          error: 'Guest users are not allowed in this lobby'
         });
       }
 
@@ -1010,7 +1028,7 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
       const sessionCreateData = {
         lobby_id: lobbyId,
         session_number: nextSessionNumber,
-        participants: [], // Empty initially
+        participants: [], // Empty initially, will add participant next
         current_state: null,
         expires_at: null, // Inherit from lobby
         finished_at: null,
@@ -1026,17 +1044,47 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
       };
 
       const session = await models.GameSession.create(sessionCreateData, { transaction });
-      await transaction.commit();
 
       clog(`✅ Student created session ${session.session_number} in lobby ${lobbyId}`);
 
+      // Add the creator as a participant to the session
+      const updatedSession = await GameSessionService.addParticipant(
+        session.id,
+        participant,
+        participant.user_id || 'anonymous',
+        transaction
+      );
+
+      await transaction.commit();
+
+      // Get the actual participant data from the session (includes generated participant.id)
+      const sessionDetails = await GameSessionService.getSessionDetails(updatedSession.id);
+      const addedParticipant = sessionDetails.participants.find(p =>
+        (participant.user_id && p.user_id === participant.user_id) ||
+        (participant.guest_token && p.guest_token === participant.guest_token) ||
+        (!participant.user_id && !participant.guest_token && p.display_name === participant.display_name)
+      );
+
+      clog(`👤 Added creator as participant:`, addedParticipant);
+
+      // Return response in the format expected by frontend
       res.status(201).json({
-        id: session.id,
-        session_number: session.session_number,
-        participants_count: 0,
-        max_players: sessionDefaults.players_per_session,
-        computed_status: 'open',
-        created: true
+        session: {
+          id: session.id,
+          session_number: session.session_number,
+          participants_count: updatedSession.participants.length
+        },
+        lobby: {
+          id: lobby.id,
+          lobby_code: lobby.lobby_code,
+          game: lobby.game
+        },
+        participant: {
+          id: addedParticipant?.id,
+          display_name: addedParticipant?.display_name,
+          isAuthedUser: addedParticipant?.isAuthedUser,
+          team_assignment: addedParticipant?.team_assignment
+        }
       });
 
     } catch (error) {

@@ -226,14 +226,16 @@ router.get('/events',
       let allowedChannels = initialChannels;
       if (!user) {
         allowedChannels = initialChannels.filter(channel => {
-          const [channelType] = channel.split(':');
-          return ['system', 'global', 'game'].includes(channelType);
+          const [channelType, channelId] = channel.split(':');
+          // Allow system, global, game channels, and the special lobby:visible_games channel
+          return ['system', 'global', 'game'].includes(channelType) ||
+                 (channelType === 'lobby' && channelId === 'visible_games');
         });
 
         if (allowedChannels.length !== initialChannels.length) {
           return res.status(403).json({
             error: 'Anonymous access limited to public channels only',
-            allowed_types: ['system', 'global', 'game'],
+            allowed_types: ['system', 'global', 'game', 'lobby:visible_games'],
             denied_channels: initialChannels.filter(c => !allowedChannels.includes(c))
           });
         }
@@ -300,8 +302,10 @@ router.post('/subscribe',
       let allowedChannels = channels;
       if (!user) {
         allowedChannels = channels.filter(channel => {
-          const [channelType] = channel.split(':');
-          return ['system', 'global', 'game'].includes(channelType);
+          const [channelType, channelId] = channel.split(':');
+          // Allow system, global, game channels, and the special lobby:visible_games channel
+          return ['system', 'global', 'game'].includes(channelType) ||
+                 (channelType === 'lobby' && channelId === 'visible_games');
         });
 
         if (allowedChannels.length !== channels.length) {
