@@ -37,21 +37,28 @@ export default function(sequelize) {
           if (!Array.isArray(value)) {
             throw new Error('participants must be an array');
           }
-          // Validate each participant object
+
           for (const participant of value) {
-            if (typeof participant !== 'object' || participant === null) {
-              throw new Error('Each participant must be an object');
+            if (!participant?.id || !participant?.display_name || !participant?.type) {
+              throw new Error('Each participant must have id, display_name, and type');
             }
-            if (!participant.id || !participant.display_name) {
-              throw new Error('Each participant must have id and display_name');
+
+            if (!['user', 'player'].includes(participant.type)) {
+              throw new Error('Participant type must be "user" or "player"');
             }
-            if (typeof participant.isAuthedUser !== 'boolean') {
-              throw new Error('Each participant must have isAuthedUser boolean');
+
+            // Type-specific validation
+            if (participant.type === 'user' && !participant.user_id) {
+              throw new Error('User participants must have user_id');
+            }
+
+            if (participant.type === 'player' && (!participant.player_id || !participant.privacy_code)) {
+              throw new Error('Player participants must have player_id and privacy_code');
             }
           }
         }
       },
-      comment: 'Array of participant objects with id, isAuthedUser, display_name, user_id?, guest_token?, team_assignment?, joined_at'
+      comment: 'Array of participant objects: {id, display_name, type: "user"|"player", user_id?, player_id?, privacy_code?}'
     },
     current_state: {
       type: DataTypes.JSONB,
@@ -137,6 +144,25 @@ export default function(sequelize) {
   GameSession.prototype.removeParticipant = function(participantId) {
     const participants = this.getParticipants();
     this.participants = participants.filter(p => p.id !== participantId);
+    return this.save();
+  };
+
+  // Simple participant helper methods
+
+  GameSession.prototype.findParticipant = function(type, id) {
+    return this.getParticipants().find(p => {
+      if (type === 'user') return p.type === 'user' && p.user_id === id;
+      if (type === 'player') return p.type === 'player' && p.player_id === id;
+      return false;
+    });
+  };
+
+  GameSession.prototype.removeParticipantByType = function(type, id) {
+    this.participants = this.getParticipants().filter(p => {
+      if (type === 'user') return !(p.type === 'user' && p.user_id === id);
+      if (type === 'player') return !(p.type === 'player' && p.player_id === id);
+      return true;
+    });
     return this.save();
   };
 
@@ -295,6 +321,7 @@ export default function(sequelize) {
       ...options
     });
   };
+
 
   GameSession.getNextSessionNumber = async function(lobbyId) {
     const lastSession = await this.findOne({

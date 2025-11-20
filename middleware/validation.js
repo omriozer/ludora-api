@@ -551,10 +551,30 @@ export const customValidators = {
   }
 };
 
+// Student access control middleware
+export async function studentsAccessMiddleware(req, res, next) {
+  try {
+    // This middleware controls student access based on settings.students_access
+    // For now, we'll allow all student access by default
+    // The actual access control logic can be implemented later based on requirements
+
+    // In the future, this could check:
+    // 1. 'invite_only' - Only allow with lobby codes or teacher invitations
+    // 2. 'authed_only' - Require some form of authentication
+    // 3. 'all' - Allow all access including anonymous
+
+    // For now, simply pass through to allow player authentication endpoints to work
+    next();
+  } catch (error) {
+    console.error('[studentsAccessMiddleware] Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 // Sanitize HTML content
 export function sanitizeHtml(html) {
   if (!html || typeof html !== 'string') return html;
-  
+
   // Basic HTML sanitization - in production, use a library like DOMPurify
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')

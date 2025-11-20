@@ -15,11 +15,11 @@ class AuthService {
     this.jwtSecret = process.env.JWT_SECRET;
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
 
-    // Clean up expired tokens and sessions every hour
+    // ✅ FIXED: Clean up expired tokens and sessions every 6 hours (reduced frequency)
     this.cleanupInterval = setInterval(async () => {
       await this.cleanupExpiredTokens();
       await this.cleanupExpiredSessions();
-    }, 60 * 60 * 1000);
+    }, 6 * 60 * 60 * 1000);
   }
 
   // Create JWT token
@@ -267,9 +267,23 @@ class AuthService {
 
       // Check if session is active (not expired, not invalidated, and is_active flag is true)
       if (!session.isActive()) {
-        // Clean up expired/inactive session
-        await session.destroy();
+        // ✅ FIXED: Graceful degradation instead of permanent destruction
+        clog(`[AuthService] Session ${sessionId} validation failed:`, {
+          expired: session.isExpired(),
+          invalidated: session.isInvalidated(),
+          active_flag: session.is_active,
+          user_id: session.user_id
+        });
+
+        // Don't destroy - let cleanup handle it with grace period
         return null;
+      }
+
+      // ✅ FIXED: Auto-extend session for active users (if expires within 2 hours)
+      const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      if (session.expires_at < twoHoursFromNow) {
+        await session.extendExpiration(24); // Extend by 24 hours
+        clog(`[AuthService] Extended session ${sessionId} for active user ${session.user_id}`);
       }
 
       // Update last accessed time
@@ -391,13 +405,17 @@ class AuthService {
   // Cleanup expired sessions
   async cleanupExpiredSessions() {
     try {
+      const beforeStats = await this.getSessionStats();
       const cleanedCount = await models.UserSession.cleanupExpired();
 
       if (cleanedCount > 0) {
-        clog(`🧹 Cleaned up ${cleanedCount} expired sessions from database`);
+        clog(`🧹 [AuthService] Cleaned up ${cleanedCount} expired sessions from database`);
+        clog(`📊 [AuthService] Sessions before cleanup: ${beforeStats.totalSessions}, after cleanup: ${beforeStats.totalSessions - cleanedCount}`);
+      } else {
+        clog(`✅ [AuthService] Session cleanup completed - no expired sessions found (grace period working)`);
       }
     } catch (error) {
-      clog(`❌ Session cleanup error: ${error.message}`);
+      clog(`❌ [AuthService] Session cleanup error: ${error.message}`);
     }
   }
 
@@ -692,7 +710,7 @@ class AuthService {
   async resetPassword({ token, newPassword }) {
     try {
       const payload = this.verifyJWTToken(token);
-      
+
       if (payload.type !== 'password_reset') {
         throw new Error('Invalid reset token');
       }
@@ -707,7 +725,7 @@ class AuthService {
       }
 
       // Password reset handled by Firebase Auth
-      await user.update({ 
+      await user.update({
         updated_at: new Date()
       });
 
@@ -717,6 +735,18 @@ class AuthService {
       };
     } catch (error) {
       throw error;
+    }
+  }
+
+  // Session cleanup - updated to handle both user and player sessions
+  async cleanupExpiredSessions() {
+    try {
+      const cleanedCount = await models.UserSession.cleanupExpired();
+      if (cleanedCount > 0) {
+        clog(`🧹 Cleaned up ${cleanedCount} expired sessions from database`);
+      }
+    } catch (error) {
+      clog(`❌ Session cleanup error: ${error.message}`);
     }
   }
 }

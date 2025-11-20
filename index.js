@@ -110,6 +110,7 @@ import systemTemplatesRoutes from './routes/system-templates.js';
 import eduContentRoutes from './routes/eduContent.js';
 import sseRoutes from './routes/sse.js';
 import settingsRoutes from './routes/settings.js';
+import playersRoutes from './routes/players.js';
 
 const app = express();
 
@@ -187,6 +188,7 @@ app.use('/api/dashboard', hebrewContentCompressionMiddleware);
 // REMOVED: All Israeli dashboard endpoints - middleware deleted
 
 app.use('/api/auth', authRoutes);
+app.use('/api/players', playersRoutes);
 app.use('/api/entities', entityRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/functions', functionRoutes);
@@ -240,6 +242,7 @@ app.get('/api', (req, res) => {
     timestamp: new Date().toISOString(),
     endpoints: {
       auth: '/api/auth',
+      players: '/api/players',
       entities: '/api/entities',
       products: '/api/products',
       functions: '/api/functions',

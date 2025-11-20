@@ -1,7 +1,10 @@
 import AuthService from '../services/AuthService.js';
+import PlayerService from '../services/PlayerService.js';
 import { createAccessTokenConfig, logCookieConfig } from '../utils/cookieConfig.js';
+import { clog } from '../lib/utils.js';
 
 const authService = new AuthService();
+const playerService = new PlayerService();
 
 // Middleware to verify tokens
 export async function authenticateToken(req, res, next) {
@@ -200,3 +203,95 @@ export function validateApiKey(req, res, next) {
     res.status(500).json({ error: 'Authentication error' });
   }
 }
+
+// =============================================
+// UNIFIED AUTHENTICATION MIDDLEWARE (USERS & PLAYERS)
+// =============================================
+
+// Middleware to authenticate players using player_session cookie
+export async function authenticatePlayer(req, res, next) {
+  try {
+    const playerSession = req.cookies.player_session;
+
+    if (!playerSession) {
+      return res.status(401).json({ error: 'Player session required' });
+    }
+
+    // Validate player session
+    const sessionData = await playerService.validateSession(playerSession);
+
+    if (!sessionData) {
+      // Clear invalid session cookie
+      res.clearCookie('player_session');
+      return res.status(401).json({ error: 'Invalid or expired player session' });
+    }
+
+    // Get full player data
+    const player = await playerService.getPlayer(sessionData.playerId, true);
+
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+
+    // Set player data on request object
+    req.player = {
+      id: player.id,
+      privacy_code: player.privacy_code,
+      display_name: player.display_name,
+      teacher_id: player.teacher_id,
+      teacher: player.teacher,
+      achievements: player.achievements,
+      preferences: player.preferences,
+      is_online: player.is_online,
+      sessionType: 'player'
+    };
+
+    // Also set as unified entity
+    req.entity = req.player;
+    req.entityType = 'player';
+
+    clog(`🎮 Player authenticated: ${player.display_name} (${player.privacy_code})`);
+    next();
+  } catch (error) {
+    res.status(403).json({ error: error.message || 'Player authentication failed' });
+  }
+}
+
+// Optional player auth - continues if no player session provided
+export async function optionalPlayerAuth(req, res, next) {
+  try {
+    const playerSession = req.cookies.player_session;
+
+    if (playerSession) {
+      try {
+        const sessionData = await playerService.validateSession(playerSession);
+        if (sessionData) {
+          const player = await playerService.getPlayer(sessionData.playerId, true);
+          if (player) {
+            req.player = {
+              id: player.id,
+              privacy_code: player.privacy_code,
+              display_name: player.display_name,
+              teacher_id: player.teacher_id,
+              teacher: player.teacher,
+              achievements: player.achievements,
+              preferences: player.preferences,
+              is_online: player.is_online,
+              sessionType: 'player'
+            };
+            req.entity = req.player;
+            req.entityType = 'player';
+          }
+        }
+      } catch (error) {
+        // Continue without player authentication if validation fails
+      }
+    }
+
+    next();
+  } catch (error) {
+    // Continue without authentication if any error occurs
+    next();
+  }
+}
+

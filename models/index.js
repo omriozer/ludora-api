@@ -48,6 +48,7 @@ import GameLobby from './GameLobby.js';
 import GameSession from './GameSession.js';
 import RefreshToken from './RefreshToken.js';
 import UserSession from './UserSession.js';
+import Player from './Player.js';
 
 // Initialize models
 const models = {
@@ -90,6 +91,7 @@ const models = {
   GameSession: GameSession(sequelize),
   RefreshToken: RefreshToken(sequelize),
   UserSession: UserSession(sequelize),
+  Player: Player(sequelize),
 };
 
 // Define associations

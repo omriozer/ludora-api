@@ -10,12 +10,21 @@ export default function(sequelize) {
     },
     user_id: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true, // Now nullable to support player sessions
       references: {
         model: 'user',
         key: 'id'
       },
-      comment: 'ID of the user this session belongs to'
+      comment: 'ID of the user this session belongs to (null for player sessions)'
+    },
+    player_id: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'player',
+        key: 'id'
+      },
+      comment: 'ID of the player this session belongs to (null for user sessions)'
     },
     expires_at: {
       type: DataTypes.DATE,
@@ -87,10 +96,18 @@ export default function(sequelize) {
   });
 
   UserSession.associate = function(models) {
-    // Each session belongs to a user
+    // Each session can belong to a user (nullable)
     UserSession.belongsTo(models.User, {
       foreignKey: 'user_id',
-      as: 'User',
+      as: 'user',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
+    });
+
+    // Each session can belong to a player (nullable)
+    UserSession.belongsTo(models.Player, {
+      foreignKey: 'player_id',
+      as: 'player',
       onDelete: 'CASCADE',
       onUpdate: 'CASCADE'
     });
@@ -98,8 +115,10 @@ export default function(sequelize) {
     // A user can have multiple sessions
     models.User.hasMany(UserSession, {
       foreignKey: 'user_id',
-      as: 'Sessions'
+      as: 'sessions'
     });
+
+    // A player can have multiple sessions (defined in Player model)
   };
 
   // Instance methods
@@ -131,6 +150,14 @@ export default function(sequelize) {
   UserSession.prototype.updateLastAccessed = async function() {
     this.last_accessed_at = new Date();
     this.updated_at = new Date();
+
+    // ✅ FIXED: Auto-extend if session expires within 2 hours
+    const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    if (this.expires_at < twoHoursFromNow) {
+      this.expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      console.log(`[UserSession] Auto-extended session ${this.id} for ${this.getSessionType()} ${this.getEntityId()}`);
+    }
+
     return await this.save();
   };
 
@@ -147,6 +174,38 @@ export default function(sequelize) {
     const values = { ...this.get() };
     // Remove or mask sensitive metadata if needed
     return values;
+  };
+
+  // Check if this is a user session
+  UserSession.prototype.isUserSession = function() {
+    return this.user_id !== null && this.player_id === null;
+  };
+
+  // Check if this is a player session
+  UserSession.prototype.isPlayerSession = function() {
+    return this.player_id !== null && this.user_id === null;
+  };
+
+  // Get session type
+  UserSession.prototype.getSessionType = function() {
+    if (this.isUserSession()) return 'user';
+    if (this.isPlayerSession()) return 'player';
+    return 'unknown';
+  };
+
+  // Get the entity ID (user_id or player_id)
+  UserSession.prototype.getEntityId = function() {
+    return this.user_id || this.player_id;
+  };
+
+  // Get session entity with associations
+  UserSession.prototype.getEntity = async function() {
+    if (this.isUserSession()) {
+      return await this.getUser();
+    } else if (this.isPlayerSession()) {
+      return await this.getPlayer();
+    }
+    return null;
   };
 
   // Class methods
@@ -174,14 +233,22 @@ export default function(sequelize) {
     });
   };
 
-  // Cleanup expired sessions
+  // Cleanup expired sessions with grace period for recently accessed sessions
   UserSession.cleanupExpired = async function() {
     const now = new Date();
+    // ✅ FIXED: Add 2-hour grace period - only delete sessions inactive for 2+ hours
+    const gracePeriodAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
     const deletedCount = await this.destroy({
       where: {
-        expires_at: { [sequelize.Sequelize.Op.lt]: now }
+        [sequelize.Sequelize.Op.and]: [
+          { expires_at: { [sequelize.Sequelize.Op.lt]: now } },
+          { last_accessed_at: { [sequelize.Sequelize.Op.lt]: gracePeriodAgo } }
+        ]
       }
     });
+
+    console.log(`[UserSession] Cleanup: Deleted ${deletedCount} expired sessions (with 2-hour grace period)`);
     return deletedCount;
   };
 
@@ -207,6 +274,104 @@ export default function(sequelize) {
     );
 
     return updatedCount;
+  };
+
+  // Find all active sessions for a player
+  UserSession.findPlayerActiveSessions = async function(playerId) {
+    const now = new Date();
+    return await this.findAll({
+      where: {
+        player_id: playerId,
+        is_active: true,
+        expires_at: { [sequelize.Sequelize.Op.gt]: now },
+        invalidated_at: null
+      },
+      order: [['last_accessed_at', 'DESC']]
+    });
+  };
+
+  // Invalidate all sessions for a player
+  UserSession.invalidatePlayerSessions = async function(playerId, exceptSessionId = null) {
+    const where = {
+      player_id: playerId,
+      is_active: true,
+      invalidated_at: null
+    };
+
+    if (exceptSessionId) {
+      where.id = { [sequelize.Sequelize.Op.ne]: exceptSessionId };
+    }
+
+    const [updatedCount] = await this.update(
+      {
+        is_active: false,
+        invalidated_at: new Date(),
+        updated_at: new Date()
+      },
+      { where }
+    );
+
+    return updatedCount;
+  };
+
+  // Create user session
+  UserSession.createUserSession = async function(sessionId, userId, expiresAt, metadata = {}) {
+    return await this.create({
+      id: sessionId,
+      user_id: userId,
+      player_id: null,
+      expires_at: expiresAt,
+      metadata: metadata,
+      is_active: true,
+      last_accessed_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date()
+    });
+  };
+
+  // Create player session
+  UserSession.createPlayerSession = async function(sessionId, playerId, expiresAt, metadata = {}) {
+    return await this.create({
+      id: sessionId,
+      user_id: null,
+      player_id: playerId,
+      expires_at: expiresAt,
+      metadata: metadata,
+      is_active: true,
+      last_accessed_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date()
+    });
+  };
+
+  // Find session with entity (user or player) included
+  UserSession.findSessionWithEntity = async function(sessionId) {
+    return await this.findByPk(sessionId, {
+      include: [
+        { model: sequelize.models.User, as: 'user' },
+        { model: sequelize.models.Player, as: 'player' }
+      ]
+    });
+  };
+
+  // Find active sessions for entity (user or player)
+  UserSession.findEntityActiveSessions = async function(entityType, entityId) {
+    if (entityType === 'user') {
+      return await this.findUserActiveSessions(entityId);
+    } else if (entityType === 'player') {
+      return await this.findPlayerActiveSessions(entityId);
+    }
+    return [];
+  };
+
+  // Invalidate all sessions for entity (user or player)
+  UserSession.invalidateEntitySessions = async function(entityType, entityId, exceptSessionId = null) {
+    if (entityType === 'user') {
+      return await this.invalidateUserSessions(entityId, exceptSessionId);
+    } else if (entityType === 'player') {
+      return await this.invalidatePlayerSessions(entityId, exceptSessionId);
+    }
+    return 0;
   };
 
   return UserSession;
