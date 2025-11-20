@@ -119,6 +119,14 @@ async function getGamesWithProducts(userId, userRole) {
       // Continue with empty lobbies array if fetch fails
     }
 
+    // DEBUG: Log game and product data
+    console.log(`🔍 [DEBUG] Game ${game.id} - Product data:`, {
+      hasProduct: !!product,
+      productTitle: product?.title,
+      productName: product?.name,
+      productId: product?.id
+    });
+
     return {
       ...gameData,
       product: product ? product.toJSON() : null,
@@ -178,7 +186,11 @@ router.get('/', async (req, res) => {
   try {
     const { user } = req;
 
+    console.log(`🔍 [DEBUG] GET /api/games called by user ${user.id} (${user.role})`);
+
     const gamesWithProducts = await getGamesWithProducts(user.id, user.role);
+
+    console.log(`🔍 [DEBUG] Returning ${gamesWithProducts.length} games to frontend`);
 
     res.json(gamesWithProducts);
   } catch (error) {

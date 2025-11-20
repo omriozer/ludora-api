@@ -15,16 +15,10 @@ class AuthService {
     this.jwtSecret = process.env.JWT_SECRET;
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
 
-    // In-memory refresh token store for development
-    this.refreshTokenStore = new Map();
-
-    // In-memory session store for active user sessions
-    this.sessionStore = new Map();
-
     // Clean up expired tokens and sessions every hour
     this.cleanupInterval = setInterval(async () => {
       await this.cleanupExpiredTokens();
-      this.cleanupExpiredSessions();
+      await this.cleanupExpiredSessions();
     }, 60 * 60 * 1000);
   }
 
@@ -235,145 +229,175 @@ class AuthService {
   // Session Management Methods
 
   // Create a new user session
-  createSession(userId, metadata = {}) {
+  async createSession(userId, metadata = {}) {
     const sessionId = generateId();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 24 hours
 
     const sessionData = {
-      sessionId,
-      userId,
-      createdAt: now,
-      lastAccessedAt: now,
-      expiresAt,
-      isActive: true,
-      // Optional metadata for tracking and analytics
+      id: sessionId,
+      user_id: userId,
+      expires_at: expiresAt,
+      last_accessed_at: now,
+      is_active: true,
       metadata: {
         userAgent: metadata.userAgent || 'Unknown',
         ipAddress: metadata.ipAddress || 'Unknown',
         loginMethod: metadata.loginMethod || 'email_password', // email_password, firebase, etc.
         ...metadata
-      }
+      },
+      created_at: now,
+      updated_at: now
     };
 
-    this.sessionStore.set(sessionId, sessionData);
+    await models.UserSession.create(sessionData);
     clog(`🔐 Session created: ${sessionId} for user ${userId}`);
 
     return sessionId;
   }
 
   // Validate and refresh a session
-  validateSession(sessionId) {
-    const session = this.sessionStore.get(sessionId);
+  async validateSession(sessionId) {
+    try {
+      const session = await models.UserSession.findByPk(sessionId);
 
-    if (!session) {
+      if (!session) {
+        return null;
+      }
+
+      // Check if session is active (not expired, not invalidated, and is_active flag is true)
+      if (!session.isActive()) {
+        // Clean up expired/inactive session
+        await session.destroy();
+        return null;
+      }
+
+      // Update last accessed time
+      await session.updateLastAccessed();
+
+      return {
+        sessionId: session.id,
+        userId: session.user_id,
+        createdAt: session.created_at,
+        lastAccessedAt: session.last_accessed_at,
+        expiresAt: session.expires_at,
+        isActive: session.is_active,
+        metadata: session.metadata
+      };
+    } catch (error) {
+      clog(`❌ Session validation error: ${error.message}`);
       return null;
     }
-
-    const now = new Date();
-
-    // Check if session is expired
-    if (now > session.expiresAt || !session.isActive) {
-      this.sessionStore.delete(sessionId);
-      return null;
-    }
-
-    // Update last accessed time
-    session.lastAccessedAt = now;
-    this.sessionStore.set(sessionId, session);
-
-    return session;
   }
 
   // Invalidate a specific session
-  invalidateSession(sessionId) {
-    const session = this.sessionStore.get(sessionId);
-    if (session) {
-      session.isActive = false;
-      this.sessionStore.set(sessionId, session);
-      clog(`🔐 Session invalidated: ${sessionId}`);
+  async invalidateSession(sessionId) {
+    try {
+      const session = await models.UserSession.findByPk(sessionId);
+      if (session) {
+        await session.invalidate();
+        clog(`🔐 Session invalidated: ${sessionId}`);
+      }
+    } catch (error) {
+      clog(`❌ Session invalidation error: ${error.message}`);
     }
   }
 
   // Invalidate all sessions for a user
-  invalidateUserSessions(userId) {
-    let invalidatedCount = 0;
-    for (const [sessionId, session] of this.sessionStore.entries()) {
-      if (session.userId === userId && session.isActive) {
-        session.isActive = false;
-        this.sessionStore.set(sessionId, session);
-        invalidatedCount++;
-      }
+  async invalidateUserSessions(userId) {
+    try {
+      const invalidatedCount = await models.UserSession.invalidateUserSessions(userId);
+      clog(`🔐 Invalidated ${invalidatedCount} sessions for user ${userId}`);
+      return invalidatedCount;
+    } catch (error) {
+      clog(`❌ User sessions invalidation error: ${error.message}`);
+      return 0;
     }
-    clog(`🔐 Invalidated ${invalidatedCount} sessions for user ${userId}`);
-    return invalidatedCount;
   }
 
   // Get active sessions for a user
-  getUserSessions(userId) {
-    const userSessions = [];
-    for (const [sessionId, session] of this.sessionStore.entries()) {
-      if (session.userId === userId && session.isActive && new Date() <= session.expiresAt) {
-        userSessions.push({
-          sessionId,
-          createdAt: session.createdAt,
-          lastAccessedAt: session.lastAccessedAt,
-          expiresAt: session.expiresAt,
-          metadata: session.metadata
-        });
-      }
+  async getUserSessions(userId) {
+    try {
+      const sessions = await models.UserSession.findUserActiveSessions(userId);
+      return sessions.map(session => ({
+        sessionId: session.id,
+        createdAt: session.created_at,
+        lastAccessedAt: session.last_accessed_at,
+        expiresAt: session.expires_at,
+        metadata: session.metadata
+      }));
+    } catch (error) {
+      clog(`❌ Get user sessions error: ${error.message}`);
+      return [];
     }
-    return userSessions;
   }
 
   // Get session statistics
-  getSessionStats() {
-    const now = new Date();
-    let activeSessions = 0;
-    let expiredSessions = 0;
-    let totalSessions = 0;
-    const userCounts = new Map();
+  async getSessionStats() {
+    try {
+      const now = new Date();
 
-    for (const [sessionId, session] of this.sessionStore.entries()) {
-      totalSessions++;
+      // Get counts from database
+      const [activeSessions, expiredSessions, totalSessions, uniqueUsers] = await Promise.all([
+        models.UserSession.count({
+          where: {
+            is_active: true,
+            expires_at: { [models.Sequelize.Op.gt]: now },
+            invalidated_at: null
+          }
+        }),
+        models.UserSession.count({
+          where: {
+            [models.Sequelize.Op.or]: [
+              { is_active: false },
+              { expires_at: { [models.Sequelize.Op.lte]: now } },
+              { invalidated_at: { [models.Sequelize.Op.ne]: null } }
+            ]
+          }
+        }),
+        models.UserSession.count(),
+        models.UserSession.count({
+          distinct: true,
+          col: 'user_id',
+          where: {
+            is_active: true,
+            expires_at: { [models.Sequelize.Op.gt]: now },
+            invalidated_at: null
+          }
+        })
+      ]);
 
-      if (!session.isActive) {
-        expiredSessions++;
-      } else if (now > session.expiresAt) {
-        expiredSessions++;
-      } else {
-        activeSessions++;
-
-        // Count sessions per user
-        const count = userCounts.get(session.userId) || 0;
-        userCounts.set(session.userId, count + 1);
-      }
+      return {
+        totalSessions,
+        activeSessions,
+        expiredSessions,
+        uniqueActiveUsers: uniqueUsers,
+        averageSessionsPerUser: uniqueUsers > 0 ? activeSessions / uniqueUsers : 0,
+        timestamp: now
+      };
+    } catch (error) {
+      clog(`❌ Session stats error: ${error.message}`);
+      return {
+        totalSessions: 0,
+        activeSessions: 0,
+        expiredSessions: 0,
+        uniqueActiveUsers: 0,
+        averageSessionsPerUser: 0,
+        timestamp: new Date()
+      };
     }
-
-    return {
-      totalSessions,
-      activeSessions,
-      expiredSessions,
-      uniqueActiveUsers: userCounts.size,
-      averageSessionsPerUser: userCounts.size > 0 ? activeSessions / userCounts.size : 0,
-      timestamp: now
-    };
   }
 
   // Cleanup expired sessions
-  cleanupExpiredSessions() {
-    const now = new Date();
-    let cleanedCount = 0;
+  async cleanupExpiredSessions() {
+    try {
+      const cleanedCount = await models.UserSession.cleanupExpired();
 
-    for (const [sessionId, session] of this.sessionStore.entries()) {
-      if (now > session.expiresAt || !session.isActive) {
-        this.sessionStore.delete(sessionId);
-        cleanedCount++;
+      if (cleanedCount > 0) {
+        clog(`🧹 Cleaned up ${cleanedCount} expired sessions from database`);
       }
-    }
-
-    if (cleanedCount > 0) {
-      clog(`🧹 Cleaned up ${cleanedCount} expired sessions`);
+    } catch (error) {
+      clog(`❌ Session cleanup error: ${error.message}`);
     }
   }
 
@@ -410,7 +434,7 @@ class AuthService {
       });
 
       // Create user session with metadata
-      const sessionId = this.createSession(user.id, {
+      const sessionId = await this.createSession(user.id, {
         ...sessionMetadata,
         loginMethod: 'registration'
       });
@@ -444,11 +468,11 @@ class AuthService {
     try {
       if (sessionId) {
         // Invalidate specific session
-        this.invalidateSession(sessionId);
+        await this.invalidateSession(sessionId);
         clog(`🚪 User ${userId} logged out from session ${sessionId}`);
       } else {
         // Invalidate all user sessions
-        const invalidatedCount = this.invalidateUserSessions(userId);
+        const invalidatedCount = await this.invalidateUserSessions(userId);
         clog(`🚪 User ${userId} logged out from ${invalidatedCount} sessions`);
       }
 

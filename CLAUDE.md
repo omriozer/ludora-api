@@ -55,7 +55,7 @@ await models.Game.findOne({ where: { id: gameId } });  // Redundant!
 
 ## 2. DATABASE PATTERNS
 
-### Model Definitions (41 total models)
+### Model Definitions (42 total models)
 
 **Product Entities (use with EntityService):**
 - File, Game, Workshop, Course, Tool, LessonPlan
@@ -65,6 +65,9 @@ await models.Game.findOne({ where: { id: gameId } });  // Redundant!
 
 **Content Models:**
 - EduContent, EduContentUse, GameSession, GameLobby
+
+**Authentication Models (direct access):**
+- RefreshToken, UserSession
 
 **System Models:**
 - Settings, Logs, Category, SystemTemplate
@@ -272,7 +275,91 @@ const requireGameOwnership = async (req, res, next) => {
 
 ---
 
-## 5. REAL-TIME FEATURES
+## 5. SESSION MANAGEMENT SYSTEM
+
+### Database-Based Session Persistence (Nov 2025)
+
+**CRITICAL: Ludora uses FULL DATABASE PERSISTENCE for both refresh tokens AND user sessions.**
+
+```javascript
+// ✅ CORRECT: Complete database-based authentication system
+// - RefreshToken model: Persistent refresh tokens with metadata
+// - UserSession model: Persistent user sessions with lifecycle management
+// - AuthService: Database operations for all session management
+
+// ALL session operations are async and database-backed:
+const sessionId = await authService.createSession(userId, metadata);
+const session = await authService.validateSession(sessionId);
+await authService.invalidateSession(sessionId);
+await authService.invalidateUserSessions(userId);
+```
+
+### UserSession Model Usage
+
+```javascript
+// ✅ CORRECT: Database session lifecycle management
+import models from '../models/index.js';
+
+// Create persistent session
+const session = await models.UserSession.create({
+  id: sessionId,
+  user_id: userId,
+  expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+  is_active: true,
+  metadata: { userAgent, ipAddress, loginMethod }
+});
+
+// Validate and refresh session
+const activeSession = await models.UserSession.findByPk(sessionId);
+if (activeSession && activeSession.isActive()) {
+  await activeSession.updateLastAccessed();
+}
+
+// Cleanup expired sessions
+const cleanedCount = await models.UserSession.cleanupExpired();
+
+// Invalidate all user sessions
+const invalidatedCount = await models.UserSession.invalidateUserSessions(userId);
+```
+
+### AuthService Session Patterns
+
+```javascript
+// ✅ CORRECT: AuthService with database sessions
+class AuthService {
+  // NO in-memory storage - everything persists to database
+
+  async createSession(userId, metadata = {}) {
+    // Creates UserSession record in database
+    const sessionData = { id: sessionId, user_id: userId, ... };
+    await models.UserSession.create(sessionData);
+    return sessionId;
+  }
+
+  async validateSession(sessionId) {
+    // Queries database for session validation
+    const session = await models.UserSession.findByPk(sessionId);
+    if (!session || !session.isActive()) return null;
+    await session.updateLastAccessed();
+    return session.toJSON();
+  }
+}
+
+// ❌ WRONG: In-memory session storage (old approach)
+// this.sessionStore = new Map(); // NEVER use in-memory for sessions
+```
+
+### Session Persistence Benefits
+
+**✅ Survives Server Restarts:** Sessions persist in database across deployments
+**✅ Handles Multiple Server Instances:** No memory conflicts between servers
+**✅ Comprehensive Analytics:** Database queries for session statistics
+**✅ Secure Lifecycle Management:** Soft deletes, expiration tracking, metadata
+**✅ Scalable Architecture:** Works with load balancers and horizontal scaling
+
+---
+
+## 6. REAL-TIME FEATURES
 
 ### Server-Sent Events (SSE) Implementation
 ```javascript
@@ -478,6 +565,28 @@ try {
 } catch (error) {
   await transaction.rollback();
   throw error;
+}
+```
+
+### ❌ In-Memory Session Storage
+```javascript
+// ❌ WRONG: In-memory session storage (lost on server restart)
+class AuthService {
+  constructor() {
+    this.sessionStore = new Map(); // ❌ NEVER use in-memory for sessions
+    this.refreshTokenStore = new Map(); // ❌ NEVER use in-memory for tokens
+  }
+}
+
+// ✅ CORRECT: Database-backed session persistence
+class AuthService {
+  async createSession(userId, metadata) {
+    await models.UserSession.create(sessionData); // ✅ Database persistence
+  }
+
+  async validateSession(sessionId) {
+    return await models.UserSession.findByPk(sessionId); // ✅ Database query
+  }
 }
 ```
 

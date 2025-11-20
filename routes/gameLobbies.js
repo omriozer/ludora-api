@@ -610,10 +610,10 @@ router.post('/game-lobbies/join-by-code',
       cerror('❌ Failed to join lobby by code:', error);
 
       if (error.message.includes('not open for joining')) {
-        return res.status(400).json({ error: 'Lobby is not open for joining' });
+        return res.status(403).json({ error: 'Lobby is not open for joining' });
       }
       if (error.message.includes('expired')) {
-        return res.status(400).json({ error: 'Lobby has expired' });
+        return res.status(403).json({ error: 'Lobby has expired' });
       }
 
       res.status(500).json({
@@ -650,7 +650,7 @@ router.post('/game-lobbies/:lobbyId/join',
       if (!lobby.canJoin || !lobby.canJoin()) {
         const status = GameLobbyService.computeStatus(lobby);
         await transaction.rollback();
-        return res.status(400).json({
+        return res.status(403).json({
           error: `Lobby is not open for joining (status: ${status})`
         });
       }
@@ -787,7 +787,7 @@ router.post('/game-lobbies/:lobbyId/join',
       cerror('❌ Failed to join lobby:', error);
 
       if (error.message.includes('not open for joining')) {
-        return res.status(400).json({ error: 'Lobby is not open for joining' });
+        return res.status(403).json({ error: 'Lobby is not open for joining' });
       }
 
       res.status(500).json({
