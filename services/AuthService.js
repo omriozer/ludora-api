@@ -228,30 +228,21 @@ class AuthService {
 
   // Session Management Methods
 
-  // Create a new user session
-  async createSession(userId, metadata = {}) {
+  // Create a new user session with portal context
+  async createSession(userId, metadata = {}, portal = 'teacher') {
     const sessionId = generateId();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 24 hours
 
-    const sessionData = {
-      id: sessionId,
-      user_id: userId,
-      expires_at: expiresAt,
-      last_accessed_at: now,
-      is_active: true,
-      metadata: {
-        userAgent: metadata.userAgent || 'Unknown',
-        ipAddress: metadata.ipAddress || 'Unknown',
-        loginMethod: metadata.loginMethod || 'email_password', // email_password, firebase, etc.
-        ...metadata
-      },
-      created_at: now,
-      updated_at: now
-    };
+    // Use the UserSession model's createUserSession method to include portal
+    await models.UserSession.createUserSession(sessionId, userId, expiresAt, {
+      userAgent: metadata.userAgent || 'Unknown',
+      ipAddress: metadata.ipAddress || 'Unknown',
+      loginMethod: metadata.loginMethod || 'email_password', // email_password, firebase, etc.
+      ...metadata
+    }, portal);
 
-    await models.UserSession.create(sessionData);
-    clog(`🔐 Session created: ${sessionId} for user ${userId}`);
+    clog(`🔐 Session created: ${sessionId} for user ${userId} in portal: ${portal}`);
 
     return sessionId;
   }
@@ -402,6 +393,78 @@ class AuthService {
     }
   }
 
+  // Portal-aware session management methods
+
+  // Invalidate all sessions for a user in a specific portal
+  async invalidateUserPortalSessions(userId, portal, exceptSessionId = null) {
+    try {
+      const invalidatedCount = await models.UserSession.invalidateUserSessionsByPortal(userId, portal, exceptSessionId);
+      clog(`🔐 Invalidated ${invalidatedCount} ${portal} portal sessions for user ${userId}`);
+      return invalidatedCount;
+    } catch (error) {
+      clog(`❌ User portal sessions invalidation error: ${error.message}`);
+      return 0;
+    }
+  }
+
+  // Check if user has active sessions in a specific portal
+  async hasActivePortalSession(userId, portal) {
+    try {
+      return await models.UserSession.hasActivePortalSession(userId, portal);
+    } catch (error) {
+      clog(`❌ Portal session check error: ${error.message}`);
+      return false;
+    }
+  }
+
+  // Get active sessions for a user in a specific portal
+  async getUserPortalSessions(userId, portal) {
+    try {
+      const sessions = await models.UserSession.findUserActiveSessionsByPortal(userId, portal);
+      return sessions.map(session => ({
+        sessionId: session.id,
+        portal: session.portal,
+        createdAt: session.created_at,
+        lastAccessedAt: session.last_accessed_at,
+        expiresAt: session.expires_at,
+        metadata: session.metadata
+      }));
+    } catch (error) {
+      clog(`❌ Get user portal sessions error: ${error.message}`);
+      return [];
+    }
+  }
+
+  // Logout user from specific portal
+  async logoutUserFromPortal(userId, portal, sessionId = null, refreshTokenId = null) {
+    try {
+      if (sessionId) {
+        // Invalidate specific session (only if it belongs to the portal)
+        const session = await models.UserSession.findByPk(sessionId);
+        if (session && session.isPortalSession(portal)) {
+          await this.invalidateSession(sessionId);
+          clog(`🚪 User ${userId} logged out from ${portal} portal session ${sessionId}`);
+        }
+      } else {
+        // Invalidate all user sessions for this portal
+        const invalidatedCount = await this.invalidateUserPortalSessions(userId, portal);
+        clog(`🚪 User ${userId} logged out from ${invalidatedCount} ${portal} portal sessions`);
+      }
+
+      if (refreshTokenId) {
+        // Revoke specific refresh token
+        await this.revokeRefreshToken(refreshTokenId);
+      }
+
+      return {
+        success: true,
+        message: `Successfully logged out from ${portal} portal`
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
   // Cleanup expired sessions
   async cleanupExpiredSessions() {
     try {
@@ -420,7 +483,7 @@ class AuthService {
   }
 
   // Register new user
-  async registerUser({ email, password, fullName, role = 'user' }, sessionMetadata = {}) {
+  async registerUser({ email, password, fullName, role = 'user' }, sessionMetadata = {}, portal = 'teacher') {
     try {
       // Validate input
       if (!email || !password) {
@@ -451,11 +514,11 @@ class AuthService {
         updated_at: new Date()
       });
 
-      // Create user session with metadata
+      // Create user session with metadata and portal context
       const sessionId = await this.createSession(user.id, {
         ...sessionMetadata,
         loginMethod: 'registration'
-      });
+      }, portal);
 
       // Generate token pair
       const { accessToken, refreshToken } = await this.generateTokenPair(user, {
@@ -735,18 +798,6 @@ class AuthService {
       };
     } catch (error) {
       throw error;
-    }
-  }
-
-  // Session cleanup - updated to handle both user and player sessions
-  async cleanupExpiredSessions() {
-    try {
-      const cleanedCount = await models.UserSession.cleanupExpired();
-      if (cleanedCount > 0) {
-        clog(`🧹 Cleaned up ${cleanedCount} expired sessions from database`);
-      }
-    } catch (error) {
-      clog(`❌ Session cleanup error: ${error.message}`);
     }
   }
 }

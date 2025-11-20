@@ -48,6 +48,12 @@ export default function(sequelize) {
       allowNull: true,
       comment: 'When this session was manually invalidated'
     },
+    portal: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'teacher',
+      comment: 'Portal context where this session was created (teacher or student)'
+    },
     metadata: {
       type: DataTypes.JSONB,
       allowNull: false,
@@ -91,6 +97,22 @@ export default function(sequelize) {
       {
         fields: ['user_id', 'expires_at'],
         name: 'idx_user_session_user_expires'
+      },
+      {
+        fields: ['portal'],
+        name: 'idx_user_session_portal'
+      },
+      {
+        fields: ['portal', 'user_id'],
+        name: 'idx_user_session_portal_user'
+      },
+      {
+        fields: ['portal', 'player_id'],
+        name: 'idx_user_session_portal_player'
+      },
+      {
+        fields: ['portal', 'is_active'],
+        name: 'idx_user_session_portal_active'
       }
     ],
   });
@@ -315,11 +337,12 @@ export default function(sequelize) {
   };
 
   // Create user session
-  UserSession.createUserSession = async function(sessionId, userId, expiresAt, metadata = {}) {
+  UserSession.createUserSession = async function(sessionId, userId, expiresAt, metadata = {}, portal = 'teacher') {
     return await this.create({
       id: sessionId,
       user_id: userId,
       player_id: null,
+      portal: portal,
       expires_at: expiresAt,
       metadata: metadata,
       is_active: true,
@@ -330,11 +353,12 @@ export default function(sequelize) {
   };
 
   // Create player session
-  UserSession.createPlayerSession = async function(sessionId, playerId, expiresAt, metadata = {}) {
+  UserSession.createPlayerSession = async function(sessionId, playerId, expiresAt, metadata = {}, portal = 'student') {
     return await this.create({
       id: sessionId,
       user_id: null,
       player_id: playerId,
+      portal: portal,
       expires_at: expiresAt,
       metadata: metadata,
       is_active: true,
@@ -342,6 +366,87 @@ export default function(sequelize) {
       created_at: new Date(),
       updated_at: new Date()
     });
+  };
+
+  // Portal-aware session management methods
+
+  // Find active sessions for a user in a specific portal
+  UserSession.findUserActiveSessionsByPortal = async function(userId, portal) {
+    const now = new Date();
+    return await this.findAll({
+      where: {
+        user_id: userId,
+        portal: portal,
+        is_active: true,
+        expires_at: { [sequelize.Sequelize.Op.gt]: now },
+        invalidated_at: null
+      },
+      order: [['last_accessed_at', 'DESC']]
+    });
+  };
+
+  // Find active sessions for a player in a specific portal
+  UserSession.findPlayerActiveSessionsByPortal = async function(playerId, portal) {
+    const now = new Date();
+    return await this.findAll({
+      where: {
+        player_id: playerId,
+        portal: portal,
+        is_active: true,
+        expires_at: { [sequelize.Sequelize.Op.gt]: now },
+        invalidated_at: null
+      },
+      order: [['last_accessed_at', 'DESC']]
+    });
+  };
+
+  // Invalidate all sessions for a user in a specific portal
+  UserSession.invalidateUserSessionsByPortal = async function(userId, portal, exceptSessionId = null) {
+    const where = {
+      user_id: userId,
+      portal: portal,
+      is_active: true,
+      invalidated_at: null
+    };
+
+    if (exceptSessionId) {
+      where.id = { [sequelize.Sequelize.Op.ne]: exceptSessionId };
+    }
+
+    const [updatedCount] = await this.update(
+      {
+        is_active: false,
+        invalidated_at: new Date(),
+        updated_at: new Date()
+      },
+      { where }
+    );
+
+    return updatedCount;
+  };
+
+  // Check if user has active sessions in a specific portal
+  UserSession.hasActivePortalSession = async function(userId, portal) {
+    const count = await this.count({
+      where: {
+        user_id: userId,
+        portal: portal,
+        is_active: true,
+        expires_at: { [sequelize.Sequelize.Op.gt]: new Date() },
+        invalidated_at: null
+      }
+    });
+    return count > 0;
+  };
+
+  // Get portal from session
+  UserSession.prototype.getPortal = function() {
+    return this.portal || 'teacher'; // Fallback to teacher for existing sessions
+  };
+
+  // Check if session belongs to a specific portal
+  UserSession.prototype.isPortalSession = function(portal) {
+    return this.getPortal() === portal;
   };
 
   // Find session with entity (user or player) included

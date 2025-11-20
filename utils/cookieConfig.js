@@ -74,35 +74,6 @@ export function createAuthCookieConfig(options = {}) {
   return config;
 }
 
-/**
- * Create access token cookie configuration (15 minutes)
- * @returns {Object} Access token cookie configuration
- */
-export function createAccessTokenConfig() {
-  return createAuthCookieConfig({
-    maxAge: 15 * 60 * 1000 // 15 minutes
-  });
-}
-
-/**
- * Create refresh token cookie configuration (7 days)
- * @returns {Object} Refresh token cookie configuration
- */
-export function createRefreshTokenConfig() {
-  return createAuthCookieConfig({
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  });
-}
-
-/**
- * Create cookie clear configuration (for logout)
- * @returns {Object} Cookie clear configuration
- */
-export function createClearCookieConfig() {
-  return createAuthCookieConfig({
-    maxAge: 0
-  });
-}
 
 /**
  * Log cookie configuration for debugging
@@ -121,13 +92,89 @@ export function logCookieConfig(action, config) {
   }
 }
 
+/**
+ * Detect portal from request (host, origin, or referer headers)
+ * @param {Object} req - Express request object
+ * @returns {string} Portal type: 'teacher' or 'student'
+ */
+export function detectPortal(req) {
+  // Check various headers to determine portal
+  const host = req.get('host') || '';
+  const origin = req.get('origin') || '';
+  const referer = req.get('referer') || '';
+
+  // Student portal indicators
+  const studentIndicators = [
+    host.includes('my.ludora.app'),
+    origin.includes('my.ludora.app'),
+    referer.includes('my.ludora.app'),
+    host.includes('localhost:5174'), // Student portal dev port
+    origin.includes('localhost:5174'),
+    referer.includes('localhost:5174')
+  ];
+
+  if (studentIndicators.some(indicator => indicator)) {
+    return 'student';
+  }
+
+  // Default to teacher portal
+  return 'teacher';
+}
+
+/**
+ * Get portal-specific cookie names
+ * @param {string} portal - Portal type ('teacher' or 'student')
+ * @returns {Object} Object with access and refresh token cookie names
+ */
+export function getPortalCookieNames(portal) {
+  return {
+    accessToken: `${portal}_access_token`,
+    refreshToken: `${portal}_refresh_token`
+  };
+}
+
+/**
+ * Create portal-specific access token cookie configuration (15 minutes)
+ * @param {string} portal - Portal type ('teacher' or 'student')
+ * @returns {Object} Access token cookie configuration
+ */
+export function createPortalAccessTokenConfig(portal) {
+  return createAuthCookieConfig({
+    maxAge: 15 * 60 * 1000 // 15 minutes
+  });
+}
+
+/**
+ * Create portal-specific refresh token cookie configuration (7 days)
+ * @param {string} portal - Portal type ('teacher' or 'student')
+ * @returns {Object} Refresh token cookie configuration
+ */
+export function createPortalRefreshTokenConfig(portal) {
+  return createAuthCookieConfig({
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+}
+
+/**
+ * Create portal-specific cookie clear configuration (for logout)
+ * @param {string} portal - Portal type ('teacher' or 'student')
+ * @returns {Object} Cookie clear configuration
+ */
+export function createPortalClearCookieConfig(portal) {
+  return createAuthCookieConfig({
+    maxAge: 0
+  });
+}
+
 export default {
   getCookieDomain,
   getSameSitePolicy,
   getSecureSetting,
   createAuthCookieConfig,
-  createAccessTokenConfig,
-  createRefreshTokenConfig,
-  createClearCookieConfig,
-  logCookieConfig
+  logCookieConfig,
+  detectPortal,
+  getPortalCookieNames,
+  createPortalAccessTokenConfig,
+  createPortalRefreshTokenConfig,
+  createPortalClearCookieConfig
 };

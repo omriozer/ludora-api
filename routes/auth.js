@@ -5,10 +5,12 @@ import { validateBody, rateLimiters, schemas } from '../middleware/validation.js
 import AuthService from '../services/AuthService.js';
 import models from '../models/index.js';
 import {
-  createAccessTokenConfig,
-  createRefreshTokenConfig,
-  createClearCookieConfig,
-  logCookieConfig
+  logCookieConfig,
+  detectPortal,
+  getPortalCookieNames,
+  createPortalAccessTokenConfig,
+  createPortalRefreshTokenConfig,
+  createPortalClearCookieConfig
 } from '../utils/cookieConfig.js';
 
 const authService = new AuthService();
@@ -20,6 +22,9 @@ const router = express.Router();
 // Register endpoint
 router.post('/register', rateLimiters.auth, validateBody(schemas.register), async (req, res) => {
   try {
+    // Detect portal from request
+    const portal = detectPortal(req);
+
     // Collect session metadata
     const sessionMetadata = {
       userAgent: req.get('User-Agent') || 'Unknown',
@@ -27,17 +32,20 @@ router.post('/register', rateLimiters.auth, validateBody(schemas.register), asyn
       timestamp: new Date()
     };
 
-    const result = await authService.registerUser(req.body, sessionMetadata);
+    const result = await authService.registerUser(req.body, sessionMetadata, portal);
 
-    // Set access token as httpOnly cookie (15 minutes) with subdomain support
-    const accessConfig = createAccessTokenConfig();
-    logCookieConfig('Register - Access Token', accessConfig);
-    res.cookie('access_token', result.accessToken, accessConfig);
+    // Get portal-specific cookie names
+    const cookieNames = getPortalCookieNames(portal);
 
-    // Set refresh token as httpOnly cookie (7 days) with subdomain support
-    const refreshConfig = createRefreshTokenConfig();
-    logCookieConfig('Register - Refresh Token', refreshConfig);
-    res.cookie('refresh_token', result.refreshToken, refreshConfig);
+    // Set access token as httpOnly cookie (15 minutes) with portal-specific name
+    const accessConfig = createPortalAccessTokenConfig(portal);
+    logCookieConfig(`Register ${portal} - Access Token`, accessConfig);
+    res.cookie(cookieNames.accessToken, result.accessToken, accessConfig);
+
+    // Set refresh token as httpOnly cookie (7 days) with portal-specific name
+    const refreshConfig = createPortalRefreshTokenConfig(portal);
+    logCookieConfig(`Register ${portal} - Refresh Token`, refreshConfig);
+    res.cookie(cookieNames.refreshToken, result.refreshToken, refreshConfig);
 
     // Send welcome email
     try {
@@ -65,7 +73,11 @@ router.post('/register', rateLimiters.auth, validateBody(schemas.register), asyn
 // Refresh token endpoint
 router.post('/refresh', async (req, res) => {
   try {
-    const refreshToken = req.cookies.refresh_token;
+    // Detect portal from request
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
+
+    const refreshToken = req.cookies[cookieNames.refreshToken];
 
     if (!refreshToken) {
       return res.status(401).json({ error: 'Refresh token required' });
@@ -73,10 +85,10 @@ router.post('/refresh', async (req, res) => {
 
     const result = await authService.refreshAccessToken(refreshToken);
 
-    // Set new access token as httpOnly cookie (15 minutes) with subdomain support
-    const accessConfig = createAccessTokenConfig();
-    logCookieConfig('Refresh - Access Token', accessConfig);
-    res.cookie('access_token', result.accessToken, accessConfig);
+    // Set new access token as httpOnly cookie (15 minutes) with portal-specific name
+    const accessConfig = createPortalAccessTokenConfig(portal);
+    logCookieConfig(`Refresh ${portal} - Access Token`, accessConfig);
+    res.cookie(cookieNames.accessToken, result.accessToken, accessConfig);
 
     // Return success and user data
     res.json({
@@ -91,10 +103,14 @@ router.post('/refresh', async (req, res) => {
 // Logout endpoint
 router.post('/logout', async (req, res) => {
   try {
+    // Detect portal from request
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
+
     let userId = null;
 
-    // Get user ID from access token if possible
-    const accessToken = req.cookies.access_token;
+    // Get user ID from portal-specific access token if possible
+    const accessToken = req.cookies[cookieNames.accessToken];
     if (accessToken) {
       try {
         const tokenData = await authService.verifyToken(accessToken);
@@ -105,7 +121,7 @@ router.post('/logout', async (req, res) => {
     }
 
     // Revoke refresh token if it exists
-    const refreshToken = req.cookies.refresh_token;
+    const refreshToken = req.cookies[cookieNames.refreshToken];
     if (refreshToken) {
       try {
         // Extract token ID to revoke from store
@@ -119,18 +135,18 @@ router.post('/logout', async (req, res) => {
       }
     }
 
-    // Invalidate user sessions if we have a user ID
+    // Invalidate user sessions for this portal only if we have a user ID
     if (userId) {
-      await authService.logoutUser(userId);
+      await authService.logoutUserFromPortal(userId, portal);
     }
 
-    // Clear both httpOnly cookies with proper domain settings
-    const clearConfig = createClearCookieConfig();
-    logCookieConfig('Logout - Clear Cookies', clearConfig);
-    res.clearCookie('access_token', clearConfig);
-    res.clearCookie('refresh_token', clearConfig);
+    // Clear both httpOnly cookies with proper domain settings and portal-specific names
+    const clearConfig = createPortalClearCookieConfig(portal);
+    logCookieConfig(`Logout ${portal} - Clear Cookies`, clearConfig);
+    res.clearCookie(cookieNames.accessToken, clearConfig);
+    res.clearCookie(cookieNames.refreshToken, clearConfig);
 
-    res.json({ success: true, message: 'Logged out successfully' });
+    res.json({ success: true, message: `Logged out from ${portal} portal successfully` });
   } catch (error) {
     res.status(500).json({ error: 'Logout failed' });
   }
@@ -139,7 +155,12 @@ router.post('/logout', async (req, res) => {
 // Get current user info
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await authService.getUserByToken(req.cookies.access_token);
+    // Detect portal and get appropriate access token
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
+    const accessToken = req.cookies[cookieNames.accessToken];
+
+    const user = await authService.getUserByToken(accessToken);
     
     // Return clean user data - all from database
     res.json({
@@ -169,7 +190,12 @@ router.get('/me', authenticateToken, async (req, res) => {
 // Update current user profile
 router.put('/update-profile', authenticateToken, async (req, res) => {
   try {
-    const user = await authService.getUserByToken(req.cookies.access_token);
+    // Detect portal and get appropriate access token
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
+    const accessToken = req.cookies[cookieNames.accessToken];
+
+    const user = await authService.getUserByToken(accessToken);
     const {
       full_name,
       phone,
@@ -297,6 +323,9 @@ router.post('/verify', async (req, res) => {
       return res.status(400).json({ error: 'ID token is required' });
     }
 
+    // Detect portal from request
+    const portal = detectPortal(req);
+
     const tokenData = await authService.verifyToken(idToken);
 
     // Get the actual user from database (like loginWithEmailPassword does)
@@ -308,7 +337,7 @@ router.post('/verify', async (req, res) => {
     // Update last login (like loginWithEmailPassword does)
     await user.update({ last_login: new Date() });
 
-    // Create user session with metadata (like loginWithEmailPassword does)
+    // Create user session with metadata and portal context
     const sessionMetadata = {
       userAgent: req.get('User-Agent') || 'Unknown',
       ipAddress: req.ip || req.socket?.remoteAddress || 'Unknown',
@@ -316,20 +345,23 @@ router.post('/verify', async (req, res) => {
       loginMethod: 'firebase_google'
     };
 
-    authService.createSession(user.id, sessionMetadata);
+    authService.createSession(user.id, sessionMetadata, portal);
 
     // Generate proper access and refresh tokens using AuthService
     const result = await authService.generateTokenPair(user, sessionMetadata);
 
-    // Set access token as httpOnly cookie (15 minutes) with subdomain support
-    const accessConfig = createAccessTokenConfig();
-    logCookieConfig('Verify - Access Token', accessConfig);
-    res.cookie('access_token', result.accessToken, accessConfig);
+    // Get portal-specific cookie names
+    const cookieNames = getPortalCookieNames(portal);
 
-    // Set refresh token as httpOnly cookie (7 days) with subdomain support
-    const refreshConfig = createRefreshTokenConfig();
-    logCookieConfig('Verify - Refresh Token', refreshConfig);
-    res.cookie('refresh_token', result.refreshToken, refreshConfig);
+    // Set access token as httpOnly cookie (15 minutes) with portal-specific name
+    const accessConfig = createPortalAccessTokenConfig(portal);
+    logCookieConfig(`Verify ${portal} - Access Token`, accessConfig);
+    res.cookie(cookieNames.accessToken, result.accessToken, accessConfig);
+
+    // Set refresh token as httpOnly cookie (7 days) with portal-specific name
+    const refreshConfig = createPortalRefreshTokenConfig(portal);
+    logCookieConfig(`Verify ${portal} - Refresh Token`, refreshConfig);
+    res.cookie(cookieNames.refreshToken, result.refreshToken, refreshConfig);
 
     res.json({
       valid: true,

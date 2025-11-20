@@ -1,6 +1,11 @@
 import AuthService from '../services/AuthService.js';
 import PlayerService from '../services/PlayerService.js';
-import { createAccessTokenConfig, logCookieConfig } from '../utils/cookieConfig.js';
+import {
+  logCookieConfig,
+  detectPortal,
+  getPortalCookieNames,
+  createPortalAccessTokenConfig
+} from '../utils/cookieConfig.js';
 import { clog } from '../lib/utils.js';
 
 const authService = new AuthService();
@@ -9,7 +14,12 @@ const playerService = new PlayerService();
 // Middleware to verify tokens
 export async function authenticateToken(req, res, next) {
   try {
-    const token = req.cookies.access_token;
+    // Detect portal and get appropriate cookie names
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
+
+    // Get portal-specific token
+    const token = req.cookies[cookieNames.accessToken];
 
     if (!token) {
       return res.status(401).json({ error: 'Access token required' });
@@ -21,7 +31,7 @@ export async function authenticateToken(req, res, next) {
       return next();
     } catch (tokenError) {
       // If access token is invalid/expired, try to refresh it
-      const refreshToken = req.cookies.refresh_token;
+      const refreshToken = req.cookies[cookieNames.refreshToken];
 
       if (!refreshToken) {
         return res.status(401).json({ error: 'Session expired, please login again' });
@@ -31,10 +41,10 @@ export async function authenticateToken(req, res, next) {
         // Attempt to refresh the access token
         const refreshResult = await authService.refreshAccessToken(refreshToken);
 
-        // Set new access token cookie with subdomain support
-        const accessConfig = createAccessTokenConfig();
-        logCookieConfig('Auth Middleware - Refresh', accessConfig);
-        res.cookie('access_token', refreshResult.accessToken, accessConfig);
+        // Set new access token cookie with portal-specific name
+        const accessConfig = createPortalAccessTokenConfig(portal);
+        logCookieConfig(`Auth Middleware ${portal} - Refresh`, accessConfig);
+        res.cookie(cookieNames.accessToken, refreshResult.accessToken, accessConfig);
 
         // Verify the new token and continue
         const newTokenData = await authService.verifyToken(refreshResult.accessToken);
@@ -52,7 +62,12 @@ export async function authenticateToken(req, res, next) {
 // Optional auth middleware - continues if no token provided
 export async function optionalAuth(req, res, next) {
   try {
-    const token = req.cookies.access_token;
+    // Detect portal and get appropriate cookie names
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
+
+    // Get portal-specific token
+    const token = req.cookies[cookieNames.accessToken];
 
     if (token) {
       try {
@@ -79,7 +94,10 @@ export function requireRole(requiredRole = 'user') {
       }
 
       // Get user from database for fresh role information
-      const user = req.user.user || await authService.getUserByToken(req.cookies.access_token);
+      const portal = detectPortal(req);
+      const cookieNames = getPortalCookieNames(portal);
+      const accessToken = req.cookies[cookieNames.accessToken];
+      const user = req.user.user || await authService.getUserByToken(accessToken);
       
       authService.validatePermissions(user, requiredRole);
       req.userRecord = user; // Attach full user record
@@ -105,7 +123,10 @@ export function requireUserType(requiredUserType) {
       }
 
       // Get user from database for fresh user_type information
-      const user = req.user.user || await authService.getUserByToken(req.cookies.access_token);
+      const portal = detectPortal(req);
+      const cookieNames = getPortalCookieNames(portal);
+      const accessToken = req.cookies[cookieNames.accessToken];
+      const user = req.user.user || await authService.getUserByToken(accessToken);
       
       if (!user.user_type || user.user_type !== requiredUserType) {
         return res.status(403).json({ error: `${requiredUserType} user type required` });
