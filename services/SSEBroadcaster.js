@@ -226,6 +226,15 @@ class SSEBroadcaster {
 
     candidates.forEach(({ connectionId, connection }) => {
       try {
+        // ✅ FIXED: Check response health before sending eviction notice
+        if (connection.response.destroyed ||
+            connection.response.finished ||
+            !connection.response.writable) {
+          clog(`⚠️ Skipping eviction notice for unhealthy connection ${connectionId}`);
+          this.removeConnection(connectionId);
+          return;
+        }
+
         // Send eviction notice
         this.sendToConnection(connectionId, {
           eventType: 'connection:evicted',
@@ -293,6 +302,12 @@ class SSEBroadcaster {
         clog(`🔄 Evicted ${evicted.length} lower priority connections for new connection (priority: ${priority}, type: ${priorityType})`);
       }
 
+      // ✅ FIXED: Check response health before setting up SSE headers
+      if (response.headersSent || response.destroyed || response.finished || !response.writable) {
+        cerror(`❌ Cannot setup SSE connection ${connectionId}: Response is not writable`);
+        return false;
+      }
+
       // Setup SSE headers (let Express CORS middleware handle CORS)
       response.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -323,7 +338,7 @@ class SSEBroadcaster {
         this.subscribeToChannel(connectionId, channel);
       });
 
-      // Send welcome message
+      // Send welcome message with retry logic
       this.sendToConnection(connectionId, {
         eventType: 'connection:established',
         data: {
@@ -333,17 +348,64 @@ class SSEBroadcaster {
           priority: priority,
           priorityType: priorityType
         }
-      });
+      }, true); // ✅ FIXED: Enable welcome message retry logic
+
+      // ✅ FIXED: Enhanced error handlers for SSE response object
 
       // Handle client disconnect
       response.req.on('close', () => {
+        clog(`🔌 SSE client disconnected: ${connectionId}`);
         this.removeConnection(connectionId);
       });
 
+      // Handle request errors
       response.req.on('error', (error) => {
-        cerror(`❌ SSE connection error for ${connectionId}:`, error);
+        cerror(`❌ SSE request error for ${connectionId}:`, error);
         this.removeConnection(connectionId);
       });
+
+      // Handle response errors
+      response.on('error', (error) => {
+        cerror(`❌ SSE response error for ${connectionId}:`, error.message);
+        this.removeConnection(connectionId);
+      });
+
+      // Handle response finish/close events
+      response.on('finish', () => {
+        clog(`📤 SSE response finished for ${connectionId}`);
+        this.removeConnection(connectionId);
+      });
+
+      response.on('close', () => {
+        clog(`🔐 SSE response closed for ${connectionId}`);
+        this.removeConnection(connectionId);
+      });
+
+      // Handle pipe errors (stream failures)
+      response.on('pipe', () => {
+        clog(`🔗 SSE response pipe established for ${connectionId}`);
+      });
+
+      response.on('unpipe', () => {
+        clog(`🔓 SSE response unpipe for ${connectionId}`);
+        this.removeConnection(connectionId);
+      });
+
+      // Connection timeout handling
+      if (response.socket) {
+        response.socket.on('timeout', () => {
+          clog(`⏰ SSE socket timeout for ${connectionId}`);
+          this.removeConnection(connectionId);
+        });
+
+        response.socket.on('error', (error) => {
+          cerror(`❌ SSE socket error for ${connectionId}:`, error.message);
+          this.removeConnection(connectionId);
+        });
+
+        // Set socket timeout to detect inactive connections
+        response.socket.setTimeout(this.config.connectionTimeoutMs);
+      }
 
       clog(`✅ SSE connection added: ${connectionId} (user: ${userId}, role: ${userRole}, priority: ${priority}, type: ${priorityType})`);
       return true;
@@ -514,22 +576,59 @@ class SSEBroadcaster {
   }
 
   /**
-   * Send event to specific connection
+   * Send event to specific connection with improved error handling
    */
-  sendToConnection(connectionId, event) {
+  sendToConnection(connectionId, event, isWelcomeMessage = false) {
     const connection = this.connections.get(connectionId);
-    if (!connection || connection.response.destroyed) {
+    if (!connection) {
+      return false;
+    }
+
+    // ✅ FIXED: Enhanced response health checks
+    if (connection.response.destroyed ||
+        connection.response.finished ||
+        !connection.response.writable) {
       this.removeConnection(connectionId);
       return false;
     }
 
     try {
       const eventData = `data: ${JSON.stringify(event)}\n\n`;
-      connection.response.write(eventData);
+
+      // ✅ FIXED: Check if response can handle the write
+      const canWrite = connection.response.write(eventData);
+
+      if (!canWrite) {
+        // Response buffer is full, but don't terminate connection
+        cerror(`⚠️ Response buffer full for connection ${connectionId}, but keeping connection alive`);
+        return false;
+      }
+
       connection.lastActivity = new Date();
       return true;
     } catch (error) {
       cerror(`❌ Failed to send event to connection ${connectionId}:`, error);
+
+      // ✅ FIXED: For welcome messages, try one retry before giving up
+      if (isWelcomeMessage && !connection.welcomeRetried) {
+        connection.welcomeRetried = true;
+        clog(`🔄 Retrying welcome message for connection ${connectionId}`);
+
+        // Retry after short delay
+        setTimeout(() => {
+          this.sendToConnection(connectionId, event, true);
+        }, 100);
+        return false;
+      }
+
+      // ✅ FIXED: For non-welcome messages, don't immediately terminate
+      // Just log the error and let the connection cleanup handle it
+      if (!isWelcomeMessage) {
+        clog(`⚠️ Non-critical send failure for connection ${connectionId}, keeping connection alive`);
+        return false;
+      }
+
+      // Only remove connection if it's a failed welcome message retry
       this.removeConnection(connectionId);
       return false;
     }
@@ -685,10 +784,14 @@ class SSEBroadcaster {
 
     // Close all connections gracefully
     this.connections.forEach((connection, connectionId) => {
-      this.sendToConnection(connectionId, {
-        eventType: 'connection:closing',
-        data: { reason: 'server_shutdown' }
-      });
+      // ✅ FIXED: Check response health before sending shutdown notice
+      if (connection.response && !connection.response.destroyed &&
+          !connection.response.finished && connection.response.writable) {
+        this.sendToConnection(connectionId, {
+          eventType: 'connection:closing',
+          data: { reason: 'server_shutdown' }
+        });
+      }
       this.removeConnection(connectionId);
     });
 
