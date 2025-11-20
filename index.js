@@ -288,6 +288,15 @@ async function startServer() {
     const DatabaseInitService = await import('./services/DatabaseInitService.js');
     await DatabaseInitService.default.initialize();
 
+    // Extend recently active sessions to prevent logout during deploy
+    try {
+      const models = await import('./models/index.js');
+      await models.default.UserSession.extendRecentlyActiveSessions();
+    } catch (sessionError) {
+      console.warn('⚠️ Failed to extend active sessions during startup:', sessionError.message);
+      // Don't fail server startup if session extension fails
+    }
+
     const server = app.listen(PORT, () => {
       console.log(`Ludora API Server running on port ${PORT} (${env})`);
     });

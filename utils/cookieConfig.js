@@ -8,7 +8,7 @@
  * @returns {string|undefined} Cookie domain or undefined for development
  */
 export function getCookieDomain() {
-  const environment = process.env.ENVIRONMENT;
+  const environment = process.env.ENVIRONMENT || 'development';
 
   switch (environment) {
     case 'production':
@@ -29,7 +29,7 @@ export function getCookieDomain() {
  * @returns {string} sameSite setting
  */
 export function getSameSitePolicy() {
-  const environment = process.env.ENVIRONMENT;
+  const environment = process.env.ENVIRONMENT || 'development';
 
   switch (environment) {
     case 'production':

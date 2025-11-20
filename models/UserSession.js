@@ -368,6 +368,43 @@ export default function(sequelize) {
     });
   };
 
+  // Deployment-safe session extension - called during server startup
+  UserSession.extendRecentlyActiveSessions = async function() {
+    const now = new Date();
+    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+
+    // Find sessions that:
+    // 1. Are currently active
+    // 2. Were accessed within the last 4 hours
+    // 3. Would expire soon (within 6 hours to catch edge cases)
+    const sixHoursFromNow = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+
+    const sessionsToExtend = await this.findAll({
+      where: {
+        is_active: true,
+        invalidated_at: null,
+        last_accessed_at: { [sequelize.Sequelize.Op.gt]: fourHoursAgo },
+        expires_at: { [sequelize.Sequelize.Op.lt]: sixHoursFromNow }
+      }
+    });
+
+    const extendedCount = await this.update(
+      {
+        expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000), // Extend to 24 hours from now
+        last_accessed_at: now, // Mark as recently accessed to prevent cleanup
+        updated_at: now
+      },
+      {
+        where: {
+          id: { [sequelize.Sequelize.Op.in]: sessionsToExtend.map(s => s.id) }
+        }
+      }
+    );
+
+    console.log(`[UserSession] Startup: Extended ${extendedCount} recently active sessions to prevent logout during deploy`);
+    return extendedCount;
+  };
+
   // Portal-aware session management methods
 
   // Find active sessions for a user in a specific portal

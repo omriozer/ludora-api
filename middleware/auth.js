@@ -20,39 +20,39 @@ export async function authenticateToken(req, res, next) {
 
     // Get portal-specific token
     const token = req.cookies[cookieNames.accessToken];
+    const refreshToken = req.cookies[cookieNames.refreshToken];
 
-    if (!token) {
-      return res.status(401).json({ error: 'Access token required' });
+    // Try to authenticate with access token first (if present)
+    if (token) {
+      try {
+        const tokenData = await authService.verifyToken(token);
+        req.user = tokenData;
+        return next();
+      } catch (tokenError) {
+        // Access token is invalid/expired, fall through to refresh token logic below
+      }
+    }
+
+    // If access token is missing or invalid, try to refresh using refresh token
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Session expired, please login again' });
     }
 
     try {
-      const tokenData = await authService.verifyToken(token);
-      req.user = tokenData;
-      return next();
-    } catch (tokenError) {
-      // If access token is invalid/expired, try to refresh it
-      const refreshToken = req.cookies[cookieNames.refreshToken];
+      // Attempt to refresh the access token
+      const refreshResult = await authService.refreshAccessToken(refreshToken);
 
-      if (!refreshToken) {
-        return res.status(401).json({ error: 'Session expired, please login again' });
-      }
+      // Set new access token cookie with portal-specific name
+      const accessConfig = createPortalAccessTokenConfig(portal);
+      logCookieConfig(`Auth Middleware ${portal} - Refresh`, accessConfig);
+      res.cookie(cookieNames.accessToken, refreshResult.accessToken, accessConfig);
 
-      try {
-        // Attempt to refresh the access token
-        const refreshResult = await authService.refreshAccessToken(refreshToken);
-
-        // Set new access token cookie with portal-specific name
-        const accessConfig = createPortalAccessTokenConfig(portal);
-        logCookieConfig(`Auth Middleware ${portal} - Refresh`, accessConfig);
-        res.cookie(cookieNames.accessToken, refreshResult.accessToken, accessConfig);
-
-        // Verify the new token and continue
-        const newTokenData = await authService.verifyToken(refreshResult.accessToken);
-        req.user = newTokenData;
-        next();
-      } catch (refreshError) {
-        return res.status(401).json({ error: 'Session expired, please login again' });
-      }
+      // Verify the new token and continue
+      const newTokenData = await authService.verifyToken(refreshResult.accessToken);
+      req.user = newTokenData;
+      next();
+    } catch (refreshError) {
+      return res.status(401).json({ error: 'Session expired, please login again' });
     }
   } catch (error) {
     res.status(403).json({ error: error.message || 'Invalid or expired token' });
