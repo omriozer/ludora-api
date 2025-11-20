@@ -430,6 +430,154 @@ router.delete('/game-sessions/:sessionId/participants/:participantId',
   }
 );
 
+/**
+ * POST /api/game-sessions/:sessionId/participants/teacher-add
+ * Add a participant to a session (teacher-facing with authentication)
+ */
+router.post('/game-sessions/:sessionId/participants/teacher-add',
+  authenticateToken,
+  validateAddParticipant,
+  async (req, res) => {
+    const transaction = await models.sequelize.transaction();
+    try {
+      const { sessionId } = req.validatedParams;
+      const participantData = req.validatedData;
+      const user = req.user;
+
+      clog(`👤 Teacher adding participant to session ${sessionId} by user ${user.id}`);
+
+      // Validate access - only lobby owner/host can add participants
+      const { session, lobby, hasAccess } = await validateSessionAccess(
+        sessionId,
+        user.id,
+        user.role,
+        transaction
+      );
+
+      const canAddParticipants =
+        lobby.owner_user_id === user.id ||
+        lobby.host_user_id === user.id ||
+        user.role === 'admin' ||
+        user.role === 'sysadmin';
+
+      if (!canAddParticipants) {
+        await transaction.rollback();
+        return res.status(403).json({
+          error: 'Access denied: Only lobby owner or host can add participants'
+        });
+      }
+
+      // Add participant using service
+      const updatedSession = await GameSessionService.addParticipant(
+        sessionId,
+        participantData,
+        user.id, // Use teacher's ID as the adding user
+        transaction
+      );
+
+      await transaction.commit();
+      res.status(200).json({
+        message: 'Participant added successfully',
+        session: updatedSession
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      cerror('❌ Failed to add participant (teacher):', error);
+
+      if (error.message.includes('Session not found')) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      if (error.message.includes('Session is full')) {
+        return res.status(400).json({ error: 'Session is full' });
+      }
+      if (error.message.includes('already in session')) {
+        return res.status(409).json({ error: 'User already in session' });
+      }
+      if (error.message.includes('Guest users are not allowed')) {
+        return res.status(403).json({ error: 'Guest users are not allowed in this session' });
+      }
+
+      res.status(500).json({
+        error: 'Failed to add participant',
+        message: error.message
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /api/game-sessions/:sessionId/participants/:participantId/teacher-remove
+ * Remove a participant from a session (teacher-facing with authentication)
+ */
+router.delete('/game-sessions/:sessionId/participants/:participantId/teacher-remove',
+  authenticateToken,
+  validateRemoveParticipant,
+  async (req, res) => {
+    const transaction = await models.sequelize.transaction();
+    try {
+      const { sessionId, participantId } = req.validatedParams;
+      const user = req.user;
+
+      clog(`👤 Teacher removing participant ${participantId} from session ${sessionId} by user ${user.id}`);
+
+      // Validate access - only lobby owner/host can remove participants
+      const { session, lobby } = await validateSessionAccess(
+        sessionId,
+        user.id,
+        user.role,
+        transaction
+      );
+
+      const canRemoveParticipants =
+        lobby.owner_user_id === user.id ||
+        lobby.host_user_id === user.id ||
+        user.role === 'admin' ||
+        user.role === 'sysadmin';
+
+      if (!canRemoveParticipants) {
+        await transaction.rollback();
+        return res.status(403).json({
+          error: 'Access denied: Only lobby owner or host can remove participants'
+        });
+      }
+
+      // Remove participant using service
+      const updatedSession = await GameSessionService.removeParticipant(
+        sessionId,
+        participantId,
+        user.id,
+        transaction
+      );
+
+      await transaction.commit();
+      res.status(200).json({
+        message: 'Participant removed successfully',
+        session: updatedSession
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      cerror('❌ Failed to remove participant (teacher):', error);
+
+      if (error.message.includes('Session not found')) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      if (error.message.includes('Participant not found')) {
+        return res.status(404).json({ error: 'Participant not found' });
+      }
+      if (error.message.includes('Access denied')) {
+        return res.status(403).json({ error: error.message });
+      }
+
+      res.status(500).json({
+        error: 'Failed to remove participant',
+        message: error.message
+      });
+    }
+  }
+);
+
 // =============================================
 // GAME STATE MANAGEMENT ROUTES
 // =============================================

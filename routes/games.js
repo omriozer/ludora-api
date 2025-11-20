@@ -153,7 +153,14 @@ router.get('/teacher/:code', checkStudentsAccess, async (req, res) => {
 
     const gamesWithProducts = await getGamesWithProducts(teacher.id, teacher.role);
 
-    res.json(gamesWithProducts);
+    // Return response in a format that includes teacher info for consistency with old endpoint
+    res.json({
+      teacher: {
+        name: teacher.full_name,
+        invitation_code: code
+      },
+      games: gamesWithProducts
+    });
   } catch (error) {
     res.status(500).json({
       error: 'Failed to fetch teacher games',

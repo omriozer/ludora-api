@@ -581,22 +581,28 @@ router.post('/game-lobbies/join-by-code',
         });
       }
 
-      // For this endpoint, we just return the lobby info for the frontend to handle
-      // The actual joining happens when a session is created or when the user
-      // explicitly joins a specific session
-
-      await transaction.commit();
-
-      res.status(200).json({
-        message: 'Lobby found and available for joining',
-        lobby: {
+      // Get detailed lobby info including sessions for manual_selection
+      let lobbyResponse;
+      if (lobby.settings.invitation_type === 'manual_selection') {
+        // For manual selection, include session data so students can choose
+        lobbyResponse = await GameLobbyService.getLobbyDetails(lobby.id, transaction);
+      } else {
+        // For other types, return basic info
+        lobbyResponse = {
           id: lobby.id,
           lobby_code: lobby.lobby_code,
           game: lobby.game,
           status: GameLobbyService.computeStatus(lobby),
           settings: lobby.settings,
           can_join: true
-        }
+        };
+      }
+
+      await transaction.commit();
+
+      res.status(200).json({
+        message: 'Lobby found and available for joining',
+        lobby: lobbyResponse
       });
 
     } catch (error) {
@@ -677,36 +683,21 @@ router.post('/game-lobbies/:lobbyId/join',
             await transaction.rollback();
             return res.status(404).json({ error: 'Specified session not found' });
           }
-          // TODO: Join specific session
-          joinedSession = { id: session_id, session_number: targetSession.session_number };
-          break;
 
-        case 'teacher_assignment':
-          // TODO: Find pre-assigned session for this participant
-          await transaction.rollback();
-          return res.status(501).json({
-            error: 'Teacher assignment joining not yet implemented'
-          });
+          // Add participant to the specified session
+          const updatedManualSession = await GameSessionService.addParticipant(
+            session_id,
+            participant,
+            participant.user_id || 'anonymous', // Use user_id or 'anonymous' for guest
+            transaction
+          );
 
-        case 'random':
-          // Find session with available space randomly
-          const availableSessionsRandom = lobby.active_sessions?.filter(session => {
-            const maxPlayers = session.data?.max_players || 4; // Default from game config
-            return session.participants_count < maxPlayers;
-          }) || [];
-
-          if (availableSessionsRandom.length > 0) {
-            // Randomly pick an available session
-            const randomIndex = Math.floor(Math.random() * availableSessionsRandom.length);
-            const selectedSession = availableSessionsRandom[randomIndex];
-            joinedSession = { id: selectedSession.id, session_number: selectedSession.session_number };
-            clog(`🎲 Randomly assigned to existing session ${selectedSession.session_number}`);
-          } else {
-            // Create new session for random assignment
-            const newSession = await createSessionForJoining(lobbyId, lobby, transaction);
-            joinedSession = newSession;
-            clog(`🎲 Created new session ${newSession.session_number} for random assignment`);
-          }
+          joinedSession = {
+            id: updatedManualSession.id,
+            session_number: updatedManualSession.session_number,
+            participants_count: updatedManualSession.participants.length
+          };
+          clog(`📋 Added participant to manually selected session ${targetSession.session_number}`);
           break;
 
         case 'order':
@@ -717,39 +708,78 @@ router.post('/game-lobbies/:lobbyId/join',
           }).sort((a, b) => a.session_number - b.session_number) || [];
 
           if (availableSessionsOrder.length > 0) {
-            // Take the first (lowest numbered) available session
+            // Take the first (lowest numbered) available session and add participant
             const firstSession = availableSessionsOrder[0];
-            joinedSession = { id: firstSession.id, session_number: firstSession.session_number };
-            clog(`📋 Assigned to session ${firstSession.session_number} in order`);
+            const updatedSession = await GameSessionService.addParticipant(
+              firstSession.id,
+              participant,
+              participant.user_id || 'anonymous', // Use user_id or 'anonymous' for guest
+              transaction
+            );
+            joinedSession = {
+              id: updatedSession.id,
+              session_number: updatedSession.session_number,
+              participants_count: updatedSession.participants.length
+            };
+            clog(`📋 Added participant to existing session ${firstSession.session_number} in order`);
           } else {
             // Create new session for sequential assignment
             const newSession = await createSessionForJoining(lobbyId, lobby, transaction);
-            joinedSession = newSession;
-            clog(`📋 Created new session ${newSession.session_number} for sequential assignment`);
+
+            // Add participant to the newly created session
+            const updatedSession = await GameSessionService.addParticipant(
+              newSession.id,
+              participant,
+              participant.user_id || 'anonymous', // Use user_id or 'anonymous' for guest
+              transaction
+            );
+
+            joinedSession = {
+              id: updatedSession.id,
+              session_number: updatedSession.session_number,
+              participants_count: updatedSession.participants.length,
+              created: true
+            };
+            clog(`📋 Created new session ${newSession.session_number} and added participant in order`);
           }
           break;
 
         default:
           await transaction.rollback();
           return res.status(400).json({
-            error: `Unknown invitation type: ${invitationType}`
+            error: `Unsupported invitation type: ${invitationType}`
           });
       }
 
-      // TODO: Actually add participant to the session
-      // For now, just return success with session info
-
       await transaction.commit();
+
+      // Get the actual participant data from the session (includes generated participant.id)
+      const sessionDetails = await GameSessionService.getSessionDetails(joinedSession.id);
+      const addedParticipant = sessionDetails.participants.find(p =>
+        (participant.user_id && p.user_id === participant.user_id) ||
+        (participant.guest_token && p.guest_token === participant.guest_token) ||
+        (!participant.user_id && !participant.guest_token && p.display_name === participant.display_name)
+      );
 
       res.status(200).json({
         message: 'Successfully joined lobby',
         lobby: {
           id: lobby.id,
           lobby_code: lobby.lobby_code,
-          invitation_type: invitationType
+          invitation_type: invitationType,
+          game: lobby.game
         },
-        session: joinedSession,
-        participant: participant
+        session: {
+          id: joinedSession.id,
+          session_number: joinedSession.session_number,
+          participants_count: joinedSession.participants_count
+        },
+        participant: {
+          id: addedParticipant?.id,
+          display_name: addedParticipant?.display_name,
+          isAuthedUser: addedParticipant?.isAuthedUser,
+          team_assignment: addedParticipant?.team_assignment
+        }
       });
 
     } catch (error) {
@@ -870,7 +900,7 @@ router.get('/game-lobbies/:lobbyId/sessions',
 
 /**
  * POST /api/game-lobbies/:lobbyId/sessions
- * Create a new session in a lobby
+ * Create a new session in a lobby (teacher-facing with authentication)
  */
 router.post('/game-lobbies/:lobbyId/sessions',
   authenticateToken,
@@ -908,6 +938,110 @@ router.post('/game-lobbies/:lobbyId/sessions',
       if (error.message.includes('Access denied')) {
         return res.status(403).json({ error: error.message });
       }
+
+      res.status(500).json({
+        error: 'Failed to create session',
+        message: error.message
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/game-lobbies/:lobbyId/sessions/create-student
+ * Create a new session in a lobby (student-facing with conditional access control)
+ */
+router.post('/game-lobbies/:lobbyId/sessions/create-student',
+  checkStudentsAccess, // Student conditional authentication middleware
+  async (req, res) => {
+    const transaction = await models.sequelize.transaction();
+    try {
+      const { lobbyId } = req.params;
+      const user = req.user; // May be null for anonymous users
+
+      clog(`🎮 Student creating session in lobby ${lobbyId}${user ? ` by user ${user.id}` : ' by anonymous user'}`);
+
+      // Get lobby details to validate it exists and is manual_selection
+      const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
+      if (!lobby) {
+        await transaction.rollback();
+        return res.status(404).json({ error: 'Lobby not found' });
+      }
+
+      // Check if lobby is joinable
+      const status = lobby.computed_status;
+      if (status !== 'open' && status !== 'open_indefinitely') {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Lobby is not open for session creation (status: ${status})`
+        });
+      }
+
+      // Only allow session creation for manual_selection lobbies
+      if (lobby.settings.invitation_type !== 'manual_selection') {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'Session creation is only allowed for manual selection lobbies'
+        });
+      }
+
+      // Check if we're at max sessions limit
+      const currentSessionCount = lobby.active_sessions.length;
+      const maxSessions = lobby.settings.max_sessions || 10; // Default max sessions
+      if (currentSessionCount >= maxSessions) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Maximum number of sessions (${maxSessions}) reached for this lobby`
+        });
+      }
+
+      // Generate session number (next available)
+      const existingSessionNumbers = lobby.active_sessions.map(s => s.session_number);
+      const nextSessionNumber = existingSessionNumbers.length > 0
+        ? Math.max(...existingSessionNumbers) + 1
+        : 1;
+
+      // Get game type defaults for session settings
+      const { getSessionDefaults } = await import('../config/gameTypeDefaults.js');
+      const gameType = lobby.game?.game_type;
+      const sessionDefaults = getSessionDefaults(gameType);
+
+      // Create session data
+      const sessionCreateData = {
+        lobby_id: lobbyId,
+        session_number: nextSessionNumber,
+        participants: [], // Empty initially
+        current_state: null,
+        expires_at: null, // Inherit from lobby
+        finished_at: null,
+        data: {
+          session_name: `${sessionDefaults.session_name} ${nextSessionNumber}`,
+          max_players: sessionDefaults.players_per_session,
+          game_type: gameType,
+          created_automatically: false,
+          created_by_student: true,
+          created_by: user?.id || 'anonymous',
+          creation_timestamp: new Date().toISOString()
+        }
+      };
+
+      const session = await models.GameSession.create(sessionCreateData, { transaction });
+      await transaction.commit();
+
+      clog(`✅ Student created session ${session.session_number} in lobby ${lobbyId}`);
+
+      res.status(201).json({
+        id: session.id,
+        session_number: session.session_number,
+        participants_count: 0,
+        max_players: sessionDefaults.players_per_session,
+        computed_status: 'open',
+        created: true
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      cerror('❌ Failed to create student session:', error);
 
       res.status(500).json({
         error: 'Failed to create session',

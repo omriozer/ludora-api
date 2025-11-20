@@ -25,10 +25,10 @@ const lobbySettingsSchema = Joi.object({
   allow_guest_users: Joi.boolean().default(true),
 
   invitation_type: Joi.string()
-    .valid('manual_selection', 'teacher_assignment', 'random', 'order')
+    .valid('manual_selection', 'order')
     .default('manual_selection')
     .messages({
-      'any.only': 'Invitation type must be one of: manual_selection, teacher_assignment, random, order'
+      'any.only': 'Invitation type must be one of: manual_selection, order'
     }),
 
   auto_close_after: Joi.number().integer().min(10).max(1440).default(60)

@@ -109,6 +109,7 @@ import svgSlidesRoutes from './routes/svgSlides.js';
 import systemTemplatesRoutes from './routes/system-templates.js';
 import eduContentRoutes from './routes/eduContent.js';
 import sseRoutes from './routes/sse.js';
+import settingsRoutes from './routes/settings.js';
 
 const app = express();
 
@@ -209,6 +210,7 @@ app.use('/api/sse', sseRoutes);
 app.use('/api/edu-content', eduContentRoutes);
 app.use('/api/svg-slides', svgSlidesRoutes);
 app.use('/api/system-templates', systemTemplatesRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);

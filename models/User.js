@@ -170,6 +170,7 @@ export default function(sequelize) {
     User.hasMany(models.Classroom, { foreignKey: 'teacher_id' });
     User.hasMany(models.StudentInvitation, { foreignKey: 'teacher_id' });
     User.hasMany(models.ClassroomMembership, { foreignKey: 'student_user_id' });
+    User.hasMany(models.RefreshToken, { foreignKey: 'user_id', as: 'refreshTokens' });
 
     // School associations
     User.belongsTo(models.School, {

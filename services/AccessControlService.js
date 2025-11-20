@@ -2,6 +2,7 @@ import models from '../models/index.js';
 import { Op } from 'sequelize';
 import { NotFoundError, ForbiddenError } from '../middleware/errorHandler.js';
 import { cerror } from '../lib/utils.js';
+import { nowInIsrael, createExpirationDate, isExpired } from '../utils/dateUtils.js';
 
 class AccessControlService {
   constructor() {
@@ -20,7 +21,7 @@ class AccessControlService {
           payment_status: 'completed', // Only successful payments
           [Op.or]: [
             { access_expires_at: null }, // Lifetime access
-            { access_expires_at: { [Op.gt]: new Date() } } // Not expired
+            { access_expires_at: { [Op.gt]: nowInIsrael() } } // Not expired (Israel timezone)
           ]
         },
         include: [
@@ -62,7 +63,7 @@ class AccessControlService {
       if (options.activeOnly) {
         whereClause[Op.or] = [
           { access_expires_at: null }, // Lifetime access
-          { access_expires_at: { [Op.gt]: new Date() } } // Not expired
+          { access_expires_at: { [Op.gt]: nowInIsrael() } } // Not expired (Israel timezone)
         ];
       }
 
@@ -89,7 +90,7 @@ class AccessControlService {
           payment_status: 'completed',
           [Op.or]: [
             { access_expires_at: null }, // Lifetime access
-            { access_expires_at: { [Op.gt]: new Date() } } // Not expired
+            { access_expires_at: { [Op.gt]: nowInIsrael() } } // Not expired (Israel timezone)
           ]
         },
         include: [
@@ -126,11 +127,10 @@ class AccessControlService {
         price = 0
       } = options;
 
-      // Calculate access expiration
+      // Calculate access expiration (using Israel timezone)
       let accessExpiresAt = null;
       if (!isLifetimeAccess && accessDays && accessDays > 0) {
-        accessExpiresAt = new Date();
-        accessExpiresAt.setDate(accessExpiresAt.getDate() + accessDays);
+        accessExpiresAt = createExpirationDate(accessDays);
       }
 
       // Create clean purchase record
@@ -252,7 +252,7 @@ class AccessControlService {
       isLifetimeAccess: !purchase.access_expires_at,
       expiresAt: purchase.access_expires_at,
       paymentAmount: purchase.payment_amount,
-      isActive: !purchase.access_expires_at || purchase.access_expires_at > new Date()
+      isActive: !purchase.access_expires_at || !isExpired(purchase.access_expires_at)
     };
   }
 

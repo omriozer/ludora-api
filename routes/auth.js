@@ -112,7 +112,7 @@ router.post('/logout', async (req, res) => {
         const jwt = await import('jsonwebtoken');
         const payload = jwt.default.verify(refreshToken, process.env.JWT_SECRET);
         if (payload.tokenId) {
-          authService.revokeRefreshToken(payload.tokenId);
+          await authService.revokeRefreshToken(payload.tokenId);
         }
       } catch (tokenError) {
         // Continue with logout even if token revocation fails
@@ -319,7 +319,7 @@ router.post('/verify', async (req, res) => {
     authService.createSession(user.id, sessionMetadata);
 
     // Generate proper access and refresh tokens using AuthService
-    const result = authService.generateTokenPair(user);
+    const result = await authService.generateTokenPair(user, sessionMetadata);
 
     // Set access token as httpOnly cookie (15 minutes) with subdomain support
     const accessConfig = createAccessTokenConfig();
@@ -439,7 +439,7 @@ router.post('/sessions/invalidate/:userId', authenticateToken, requireAdmin, asy
 router.post('/sessions/cleanup', authenticateToken, requireAdmin, async (_req, res) => {
   try {
     authService.cleanupExpiredSessions();
-    authService.cleanupExpiredTokens();
+    await authService.cleanupExpiredTokens();
 
     const stats = authService.getSessionStats();
     res.json({

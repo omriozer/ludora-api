@@ -46,6 +46,7 @@ import EduContentUse from './EduContentUse.js';
 import SystemTemplate from './SystemTemplate.js';
 import GameLobby from './GameLobby.js';
 import GameSession from './GameSession.js';
+import RefreshToken from './RefreshToken.js';
 
 // Initialize models
 const models = {
@@ -86,6 +87,7 @@ const models = {
   SystemTemplate: SystemTemplate(sequelize),
   GameLobby: GameLobby(sequelize),
   GameSession: GameSession(sequelize),
+  RefreshToken: RefreshToken(sequelize),
 };
 
 // Define associations

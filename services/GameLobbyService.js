@@ -117,7 +117,7 @@ class GameLobbyService {
         max_players: 12,
         session_time_limit: 30, // minutes
         allow_guest_users: true,
-        invitation_type: 'manual_selection', // 'manual_selection', 'teacher_assignment', 'random', 'order'
+        invitation_type: 'manual_selection', // 'manual_selection', 'order'
         auto_close_after: 60 // minutes of inactivity
       };
 
@@ -385,24 +385,12 @@ class GameLobbyService {
       // Handle session creation based on invitation_type
       const sessionConfig = activationData.session_config || {};
       const invitationType = updatedSettings.invitation_type || 'manual_selection'; // Default to manual_selection
-      const autoCreateSessions = invitationType === 'teacher_assignment'; // Sessions are only pre-created for teacher assignment
 
+      // For the supported invitation types, sessions are created on-demand when students join
       let createdSessions = [];
+      const autoCreateSessions = lobbyDefaults.auto_create_sessions || false; // Get from config
+      clog(`📍 Skipping session pre-creation for invitation_type: ${invitationType} (sessions will be created on-demand when students join)`);
 
-      // Only pre-create sessions for teacher_assignment type
-      if (invitationType === 'teacher_assignment') {
-        clog(`📍 Pre-creating sessions for teacher_assignment invitation type...`);
-        createdSessions = await this.createInitialSessions(
-          lobbyId,
-          gameType,
-          sessionConfig,
-          maxPlayers,
-          userId,
-          transaction
-        );
-      } else {
-        clog(`📍 Skipping session pre-creation for invitation_type: ${invitationType} (sessions will be created on-demand when students join)`);
-      }
 
       // Return updated lobby with details and sessions
       const updatedLobby = await this.getLobbyDetails(lobbyId, transaction);
@@ -781,10 +769,29 @@ class GameLobbyService {
       // Enhance lobby with computed status
       const enhancedLobby = this.enhanceLobbyWithStatus(lobby);
 
+      // Fetch Product data for the game to get title information
+      let gameWithProduct = lobby.game;
+      if (lobby.game) {
+        const product = await models.Product.findOne({
+          where: {
+            product_type: 'game',
+            entity_id: lobby.game.id
+          },
+          attributes: ['title', 'description'],
+          transaction
+        });
+
+        gameWithProduct = {
+          ...lobby.game.toJSON ? lobby.game.toJSON() : lobby.game,
+          title: product?.title,
+          description: product?.description
+        };
+      }
+
       // Format response
       const formattedLobby = {
         ...enhancedLobby,
-        game: lobby.game,
+        game: gameWithProduct,
         owner: lobby.owner,
         host: lobby.host,
         active_sessions: lobby.sessions.map(session => {
@@ -844,6 +851,26 @@ class GameLobbyService {
         throw new Error(`Lobby is not open for joining (status: ${computed_status})`);
       }
 
+      // Fetch Product data for the game to get title information
+      if (lobby.game) {
+        const product = await models.Product.findOne({
+          where: {
+            product_type: 'game',
+            entity_id: lobby.game.id
+          },
+          attributes: ['title', 'description'],
+          transaction
+        });
+
+        if (product) {
+          lobby.game = {
+            ...lobby.game.toJSON ? lobby.game.toJSON() : lobby.game,
+            title: product.title,
+            description: product.description
+          };
+        }
+      }
+
       return this.enhanceLobbyWithStatus(lobby);
 
     } catch (error) {
@@ -867,6 +894,11 @@ class GameLobbyService {
         },
         include: [
           {
+            model: models.Game,
+            as: 'game',
+            attributes: ['id', 'game_type', 'digital']
+          },
+          {
             model: models.User,
             as: 'owner',
             attributes: ['id', 'full_name']
@@ -881,8 +913,40 @@ class GameLobbyService {
         transaction
       });
 
-      // Enhance each lobby with computed status
-      const enhancedLobbies = lobbies.map(lobby => this.enhanceLobbyWithStatus(lobby));
+      // Fetch Product data for the game to get title information
+      let gameWithProduct = null;
+      if (gameId) {
+        const product = await models.Product.findOne({
+          where: {
+            product_type: 'game',
+            entity_id: gameId
+          },
+          attributes: ['title', 'description'],
+          transaction
+        });
+
+        if (product) {
+          gameWithProduct = {
+            title: product.title,
+            description: product.description
+          };
+        }
+      }
+
+      // Enhance each lobby with computed status and game title
+      const enhancedLobbies = lobbies.map(lobby => {
+        const enhanced = this.enhanceLobbyWithStatus(lobby);
+
+        // Add game title information if we have it
+        if (enhanced.game && gameWithProduct) {
+          enhanced.game = {
+            ...enhanced.game,
+            ...gameWithProduct
+          };
+        }
+
+        return enhanced;
+      });
 
       return enhancedLobbies;
 

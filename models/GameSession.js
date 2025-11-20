@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { baseOptions } from './baseModel.js';
+import { nowInIsrael, isExpired } from '../utils/dateUtils.js';
 
 export default function(sequelize) {
   const GameSession = sequelize.define('GameSession', {
@@ -154,11 +155,11 @@ export default function(sequelize) {
     // No expiration = pending activation
     if (!this.expires_at) return 'pending';
 
-    const now = new Date();
+    const now = nowInIsrael();
     const expiration = new Date(this.expires_at);
     const fiftyYearsFromNow = new Date(now.getFullYear() + 50, now.getMonth(), now.getDate());
 
-    // Past expiration = closed
+    // Past expiration = closed (using Israel timezone)
     if (expiration <= now) return 'closed';
 
     // ~50+ years = indefinite
@@ -169,7 +170,7 @@ export default function(sequelize) {
   };
 
   GameSession.prototype.finishGame = function(finalData) {
-    this.finished_at = new Date();
+    this.finished_at = nowInIsrael();
     this.data = finalData;
     this.current_state = null; // Clear current state when finished
     return this.save();
@@ -182,7 +183,7 @@ export default function(sequelize) {
 
   GameSession.prototype.isExpired = function() {
     if (!this.expires_at) return false; // Pending sessions are not expired
-    return new Date() > this.expires_at;
+    return isExpired(this.expires_at);
   };
 
   GameSession.prototype.inheritLobbyExpiration = async function(models) {
@@ -197,12 +198,12 @@ export default function(sequelize) {
   GameSession.prototype.activate = function(duration_minutes = null) {
     if (duration_minutes === 'indefinite' || duration_minutes === null) {
       // Set to 100 years from now for indefinite (will be detected as open_indefinitely)
-      const indefiniteDate = new Date();
+      const indefiniteDate = nowInIsrael();
       indefiniteDate.setFullYear(indefiniteDate.getFullYear() + 100);
       this.expires_at = indefiniteDate;
     } else {
-      // Set specific duration
-      const expirationDate = new Date();
+      // Set specific duration (using Israel timezone)
+      const expirationDate = nowInIsrael();
       expirationDate.setMinutes(expirationDate.getMinutes() + duration_minutes);
       this.expires_at = expirationDate;
     }
@@ -210,7 +211,7 @@ export default function(sequelize) {
   };
 
   GameSession.prototype.getDuration = function() {
-    const endTime = this.finished_at || new Date();
+    const endTime = this.finished_at || nowInIsrael();
     return endTime - this.started_at;
   };
 
@@ -231,7 +232,7 @@ export default function(sequelize) {
     if (lobby.closed_at) return 'closed';
 
     // If lobby expired, session must be expired regardless of its own expiration
-    if (lobby.expires_at && lobby.expires_at <= new Date()) {
+    if (lobby.expires_at && lobby.expires_at <= nowInIsrael()) {
       return 'closed';
     }
 
@@ -260,7 +261,7 @@ export default function(sequelize) {
     return this.findAll({
       where: {
         expires_at: {
-          [sequelize.Sequelize.Op.gt]: new Date()
+          [sequelize.Sequelize.Op.gt]: nowInIsrael()
         },
         finished_at: null,
         ...options.where
@@ -273,7 +274,7 @@ export default function(sequelize) {
             // Include lobby expiration in the query
             [sequelize.Sequelize.Op.or]: [
               { expires_at: null }, // pending lobbies
-              { expires_at: { [sequelize.Sequelize.Op.gt]: new Date() } }, // not expired lobbies
+              { expires_at: { [sequelize.Sequelize.Op.gt]: nowInIsrael() } }, // not expired lobbies (Israel timezone)
             ],
             closed_at: null // not manually closed
           }

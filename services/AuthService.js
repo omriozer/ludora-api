@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { admin } from '../config/firebase.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
@@ -21,8 +22,8 @@ class AuthService {
     this.sessionStore = new Map();
 
     // Clean up expired tokens and sessions every hour
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupExpiredTokens();
+    this.cleanupInterval = setInterval(async () => {
+      await this.cleanupExpiredTokens();
       this.cleanupExpiredSessions();
     }, 60 * 60 * 1000);
   }
@@ -51,7 +52,7 @@ class AuthService {
   }
 
   // Create long-lived refresh token (7 days)
-  createRefreshToken(userId) {
+  async createRefreshToken(userId, metadata = {}) {
     const refreshTokenId = generateId();
     const refreshToken = jwt.sign(
       {
@@ -63,25 +64,38 @@ class AuthService {
       { expiresIn: '7d' }
     );
 
-    // Store refresh token in memory with expiration
-    this.refreshTokenStore.set(refreshTokenId, {
-      userId,
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    // Hash the token for secure storage
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+    // Store refresh token in database with metadata
+    await models.RefreshToken.create({
+      id: refreshTokenId,
+      user_id: userId,
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      metadata: {
+        created_via: 'login',
+        user_agent: metadata.userAgent || 'unknown',
+        ip_address: metadata.ipAddress || 'unknown',
+        login_method: metadata.loginMethod || 'email_password',
+        ...metadata
+      },
+      created_at: new Date(),
+      updated_at: new Date()
     });
 
     return { refreshToken, refreshTokenId };
   }
 
   // Generate both access and refresh tokens for a user
-  generateTokenPair(user) {
+  async generateTokenPair(user, metadata = {}) {
     const accessToken = this.createAccessToken({
       id: user.id,
       email: user.email,
       role: user.role
     });
 
-    const { refreshToken, refreshTokenId } = this.createRefreshToken(user.id);
+    const { refreshToken, refreshTokenId } = await this.createRefreshToken(user.id, metadata);
 
     return {
       accessToken,
@@ -99,23 +113,40 @@ class AuthService {
         throw new Error('Invalid token type');
       }
 
-      // Check if token exists in store
-      const tokenData = this.refreshTokenStore.get(payload.tokenId);
-      if (!tokenData) {
-        throw new Error('Refresh token not found');
+      // Hash the token to match stored hash
+      const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+      // Check database for token
+      const tokenRecord = await models.RefreshToken.findOne({
+        where: {
+          id: payload.tokenId,
+          token_hash: tokenHash,
+          revoked_at: null // Not manually revoked
+        },
+        include: [{
+          model: models.User,
+          as: 'User'
+        }]
+      });
+
+      if (!tokenRecord) {
+        throw new Error('Refresh token not found or revoked');
       }
 
       // Check if token expired
-      if (new Date() > tokenData.expiresAt) {
-        this.refreshTokenStore.delete(payload.tokenId);
+      if (tokenRecord.isExpired()) {
+        // Clean up expired token
+        await tokenRecord.destroy();
         throw new Error('Refresh token expired');
       }
 
-      // Get fresh user data
-      const user = await models.User.findByPk(payload.id);
+      const user = tokenRecord.User;
       if (!user || !user.is_active) {
         throw new Error('User not found or inactive');
       }
+
+      // Update last used timestamp
+      await tokenRecord.updateLastUsed();
 
       return { user, tokenId: payload.tokenId };
     } catch (error) {
@@ -147,18 +178,58 @@ class AuthService {
   }
 
   // Revoke a refresh token
-  revokeRefreshToken(refreshTokenId) {
-    this.refreshTokenStore.delete(refreshTokenId);
+  async revokeRefreshToken(refreshTokenId) {
+    await models.RefreshToken.update(
+      {
+        revoked_at: new Date(),
+        updated_at: new Date()
+      },
+      { where: { id: refreshTokenId } }
+    );
+    clog(`🔐 Refresh token ${refreshTokenId} revoked`);
   }
 
   // Cleanup expired refresh tokens
-  cleanupExpiredTokens() {
-    const now = new Date();
-    for (const [tokenId, tokenData] of this.refreshTokenStore.entries()) {
-      if (now > tokenData.expiresAt) {
-        this.refreshTokenStore.delete(tokenId);
+  async cleanupExpiredTokens() {
+    const deletedCount = await models.RefreshToken.destroy({
+      where: {
+        expires_at: { [models.Sequelize.Op.lt]: new Date() }
       }
+    });
+
+    if (deletedCount > 0) {
+      clog(`🧹 Cleaned up ${deletedCount} expired refresh tokens from database`);
     }
+  }
+
+  // Get all active refresh tokens for a user
+  async getUserRefreshTokens(userId) {
+    return await models.RefreshToken.findAll({
+      where: {
+        user_id: userId,
+        revoked_at: null,
+        expires_at: { [models.Sequelize.Op.gt]: new Date() }
+      },
+      order: [['created_at', 'DESC']]
+    });
+  }
+
+  // Revoke all refresh tokens for a user
+  async revokeUserRefreshTokens(userId) {
+    const revokedCount = await models.RefreshToken.update(
+      {
+        revoked_at: new Date(),
+        updated_at: new Date()
+      },
+      {
+        where: {
+          user_id: userId,
+          revoked_at: null
+        }
+      }
+    );
+    clog(`🔐 Revoked ${revokedCount[0]} refresh tokens for user ${userId}`);
+    return revokedCount[0];
   }
 
   // Session Management Methods
@@ -345,7 +416,10 @@ class AuthService {
       });
 
       // Generate token pair
-      const { accessToken, refreshToken } = this.generateTokenPair(user);
+      const { accessToken, refreshToken } = await this.generateTokenPair(user, {
+        ...sessionMetadata,
+        loginMethod: 'registration'
+      });
 
       return {
         success: true,
@@ -366,7 +440,7 @@ class AuthService {
   }
 
   // Logout user and invalidate session
-  async logoutUser(userId, sessionId = null) {
+  async logoutUser(userId, sessionId = null, refreshTokenId = null) {
     try {
       if (sessionId) {
         // Invalidate specific session
@@ -376,6 +450,14 @@ class AuthService {
         // Invalidate all user sessions
         const invalidatedCount = this.invalidateUserSessions(userId);
         clog(`🚪 User ${userId} logged out from ${invalidatedCount} sessions`);
+      }
+
+      if (refreshTokenId) {
+        // Revoke specific refresh token
+        await this.revokeRefreshToken(refreshTokenId);
+      } else {
+        // Revoke all refresh tokens for user
+        await this.revokeUserRefreshTokens(userId);
       }
 
       return {
