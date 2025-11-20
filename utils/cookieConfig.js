@@ -166,6 +166,40 @@ export function createPortalClearCookieConfig(portal) {
   });
 }
 
+/**
+ * Generic cookie configuration functions (for non-portal use cases like players)
+ */
+
+/**
+ * Create generic access token cookie configuration (15 minutes)
+ * @returns {Object} Access token cookie configuration
+ */
+export function createAccessTokenConfig() {
+  return createAuthCookieConfig({
+    maxAge: 15 * 60 * 1000 // 15 minutes
+  });
+}
+
+/**
+ * Create generic refresh token cookie configuration (7 days)
+ * @returns {Object} Refresh token cookie configuration
+ */
+export function createRefreshTokenConfig() {
+  return createAuthCookieConfig({
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+}
+
+/**
+ * Create generic cookie clear configuration (for logout)
+ * @returns {Object} Cookie clear configuration
+ */
+export function createClearCookieConfig() {
+  return createAuthCookieConfig({
+    maxAge: 0
+  });
+}
+
 export default {
   getCookieDomain,
   getSameSitePolicy,
@@ -176,5 +210,9 @@ export default {
   getPortalCookieNames,
   createPortalAccessTokenConfig,
   createPortalRefreshTokenConfig,
-  createPortalClearCookieConfig
+  createPortalClearCookieConfig,
+  // Generic versions for non-portal use cases
+  createAccessTokenConfig,
+  createRefreshTokenConfig,
+  createClearCookieConfig
 };
