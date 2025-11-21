@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { rateLimiters } from '../middleware/validation.js';
+import { ADVANCED_FEATURES_KEYS } from '../constants/settingsKeys.js';
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.use(rateLimiters.general);
 router.get('/widgets', async (req, res) => {
   try {
     // Get available widgets from configuration
-    const availableWidgets = await SettingsService.get('available_dashboard_widgets');
+    const availableWidgets = await SettingsService.get(ADVANCED_FEATURES_KEYS.AVAILABLE_DASHBOARD_WIDGETS);
 
     if (!availableWidgets) {
       return res.json({
@@ -161,7 +162,7 @@ router.post('/widgets', async (req, res) => {
     }
 
     // Get available widgets to validate type
-    const availableWidgets = await SettingsService.get('available_dashboard_widgets') || {};
+    const availableWidgets = await SettingsService.get(ADVANCED_FEATURES_KEYS.AVAILABLE_DASHBOARD_WIDGETS) || {};
 
     if (!availableWidgets[type]) {
       return res.status(400).json({

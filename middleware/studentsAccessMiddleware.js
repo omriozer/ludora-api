@@ -1,6 +1,7 @@
 import SettingsService from '../services/SettingsService.js';
 import { authenticateToken, optionalAuth } from './auth.js';
 import models from '../models/index.js';
+import { STUDENTS_ACCESS_MODES } from '../constants/settingsKeys.js';
 
 /**
  * Main students access control middleware
@@ -13,11 +14,11 @@ export async function checkStudentsAccess(req, res, next) {
 
     // Route to appropriate access validation based on settings
     switch (accessMode) {
-      case 'invite_only':
+      case STUDENTS_ACCESS_MODES.INVITE_ONLY:
         return await validateInviteOnlyAccess(req, res, next);
-      case 'authed_only':
+      case STUDENTS_ACCESS_MODES.AUTHED_ONLY:
         return await validateAuthedOnlyAccess(req, res, next);
-      case 'all':
+      case STUDENTS_ACCESS_MODES.ALL:
         return await validateAllAccess(req, res, next);
       default:
         // Fallback to 'all' for any unrecognized mode
@@ -91,7 +92,7 @@ export async function checkStudentsLobbyAccess(req, res, next) {
     const accessMode = await SettingsService.getStudentsAccessMode();
 
     // For lobby access, we're more permissive as lobbies are teacher-controlled
-    if (accessMode === 'authed_only') {
+    if (accessMode === STUDENTS_ACCESS_MODES.AUTHED_ONLY) {
       return await authenticateToken(req, res, next);
     }
 
@@ -112,7 +113,7 @@ export async function getCurrentAccessMode() {
     return await SettingsService.getStudentsAccessMode();
   } catch (error) {
     console.error('Error getting current access mode:', error);
-    return 'all'; // Safe fallback
+    return STUDENTS_ACCESS_MODES.ALL; // Safe fallback
   }
 }
 

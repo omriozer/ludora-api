@@ -5,6 +5,7 @@ import EntityService from '../services/EntityService.js';
 import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
+import { CONTENT_CREATOR_KEYS } from '../constants/settingsKeys.js';
 
 const router = express.Router();
 
@@ -29,10 +30,17 @@ async function checkContentCreatorPermissions(user, entityType) {
       let permissionKey;
 
       if (entityType === 'file' || entityType === 'tool') {
-        permissionKey = 'allow_content_creator_files';
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_FILES;
       } else if (entityType === 'game') {
-        permissionKey = 'allow_content_creator_games';
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_GAMES;
+      } else if (entityType === 'workshop') {
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_WORKSHOPS;
+      } else if (entityType === 'course') {
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_COURSES;
+      } else if (entityType === 'lesson_plan') {
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_LESSON_PLANS;
       } else {
+        // Fallback for any unknown types (should not happen with current entity types)
         permissionKey = `allow_content_creator_${entityType}s`;
       }
 

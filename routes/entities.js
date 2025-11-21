@@ -12,6 +12,7 @@ import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 // Note: No longer importing deprecated helper functions since we use SystemTemplate now
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
+import { CONTENT_CREATOR_KEYS } from '../constants/settingsKeys.js';
 import fileService from '../services/FileService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
 import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
@@ -153,10 +154,17 @@ async function checkContentCreatorPermissions(user, entityType, entityData = {})
       let permissionKey;
 
       if (entityType === 'file' || entityType === 'tool') {
-        permissionKey = 'allow_content_creator_files';
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_FILES;
       } else if (entityType === 'game') {
-        permissionKey = 'allow_content_creator_games';
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_GAMES;
+      } else if (entityType === 'workshop') {
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_WORKSHOPS;
+      } else if (entityType === 'course') {
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_COURSES;
+      } else if (entityType === 'lesson_plan') {
+        permissionKey = CONTENT_CREATOR_KEYS.ALLOW_CONTENT_CREATOR_LESSON_PLANS;
       } else {
+        // Fallback for any unknown types (should not happen with current entity types)
         permissionKey = `allow_content_creator_${entityType}s`;
       }
 
