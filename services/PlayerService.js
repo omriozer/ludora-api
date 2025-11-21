@@ -47,7 +47,6 @@ class PlayerService {
         updated_at: new Date()
       });
 
-      clog(`👤 Player created: ${player.id} (${player.privacy_code}) for teacher ${teacherId}`);
 
       return {
         id: player.id,
@@ -98,7 +97,6 @@ class PlayerService {
         loginMethod: 'privacy_code'
       });
 
-      clog(`🎮 Player authenticated: ${player.privacy_code} (${player.display_name})`);
 
       return {
         success: true,
@@ -191,7 +189,6 @@ class PlayerService {
 
       await player.update(updateData);
 
-      clog(`👤 Player updated: ${player.privacy_code} (${player.display_name})`);
 
       return await this.getPlayer(playerId);
     } catch (error) {
@@ -219,7 +216,6 @@ class PlayerService {
       // Deactivate player
       await player.deactivate();
 
-      clog(`👤 Player deactivated: ${player.privacy_code} (${player.display_name}) by teacher ${teacherId}`);
 
       return {
         success: true,
@@ -290,7 +286,6 @@ class PlayerService {
       ...metadata
     });
 
-    clog(`🎮 Player session created: ${sessionId} for player ${playerId}`);
     return sessionId;
   }
 
@@ -356,7 +351,6 @@ class PlayerService {
       const session = await models.UserSession.findByPk(sessionId);
       if (session && session.isPlayerSession()) {
         await session.invalidate();
-        clog(`🎮 Player session invalidated: ${sessionId}`);
       }
     } catch (error) {
       clog(`❌ Player session invalidation error: ${error.message}`);
@@ -366,9 +360,7 @@ class PlayerService {
   // Invalidate all sessions for a player
   async invalidatePlayerSessions(playerId) {
     try {
-      const invalidatedCount = await models.UserSession.invalidatePlayerSessions(playerId);
-      clog(`🎮 Invalidated ${invalidatedCount} sessions for player ${playerId}`);
-      return invalidatedCount;
+      return await models.UserSession.invalidatePlayerSessions(playerId);
     } catch (error) {
       clog(`❌ Player sessions invalidation error: ${error.message}`);
       return 0;
@@ -437,11 +429,9 @@ class PlayerService {
       if (sessionId) {
         // Invalidate specific session
         await this.invalidateSession(sessionId);
-        clog(`🚪 Player ${playerId} logged out from session ${sessionId}`);
       } else {
         // Invalidate all player sessions
-        const invalidatedCount = await this.invalidatePlayerSessions(playerId);
-        clog(`🚪 Player ${playerId} logged out from ${invalidatedCount} sessions`);
+        await this.invalidatePlayerSessions(playerId);
       }
 
       return {
@@ -491,7 +481,6 @@ class PlayerService {
         updated_at: new Date()
       });
 
-      clog(`🔄 Privacy code regenerated for player ${playerId}: ${newPrivacyCode}`);
 
       return {
         success: true,
@@ -508,25 +497,17 @@ class PlayerService {
   // Cleanup expired player sessions
   async cleanupExpiredSessions() {
     try {
-      const cleanedCount = await models.UserSession.cleanupExpired();
-      if (cleanedCount > 0) {
-        clog(`🧹 Cleaned up ${cleanedCount} expired player sessions`);
-      }
+      await models.UserSession.cleanupExpired();
     } catch (error) {
-      clog(`❌ Player session cleanup error: ${error.message}`);
+      // Silent cleanup failure
     }
   }
 
   // Cleanup inactive players (called periodically)
   async cleanupInactivePlayers(daysInactive = 365) {
     try {
-      const deletedCount = await models.Player.cleanupInactive(daysInactive);
-      if (deletedCount > 0) {
-        clog(`🧹 Cleaned up ${deletedCount} inactive players`);
-      }
-      return deletedCount;
+      return await models.Player.cleanupInactive(daysInactive);
     } catch (error) {
-      clog(`❌ Player cleanup error: ${error.message}`);
       return 0;
     }
   }
@@ -534,13 +515,8 @@ class PlayerService {
   // Set all players offline (for server restart scenarios)
   async setAllPlayersOffline() {
     try {
-      const updatedCount = await models.Player.setAllOffline();
-      if (updatedCount > 0) {
-        clog(`🧹 Set ${updatedCount} players offline`);
-      }
-      return updatedCount;
+      return await models.Player.setAllOffline();
     } catch (error) {
-      clog(`❌ Set all players offline error: ${error.message}`);
       return 0;
     }
   }
@@ -623,7 +599,6 @@ class PlayerService {
       // Associate player with user
       await player.associateWithUser(userId);
 
-      clog(`🔗 Player ${playerId} associated with user ${userId}`);
 
       return {
         success: true,

@@ -158,14 +158,6 @@ router.get('/', authenticateToken, async (req, res) => {
     const { type, format, include_inactive } = req.query;
     const isAdmin = req.user.role === 'admin' || req.user.role === 'sysadmin';
 
-    clog('SystemTemplates: Getting templates', {
-      userId: req.user.id,
-      type,
-      format,
-      include_inactive,
-      isAdmin
-    });
-
     // Build where clause
     const whereClause = {};
 
@@ -210,11 +202,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    clog('SystemTemplates: Getting template by ID', {
-      userId: req.user.id,
-      templateId: id
-    });
-
     // Validate ID format to prevent unnecessary database queries
     if (!id || typeof id !== 'string') {
       return res.status(400).json({
@@ -224,7 +211,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     // Check if ID is too short (template IDs are 6+ characters)
     if (id.length < 6) {
-      clog('SystemTemplates: Rejecting short ID that is invalid:', id);
       return res.status(400).json({
         error: 'Invalid template ID format - ID too short'
       });
@@ -242,7 +228,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const template = await models.SystemTemplate.findByPk(id);
 
     if (!template) {
-      clog('SystemTemplates: Template not found for ID:', id);
       return res.status(404).json({
         error: 'Template not found',
         details: 'The template ID does not exist in the system'
@@ -269,12 +254,6 @@ router.get('/type/:templateType', authenticateToken, async (req, res) => {
   try {
     const { templateType } = req.params;
     const { format } = req.query;
-
-    clog('SystemTemplates: Getting templates by type', {
-      userId: req.user.id,
-      templateType,
-      format
-    });
 
     // Validate template type
     const validTypes = ['branding', 'watermark'];
@@ -323,11 +302,6 @@ router.get('/default/:templateType', authenticateToken, async (req, res) => {
   try {
     const { templateType } = req.params;
 
-    clog('SystemTemplates: Getting default template', {
-      userId: req.user.id,
-      templateType
-    });
-
     const defaultTemplate = await models.SystemTemplate.findDefaultByType(templateType);
 
     if (!defaultTemplate) {
@@ -355,14 +329,6 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { name, description, template_type, target_format, template_data, is_default } = req.body;
     const createdBy = req.user.email;
-
-    clog('SystemTemplates: Creating new template', {
-      name,
-      template_type,
-      target_format,
-      is_default,
-      createdBy
-    });
 
     // Validation
     if (!name || !template_type || !target_format || !template_data) {
@@ -433,11 +399,6 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
       await template.reload(); // Refresh to get updated is_default status
     }
 
-    clog('SystemTemplates: Template created successfully', {
-      templateId: template.id,
-      name: template.name
-    });
-
     res.status(201).json({
       success: true,
       data: template,
@@ -466,13 +427,6 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, target_format, template_data, is_default } = req.body;
-
-    clog('SystemTemplates: Updating template', {
-      templateId: id,
-      name,
-      target_format,
-      is_default
-    });
 
     const template = await models.SystemTemplate.findByPk(id);
 
@@ -541,11 +495,6 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
     await template.reload();
 
-    clog('SystemTemplates: Template updated successfully', {
-      templateId: template.id,
-      name: template.name
-    });
-
     res.json({
       success: true,
       data: template,
@@ -565,8 +514,6 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-
-    clog('SystemTemplates: Deleting template', { templateId: id });
 
     const template = await models.SystemTemplate.findByPk(id);
 
@@ -614,13 +561,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
 
-    const templateName = template.name;
     await template.destroy();
-
-    clog('SystemTemplates: Template deleted successfully', {
-      templateId: id,
-      name: templateName
-    });
 
     res.json({
       success: true,
@@ -641,14 +582,7 @@ router.post('/:id/set-default', authenticateToken, requireAdmin, async (req, res
   try {
     const { id } = req.params;
 
-    clog('SystemTemplates: Setting template as default', { templateId: id });
-
     const template = await models.SystemTemplate.setAsDefault(id);
-
-    clog('SystemTemplates: Template set as default successfully', {
-      templateId: template.id,
-      name: template.name
-    });
 
     res.json({
       success: true,
@@ -677,11 +611,6 @@ router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) 
     const { name } = req.body;
     const createdBy = req.user.email;
 
-    clog('SystemTemplates: Duplicating template', {
-      sourceTemplateId: id,
-      newName: name
-    });
-
     const sourceTemplate = await models.SystemTemplate.findByPk(id);
 
     if (!sourceTemplate) {
@@ -698,12 +627,6 @@ router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) 
       template_data: sourceTemplate.template_data,
       is_default: false, // Duplicated templates are never default
       created_by: createdBy
-    });
-
-    clog('SystemTemplates: Template duplicated successfully', {
-      sourceTemplateId: id,
-      newTemplateId: duplicatedTemplate.id,
-      newName: duplicatedTemplate.name
     });
 
     res.status(201).json({
@@ -727,12 +650,6 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
     const { fileId } = req.params;
     const { name, description, target_format } = req.body;
     const createdBy = req.user.email;
-
-    clog('SystemTemplates: Saving file branding as template', {
-      fileId,
-      name,
-      target_format
-    });
 
     // Get the file with its branding configuration
     const file = await models.File.findByPk(fileId, {
@@ -779,12 +696,6 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
       created_by: createdBy
     });
 
-    clog('SystemTemplates: Template created from file branding', {
-      templateId: template.id,
-      fileId: file.id,
-      name: template.name
-    });
-
     res.status(201).json({
       success: true,
       data: template,
@@ -805,12 +716,6 @@ router.post('/:id/preview-watermark', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { contentType, sampleContent, variables } = req.body;
-
-    clog('SystemTemplates: Previewing watermark template', {
-      templateId: id,
-      contentType,
-      userId: req.user.id
-    });
 
     const template = await models.SystemTemplate.findByPk(id);
 
@@ -880,11 +785,6 @@ router.post('/:id/preview-watermark', authenticateToken, async (req, res) => {
 router.post('/test-variables', authenticateToken, async (req, res) => {
   try {
     const { template_data, variables } = req.body;
-
-    clog('SystemTemplates: Testing watermark variables', {
-      userId: req.user.id,
-      variableCount: Object.keys(variables || {}).length
-    });
 
     if (!template_data) {
       return res.status(400).json({ error: 'template_data is required' });
@@ -959,11 +859,6 @@ router.get('/:id/usage', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
-    clog('SystemTemplates: Getting template usage', {
-      templateId: id,
-      userId: req.user.id
-    });
-
     const template = await models.SystemTemplate.findByPk(id);
 
     if (!template) {
@@ -1029,11 +924,6 @@ router.get('/:id/export', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
-    clog('SystemTemplates: Exporting template', {
-      templateId: id,
-      userId: req.user.id
-    });
-
     const template = await models.SystemTemplate.findByPk(id);
 
     if (!template) {
@@ -1078,11 +968,6 @@ router.post('/import', authenticateToken, requireAdmin, async (req, res) => {
     const { template_data: importData, new_name } = req.body;
     const createdBy = req.user.email;
 
-    clog('SystemTemplates: Importing template', {
-      newName: new_name,
-      userId: req.user.id
-    });
-
     if (!importData || !importData.template) {
       return res.status(400).json({
         error: 'Invalid import data. Expected exported template format.'
@@ -1117,12 +1002,6 @@ router.post('/import', authenticateToken, requireAdmin, async (req, res) => {
       template_data: templateData.template_data,
       is_default: false, // Imported templates are never default
       created_by: createdBy
-    });
-
-    clog('SystemTemplates: Template imported successfully', {
-      templateId: template.id,
-      name: template.name,
-      originalName: templateData.name
     });
 
     res.status(201).json({

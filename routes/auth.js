@@ -484,4 +484,98 @@ router.post('/sessions/cleanup', authenticateToken, requireAdmin, async (_req, r
   }
 });
 
+// =============================================
+// ANONYMOUS ADMIN PASSWORD VALIDATION
+// =============================================
+
+// Anonymous admin password validation (no authentication required)
+// Used for maintenance mode bypass on student portal when students_access is invite_only
+router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    // Validate input
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Password is required'
+      });
+    }
+
+    // Check password length to prevent obviously wrong passwords
+    if (password.length < 3 || password.length > 100) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid password format'
+      });
+    }
+
+    // Validate password against environment variable
+    if (!process.env.ADMIN_PASSWORD) {
+      cerror('ADMIN_PASSWORD not configured in environment');
+      return res.status(500).json({
+        success: false,
+        error: 'Admin password not configured'
+      });
+    }
+
+    // Compare password
+    if (password !== process.env.ADMIN_PASSWORD) {
+      // Audit log failed attempts
+      clog('Anonymous admin password validation failed:', {
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        timestamp: new Date().toISOString(),
+        portal: 'student' // Only used on student portal
+      });
+
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid admin password'
+      });
+    }
+
+    // Password is correct - create signed token for localStorage
+    const jwt = await import('jsonwebtoken');
+    const tokenPayload = {
+      type: 'anonymous_admin',
+      timestamp: Date.now(),
+      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
+      portal: 'student'
+    };
+
+    const anonymousAdminToken = jwt.default.sign(
+      tokenPayload,
+      process.env.JWT_SECRET,
+      {
+        expiresIn: '24h',
+        issuer: 'ludora-api',
+        audience: 'ludora-student-portal'
+      }
+    );
+
+    // Audit log successful validation
+    clog('Anonymous admin password validation successful:', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      timestamp: new Date().toISOString(),
+      portal: 'student',
+      tokenExpiresAt: new Date(tokenPayload.expiresAt).toISOString()
+    });
+
+    res.json({
+      success: true,
+      anonymousAdminToken,
+      expiresAt: new Date(tokenPayload.expiresAt).toISOString()
+    });
+
+  } catch (error) {
+    cerror('Anonymous admin password validation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
 export default router;

@@ -180,20 +180,15 @@ class AuthService {
       },
       { where: { id: refreshTokenId } }
     );
-    clog(`🔐 Refresh token ${refreshTokenId} revoked`);
   }
 
   // Cleanup expired refresh tokens
   async cleanupExpiredTokens() {
-    const deletedCount = await models.RefreshToken.destroy({
+    await models.RefreshToken.destroy({
       where: {
         expires_at: { [models.Sequelize.Op.lt]: new Date() }
       }
     });
-
-    if (deletedCount > 0) {
-      clog(`🧹 Cleaned up ${deletedCount} expired refresh tokens from database`);
-    }
   }
 
   // Get all active refresh tokens for a user
@@ -222,7 +217,6 @@ class AuthService {
         }
       }
     );
-    clog(`🔐 Revoked ${revokedCount[0]} refresh tokens for user ${userId}`);
     return revokedCount[0];
   }
 
@@ -242,8 +236,6 @@ class AuthService {
       ...metadata
     }, portal);
 
-    clog(`🔐 Session created: ${sessionId} for user ${userId} in portal: ${portal}`);
-
     return sessionId;
   }
 
@@ -258,23 +250,14 @@ class AuthService {
 
       // Check if session is active (not expired, not invalidated, and is_active flag is true)
       if (!session.isActive()) {
-        // ✅ FIXED: Graceful degradation instead of permanent destruction
-        clog(`[AuthService] Session ${sessionId} validation failed:`, {
-          expired: session.isExpired(),
-          invalidated: session.isInvalidated(),
-          active_flag: session.is_active,
-          user_id: session.user_id
-        });
-
         // Don't destroy - let cleanup handle it with grace period
         return null;
       }
 
-      // ✅ FIXED: Auto-extend session for active users (if expires within 2 hours)
+      // Auto-extend session for active users (if expires within 2 hours)
       const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000);
       if (session.expires_at < twoHoursFromNow) {
         await session.extendExpiration(24); // Extend by 24 hours
-        clog(`[AuthService] Extended session ${sessionId} for active user ${session.user_id}`);
       }
 
       // Update last accessed time
@@ -290,7 +273,6 @@ class AuthService {
         metadata: session.metadata
       };
     } catch (error) {
-      clog(`❌ Session validation error: ${error.message}`);
       return null;
     }
   }
@@ -301,21 +283,17 @@ class AuthService {
       const session = await models.UserSession.findByPk(sessionId);
       if (session) {
         await session.invalidate();
-        clog(`🔐 Session invalidated: ${sessionId}`);
       }
     } catch (error) {
-      clog(`❌ Session invalidation error: ${error.message}`);
+      // Silent failure for session invalidation
     }
   }
 
   // Invalidate all sessions for a user
   async invalidateUserSessions(userId) {
     try {
-      const invalidatedCount = await models.UserSession.invalidateUserSessions(userId);
-      clog(`🔐 Invalidated ${invalidatedCount} sessions for user ${userId}`);
-      return invalidatedCount;
+      return await models.UserSession.invalidateUserSessions(userId);
     } catch (error) {
-      clog(`❌ User sessions invalidation error: ${error.message}`);
       return 0;
     }
   }
@@ -332,7 +310,6 @@ class AuthService {
         metadata: session.metadata
       }));
     } catch (error) {
-      clog(`❌ Get user sessions error: ${error.message}`);
       return [];
     }
   }
@@ -381,7 +358,6 @@ class AuthService {
         timestamp: now
       };
     } catch (error) {
-      clog(`❌ Session stats error: ${error.message}`);
       return {
         totalSessions: 0,
         activeSessions: 0,
@@ -398,11 +374,8 @@ class AuthService {
   // Invalidate all sessions for a user in a specific portal
   async invalidateUserPortalSessions(userId, portal, exceptSessionId = null) {
     try {
-      const invalidatedCount = await models.UserSession.invalidateUserSessionsByPortal(userId, portal, exceptSessionId);
-      clog(`🔐 Invalidated ${invalidatedCount} ${portal} portal sessions for user ${userId}`);
-      return invalidatedCount;
+      return await models.UserSession.invalidateUserSessionsByPortal(userId, portal, exceptSessionId);
     } catch (error) {
-      clog(`❌ User portal sessions invalidation error: ${error.message}`);
       return 0;
     }
   }
@@ -412,7 +385,6 @@ class AuthService {
     try {
       return await models.UserSession.hasActivePortalSession(userId, portal);
     } catch (error) {
-      clog(`❌ Portal session check error: ${error.message}`);
       return false;
     }
   }
@@ -430,7 +402,6 @@ class AuthService {
         metadata: session.metadata
       }));
     } catch (error) {
-      clog(`❌ Get user portal sessions error: ${error.message}`);
       return [];
     }
   }
@@ -443,12 +414,10 @@ class AuthService {
         const session = await models.UserSession.findByPk(sessionId);
         if (session && session.isPortalSession(portal)) {
           await this.invalidateSession(sessionId);
-          clog(`🚪 User ${userId} logged out from ${portal} portal session ${sessionId}`);
         }
       } else {
         // Invalidate all user sessions for this portal
-        const invalidatedCount = await this.invalidateUserPortalSessions(userId, portal);
-        clog(`🚪 User ${userId} logged out from ${invalidatedCount} ${portal} portal sessions`);
+        await this.invalidateUserPortalSessions(userId, portal);
       }
 
       if (refreshTokenId) {
@@ -468,17 +437,9 @@ class AuthService {
   // Cleanup expired sessions
   async cleanupExpiredSessions() {
     try {
-      const beforeStats = await this.getSessionStats();
-      const cleanedCount = await models.UserSession.cleanupExpired();
-
-      if (cleanedCount > 0) {
-        clog(`🧹 [AuthService] Cleaned up ${cleanedCount} expired sessions from database`);
-        clog(`📊 [AuthService] Sessions before cleanup: ${beforeStats.totalSessions}, after cleanup: ${beforeStats.totalSessions - cleanedCount}`);
-      } else {
-        clog(`✅ [AuthService] Session cleanup completed - no expired sessions found (grace period working)`);
-      }
+      await models.UserSession.cleanupExpired();
     } catch (error) {
-      clog(`❌ [AuthService] Session cleanup error: ${error.message}`);
+      // Silent cleanup failure
     }
   }
 
@@ -548,20 +509,14 @@ class AuthService {
   async logoutUser(userId, sessionId = null, refreshTokenId = null) {
     try {
       if (sessionId) {
-        // Invalidate specific session
         await this.invalidateSession(sessionId);
-        clog(`🚪 User ${userId} logged out from session ${sessionId}`);
       } else {
-        // Invalidate all user sessions
-        const invalidatedCount = await this.invalidateUserSessions(userId);
-        clog(`🚪 User ${userId} logged out from ${invalidatedCount} sessions`);
+        await this.invalidateUserSessions(userId);
       }
 
       if (refreshTokenId) {
-        // Revoke specific refresh token
         await this.revokeRefreshToken(refreshTokenId);
       } else {
-        // Revoke all refresh tokens for user
         await this.revokeUserRefreshTokens(userId);
       }
 

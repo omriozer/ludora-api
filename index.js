@@ -39,6 +39,9 @@ if (missingVars.length > 0) {
 // Now import other modules after environment is loaded
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import cookie from 'cookie';
 
 // Initialize secrets service (validates critical secrets)
 import SecretsService from './services/SecretsService.js';
@@ -108,11 +111,37 @@ import productsRoutes from './routes/products.js';
 import svgSlidesRoutes from './routes/svgSlides.js';
 import systemTemplatesRoutes from './routes/system-templates.js';
 import eduContentRoutes from './routes/eduContent.js';
-import sseRoutes from './routes/sse.js';
 import settingsRoutes from './routes/settings.js';
 import playersRoutes from './routes/players.js';
 
+// Import services and utilities for Socket.IO authentication
+import AuthService from './services/AuthService.js';
+import PlayerService from './services/PlayerService.js';
+import SettingsService from './services/SettingsService.js';
+import { detectPortal, getPortalCookieNames } from './utils/cookieConfig.js';
+import { STUDENTS_ACCESS_MODES } from './constants/settingsKeys.js';
+import { clog, cerror } from './lib/utils.js';
+
+// Initialize services for Socket.IO authentication
+const socketAuthService = new AuthService();
+const socketPlayerService = new PlayerService();
+
+// Socket.IO Portal Authentication Constants
+const SOCKET_PORTAL_TYPES = {
+  TEACHER: 'teacher',
+  STUDENT: 'student'
+};
+
+const SOCKET_CREDENTIAL_POLICIES = {
+  WITH_CREDENTIALS: 'with_credentials',
+  WITHOUT_CREDENTIALS: 'without_credentials',
+  TRY_BOTH: 'try_both'
+};
+
 const app = express();
+
+// Create HTTP server for Socket.IO integration
+const httpServer = createServer(app);
 
 // 1. HTTPS Enforcement (must be first in production)
 if (process.env.ENVIRONMENT === 'production') {
@@ -208,7 +237,6 @@ app.use('/api/public', publicApisRoutes);
 app.use('/api/games', gamesRoutes);
 app.use('/api', gameLobbiesRoutes);
 app.use('/api', gameSessionsRoutes);
-app.use('/api/sse', sseRoutes);
 app.use('/api/edu-content', eduContentRoutes);
 app.use('/api/svg-slides', svgSlidesRoutes);
 app.use('/api/system-templates', systemTemplatesRoutes);
@@ -259,7 +287,6 @@ app.get('/api', (req, res) => {
       games: '/api/games',
       'game-lobbies': '/api/game-lobbies',
       'game-sessions': '/api/game-sessions',
-      'sse': '/api/sse',
       'edu-content': '/api/edu-content',
       'svg-slides': '/api/svg-slides',
       'system-templates': '/api/system-templates'
@@ -281,6 +308,444 @@ app.use(globalErrorHandler);
 
 const PORT = process.env.PORT || process.env.DEFAULT_PORT || 3000;
 
+// Configure Socket.IO server with CORS
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: (origin, callback) => {
+      // Use same CORS logic as the main API
+      const frontendUrls = [];
+
+      // Get frontend URLs from environment (same logic as dynamicCors)
+      if (process.env.FRONTEND_URL) {
+        frontendUrls.push(process.env.FRONTEND_URL);
+      }
+
+      if (process.env.ADDITIONAL_FRONTEND_URLS) {
+        const additionalUrls = process.env.ADDITIONAL_FRONTEND_URLS.split(',')
+          .map(url => url.trim())
+          .filter(url => url.length > 0);
+        frontendUrls.push(...additionalUrls);
+      }
+
+      // Default development URLs (both teacher and student portal ports)
+      if (frontendUrls.length === 0) {
+        frontendUrls.push('http://localhost:5173', 'http://localhost:5174', `http://localhost:${PORT}`);
+      }
+
+      // Development override
+      if (process.env.CORS_DEV_OVERRIDE === 'true') {
+        return callback(null, true);
+      }
+
+      // Allow requests with no origin (mobile apps, etc.)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Check if origin is allowed
+      if (frontendUrls.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.warn('🚨 Socket.IO CORS: Unauthorized origin attempt:', {
+        origin,
+        allowedOrigins: frontendUrls,
+        timestamp: new Date().toISOString()
+      });
+
+      callback(new Error('Not allowed by CORS policy'));
+    },
+    credentials: true, // Support cookie authentication
+    methods: ['GET', 'POST']
+  },
+  allowEIO3: true // Support older Socket.IO clients
+});
+
+// =============================================
+// SOCKET.IO PORTAL-AWARE AUTHENTICATION MIDDLEWARE
+// =============================================
+
+/**
+ * Parse portal context from Socket.IO handshake query parameters
+ * @param {Object} socket - Socket.IO socket object
+ * @returns {Object} Parsed portal context
+ */
+function parseSocketPortalContext(socket) {
+  const query = socket.handshake.query || {};
+  const auth = socket.handshake.auth || {};
+
+  // Merge query and auth objects (auth takes precedence)
+  const combined = { ...query, ...auth };
+
+  // TODO remove debug - update Socket.IO server for portal-aware authentication
+  clog('🔌 [SocketAuth] Parsing portal context from handshake:', {
+    query: Object.keys(query),
+    auth: Object.keys(auth)
+  });
+
+  return {
+    portalType: combined.portalType || SOCKET_PORTAL_TYPES.TEACHER,
+    credentialPolicy: combined.credentialPolicy || SOCKET_CREDENTIAL_POLICIES.WITH_CREDENTIALS,
+    studentsAccessMode: combined.studentsAccessMode || null,
+    authMethod: combined.authMethod || 'firebase'
+  };
+}
+
+/**
+ * Detect portal type from Socket.IO handshake headers
+ * Similar to HTTP request portal detection but for Socket.IO
+ * @param {Object} socket - Socket.IO socket object
+ * @returns {string} Portal type: 'teacher' or 'student'
+ */
+function detectSocketPortal(socket) {
+  const origin = socket.handshake.headers.origin || '';
+  const referer = socket.handshake.headers.referer || '';
+
+  // Student portal indicators
+  const studentIndicators = [
+    origin.includes('my.ludora.app'),
+    referer.includes('my.ludora.app'),
+    origin.includes('localhost:5174'),
+    referer.includes('localhost:5174')
+  ];
+
+  if (studentIndicators.some(indicator => indicator)) {
+    return SOCKET_PORTAL_TYPES.STUDENT;
+  }
+
+  return SOCKET_PORTAL_TYPES.TEACHER;
+}
+
+/**
+ * Attempt to authenticate socket using Firebase cookies
+ * @param {Object} socket - Socket.IO socket object
+ * @param {string} portalType - Portal type for cookie name selection
+ * @returns {Promise<Object|null>} User data or null if not authenticated
+ */
+async function authenticateSocketWithFirebase(socket, portalType) {
+  try {
+    // Parse cookies from handshake headers
+    const cookieHeader = socket.handshake.headers.cookie || '';
+    const cookies = cookie.parse(cookieHeader);
+
+    // Get portal-specific cookie names
+    const cookieNames = getPortalCookieNames(portalType);
+    const accessToken = cookies[cookieNames.accessToken];
+
+    if (!accessToken) {
+      // TODO remove debug - update Socket.IO server for portal-aware authentication
+      clog('🔌 [SocketAuth] No access token cookie found for portal:', portalType);
+      return null;
+    }
+
+    // Verify the token
+    const tokenData = await socketAuthService.verifyToken(accessToken);
+
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 [SocketAuth] Firebase authentication successful:', {
+      userId: tokenData.id || tokenData.user?.id,
+      portalType
+    });
+
+    return tokenData;
+  } catch (error) {
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 [SocketAuth] Firebase authentication failed:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Attempt to authenticate socket using player session cookie
+ * @param {Object} socket - Socket.IO socket object
+ * @returns {Promise<Object|null>} Player data or null if not authenticated
+ */
+async function authenticateSocketWithPlayerSession(socket) {
+  try {
+    // Parse cookies from handshake headers
+    const cookieHeader = socket.handshake.headers.cookie || '';
+    const cookies = cookie.parse(cookieHeader);
+    const playerSession = cookies.player_session;
+
+    if (!playerSession) {
+      // TODO remove debug - update Socket.IO server for portal-aware authentication
+      clog('🔌 [SocketAuth] No player session cookie found');
+      return null;
+    }
+
+    // Validate player session
+    const sessionData = await socketPlayerService.validateSession(playerSession);
+
+    if (!sessionData) {
+      // TODO remove debug - update Socket.IO server for portal-aware authentication
+      clog('🔌 [SocketAuth] Invalid player session');
+      return null;
+    }
+
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 [SocketAuth] Player session authentication successful:', {
+      playerId: sessionData.playerId,
+      displayName: sessionData.player?.display_name
+    });
+
+    return {
+      player: sessionData.player,
+      sessionId: sessionData.sessionId,
+      sessionType: 'player'
+    };
+  } catch (error) {
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 [SocketAuth] Player session authentication failed:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Validate students access mode against current settings
+ * @param {string} requestedMode - Mode requested by client
+ * @returns {Promise<boolean>} True if the requested mode matches settings
+ */
+async function validateStudentsAccessMode(requestedMode) {
+  try {
+    const currentMode = await SettingsService.getStudentsAccessMode();
+    return currentMode === requestedMode;
+  } catch (error) {
+    cerror('🔌 [SocketAuth] Error validating students access mode:', error);
+    return false;
+  }
+}
+
+/**
+ * Socket.IO authentication middleware
+ * Validates connections based on portal context and credential policy
+ */
+io.use(async (socket, next) => {
+  try {
+    // Parse portal context from client handshake
+    const portalContext = parseSocketPortalContext(socket);
+
+    // Also detect portal from headers for validation
+    const detectedPortal = detectSocketPortal(socket);
+
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 [SocketAuth] Connection attempt:', {
+      socketId: socket.id,
+      portalContext,
+      detectedPortal,
+      origin: socket.handshake.headers.origin
+    });
+
+    // Initialize socket authentication context
+    socket.portalContext = portalContext;
+    socket.isAuthenticated = false;
+    socket.user = null;
+    socket.player = null;
+
+    // Validate based on credential policy
+    const { credentialPolicy, portalType, studentsAccessMode } = portalContext;
+
+    switch (credentialPolicy) {
+      case SOCKET_CREDENTIAL_POLICIES.WITH_CREDENTIALS: {
+        // Firebase authentication required
+        const userData = await authenticateSocketWithFirebase(socket, portalType);
+
+        if (!userData) {
+          // TODO remove debug - update Socket.IO server for portal-aware authentication
+          clog('🔌 [SocketAuth] Rejecting connection: Firebase auth required but not provided');
+          return next(new Error('Authentication required'));
+        }
+
+        socket.isAuthenticated = true;
+        socket.user = userData;
+        socket.authMethod = 'firebase';
+
+        // TODO remove debug - update Socket.IO server for portal-aware authentication
+        clog('🔌 [SocketAuth] Connection authenticated via Firebase');
+        break;
+      }
+
+      case SOCKET_CREDENTIAL_POLICIES.WITHOUT_CREDENTIALS: {
+        // Anonymous connection allowed (for student portal invite_only mode)
+        // Verify this is actually a student portal connection
+        if (portalType === SOCKET_PORTAL_TYPES.TEACHER) {
+          // TODO remove debug - update Socket.IO server for portal-aware authentication
+          clog('🔌 [SocketAuth] Rejecting: Teacher portal cannot use anonymous connections');
+          return next(new Error('Teacher portal requires authentication'));
+        }
+
+        // For student portal, allow anonymous but check for optional player session
+        const playerData = await authenticateSocketWithPlayerSession(socket);
+
+        if (playerData) {
+          socket.player = playerData;
+          socket.authMethod = 'player_session';
+          // TODO remove debug - update Socket.IO server for portal-aware authentication
+          clog('🔌 [SocketAuth] Anonymous connection with player session:', playerData.player?.display_name);
+        } else {
+          socket.authMethod = 'anonymous';
+          // TODO remove debug - update Socket.IO server for portal-aware authentication
+          clog('🔌 [SocketAuth] Fully anonymous connection allowed');
+        }
+
+        // Anonymous connections are allowed, mark as not authenticated but valid
+        socket.isAuthenticated = false;
+        break;
+      }
+
+      case SOCKET_CREDENTIAL_POLICIES.TRY_BOTH: {
+        // Try Firebase first, then fall back to player session, then allow anonymous
+        const userData = await authenticateSocketWithFirebase(socket, portalType);
+
+        if (userData) {
+          socket.isAuthenticated = true;
+          socket.user = userData;
+          socket.authMethod = 'firebase';
+          // TODO remove debug - update Socket.IO server for portal-aware authentication
+          clog('🔌 [SocketAuth] TRY_BOTH: Authenticated via Firebase');
+        } else {
+          // Try player session
+          const playerData = await authenticateSocketWithPlayerSession(socket);
+
+          if (playerData) {
+            socket.player = playerData;
+            socket.authMethod = 'player_session';
+            // TODO remove debug - update Socket.IO server for portal-aware authentication
+            clog('🔌 [SocketAuth] TRY_BOTH: Authenticated via player session');
+          } else {
+            // Allow anonymous for student portal
+            if (portalType === SOCKET_PORTAL_TYPES.STUDENT) {
+              socket.authMethod = 'anonymous';
+              // TODO remove debug - update Socket.IO server for portal-aware authentication
+              clog('🔌 [SocketAuth] TRY_BOTH: Anonymous connection allowed for student portal');
+            } else {
+              // Teacher portal requires authentication
+              // TODO remove debug - update Socket.IO server for portal-aware authentication
+              clog('🔌 [SocketAuth] TRY_BOTH: Rejecting anonymous teacher portal connection');
+              return next(new Error('Teacher portal requires authentication'));
+            }
+          }
+
+          socket.isAuthenticated = false;
+        }
+        break;
+      }
+
+      default: {
+        // Unknown credential policy - default to requiring authentication
+        // TODO remove debug - update Socket.IO server for portal-aware authentication
+        clog('🔌 [SocketAuth] Unknown credential policy, requiring authentication:', credentialPolicy);
+
+        const userData = await authenticateSocketWithFirebase(socket, portalType);
+
+        if (!userData) {
+          return next(new Error('Authentication required'));
+        }
+
+        socket.isAuthenticated = true;
+        socket.user = userData;
+        socket.authMethod = 'firebase';
+      }
+    }
+
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 [SocketAuth] Connection authorized:', {
+      socketId: socket.id,
+      portalType,
+      authMethod: socket.authMethod,
+      isAuthenticated: socket.isAuthenticated,
+      userId: socket.user?.id || socket.user?.user?.id || null,
+      playerId: socket.player?.player?.id || null
+    });
+
+    next();
+  } catch (error) {
+    cerror('🔌 [SocketAuth] Authentication middleware error:', error);
+    next(new Error('Authentication failed'));
+  }
+});
+
+// =============================================
+// SOCKET.IO CONNECTION HANDLING
+// =============================================
+
+// Socket.IO connection handling with portal-aware context
+io.on('connection', (socket) => {
+  // TODO remove debug - update Socket.IO server for portal-aware authentication
+  clog('🔌 Socket.IO client connected:', {
+    id: socket.id,
+    origin: socket.handshake.headers.origin,
+    portalType: socket.portalContext?.portalType,
+    authMethod: socket.authMethod,
+    isAuthenticated: socket.isAuthenticated,
+    userId: socket.user?.id || socket.user?.user?.id || null,
+    playerId: socket.player?.player?.id || null
+  });
+
+  // Join lobby updates channel
+  socket.on('join-lobby-updates', () => {
+    socket.join('lobby-updates');
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog(`🔌 Socket ${socket.id} joined lobby-updates channel (auth: ${socket.authMethod})`);
+  });
+
+  // Legacy event handler for backward compatibility
+  socket.on('join', (channel) => {
+    if (channel === 'lobby-updates') {
+      socket.join('lobby-updates');
+      // TODO remove debug - update Socket.IO server for portal-aware authentication
+      clog(`🔌 Socket ${socket.id} joined ${channel} via legacy 'join' event`);
+    }
+  });
+
+  // Leave lobby updates channel
+  socket.on('leave-lobby-updates', () => {
+    socket.leave('lobby-updates');
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog(`🔌 Socket ${socket.id} left lobby-updates channel`);
+  });
+
+  // Legacy event handler for backward compatibility
+  socket.on('leave', (channel) => {
+    if (channel === 'lobby-updates') {
+      socket.leave('lobby-updates');
+      // TODO remove debug - update Socket.IO server for portal-aware authentication
+      clog(`🔌 Socket ${socket.id} left ${channel} via legacy 'leave' event`);
+    }
+  });
+
+  // Handle test messages (for debugging)
+  socket.on('test', (data) => {
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 Socket test message received:', {
+      socketId: socket.id,
+      data,
+      authMethod: socket.authMethod
+    });
+  });
+
+  socket.on('disconnect', (reason) => {
+    // TODO remove debug - update Socket.IO server for portal-aware authentication
+    clog('🔌 Socket.IO client disconnected:', {
+      id: socket.id,
+      reason,
+      portalType: socket.portalContext?.portalType,
+      authMethod: socket.authMethod,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // Handle connection errors
+  socket.on('error', (error) => {
+    cerror('🔌 Socket.IO error:', {
+      socketId: socket.id,
+      error: error.message
+    });
+  });
+});
+
+// Export io instance for use in other services
+global.io = io;
+
 // Initialize database before starting server
 async function startServer() {
   try {
@@ -297,8 +762,8 @@ async function startServer() {
       // Don't fail server startup if session extension fails
     }
 
-    const server = app.listen(PORT, () => {
-      console.log(`Ludora API Server running on port ${PORT} (${env})`);
+    const server = httpServer.listen(PORT, () => {
+      console.log(`Ludora API Server with Socket.IO running on port ${PORT} (${env})`);
     });
 
     // Start background services

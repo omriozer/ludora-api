@@ -4,7 +4,7 @@
 import models from '../models/index.js';
 import { Op } from 'sequelize';
 import { clog, cerror } from '../lib/utils.js';
-import { broadcastSessionEvent, SSE_EVENT_TYPES } from './SSEBroadcaster.js';
+import LobbySocketService from './LobbySocketService.js';
 
 /**
  * GameSessionService - Manages session creation, participant management, and game state
@@ -23,7 +23,6 @@ class GameSessionService {
    */
   static async createSession(lobbyId, sessionData, userId, transaction = null) {
     try {
-      clog(`🎮 Creating session for lobby ${lobbyId} by user ${userId}`);
 
       // Validate that lobby exists and is active
       const lobby = await models.GameLobby.findByPk(lobbyId, { transaction });
@@ -64,22 +63,9 @@ class GameSessionService {
       // Return session with lobby details
       const sessionWithDetails = await this.getSessionDetails(session.id, transaction);
 
-      // Emit SSE event for session creation
-      try {
-        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_CREATED, session.id, lobbyId, lobby.game_id, {
-          session_number: nextSessionNumber,
-          participants_count: formattedParticipants.length,
-          status: 'pending',
-          created_by: userId,
-          lobby_code: lobby.lobby_code
-        });
-        clog(`📡 Broadcasted SESSION_CREATED event for session ${session.id}`);
-      } catch (sseError) {
-        cerror('❌ Failed to broadcast session created event:', sseError);
-        // Don't fail the creation if SSE fails
-      }
+      // Broadcast session created event
+      LobbySocketService.broadcastSessionCreated(sessionWithDetails);
 
-      clog(`✅ Created session ${session.id} (session #${nextSessionNumber}) in lobby ${lobbyId}`);
       return sessionWithDetails;
 
     } catch (error) {
@@ -102,7 +88,6 @@ class GameSessionService {
    */
   static async addParticipant(sessionId, participantData, userId, transaction = null) {
     try {
-      clog(`👤 Adding participant to session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
         include: [
@@ -169,26 +154,9 @@ class GameSessionService {
       // Return updated session
       const updatedSession = await this.getSessionDetails(sessionId, transaction);
 
-      // Emit SSE event for participant joined
-      try {
-        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_PARTICIPANT_JOINED, sessionId, lobby.id, lobby.game.id, {
-          participant: {
-            id: newParticipant.id,
-            display_name: newParticipant.display_name,
-            isAuthedUser: newParticipant.isAuthedUser,
-            team_assignment: newParticipant.team_assignment
-          },
-          participants_count: updatedParticipants.length,
-          session_number: session.session_number,
-          lobby_code: lobby.lobby_code
-        });
-        clog(`📡 Broadcasted SESSION_PARTICIPANT_JOINED event for session ${sessionId}`);
-      } catch (sseError) {
-        cerror('❌ Failed to broadcast participant joined event:', sseError);
-        // Don't fail the operation if SSE fails
-      }
+      // Broadcast participant joined event
+      LobbySocketService.broadcastParticipantJoined(updatedSession);
 
-      clog(`✅ Added participant ${newParticipant.display_name} to session ${sessionId}`);
       return updatedSession;
 
     } catch (error) {
@@ -207,7 +175,6 @@ class GameSessionService {
    */
   static async removeParticipant(sessionId, participantId, userId, transaction = null) {
     try {
-      clog(`👤 Removing participant ${participantId} from session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
         include: [{ model: models.GameLobby, as: 'lobby' }],
@@ -249,26 +216,9 @@ class GameSessionService {
       // Return updated session
       const updatedSession = await this.getSessionDetails(sessionId, transaction);
 
-      // Emit SSE event for participant left
-      try {
-        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_PARTICIPANT_LEFT, sessionId, lobby.id, lobby.game_id, {
-          participant: {
-            id: participant.id,
-            display_name: participant.display_name,
-            isAuthedUser: participant.isAuthedUser
-          },
-          participants_count: updatedParticipants.length,
-          session_number: session.session_number,
-          lobby_code: lobby.lobby_code,
-          removed_by: userId
-        });
-        clog(`📡 Broadcasted SESSION_PARTICIPANT_LEFT event for session ${sessionId}`);
-      } catch (sseError) {
-        cerror('❌ Failed to broadcast participant left event:', sseError);
-        // Don't fail the operation if SSE fails
-      }
+      // Broadcast participant left event
+      LobbySocketService.broadcastParticipantLeft(updatedSession);
 
-      clog(`✅ Removed participant ${participant.display_name} from session ${sessionId}`);
       return updatedSession;
 
     } catch (error) {
@@ -288,7 +238,6 @@ class GameSessionService {
    */
   static async updateGameState(sessionId, newState, userId, autoSave = true, transaction = null) {
     try {
-      clog(`🎮 Updating game state for session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
         include: [{ model: models.GameLobby, as: 'lobby' }],
@@ -340,23 +289,9 @@ class GameSessionService {
       // Return updated session
       const updatedSession = await this.getSessionDetails(sessionId, transaction);
 
-      // Emit SSE event for game state update
-      try {
-        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_STATE_UPDATED, sessionId, lobby.id, lobby.game_id, {
-          updated_by: userId,
-          session_number: session.session_number,
-          participants_count: session.participants ? session.participants.length : 0,
-          auto_saved: autoSave,
-          state_keys: Object.keys(newState), // What parts of the state were updated
-          last_updated: updateData.current_state.last_updated
-        });
-        clog(`📡 Broadcasted SESSION_STATE_UPDATED event for session ${sessionId}`);
-      } catch (sseError) {
-        cerror('❌ Failed to broadcast session state updated event:', sseError);
-        // Don't fail the operation if SSE fails
-      }
+      // Broadcast game state updated event
+      LobbySocketService.broadcastGameStateUpdated(updatedSession);
 
-      clog(`✅ Updated game state for session ${sessionId}`);
       return updatedSession;
 
     } catch (error) {
@@ -375,7 +310,6 @@ class GameSessionService {
    */
   static async finishSession(sessionId, finalData, userId, transaction = null) {
     try {
-      clog(`🏁 Finishing session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
         include: [{ model: models.GameLobby, as: 'lobby' }],
@@ -414,23 +348,9 @@ class GameSessionService {
       // Return finished session
       const finishedSession = await this.getSessionDetails(sessionId, transaction);
 
-      // Emit SSE event for session finished
-      try {
-        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_FINISHED, sessionId, lobby.id, lobby.game_id, {
-          session_number: session.session_number,
-          participants_count: session.participants ? session.participants.length : 0,
-          finished_by: userId,
-          finished_at: updateData.finished_at,
-          lobby_code: lobby.lobby_code,
-          final_data_keys: Object.keys(finalData) // What final data was saved
-        });
-        clog(`📡 Broadcasted SESSION_FINISHED event for session ${sessionId}`);
-      } catch (sseError) {
-        cerror('❌ Failed to broadcast session finished event:', sseError);
-        // Don't fail the operation if SSE fails
-      }
+      // Broadcast session finished event
+      LobbySocketService.broadcastSessionFinished(finishedSession);
 
-      clog(`✅ Finished session ${sessionId}`);
       return finishedSession;
 
     } catch (error) {
@@ -614,7 +534,6 @@ class GameSessionService {
    */
   static async startSession(sessionId, userId, transaction = null) {
     try {
-      clog(`▶️ Starting session ${sessionId}`);
 
       const session = await models.GameSession.findByPk(sessionId, {
         include: [{ model: models.GameLobby, as: 'lobby' }],
@@ -648,22 +567,9 @@ class GameSessionService {
 
       const startedSession = await this.getSessionDetails(sessionId, transaction);
 
-      // Emit SSE event for session started
-      try {
-        broadcastSessionEvent(SSE_EVENT_TYPES.SESSION_STARTED, sessionId, lobby.id, lobby.game_id, {
-          session_number: session.session_number,
-          participants_count: session.participants ? session.participants.length : 0,
-          started_by: userId,
-          started_at: session.started_at,
-          lobby_code: lobby.lobby_code
-        });
-        clog(`📡 Broadcasted SESSION_STARTED event for session ${sessionId}`);
-      } catch (sseError) {
-        cerror('❌ Failed to broadcast session started event:', sseError);
-        // Don't fail the operation if SSE fails
-      }
+      // Broadcast session started event
+      LobbySocketService.broadcastSessionStarted(startedSession);
 
-      clog(`✅ Started session ${sessionId}`);
       return startedSession;
 
     } catch (error) {
