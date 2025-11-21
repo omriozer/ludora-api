@@ -308,19 +308,20 @@ async function collectUrlFieldReferences() {
       }
     }
 
-    // Settings.logo_url
-    const settings = await safeModelQuery(() => models.Settings.findAll({
-      attributes: ['logo_url'],
+    // Settings.logo_url (key-value structure)
+    const logoUrlConfigs = await safeModelQuery(() => models.Settings.findAll({
+      attributes: ['key', 'value'],
       where: {
-        logo_url: {
+        key: 'logo_url',
+        value: {
           [models.Sequelize.Op.ne]: null
         }
       }
-    }), 'Settings');
+    }), 'Configuration');
 
-    for (const setting of settings) {
-      if (setting.logo_url) {
-        const s3Key = EntityService.extractS3KeyFromUrl(setting.logo_url);
+    for (const config of logoUrlConfigs) {
+      if (config.value) {
+        const s3Key = EntityService.extractS3KeyFromUrl(config.value);
         if (s3Key) references.push(s3Key);
       }
     }
@@ -381,19 +382,20 @@ async function collectJsonbReferences() {
       }
     }
 
-    // Settings.footer_settings (may contain logo URLs)
-    const settingsWithFooter = await safeModelQuery(() => models.Settings.findAll({
-      attributes: ['footer_settings'],
+    // Settings.footer_settings (may contain logo URLs) - key-value structure
+    const footerSettingsConfigs = await safeModelQuery(() => models.Settings.findAll({
+      attributes: ['key', 'value'],
       where: {
-        footer_settings: {
+        key: 'footer_settings',
+        value: {
           [models.Sequelize.Op.ne]: null
         }
       }
     }), 'Settings');
 
-    for (const setting of settingsWithFooter) {
-      if (setting.footer_settings && setting.footer_settings.logo && setting.footer_settings.logo.url) {
-        const s3Key = EntityService.extractS3KeyFromUrl(setting.footer_settings.logo.url);
+    for (const config of footerSettingsConfigs) {
+      if (config.value && typeof config.value === 'object' && config.value.logo && config.value.logo.url) {
+        const s3Key = EntityService.extractS3KeyFromUrl(config.value.logo.url);
         if (s3Key) references.push(s3Key);
       }
     }

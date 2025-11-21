@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { validateBody, schemas } from '../middleware/validation.js';
 import EntityService from '../services/EntityService.js';
+import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 
@@ -25,12 +26,6 @@ async function checkContentCreatorPermissions(user, entityType) {
   // For product types, check specific content creator permissions
   if (ALL_PRODUCT_TYPES.includes(entityType)) {
     try {
-      const settings = await models.Settings.findAll();
-      if (!settings || settings.length === 0) {
-        return { allowed: false, message: 'System settings not found' };
-      }
-
-      const currentSettings = settings[0];
       let permissionKey;
 
       if (entityType === 'file' || entityType === 'tool') {
@@ -41,7 +36,9 @@ async function checkContentCreatorPermissions(user, entityType) {
         permissionKey = `allow_content_creator_${entityType}s`;
       }
 
-      if (!currentSettings[permissionKey]) {
+      const permissionValue = await SettingsService.get(permissionKey);
+
+      if (!permissionValue) {
         return {
           allowed: false,
           message: `Content creators are not allowed to create ${entityType}s`

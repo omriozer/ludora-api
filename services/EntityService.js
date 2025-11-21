@@ -132,7 +132,7 @@ class EntityService {
       'classroommembership': 'ClassroomMembership',
       'curriculumitem': 'CurriculumItem',
       'curriculumproduct': 'CurriculumProduct',
-      'lessonplan': 'LessonPlan'
+      'lessonplan': 'LessonPlan',
     };
 
     // Check for special mappings first

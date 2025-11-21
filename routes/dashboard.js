@@ -1,6 +1,7 @@
 import express from 'express';
 import { Op } from 'sequelize';
 import { authenticateToken } from '../middleware/auth.js';
+import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { rateLimiters } from '../middleware/validation.js';
 
@@ -18,16 +19,10 @@ router.use(rateLimiters.general);
  */
 router.get('/widgets', async (req, res) => {
   try {
-    // Get available widgets from settings (find the record that has widgets configured)
-    const settings = await models.Settings.findOne({
-      where: {
-        available_dashboard_widgets: {
-          [Op.ne]: null
-        }
-      }
-    });
+    // Get available widgets from configuration
+    const availableWidgets = await SettingsService.get('available_dashboard_widgets');
 
-    if (!settings || !settings.available_dashboard_widgets) {
+    if (!availableWidgets) {
       return res.json({
         success: true,
         data: {},
@@ -37,7 +32,7 @@ router.get('/widgets', async (req, res) => {
 
     res.json({
       success: true,
-      data: settings.available_dashboard_widgets,
+      data: availableWidgets,
       message: 'Available widgets retrieved successfully'
     });
   } catch (error) {
@@ -165,15 +160,8 @@ router.post('/widgets', async (req, res) => {
       });
     }
 
-    // Get available widgets to validate type (find the record that has widgets configured)
-    const globalSettings = await models.Settings.findOne({
-      where: {
-        available_dashboard_widgets: {
-          [Op.ne]: null
-        }
-      }
-    });
-    const availableWidgets = globalSettings?.available_dashboard_widgets || {};
+    // Get available widgets to validate type
+    const availableWidgets = await SettingsService.get('available_dashboard_widgets') || {};
 
     if (!availableWidgets[type]) {
       return res.status(400).json({

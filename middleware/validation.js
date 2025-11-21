@@ -444,7 +444,7 @@ export const customValidators = {
   // Validate entity type
   validateEntityType: (req, res, next) => {
     const validEntityTypes = [
-      'user', 'settings', 'registration', 'emailtemplate', 'category',
+      'user', 'settings', 'configuration', 'registration', 'emailtemplate', 'category',
       'coupon', 'supportmessage', 'notification', 'product',
       'purchase', 'workshop', 'course', 'file', 'tool', 'emaillog',
       'game', 'gamecontent', 'audiofile', 'gameaudiosettings', 'word', 'worden', 'image',

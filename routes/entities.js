@@ -5,6 +5,7 @@ import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
 import EntityService from '../services/EntityService.js';
 import GameDetailsService from '../services/GameDetailsService.js';
+import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { sequelize } from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
@@ -149,12 +150,6 @@ async function checkContentCreatorPermissions(user, entityType, entityData = {})
   // For product types, check specific content creator permissions
   if (ALL_PRODUCT_TYPES.includes(entityType)) {
     try {
-      const settings = await models.Settings.findAll();
-      if (!settings || settings.length === 0) {
-        return { allowed: false, message: 'System settings not found' };
-      }
-
-      const currentSettings = settings[0];
       let permissionKey;
 
       if (entityType === 'file' || entityType === 'tool') {
@@ -165,7 +160,9 @@ async function checkContentCreatorPermissions(user, entityType, entityData = {})
         permissionKey = `allow_content_creator_${entityType}s`;
       }
 
-      if (!currentSettings[permissionKey]) {
+      const permissionValue = await SettingsService.get(permissionKey);
+
+      if (!permissionValue) {
         return {
           allowed: false,
           message: `Content creators are not allowed to create ${entityType}s`
@@ -609,15 +606,15 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       }
     }
 
-    const results = await EntityService.find(entityType, query, options);
-
-    // For Settings entity, add file_types_config and backwards compatibility for copyright_footer_text
+    // For Settings entity, use SettingsService to get properly transformed object with enhancements
     if (entityType === 'settings') {
-      const enhancedResults = results.map(setting => {
-        const settingData = setting.toJSON ? setting.toJSON() : setting;
+      try {
+        // Get settings object from SettingsService (built from key-value records)
+        const settingsObject = await SettingsService.getSettings();
 
-        return {
-          ...settingData,
+        // Enhance with same static config as Configuration
+        const enhancedSettings = {
+          ...settingsObject,
           file_types_config: getFileTypesForFrontend(),
           study_subjects: STUDY_SUBJECTS,
           audiance_targets: AUDIANCE_TARGETS,
@@ -625,9 +622,16 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
           game_types: GAME_TYPES,
           languade_options: LANGUAGES_OPTIONS
         };
-      });
-      return res.json(enhancedResults);
+
+        // Return as array to match frontend expectations
+        return res.json([enhancedSettings]);
+      } catch (error) {
+        return res.status(500).json({ error: `Settings service error: ${error.message}` });
+      }
     }
+
+    const results = await EntityService.find(entityType, query, options);
+
 
 
     res.json(results);

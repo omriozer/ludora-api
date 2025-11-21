@@ -93,7 +93,7 @@ class SSEBroadcaster {
     // Configuration
     this.config = {
       heartbeatIntervalMs: 30000,    // 30 seconds
-      cleanupIntervalMs: 60000,      // 1 minute
+      cleanupIntervalMs: 15000,      // 15 seconds (reduced from 60s for faster cleanup)
       maxConnections: 1000,          // Per process (absolute maximum)
       maxChannelsPerConnection: 50,  // Prevent subscription abuse
       connectionTimeoutMs: 300000,   // 5 minutes
@@ -327,7 +327,14 @@ class SSEBroadcaster {
         lastActivity: new Date(),
         priority: priority,
         priorityType: priorityType,
-        sessionContext: sessionContext
+        sessionContext: sessionContext,
+        // ✅ NEW: Connection health monitoring
+        healthStats: {
+          failedSends: 0,
+          consecutiveBufferFull: 0,
+          lastFailureTime: null,
+          isHealthy: true
+        }
       };
 
       this.connections.set(connectionId, connection);
@@ -599,15 +606,36 @@ class SSEBroadcaster {
       const canWrite = connection.response.write(eventData);
 
       if (!canWrite) {
-        // Response buffer is full, but don't terminate connection
-        cerror(`⚠️ Response buffer full for connection ${connectionId}, but keeping connection alive`);
+        // ✅ ENHANCED: Track buffer full conditions for health monitoring
+        connection.healthStats.consecutiveBufferFull++;
+        connection.healthStats.lastFailureTime = new Date();
+
+        // If buffer is consistently full, mark as unhealthy
+        if (connection.healthStats.consecutiveBufferFull >= 3) {
+          connection.healthStats.isHealthy = false;
+          cerror(`🏥 Connection ${connectionId} marked unhealthy - consecutive buffer full (${connection.healthStats.consecutiveBufferFull})`);
+        } else {
+          clog(`⚠️ Response buffer full for connection ${connectionId} (${connection.healthStats.consecutiveBufferFull}/3)`);
+        }
         return false;
       }
 
+      // ✅ RESET: Buffer write succeeded, reset health stats
+      connection.healthStats.consecutiveBufferFull = 0;
+      connection.healthStats.isHealthy = true;
       connection.lastActivity = new Date();
       return true;
     } catch (error) {
-      cerror(`❌ Failed to send event to connection ${connectionId}:`, error);
+      // ✅ ENHANCED: Track failed send attempts
+      connection.healthStats.failedSends++;
+      connection.healthStats.lastFailureTime = new Date();
+
+      // Mark as unhealthy after 2 failed sends
+      if (connection.healthStats.failedSends >= 2) {
+        connection.healthStats.isHealthy = false;
+      }
+
+      cerror(`❌ Failed to send event to connection ${connectionId} (${connection.healthStats.failedSends} failures):`, error);
 
       // ✅ FIXED: For welcome messages, try one retry before giving up
       if (isWelcomeMessage && !connection.welcomeRetried) {
@@ -621,10 +649,14 @@ class SSEBroadcaster {
         return false;
       }
 
-      // ✅ FIXED: For non-welcome messages, don't immediately terminate
-      // Just log the error and let the connection cleanup handle it
+      // ✅ ENHANCED: For non-welcome messages, check if connection is persistently unhealthy
       if (!isWelcomeMessage) {
-        clog(`⚠️ Non-critical send failure for connection ${connectionId}, keeping connection alive`);
+        if (!connection.healthStats.isHealthy) {
+          clog(`🏥 Removing unhealthy connection ${connectionId} after failed send`);
+          this.removeConnection(connectionId);
+        } else {
+          clog(`⚠️ Non-critical send failure for connection ${connectionId}, keeping connection alive`);
+        }
         return false;
       }
 
@@ -655,21 +687,50 @@ class SSEBroadcaster {
     this.cleanupInterval = setInterval(() => {
       const now = new Date();
       const staleConnections = [];
+      const unhealthyConnections = [];
 
       this.connections.forEach((connection, connectionId) => {
         const timeSinceActivity = now - connection.lastActivity;
+
+        // ✅ EXISTING: Time-based stale connection detection
         if (timeSinceActivity > this.config.connectionTimeoutMs) {
-          staleConnections.push(connectionId);
+          staleConnections.push({ connectionId, reason: 'timeout' });
+          return;
+        }
+
+        // ✅ NEW: Health-based connection cleanup
+        if (!connection.healthStats.isHealthy) {
+          const timeSinceFailure = connection.healthStats.lastFailureTime
+            ? now - connection.healthStats.lastFailureTime
+            : 0;
+
+          // Remove unhealthy connections after 30 seconds
+          if (timeSinceFailure > 30000) {
+            unhealthyConnections.push({
+              connectionId,
+              reason: 'unhealthy',
+              failedSends: connection.healthStats.failedSends,
+              bufferFull: connection.healthStats.consecutiveBufferFull
+            });
+          }
         }
       });
 
-      staleConnections.forEach(connectionId => {
-        clog(`🧹 Cleaning up stale connection: ${connectionId}`);
+      // Clean up stale connections
+      staleConnections.forEach(({ connectionId, reason }) => {
+        clog(`🧹 Cleaning up stale connection: ${connectionId} (${reason})`);
         this.removeConnection(connectionId);
       });
 
-      if (staleConnections.length > 0) {
-        clog(`🧹 Cleaned up ${staleConnections.length} stale connections`);
+      // Clean up unhealthy connections
+      unhealthyConnections.forEach(({ connectionId, reason, failedSends, bufferFull }) => {
+        clog(`🏥 Cleaning up unhealthy connection: ${connectionId} (fails: ${failedSends}, buffer: ${bufferFull})`);
+        this.removeConnection(connectionId);
+      });
+
+      const totalCleaned = staleConnections.length + unhealthyConnections.length;
+      if (totalCleaned > 0) {
+        clog(`🧹 Cleaned up ${totalCleaned} connections (${staleConnections.length} stale, ${unhealthyConnections.length} unhealthy)`);
       }
 
     }, this.config.cleanupIntervalMs);

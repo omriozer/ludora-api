@@ -10,8 +10,8 @@ class SettingsService {
   }
 
   /**
-   * Get current settings with caching
-   * @returns {Promise<Object>} Settings object
+   * Get current settings built from Settings records with caching
+   * @returns {Promise<Object>} Settings object (identical to ConfigurationService)
    */
   async getSettings() {
     const now = Date.now();
@@ -23,29 +23,31 @@ class SettingsService {
       return this.cache.settings;
     }
 
-    // Fetch fresh settings from database
+    // Fetch fresh settings from settings records
     await this.refreshCache();
     return this.cache.settings;
   }
 
   /**
-   * Refresh settings cache from database
+   * Refresh settings cache from Settings records
    * @returns {Promise<Object>} Fresh settings object
    */
   async refreshCache() {
     try {
-      const settingsArray = await models.Settings.findAll();
+      // Fetch all settings records
+      const settingsRecords = await models.Settings.findAll({
+        order: [['key', 'ASC']]
+      });
 
-      if (!settingsArray || settingsArray.length === 0) {
+      if (!settingsRecords || settingsRecords.length === 0) {
         // Create default settings if none exist
-        const defaultSettings = await models.Settings.create({
-          students_access: 'all',
-          maintenance_mode: false
-        });
+        const defaultSettings = await this.createDefaultSettings();
         this.cache.settings = defaultSettings;
       } else {
-        // Use first (and typically only) settings record
-        this.cache.settings = settingsArray[0];
+        // Build Settings-like object from Settings records
+        this.cache.settings = models.Settings.buildSettingsObject(settingsRecords);
+        // Add an id for compatibility
+        this.cache.settings.id = 1;
       }
 
       this.cache.lastFetch = Date.now();
@@ -57,6 +59,49 @@ class SettingsService {
         return this.cache.settings;
       }
       throw error;
+    }
+  }
+
+  /**
+   * Create default settings records
+   * @returns {Promise<Object>} Default settings object
+   */
+  async createDefaultSettings() {
+    const defaultConfigs = [
+      { key: 'students_access', value: 'all', value_type: 'string', description: 'Student portal access mode' },
+      { key: 'maintenance_mode', value: false, value_type: 'boolean', description: 'System maintenance mode' }
+    ];
+
+    const transaction = await models.sequelize.transaction();
+    try {
+      // Create default settings records
+      await models.Settings.bulkCreate(defaultConfigs, { transaction });
+      await transaction.commit();
+
+      // Return built settings object
+      return models.Settings.buildSettingsObject(defaultConfigs.map(config => ({
+        key: config.key,
+        value: config.value,
+        value_type: config.value_type
+      })));
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific setting value by key
+   * @param {string} key - Setting key to retrieve
+   * @returns {Promise<any>} Setting value or null if not found
+   */
+  async get(key) {
+    try {
+      const settings = await this.getSettings();
+      return settings[key] || null;
+    } catch (error) {
+      console.error(`Error getting setting '${key}':`, error);
+      return null;
     }
   }
 
@@ -133,17 +178,40 @@ class SettingsService {
    * @returns {Promise<Object>} Updated settings object
    */
   async updateSettings(updates) {
-    try {
-      const settings = await this.getSettings();
+    const transaction = await models.sequelize.transaction();
 
-      // Update the settings record
-      await settings.update(updates);
+    try {
+      // Update individual settings records
+      for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined) {
+          // Determine value type
+          let valueType = 'string';
+          if (typeof value === 'boolean') {
+            valueType = 'boolean';
+          } else if (typeof value === 'number') {
+            valueType = 'number';
+          } else if (typeof value === 'object' && value !== null) {
+            valueType = Array.isArray(value) ? 'array' : 'object';
+          }
+
+          // Update or create settings record
+          await models.Settings.upsert({
+            key: key,
+            value: value,
+            value_type: valueType,
+            description: `Updated settings for ${key}`
+          }, { transaction });
+        }
+      }
+
+      await transaction.commit();
 
       // Refresh cache with updated data
       await this.refreshCache();
 
       return this.cache.settings;
     } catch (error) {
+      await transaction.rollback();
       console.error('Error updating settings:', error);
       throw error;
     }

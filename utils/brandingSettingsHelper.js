@@ -185,10 +185,10 @@ export async function resolveBrandingTemplate(fileEntity) {
  * Uses unified structure only - legacy structure support removed
  *
  * @param {Object} fileEntity - File entity from database
- * @param {Object} systemSettings - System settings object (optional)
+ * @param {Object} configurationSettings - Configuration settings object (optional)
  * @returns {Promise<Object>} Complete branding settings ready for PDF rendering in unified structure
  */
-export async function resolveBrandingSettingsFromTemplate(fileEntity, systemSettings = null) {
+export async function resolveBrandingSettingsFromTemplate(fileEntity, configurationSettings = null) {
   // Get the appropriate branding template
   const template = await resolveBrandingTemplate(fileEntity);
 
@@ -211,9 +211,9 @@ export async function resolveBrandingSettingsFromTemplate(fileEntity, systemSett
     brandingSettings = mergeFooterSettings(brandingSettings, fileEntity.branding_settings);
   }
 
-  // Merge system settings to populate copyright text
-  if (systemSettings?.copyright_text) {
-    const copyrightText = systemSettings.copyright_text;
+  // Merge configuration settings to populate copyright text
+  if (configurationSettings?.copyright_text) {
+    const copyrightText = configurationSettings.copyright_text;
 
     // Update all copyright-text elements
     if (brandingSettings.elements?.['copyright-text']) {
@@ -231,13 +231,13 @@ export async function resolveBrandingSettingsFromTemplate(fileEntity, systemSett
 
 /**
  * Resolve branding settings using proper priority order
- * Implements the correct template resolution flow without hardcoded fallbacks
+ * Implements the correct template resolution flow with Configuration system
  *
  * @param {Object} fileEntity - File entity from database
- * @param {Object} legacySettings - Legacy Settings entity (optional)
+ * @param {Object} configurationSettings - Configuration settings object (optional)
  * @returns {Promise<Object>} Complete branding settings ready for PDF rendering
  */
-export async function resolveBrandingSettingsWithFallback(fileEntity, legacySettings = null) {
+export async function resolveBrandingSettingsWithFallback(fileEntity, configurationSettings = null) {
   console.log('🔍 Resolving branding template for file:', fileEntity?.id);
   console.log('- File details:', {
     id: fileEntity?.id,
@@ -252,16 +252,13 @@ export async function resolveBrandingSettingsWithFallback(fileEntity, legacySett
     console.log('✅ Using file-specific branding_settings');
     console.log('- branding_settings content:', Object.keys(fileEntity.branding_settings));
 
-    // Apply copyright text from legacy settings if provided
+    // Apply copyright text from Configuration settings
     let result = JSON.parse(JSON.stringify(fileEntity.branding_settings));
-    if (legacySettings?.copyright_text) {
-      // Update all copyright-text elements
-      if (result.elements?.['copyright-text']) {
-        result.elements['copyright-text'].forEach(element => {
-          element.content = legacySettings.copyright_text;
-        });
-        console.log('- Applied copyright text to unified structure');
-      }
+    if (configurationSettings?.copyright_text && result.elements?.['copyright-text']) {
+      result.elements['copyright-text'].forEach(element => {
+        element.content = configurationSettings.copyright_text;
+      });
+      console.log('- Applied copyright text from Configuration settings');
     }
 
     return result;
@@ -273,7 +270,7 @@ export async function resolveBrandingSettingsWithFallback(fileEntity, legacySett
       const template = await models.SystemTemplate.findByPk(fileEntity.branding_template_id);
       if (template) {
         console.log('✅ Using template by ID:', template.id, '-', template.name);
-        const result = await resolveBrandingSettingsFromTemplate(fileEntity, legacySettings);
+        const result = await resolveBrandingSettingsFromTemplate(fileEntity, configurationSettings);
         return result;
       } else {
         console.log('⚠️ Template ID not found in database:', fileEntity.branding_template_id);
@@ -291,7 +288,7 @@ export async function resolveBrandingSettingsWithFallback(fileEntity, legacySett
     const defaultTemplate = await models.SystemTemplate.findDefaultByType('branding', targetFormat);
     if (defaultTemplate) {
       console.log('✅ Using default template:', defaultTemplate.id, '-', defaultTemplate.name, 'for format:', targetFormat);
-      const result = await resolveBrandingSettingsFromTemplate(fileEntity, legacySettings);
+      const result = await resolveBrandingSettingsFromTemplate(fileEntity, configurationSettings);
       return result;
     } else {
       console.log('⚠️ No default template found for branding + format:', targetFormat);

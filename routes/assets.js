@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import fileService from '../services/FileService.js';
+import SettingsService from '../services/SettingsService.js';
 import db from '../models/index.js';
 import { sequelize } from '../models/index.js';
 import { mergePdfTemplate } from '../utils/pdfTemplateMerge.js';
@@ -24,7 +25,7 @@ import { clog, cerror } from '../lib/utils.js';
 let renderPptx;
 
 const router = express.Router();
-const { File: FileModel, User, Purchase, Settings } = db;
+const { File: FileModel, User, Purchase } = db;
 
 /**
  * Helper: Encode filename for Content-Disposition header
@@ -1818,7 +1819,7 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
 
         // Fetch settings and download PDF
         const [settings, pdfBuffer] = await Promise.all([
-          Settings.findOne(),
+          SettingsService.getSettings(),
           fileService.downloadToBuffer(s3Key)
         ]);
 
@@ -2702,7 +2703,7 @@ router.get('/template-preview/:fileId', authenticateToken, async (req, res) => {
     }
 
     // Get system settings
-    const settings = await Settings.findOne() || {};
+    const settings = await SettingsService.getSettings() || {};
 
     // Prepare variables exactly as done in PDF processing
     const variables = {
