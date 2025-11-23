@@ -76,7 +76,17 @@
     "deploy:force": "../ludora-utils/scripts/deploy-api.sh --force",
     "deploy:heroku": "git push heroku main",
     "deploy:heroku:staging": "git push heroku-staging staging",
-    "deploy:heroku:force": "git push heroku main --force"
+    "deploy:heroku:force": "git push heroku main --force",
+    "env:check-prod": "node scripts/env-validator.js --check-prod",
+    "env:check-staging": "node scripts/env-validator.js --check-staging",
+    "env:sync-prod": "node scripts/env-validator.js --sync-prod",
+    "env:sync-staging": "node scripts/env-validator.js --sync-staging",
+    "env:diff-prod": "node scripts/env-validator.js --diff-prod",
+    "env:diff-staging": "node scripts/env-validator.js --diff-staging",
+    "hooks:install": "node scripts/install-hooks.js",
+    "hooks:remove": "node scripts/install-hooks.js --remove",
+    "hooks:check": "node scripts/install-hooks.js --check",
+    "postinstall": "node scripts/install-hooks.js 2>/dev/null || true"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.673.0",
