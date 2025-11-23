@@ -1,5 +1,5 @@
 import PaymentService from './PaymentService.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 import { calcFinalPurchasePrice } from '../utils/purchasePricing.js';
 import models from '../models/index.js';
 
@@ -88,7 +88,7 @@ class PayplusService {
       const responseText = await response.text();
 
       if (!response.ok) {
-        cerror(`!!!! PayPlus API HTTP error ${response.status}:`, {
+        error.payment(`!!!! PayPlus API HTTP error ${response.status}:`, {
           status: response.status,
           statusText: response.statusText,
           responseText: responseText.substring(0, 500) // First 500 chars to avoid huge logs
@@ -101,7 +101,7 @@ class PayplusService {
       try {
         paymentData = JSON.parse(responseText);
       } catch (parseError) {
-        cerror(`!!!! PayPlus API returned invalid JSON:`, {
+        error.payment(`!!!! PayPlus API returned invalid JSON:`, {
           parseError: parseError.message,
           responseText: responseText.substring(0, 500) // First 500 chars
         });
@@ -109,7 +109,7 @@ class PayplusService {
       }
 
       if (paymentData?.results?.code || paymentData?.results?.status !== 'success') {
-        cerror(`!!!! PayPlus API error:`, paymentData?.results);
+        error.payment(`!!!! PayPlus API error:`, paymentData?.results);
         throw new Error(errorMsg);
       }
 
@@ -118,7 +118,7 @@ class PayplusService {
       const paymentPageLink = paymentData?.data?.payment_page_link;
 
       if (!pageRequestUid || !paymentPageLink) {
-        cerror('!!!! PayPlus API missing required data:', {
+        error.payment('!!!! PayPlus API missing required data:', {
           hasPageRequestUid: !!pageRequestUid,
           hasPaymentPageLink: !!paymentPageLink,
           data: paymentData?.data
@@ -139,7 +139,7 @@ class PayplusService {
       };
 
     } catch (error) {
-      cerror('❌ PayplusService: Error opening PayPlus payment page:', error);
+      error.payment('❌ PayplusService: Error opening PayPlus payment page:', error);
       throw error;
     }
   }

@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 import { calcSubscriptionPlanPrice } from '../utils/purchasePricing.js';
 
 /**
@@ -120,7 +120,7 @@ class SubscriptionService {
       };
 
     } catch (error) {
-      cerror('SubscriptionService: Error validating subscription creation:', error);
+      error.payment('SubscriptionService: Error validating subscription creation:', error);
       return {
         valid: false,
         error: error.message
@@ -224,7 +224,7 @@ class SubscriptionService {
       return subscription;
 
     } catch (error) {
-      cerror('SubscriptionService: Error creating subscription:', error);
+      error.payment('SubscriptionService: Error creating subscription:', error);
       throw error;
     }
   }
@@ -252,7 +252,7 @@ class SubscriptionService {
 
       return subscription;
     } catch (error) {
-      cerror('SubscriptionService: Error getting user active subscription:', error);
+      error.payment('SubscriptionService: Error getting user active subscription:', error);
       throw error;
     }
   }
@@ -288,7 +288,7 @@ class SubscriptionService {
 
       return subscriptions;
     } catch (error) {
-      cerror('SubscriptionService: Error getting user subscription history:', error);
+      error.payment('SubscriptionService: Error getting user subscription history:', error);
       throw error;
     }
   }
@@ -315,7 +315,7 @@ class SubscriptionService {
       return activatedSubscription;
 
     } catch (error) {
-      cerror('SubscriptionService: Error activating subscription:', error);
+      error.payment('SubscriptionService: Error activating subscription:', error);
       throw error;
     }
   }
@@ -346,7 +346,7 @@ class SubscriptionService {
       return cancelledSubscription;
 
     } catch (error) {
-      cerror('SubscriptionService: Error cancelling subscription:', error);
+      error.payment('SubscriptionService: Error cancelling subscription:', error);
       throw error;
     }
   }
@@ -366,7 +366,7 @@ class SubscriptionService {
       });
 
       if (!subscription) {
-        cerror('SubscriptionService: Subscription not found for PayPlus UID', {
+        error.payment('SubscriptionService: Subscription not found for PayPlus UID', {
           payplusSubscriptionUid
         });
         throw new Error(`Subscription not found for PayPlus UID: ${payplusSubscriptionUid}`);
@@ -377,7 +377,7 @@ class SubscriptionService {
       return updatedSubscription;
 
     } catch (error) {
-      cerror('SubscriptionService: Error updating subscription from PayPlus:', error);
+      error.payment('SubscriptionService: Error updating subscription from PayPlus:', error);
       throw error;
     }
   }
@@ -406,10 +406,9 @@ class SubscriptionService {
             updated_at: new Date()
           });
           processedIds.push(subscription.id);
-        } catch (error) {
-          cerror('SubscriptionService: Error marking subscription as expired:', {
-            subscriptionId: subscription.id,
-            error: error.message
+        } catch (err) {
+          error.payment('SubscriptionService: Error marking subscription as expired:', err, {
+            subscriptionId: subscription.id
           });
         }
       }
@@ -417,7 +416,7 @@ class SubscriptionService {
       return processedIds;
 
     } catch (error) {
-      cerror('SubscriptionService: Error processing expired subscriptions:', error);
+      error.payment('SubscriptionService: Error processing expired subscriptions:', error);
       throw error;
     }
   }
@@ -472,7 +471,7 @@ class SubscriptionService {
 
       return subscription;
     } catch (error) {
-      cerror('SubscriptionService: Error getting subscription by ID:', error);
+      error.payment('SubscriptionService: Error getting subscription by ID:', error);
       throw error;
     }
   }
@@ -498,7 +497,7 @@ class SubscriptionService {
       return updatedSubscription;
 
     } catch (error) {
-      cerror('SubscriptionService: Error updating subscription PayPlus UID:', error);
+      error.payment('SubscriptionService: Error updating subscription PayPlus UID:', error);
       throw error;
     }
   }
@@ -532,7 +531,7 @@ class SubscriptionService {
 
       return subscription;
     } catch (error) {
-      cerror('SubscriptionService: Error getting user pending subscription:', error);
+      error.payment('SubscriptionService: Error getting user pending subscription:', error);
       throw error;
     }
   }
@@ -573,7 +572,7 @@ class SubscriptionService {
       };
 
     } catch (error) {
-      cerror('SubscriptionService: Error validating retry payment:', error);
+      error.payment('SubscriptionService: Error validating retry payment:', error);
       return {
         valid: false,
         error: error.message
@@ -698,7 +697,7 @@ class SubscriptionService {
       throw new Error('Paid plan changes must go through payment flow');
 
     } catch (error) {
-      cerror('SubscriptionService: Error changing subscription plan:', error);
+      error.payment('SubscriptionService: Error changing subscription plan:', error);
       throw error;
     }
   }

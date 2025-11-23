@@ -6,7 +6,7 @@
  */
 
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 import { generateId } from '../models/baseModel.js';
 
 const { Game, EduContent, EduContentUse } = models;
@@ -22,8 +22,6 @@ class GameContentService {
   static async getGameContents(gameId, options = {}) {
     try {
       const { use_type = null } = options;
-
-      clog(`Getting content for game ${gameId}, use_type: ${use_type || 'all'}`);
 
       const where = { game_id: gameId };
 
@@ -87,11 +85,10 @@ class GameContentService {
         });
       }
 
-      clog(`Found ${populatedUses.length} content uses for game ${gameId}`);
       return populatedUses;
 
     } catch (error) {
-      cerror(`Error getting game contents for ${gameId}:`, error);
+      error.api(`Error getting game contents for ${gameId}:`, error);
       throw error;
     }
   }
@@ -134,8 +131,6 @@ class GameContentService {
   static async createContentUse(gameId, useData, userId, transaction = null, userRole = null) {
     try {
       const { use_type, contents, usage_metadata = {} } = useData;
-
-      clog(`Creating content use for game ${gameId}: ${use_type} with ${contents.length} items`);
 
       // Validate game ownership
       await this.validateGameOwnership(gameId, userId, userRole);
@@ -201,11 +196,10 @@ class GameContentService {
         result.contentItems.push(contentData);
       }
 
-      clog(`Created content use ${useId} for game ${gameId}`);
       return result;
 
     } catch (error) {
-      cerror(`Error creating content use for game ${gameId}:`, error);
+      error.api(`Error creating content use for game ${gameId}:`, error);
       throw error;
     }
   }
@@ -223,8 +217,6 @@ class GameContentService {
   static async updateContentUse(gameId, useId, updates, userId, transaction = null, userRole = null) {
     try {
       const { contents, usage_metadata } = updates;
-
-      clog(`Updating content use ${useId} for game ${gameId}`);
 
       // Validate game ownership
       await this.validateGameOwnership(gameId, userId, userRole);
@@ -296,11 +288,10 @@ class GameContentService {
         result.contentItems.push(contentData);
       }
 
-      clog(`Updated content use ${useId} for game ${gameId}`);
       return result;
 
     } catch (error) {
-      cerror(`Error updating content use ${useId}:`, error);
+      error.api(`Error updating content use ${useId}:`, error);
       throw error;
     }
   }
@@ -314,7 +305,6 @@ class GameContentService {
    */
   static async deleteContentUse(gameId, useId, userId, transaction = null, userRole = null) {
     try {
-      clog(`Deleting content use ${useId} from game ${gameId}`);
 
       // Validate game ownership
       await this.validateGameOwnership(gameId, userId, userRole);
@@ -330,10 +320,8 @@ class GameContentService {
 
       await contentUse.destroy({ transaction });
 
-      clog(`Deleted content use ${useId} from game ${gameId}`);
-
     } catch (error) {
-      cerror(`Error deleting content use ${useId}:`, error);
+      error.api(`Error deleting content use ${useId}:`, error);
       throw error;
     }
   }
@@ -386,7 +374,7 @@ class GameContentService {
       return stats;
 
     } catch (error) {
-      cerror(`Error getting stats for game ${gameId}:`, error);
+      error.api(`Error getting stats for game ${gameId}:`, error);
       throw error;
     }
   }
@@ -568,7 +556,6 @@ class GameContentService {
       throw new Error('רקע התמונה חייב לכלול קובץ תמונה');
     }
 
-    clog('Mixed edu contents validation passed: playing_card_bg + data combination valid');
   }
 
   /**
@@ -587,7 +574,7 @@ class GameContentService {
 
     // Admin users can access any game
     if (userRole === 'admin' || userRole === 'sysadmin') {
-      clog(`Admin access granted: ${userRole} user ${userId} can access game ${gameId}`);
+
       return;
     }
 
@@ -600,13 +587,12 @@ class GameContentService {
     });
 
     if (!product) {
-      clog(`No product found for game ${gameId} - allowing access (Ludora-owned game)`);
       return; // Game without product belongs to Ludora, allow access
     }
 
     // If product has no creator_user_id, it belongs to Ludora (allow access)
     if (!product.creator_user_id) {
-      clog(`Product for game ${gameId} has no creator - Ludora-owned, allowing access`);
+
       return;
     }
 
@@ -614,14 +600,11 @@ class GameContentService {
     const productCreatorId = String(product.creator_user_id);
     const requestUserId = String(userId);
 
-    clog(`Game ownership check via Product: gameId=${gameId}, userId=${userId}, product.creator_user_id=${productCreatorId}`);
-
     if (productCreatorId !== requestUserId) {
-      cerror(`Access denied: User ${requestUserId} does not own game ${gameId} (owned by ${productCreatorId} via product ${product.id})`);
+      error.api(`Access denied: User ${requestUserId} does not own game ${gameId} (owned by ${productCreatorId} via product ${product.id})`);
       throw new Error(`Access denied: You do not own this game`);
     }
 
-    clog(`Game ownership validated: User ${requestUserId} owns game ${gameId} via product ${product.id}`);
   }
 }
 

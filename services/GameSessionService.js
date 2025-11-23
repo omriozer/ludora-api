@@ -3,7 +3,7 @@
 
 import models from '../models/index.js';
 import { Op } from 'sequelize';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 import LobbySocketService from './LobbySocketService.js';
 
 /**
@@ -69,7 +69,7 @@ class GameSessionService {
       return sessionWithDetails;
 
     } catch (error) {
-      cerror('❌ Failed to create session:', error);
+      error.auth('❌ Failed to create session:', error);
       throw error;
     }
   }
@@ -170,7 +170,7 @@ class GameSessionService {
       return updatedSession;
 
     } catch (error) {
-      cerror('❌ Failed to add participant:', error);
+      error.auth('❌ Failed to add participant:', error);
       throw error;
     }
   }
@@ -232,7 +232,7 @@ class GameSessionService {
       return updatedSession;
 
     } catch (error) {
-      cerror('❌ Failed to remove participant:', error);
+      error.auth('❌ Failed to remove participant:', error);
       throw error;
     }
   }
@@ -305,7 +305,7 @@ class GameSessionService {
       return updatedSession;
 
     } catch (error) {
-      cerror('❌ Failed to update game state:', error);
+      error.auth('❌ Failed to update game state:', error);
       throw error;
     }
   }
@@ -364,7 +364,7 @@ class GameSessionService {
       return finishedSession;
 
     } catch (error) {
-      cerror('❌ Failed to finish session:', error);
+      error.auth('❌ Failed to finish session:', error);
       throw error;
     }
   }
@@ -431,7 +431,7 @@ class GameSessionService {
       return formattedSession;
 
     } catch (error) {
-      cerror('❌ Failed to get session details:', error);
+      error.auth('❌ Failed to get session details:', error);
       throw error;
     }
   }
@@ -467,7 +467,7 @@ class GameSessionService {
       }));
 
     } catch (error) {
-      cerror('❌ Failed to get sessions by lobby:', error);
+      error.auth('❌ Failed to get sessions by lobby:', error);
       throw error;
     }
   }
@@ -488,7 +488,7 @@ class GameSessionService {
       return (result || 0) + 1;
 
     } catch (error) {
-      cerror('❌ Failed to get next session number:', error);
+      error.auth('❌ Failed to get next session number:', error);
       return 1;
     }
   }
@@ -589,7 +589,7 @@ class GameSessionService {
       return startedSession;
 
     } catch (error) {
-      cerror('❌ Failed to start session:', error);
+      error.auth('❌ Failed to start session:', error);
       throw error;
     }
   }

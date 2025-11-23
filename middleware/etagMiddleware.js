@@ -11,7 +11,7 @@
 
 import models from '../models/index.js';
 import crypto from 'crypto';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * Generate MD5 hash for ETag
@@ -41,10 +41,9 @@ async function generateSettingsETag() {
     // Generate ETag in format: "settings-{timestamp}"
     const etag = `"settings-${timestamp}"`;
 
-    clog('[ETag] Generated Settings ETag:', etag);
     return etag;
   } catch (error) {
-    cerror('[ETag] Error generating Settings ETag:', error);
+    error.api('[ETag] Error generating Settings ETag:', error);
     // Return a fallback ETag that changes on error
     return `"settings-error-${Date.now()}"`;
   }
@@ -72,10 +71,9 @@ async function generateUserETag(userId) {
     // Generate ETag in format: "user-{userId}-{timestamp}"
     const etag = `"user-${userId}-${timestamp}"`;
 
-    clog('[ETag] Generated User ETag:', etag);
     return etag;
   } catch (error) {
-    cerror('[ETag] Error generating User ETag:', error);
+    error.api('[ETag] Error generating User ETag:', error);
     return `"user-error-${Date.now()}"`;
   }
 }
@@ -95,7 +93,7 @@ async function generateAuthMeETag(req) {
 
     return generateUserETag(req.user.id);
   } catch (error) {
-    cerror('[ETag] Error generating auth/me ETag:', error);
+    error.api('[ETag] Error generating auth/me ETag:', error);
     return `"auth-me-error-${Date.now()}"`;
   }
 }
@@ -144,7 +142,7 @@ export function addETagSupport(recordType) {
               break;
 
             default:
-              cerror('[ETag] Unknown record type:', recordType);
+              error.api('[ETag] Unknown record type:', recordType);
           }
 
           // Check if client sent If-None-Match header
@@ -152,21 +150,21 @@ export function addETagSupport(recordType) {
 
           if (etag && clientETag && clientETag === etag) {
             // Client has current version - return 304 Not Modified
-            clog('[ETag] Cache hit - returning 304 for:', req.originalUrl);
+
             return res.status(304).end();
           }
 
           // Set ETag header if we generated one
           if (etag) {
             res.set('ETag', etag);
-            clog('[ETag] Setting ETag header:', etag);
+
           }
 
           // Call original json method with data
           return originalJson(data);
 
         } catch (error) {
-          cerror('[ETag] Error in response handler:', error);
+          error.api('[ETag] Error in response handler:', error);
           // On error, just send response without ETag
           return originalJson(data);
         }
@@ -176,7 +174,7 @@ export function addETagSupport(recordType) {
       next();
 
     } catch (error) {
-      cerror('[ETag] Middleware error:', error);
+      error.api('[ETag] Middleware error:', error);
       // On error, continue without ETag support
       next();
     }
@@ -199,7 +197,7 @@ export async function invalidateETag(recordType, recordId = null) {
           { updated_at: new Date() },
           { where: {}, silent: true }
         );
-        clog('[ETag] Invalidated Settings ETags');
+
         break;
 
       case 'user':
@@ -209,15 +207,15 @@ export async function invalidateETag(recordType, recordId = null) {
             { updated_at: new Date() },
             { where: { id: recordId }, silent: true }
           );
-          clog('[ETag] Invalidated User ETag for:', recordId);
+
         }
         break;
 
       default:
-        cerror('[ETag] Cannot invalidate unknown type:', recordType);
+        error.api('[ETag] Cannot invalidate unknown type:', recordType);
     }
   } catch (error) {
-    cerror('[ETag] Error invalidating ETag:', error);
+    error.api('[ETag] Error invalidating ETag:', error);
   }
 }
 

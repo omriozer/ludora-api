@@ -16,7 +16,7 @@ import {
 } from '../middleware/gameSessionValidation.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const router = express.Router();
 
@@ -87,8 +87,6 @@ router.get('/game-sessions/:sessionId',
       const { sessionId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🔍 Getting session details for ${sessionId} by user ${user.id}`);
-
       // Validate access and get session
       const { hasAccess } = await validateSessionAccess(
         sessionId,
@@ -115,7 +113,7 @@ router.get('/game-sessions/:sessionId',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to get session details:', error);
+      error.auth('❌ Failed to get session details:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -142,8 +140,6 @@ router.put('/game-sessions/:sessionId',
       const { sessionId } = req.validatedParams;
       const { session_settings } = req.validatedData;
       const user = req.user;
-
-      clog(`✏️ Updating session ${sessionId} by user ${user.id}`);
 
       // Validate access
       const { session, lobby, hasAccess } = await validateSessionAccess(
@@ -191,7 +187,7 @@ router.put('/game-sessions/:sessionId',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to update session:', error);
+      error.auth('❌ Failed to update session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -218,8 +214,6 @@ router.delete('/game-sessions/:sessionId',
       const { sessionId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🛑 Closing session ${sessionId} by user ${user.id}`);
-
       // Close the session
       const finishedSession = await GameSessionService.finishSession(
         sessionId,
@@ -237,7 +231,7 @@ router.delete('/game-sessions/:sessionId',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to close session:', error);
+      error.auth('❌ Failed to close session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -271,8 +265,6 @@ router.get('/game-sessions/:sessionId/participants',
       const { sessionId } = req.validatedParams;
       const user = req.user;
 
-      clog(`👥 Getting participants for session ${sessionId} by user ${user.id}`);
-
       // Validate access
       const { session, hasAccess } = await validateSessionAccess(
         sessionId,
@@ -298,7 +290,7 @@ router.get('/game-sessions/:sessionId/participants',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to get participants:', error);
+      error.auth('❌ Failed to get participants:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -328,7 +320,6 @@ router.post('/game-sessions/:sessionId/participants',
       const user = req.user; // May be null for guest users
 
       const userId = user?.id || 'guest';
-      clog(`👤 Adding participant to session ${sessionId} by user ${userId}`);
 
       // For guest users, ensure they provide a guest_token
       if (!user && !participantData.guest_token) {
@@ -359,7 +350,7 @@ router.post('/game-sessions/:sessionId/participants',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to add participant:', error);
+      error.auth('❌ Failed to add participant:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -395,8 +386,6 @@ router.delete('/game-sessions/:sessionId/participants/:participantId',
       const { sessionId, participantId } = req.validatedParams;
       const user = req.user;
 
-      clog(`👤 Removing participant ${participantId} from session ${sessionId} by user ${user.id}`);
-
       // Remove participant using service
       const updatedSession = await GameSessionService.removeParticipant(
         sessionId,
@@ -410,7 +399,7 @@ router.delete('/game-sessions/:sessionId/participants/:participantId',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to remove participant:', error);
+      error.auth('❌ Failed to remove participant:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -443,8 +432,6 @@ router.post('/game-sessions/:sessionId/participants/teacher-add',
       const { sessionId } = req.validatedParams;
       const participantData = req.validatedData;
       const user = req.user;
-
-      clog(`👤 Teacher adding participant to session ${sessionId} by user ${user.id}`);
 
       // Validate access - only lobby owner/host can add participants
       const { session, lobby, hasAccess } = await validateSessionAccess(
@@ -483,7 +470,7 @@ router.post('/game-sessions/:sessionId/participants/teacher-add',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to add participant (teacher):', error);
+      error.auth('❌ Failed to add participant (teacher):', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -518,8 +505,6 @@ router.delete('/game-sessions/:sessionId/participants/:participantId/teacher-rem
     try {
       const { sessionId, participantId } = req.validatedParams;
       const user = req.user;
-
-      clog(`👤 Teacher removing participant ${participantId} from session ${sessionId} by user ${user.id}`);
 
       // Validate access - only lobby owner/host can remove participants
       const { session, lobby } = await validateSessionAccess(
@@ -558,7 +543,7 @@ router.delete('/game-sessions/:sessionId/participants/:participantId/teacher-rem
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to remove participant (teacher):', error);
+      error.auth('❌ Failed to remove participant (teacher):', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -621,7 +606,7 @@ router.get('/game-sessions/:sessionId/state',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to get game state:', error);
+      error.auth('❌ Failed to get game state:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -670,7 +655,7 @@ router.put('/game-sessions/:sessionId/state',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to update game state:', error);
+      error.auth('❌ Failed to update game state:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -704,8 +689,6 @@ router.put('/game-sessions/:sessionId/finish',
       const { final_data, reason, save_results } = req.validatedData;
       const user = req.user;
 
-      clog(`🏁 Finishing session ${sessionId} with reason: ${reason} by user ${user.id}`);
-
       // Finish session using service
       const finishedSession = await GameSessionService.finishSession(
         sessionId,
@@ -728,7 +711,7 @@ router.put('/game-sessions/:sessionId/finish',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to finish session:', error);
+      error.auth('❌ Failed to finish session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -758,8 +741,6 @@ router.put('/game-sessions/:sessionId/start',
       const { sessionId } = req.validatedParams;
       const user = req.user;
 
-      clog(`▶️ Starting session ${sessionId} by user ${user.id}`);
-
       // Start session using service
       const startedSession = await GameSessionService.startSession(
         sessionId,
@@ -776,7 +757,7 @@ router.put('/game-sessions/:sessionId/start',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to start session:', error);
+      error.auth('❌ Failed to start session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -810,8 +791,6 @@ router.get('/game-sessions/my-active',
     const transaction = await models.sequelize.transaction();
     try {
       const user = req.user;
-
-      clog(`👤 Getting active sessions for user ${user.id}`);
 
       // Find sessions where user is a participant and session is active
       const activeSessions = await models.GameSession.findAll({
@@ -860,7 +839,7 @@ router.get('/game-sessions/my-active',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to get user active sessions:', error);
+      error.auth('❌ Failed to get user active sessions:', error);
       res.status(500).json({
         error: 'Failed to fetch active sessions',
         message: error.message

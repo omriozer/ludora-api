@@ -2,7 +2,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } fro
 import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * DirectSlideService - Handle SVG slides without Files table
@@ -393,7 +393,7 @@ class DirectSlideService {
       };
 
     } catch (error) {
-      cerror('Error reordering slides:', error);
+      error.api('Error reordering slides:', error);
       throw error;
     }
   }
@@ -423,7 +423,6 @@ class DirectSlideService {
       throw new Error(`File too large. Maximum size is ${maxSize / 1024 / 1024}MB`);
     }
 
-    clog(`✅ SVG file validation passed: ${file.originalname} (${file.buffer.length} bytes)`);
   }
 
   /**

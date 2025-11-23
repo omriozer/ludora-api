@@ -1,6 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
-import { clog } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 export default function(sequelize) {
   const Curriculum = sequelize.define('Curriculum', {
@@ -177,7 +177,6 @@ export default function(sequelize) {
   };
 
   Curriculum.findByGradeAndSubject = function(grade, subject, options = {}) {
-    clog('🔍 findByGradeAndSubject called with:', { grade, subject, options });
 
     const Op = this.sequelize.Sequelize.Op;
 
@@ -194,7 +193,7 @@ export default function(sequelize) {
 
     // Validate subject parameter - require a valid subject for filtering
     if (!subject || subject.trim() === '') {
-      clog('❌ Subject validation failed:', { subject });
+
       throw new Error('Subject parameter is required for grade-based curriculum filtering');
     }
 
@@ -231,8 +230,6 @@ export default function(sequelize) {
     if (normalizedIsActive !== undefined) {
       whereClause.is_active = normalizedIsActive === 'true' || normalizedIsActive === true;
     }
-
-    clog('🔍 Final whereClause:', JSON.stringify(whereClause, null, 2));
 
     // Remove the where from options to avoid duplication
     const { where: _, ...optionsWithoutWhere } = options;

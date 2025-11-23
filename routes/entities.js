@@ -19,7 +19,7 @@ import { constructS3Path } from '../utils/s3PathUtils.js';
 import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
 import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCountingUtils.js';
 import { GAME_TYPES } from '../config/gameTypes.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 import { generateId } from '../models/baseModel.js';
 import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
 
@@ -43,7 +43,7 @@ const fileUpload = multer({
         file.originalname = fixedName;
       }
     } catch (error) {
-      cerror(`📤 Could not fix filename encoding: ${error.message}`);
+      error.api(`📤 Could not fix filename encoding: ${error.message}`);
     }
 
     cb(null, true);
@@ -446,7 +446,6 @@ router.post('/user/:id/generate-invitation-code', authenticateToken, async (req,
   }
 });
 
-
 // GET /entities/curriculum/available-combinations - Get available subject-grade combinations that have curriculum items
 // MUST be before generic /:type route to match correctly
 router.get('/curriculum/available-combinations', optionalAuth, async (req, res) => {
@@ -641,8 +640,6 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
 
     const results = await EntityService.find(entityType, query, options);
 
-
-
     res.json(results);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -668,7 +665,6 @@ router.get('/:type/:id',
   try {
     const include = req.query.include;
     const entity = await EntityService.findById(entityType, id, include);
-
 
     res.json(entity);
   } catch (error) {
@@ -699,7 +695,6 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
   return validateBody(validationSchema)(req, res, next);
 }, async (req, res) => {
   const entityType = req.params.type;
-
 
   try {
     // Get user information
@@ -759,7 +754,6 @@ function sanitizeNumericFields(data, entityType) {
   const enumFieldsToSanitize = enumFields[entityType] || [];
   const allFieldsToSanitize = [...numericFieldsToSanitize, ...enumFieldsToSanitize];
 
-  clog('🧹 Sanitizing fields:', {
     entityType,
     numericFields: numericFieldsToSanitize,
     enumFields: enumFieldsToSanitize,
@@ -785,7 +779,6 @@ function sanitizeNumericFields(data, entityType) {
       sanitizedData[field] = null;
     }
   });
-
 
   return sanitizedData;
 }
@@ -847,7 +840,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
 
         return res.json(enhancedSettings);
       } catch (error) {
-        cerror('Settings update error:', error);
+        error.api('Settings update error:', error);
         return res.status(400).json({ error: error.message });
       }
     }
@@ -1480,7 +1473,6 @@ router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) =>
   }
 });
 
-
 // POST /entities/lesson-plan/:lessonPlanId/upload-file - Atomic file upload for lesson plans
 router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpload.single('file'), async (req, res) => {
   const lessonPlanId = req.params.lessonPlanId;
@@ -1535,7 +1527,6 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     const fileExtension = fileName.split('.').pop().toLowerCase();
     const fileType = getFileTypeFromExtension(fileExtension);
-
 
     // TODO: SVG validation will be added here for new presentation upload system
 
@@ -1593,7 +1584,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     // IMPORTANT: For SVG files uploaded to lesson plans, always set target_format to 'svg-lessonplan'
     if (fileExtension === 'svg') {
       targetFormat = 'svg-lessonplan';
-      clog(`📊 SVG file detected for lesson plan - setting target_format to 'svg-lessonplan'`);
+
     }
 
     // Update file entity with S3 information and detected target_format
@@ -1691,7 +1682,6 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     }
 
     const updateResult = await lessonPlan.save({ transaction });
-
 
     // Force reload to check if update actually persisted
     await lessonPlan.reload({ transaction });
@@ -2177,8 +2167,6 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
       // Don't fail the reset if subscription cleanup fails
     }
 
-    clog(`✅ Admin ${requestingUser.email} reset onboarding for user ${targetUser.email}`);
-
     res.json({
       message: 'User onboarding status reset successfully',
       user: {
@@ -2194,13 +2182,11 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
   }
 });
 
-
 // GET /entities/lesson-plan/:lessonPlanId/presentation - Get lesson plan presentation files with access control
 router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (req, res) => {
   try {
     const { lessonPlanId } = req.params;
     const userId = req.user.id;
-
 
     // Check user access to the lesson plan
     const hasAccess = await checkLessonPlanAccess(userId, lessonPlanId);
@@ -2211,7 +2197,6 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
         hasAccess: false
       });
     }
-
 
     // Get presentation files
     const presentationFiles = await getLessonPlanPresentationFiles(lessonPlanId);
@@ -2226,7 +2211,6 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
 
     // Get ordered URLs for frontend consumption
     const orderedUrls = getOrderedPresentationUrls(presentationFiles);
-
 
     res.json({
       success: true,
@@ -2257,7 +2241,5 @@ router.get('/lesson-plan/:lessonPlanId/presentation', authenticateToken, async (
     });
   }
 });
-
-
 
 export default router;

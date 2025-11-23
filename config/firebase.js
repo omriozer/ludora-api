@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import dotenv from 'dotenv';
 import SecretsService from '../services/SecretsService.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 try {
   // Load environment-specific .env file
@@ -14,16 +14,16 @@ try {
   const serviceAccount = secretsService.getFirebaseServiceAccount();
 
   if (!serviceAccount) {
-    clog('⚠️ Firebase service account not configured - Firebase features will be disabled');
+
   } else {
     // Initialize Firebase Admin SDK
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
-    clog('✅ Firebase Admin SDK initialized successfully');
+
   }
 } catch (error) {
-  cerror('❌ Firebase initialization error:', error);
+  error.auth('❌ Firebase initialization error:', error);
   // Don't exit the process, let the server continue without Firebase
 }
 

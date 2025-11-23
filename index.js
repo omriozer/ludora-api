@@ -35,7 +35,6 @@ if (missingVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
 }
 
-
 // Now import other modules after environment is loaded
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -120,7 +119,7 @@ import PlayerService from './services/PlayerService.js';
 import SettingsService from './services/SettingsService.js';
 import { detectPortal, getPortalCookieNames } from './utils/cookieConfig.js';
 import { STUDENTS_ACCESS_MODES } from './constants/settingsKeys.js';
-import { clog, cerror } from './lib/utils.js';
+import { error } from './lib/errorLogger.js';
 
 // Initialize services for Socket.IO authentication
 const socketAuthService = new AuthService();
@@ -523,8 +522,8 @@ async function validateStudentsAccessMode(requestedMode) {
   try {
     const currentMode = await SettingsService.getStudentsAccessMode();
     return currentMode === requestedMode;
-  } catch (error) {
-    cerror('🔌 [SocketAuth] Error validating students access mode:', error);
+  } catch (err) {
+    error.api('🔌 [SocketAuth] Error validating students access mode:', err);
     return false;
   }
 }
@@ -646,8 +645,8 @@ io.use(async (socket, next) => {
     }
 
     next();
-  } catch (error) {
-    cerror('🔌 [SocketAuth] Authentication middleware error:', error);
+  } catch (err) {
+    error.api('🔌 [SocketAuth] Authentication middleware error:', err);
     next(new Error('Authentication failed'));
   }
 });
@@ -692,10 +691,9 @@ io.on('connection', (socket) => {
   });
 
   // Handle connection errors
-  socket.on('error', (error) => {
-    cerror('🔌 Socket.IO error:', {
-      socketId: socket.id,
-      error: error.message
+  socket.on('error', (socketError) => {
+    error.system('🔌 Socket.IO error:', socketError, {
+      socketId: socket.id
     });
   });
 });

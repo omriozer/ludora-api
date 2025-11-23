@@ -6,7 +6,7 @@ import models from '../models/index.js';
 import EntityService from '../services/EntityService.js';
 import GameContentService from '../services/GameContentService.js';
 import GameLobbyService from '../services/GameLobbyService.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 const { Game, sequelize } = models;
 
 const router = express.Router();
@@ -114,7 +114,7 @@ async function getGamesWithProducts(userId, userRole) {
     try {
       lobbies = await GameLobbyService.getLobbiesByGame(game.id);
     } catch (error) {
-      cerror(`Error fetching lobbies for game ${game.id}:`, error);
+      error.api(`Error fetching lobbies for game ${game.id}:`, error);
       // Continue with empty lobbies array if fetch fails
     }
 
@@ -211,7 +211,7 @@ router.get('/', async (req, res) => {
         try {
           lobbies = await GameLobbyService.getLobbiesByGame(game.id);
         } catch (error) {
-          cerror(`Error fetching lobbies for game ${game.id}:`, error);
+          error.api(`Error fetching lobbies for game ${game.id}:`, error);
         }
 
         return {
@@ -529,8 +529,6 @@ router.get('/:gameId/contents', async (req, res) => {
     const { gameId } = req.params;
     const { use_type } = req.query;
 
-    clog(`Getting contents for game ${gameId}`);
-
     const contents = await GameContentService.getGameContents(gameId, { use_type });
 
     res.json({
@@ -542,7 +540,7 @@ router.get('/:gameId/contents', async (req, res) => {
       }
     });
   } catch (error) {
-    cerror(`Error in GET /games/${req.params.gameId}/contents:`, error);
+    error.api(`Error in GET /games/${req.params.gameId}/contents:`, error);
 
     if (error.message === 'Game not found') {
       return res.status(404).json({ error: 'Game not found' });
@@ -576,8 +574,6 @@ router.post('/:gameId/content-use',
         });
       }
 
-      clog(`Creating content use for game ${gameId}`);
-
       const contentUse = await GameContentService.createContentUse(
         gameId,
         req.validatedData,
@@ -591,7 +587,7 @@ router.post('/:gameId/content-use',
       res.status(201).json(contentUse);
     } catch (error) {
       await transaction.rollback();
-      cerror(`Error in POST /games/${req.params.gameId}/content-use:`, error);
+      error.api(`Error in POST /games/${req.params.gameId}/content-use:`, error);
 
       if (error.message === 'Game not found') {
         return res.status(404).json({ error: 'Game not found' });
@@ -639,8 +635,6 @@ router.put('/:gameId/content-use/:useId',
         });
       }
 
-      clog(`Updating content use ${useId} for game ${gameId}`);
-
       const contentUse = await GameContentService.updateContentUse(
         gameId,
         useId,
@@ -655,7 +649,7 @@ router.put('/:gameId/content-use/:useId',
       res.json(contentUse);
     } catch (error) {
       await transaction.rollback();
-      cerror(`Error in PUT /games/${req.params.gameId}/content-use/${req.params.useId}:`, error);
+      error.api(`Error in PUT /games/${req.params.gameId}/content-use/${req.params.useId}:`, error);
 
       if (error.message === 'Game not found' || error.message === 'Content usage not found') {
         return res.status(404).json({ error: error.message });
@@ -701,8 +695,6 @@ router.delete('/:gameId/content-use/:useId', async (req, res) => {
       });
     }
 
-    clog(`Deleting content use ${useId} from game ${gameId}`);
-
     await GameContentService.deleteContentUse(gameId, useId, entity.id, transaction, entity.role);
 
     await transaction.commit();
@@ -713,7 +705,7 @@ router.delete('/:gameId/content-use/:useId', async (req, res) => {
     });
   } catch (error) {
     await transaction.rollback();
-    cerror(`Error in DELETE /games/${req.params.gameId}/content-use/${req.params.useId}:`, error);
+    error.api(`Error in DELETE /games/${req.params.gameId}/content-use/${req.params.useId}:`, error);
 
     if (error.message === 'Game not found' || error.message === 'Content usage not found') {
       return res.status(404).json({ error: error.message });
@@ -738,13 +730,11 @@ router.get('/:gameId/content-stats', async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    clog(`Getting content stats for game ${gameId}`);
-
     const stats = await GameContentService.getGameContentStats(gameId);
 
     res.json(stats);
   } catch (error) {
-    cerror(`Error in GET /games/${req.params.gameId}/content-stats:`, error);
+    error.api(`Error in GET /games/${req.params.gameId}/content-stats:`, error);
     res.status(500).json({
       error: 'Internal server error',
       message: error.message

@@ -7,7 +7,7 @@
  */
 
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 class GameDetailsService {
   /**
@@ -34,14 +34,14 @@ class GameDetailsService {
           return await this.getPuzzleGameDetails(gameId);
 
         default:
-          clog(`Unknown game type for details calculation: ${gameType}`);
+
           return {
             game_type: gameType,
             details: {}
           };
       }
     } catch (error) {
-      cerror(`Error calculating game details for ${gameType} game ${gameId}:`, error);
+      error.api(`Error calculating game details for ${gameType} game ${gameId}:`, error);
       return null;
     }
   }
@@ -68,7 +68,7 @@ class GameDetailsService {
       };
 
     } catch (error) {
-      cerror('Error calculating memory game details:', error);
+      error.api('Error calculating memory game details:', error);
       throw error;
     }
   }

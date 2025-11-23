@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { clog } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 class PlayerService {
   constructor() {
@@ -48,7 +48,6 @@ class PlayerService {
         created_at: new Date(),
         updated_at: new Date()
       });
-
 
       return {
         id: player.id,
@@ -135,7 +134,6 @@ class PlayerService {
         loginMethod: 'privacy_code'
       });
 
-
       return {
         success: true,
         sessionId,
@@ -194,7 +192,7 @@ class PlayerService {
         updated_at: player.updated_at
       };
     } catch (error) {
-      clog(`❌ Get player error: ${error.message}`);
+
       return null;
     }
   }
@@ -227,7 +225,6 @@ class PlayerService {
 
       await player.update(updateData);
 
-
       return await this.getPlayer(playerId);
     } catch (error) {
       throw error;
@@ -253,7 +250,6 @@ class PlayerService {
 
       // Deactivate player
       await player.deactivate();
-
 
       return {
         success: true,
@@ -304,7 +300,7 @@ class PlayerService {
         achievements_count: player.achievements ? player.achievements.length : 0
       }));
     } catch (error) {
-      clog(`❌ Get teacher players error: ${error.message}`);
+
       return [];
     }
   }
@@ -390,7 +386,7 @@ class PlayerService {
         }
       };
     } catch (error) {
-      clog(`❌ Player session validation error: ${error.message}`);
+
       return null;
     }
   }
@@ -403,7 +399,7 @@ class PlayerService {
         await session.invalidate();
       }
     } catch (error) {
-      clog(`❌ Player session invalidation error: ${error.message}`);
+
     }
   }
 
@@ -412,7 +408,7 @@ class PlayerService {
     try {
       return await models.UserSession.invalidatePlayerSessions(playerId);
     } catch (error) {
-      clog(`❌ Player sessions invalidation error: ${error.message}`);
+
       return 0;
     }
   }
@@ -429,7 +425,7 @@ class PlayerService {
         metadata: session.metadata
       }));
     } catch (error) {
-      clog(`❌ Get player sessions error: ${error.message}`);
+
       return [];
     }
   }
@@ -446,7 +442,7 @@ class PlayerService {
       }
       return false;
     } catch (error) {
-      clog(`❌ Set player online status error: ${error.message}`);
+
       return false;
     }
   }
@@ -465,7 +461,7 @@ class PlayerService {
         last_seen: player.last_seen
       }));
     } catch (error) {
-      clog(`❌ Get online players error: ${error.message}`);
+
       return [];
     }
   }
@@ -530,7 +526,6 @@ class PlayerService {
         privacy_code: newPrivacyCode,
         updated_at: new Date()
       });
-
 
       return {
         success: true,
@@ -614,7 +609,7 @@ class PlayerService {
         timestamp: now
       };
     } catch (error) {
-      clog(`❌ Player stats error: ${error.message}`);
+
       return {
         totalPlayers: 0,
         activePlayers: 0,
@@ -705,7 +700,6 @@ class PlayerService {
       // Associate player with user
       await player.associateWithUser(userId);
 
-
       return {
         success: true,
         message: 'Player associated with user successfully',
@@ -743,11 +737,11 @@ class PlayerService {
       });
 
       if (deletedSessions > 0 || deletedPlayers > 0) {
-        clog(`Player safety net cleanup: ${deletedSessions} expired sessions, ${deletedPlayers} inactive players`);
+
       }
     } catch (error) {
       // Silent failure for safety net cleanup
-      clog(`Player safety net cleanup error: ${error.message}`);
+
     }
   }
 }

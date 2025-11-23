@@ -3,7 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import PaymentService from '../services/PaymentService.js';
 import PayplusService from '../services/PayplusService.js';
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const router = express.Router();
 
@@ -149,7 +149,7 @@ router.post('/purchases', authenticateToken, async (req, res) => {
     }
 
   } catch (error) {
-    cerror('Error creating purchase:', error);
+    error.payment('Error creating purchase:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -183,7 +183,7 @@ router.delete('/purchases/:id', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Error deleting cart item:', error);
+    error.payment('Error deleting cart item:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -208,7 +208,7 @@ router.put('/purchases/:id', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Error updating cart purchase:', error);
+    error.payment('Error updating cart purchase:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -289,7 +289,7 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
     });
 
   } catch (error) {
-    cerror('❌ Payment: Error creating PayPlus payment page:', error);
+    error.payment('❌ Payment: Error creating PayPlus payment page:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -322,7 +322,7 @@ router.post('/createSubscriptionPayment', authenticateToken, async (req, res) =>
     res.json(result);
 
   } catch (error) {
-    cerror('❌ Payment: Error creating subscription payment:', error);
+    error.payment('❌ Payment: Error creating subscription payment:', error);
 
     // Handle specific validation errors
     if (error.message.includes('already has an active subscription') ||

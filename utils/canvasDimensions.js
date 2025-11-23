@@ -3,7 +3,7 @@
  * Centralizes all canvas size definitions to avoid hardcoded values
  */
 
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';;
 
 const CANVAS_DIMENSIONS = {
   // PDF formats - traditional 4:3 aspect ratio
@@ -43,7 +43,6 @@ const CANVAS_DIMENSIONS = {
 function getCanvasDimensions(targetFormat) {
   const dimensions = CANVAS_DIMENSIONS[targetFormat] || CANVAS_DIMENSIONS.default;
 
-  clog(`📐 Canvas dimensions for ${targetFormat}:`, {
     width: dimensions.width,
     height: dimensions.height,
     aspectRatio: dimensions.aspectRatio.toFixed(2),

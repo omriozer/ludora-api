@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
 import { generateId } from './baseModel.js';
 import DeprecationWarnings from '../utils/deprecationWarnings.js';
-import { clog } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 export default (sequelize) => {
   const Product = sequelize.define('Product', {
@@ -128,11 +128,7 @@ export default (sequelize) => {
 
   // Hook to auto-set is_published=false for File products without documents
   Product.addHook('beforeSave', async (product, options) => {
-    clog('🔍 Product beforeSave hook triggered:', {
-      id: product.id,
-      product_type: product.product_type,
-      is_published: product.is_published,
-      changed: product.changed()
+
     });
 
     // Only check File products that are being set to published
@@ -141,16 +137,10 @@ export default (sequelize) => {
       const models = sequelize.models;
       const fileEntity = await models.File.findByPk(product.entity_id);
 
-      clog('🔍 File entity check:', {
-        entity_id: product.entity_id,
-        fileEntity: !!fileEntity,
-        file_name: fileEntity?.file_name
-      });
-
       // If File has no file_name, force is_published to false
       if (!fileEntity || !fileEntity.file_name) {
         product.is_published = false;
-        clog(`⚠️ Auto-set is_published=false for Product ${product.id} - File entity has no document`);
+
       }
     }
   });

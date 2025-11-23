@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * CouponCodeGenerator - Generate unique coupon codes with custom patterns
@@ -125,7 +125,7 @@ class CouponCodeGenerator {
         }
       };
     } catch (error) {
-      cerror('Error generating and creating coupons:', error);
+      error.payment('Error generating and creating coupons:', error);
       throw error;
     }
   }
@@ -270,7 +270,7 @@ class CouponCodeGenerator {
         average_uses_per_coupon: totalGenerated > 0 ? (totalUsageCount / totalGenerated).toFixed(2) : 0
       };
     } catch (error) {
-      cerror('Error getting pattern statistics:', error);
+      error.payment('Error getting pattern statistics:', error);
       throw error;
     }
   }
@@ -303,7 +303,7 @@ class CouponCodeGenerator {
         }
       };
     } catch (error) {
-      cerror('Error deactivating coupons by pattern:', error);
+      error.payment('Error deactivating coupons by pattern:', error);
       throw error;
     }
   }

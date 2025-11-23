@@ -7,7 +7,7 @@
 
 import models from '../models/index.js';
 import FileService from './FileService.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 import { generateId } from '../models/baseModel.js';
 
 const { EduContent } = models;
@@ -33,7 +33,6 @@ class EduContentService {
     transaction = null
   }) {
     try {
-      clog(`Creating EduContent: ${element_type} - ${content}`);
 
       // Generate ID for content
       const contentId = generateId('content');
@@ -48,7 +47,6 @@ class EduContentService {
 
       // If file provided, upload via FileService
       if (file) {
-        clog(`Uploading file for content ${contentId}: ${file.originalname}`);
 
         const uploadResult = await FileService.uploadAsset({
           file: file,
@@ -86,7 +84,7 @@ class EduContentService {
       return eduContent;
 
     } catch (error) {
-      cerror('Error creating EduContent:', error);
+      error.api('Error creating EduContent:', error);
       throw error;
     }
   }
@@ -150,7 +148,7 @@ class EduContentService {
       };
 
     } catch (error) {
-      cerror('Error finding EduContent:', error);
+      error.api('Error finding EduContent:', error);
       throw error;
     }
   }
@@ -176,7 +174,7 @@ class EduContentService {
       return result;
 
     } catch (error) {
-      cerror(`Error finding EduContent ${contentId}:`, error);
+      error.api(`Error finding EduContent ${contentId}:`, error);
       throw error;
     }
   }
@@ -203,13 +201,11 @@ class EduContentService {
 
       // Handle corrupted s3_key data (objects instead of strings from old bug)
       if (typeof s3Key === 'object' && s3Key.s3Key) {
-        clog(`Fixing corrupted s3Key for content ${contentId}`);
+
         s3Key = s3Key.s3Key; // Extract the actual string from the object
       } else if (typeof s3Key !== 'string') {
         throw new Error(`Invalid s3Key format for content ${contentId}: expected string, got ${typeof s3Key}`);
       }
-
-      clog(`Streaming file for content ${contentId}: ${s3Key}`);
 
       // Create S3 stream using FileService
       const stream = await FileService.createS3Stream(s3Key);
@@ -226,7 +222,7 @@ class EduContentService {
       stream.pipe(res);
 
     } catch (error) {
-      cerror(`Error streaming file for content ${contentId}:`, error);
+      error.api(`Error streaming file for content ${contentId}:`, error);
       throw error;
     }
   }
@@ -244,33 +240,29 @@ class EduContentService {
         throw new Error('Content not found');
       }
 
-      clog(`Deleting EduContent ${contentId}`);
-
       // If content has file, delete from S3 first
       if (content.content_metadata?.file_info?.s3_key) {
         let s3Key = content.content_metadata.file_info.s3_key;
 
         // Handle corrupted s3_key data (objects instead of strings from old bug)
         if (typeof s3Key === 'object' && s3Key.s3Key) {
-          clog(`Fixing corrupted s3Key for deletion: ${contentId}`);
+
           s3Key = s3Key.s3Key; // Extract the actual string from the object
         }
 
         if (typeof s3Key === 'string') {
-          clog(`Deleting S3 file: ${s3Key}`);
+
           await FileService.deleteS3Object(s3Key);
         } else {
-          clog(`Warning: Invalid s3Key format for content ${contentId}, skipping S3 deletion`);
+
         }
       }
 
       // Delete content record
       await content.destroy({ transaction });
 
-      clog(`EduContent ${contentId} deleted successfully`);
-
     } catch (error) {
-      cerror(`Error deleting EduContent ${contentId}:`, error);
+      error.api(`Error deleting EduContent ${contentId}:`, error);
       throw error;
     }
   }
@@ -311,7 +303,7 @@ class EduContentService {
       return result;
 
     } catch (error) {
-      cerror(`Error updating EduContent ${contentId}:`, error);
+      error.api(`Error updating EduContent ${contentId}:`, error);
       throw error;
     }
   }
@@ -326,7 +318,7 @@ class EduContentService {
       const content = await EduContent.findByPk(contentId);
       return Boolean(content?.content_metadata?.file_info?.s3_key);
     } catch (error) {
-      cerror(`Error checking file for content ${contentId}:`, error);
+      error.api(`Error checking file for content ${contentId}:`, error);
       return false;
     }
   }
@@ -361,7 +353,7 @@ class EduContentService {
       };
 
     } catch (error) {
-      cerror(`Error getting usage for content ${contentId}:`, error);
+      error.api(`Error getting usage for content ${contentId}:`, error);
       return { total_uses: 0, games: [] };
     }
   }

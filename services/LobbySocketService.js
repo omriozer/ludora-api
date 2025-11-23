@@ -2,7 +2,7 @@
 // Socket.IO service for broadcasting lobby updates in real-time
 // Replaces the removed SSE system for lobby visibility updates
 
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * LobbySocketService - Manages real-time lobby updates via Socket.IO
@@ -16,7 +16,7 @@ class LobbySocketService {
    */
   static getSocketIO() {
     if (!global.io) {
-      cerror('❌ Socket.IO instance not available');
+      error.lobby('❌ Socket.IO instance not available');
       throw new Error('Socket.IO server not initialized');
     }
     return global.io;
@@ -39,7 +39,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast lobby created:', error);
+      error.lobby('❌ Failed to broadcast lobby created:', error);
     }
   }
 
@@ -60,7 +60,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast lobby activated:', error);
+      error.lobby('❌ Failed to broadcast lobby activated:', error);
     }
   }
 
@@ -81,7 +81,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast lobby closed:', error);
+      error.lobby('❌ Failed to broadcast lobby closed:', error);
     }
   }
 
@@ -102,7 +102,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast session created:', error);
+      error.auth('❌ Failed to broadcast session created:', error);
     }
   }
 
@@ -123,7 +123,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast participant joined:', error);
+      error.lobby('❌ Failed to broadcast participant joined:', error);
     }
   }
 
@@ -144,7 +144,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast participant left:', error);
+      error.lobby('❌ Failed to broadcast participant left:', error);
     }
   }
 
@@ -165,7 +165,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast game state updated:', error);
+      error.lobby('❌ Failed to broadcast game state updated:', error);
     }
   }
 
@@ -186,7 +186,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast session started:', error);
+      error.auth('❌ Failed to broadcast session started:', error);
     }
   }
 
@@ -207,7 +207,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      cerror('❌ Failed to broadcast session finished:', error);
+      error.auth('❌ Failed to broadcast session finished:', error);
     }
   }
 
@@ -227,7 +227,7 @@ class LobbySocketService {
         timestamp: new Date().toISOString()
       };
     } catch (error) {
-      cerror('❌ Failed to get lobby updates stats:', error);
+      error.lobby('❌ Failed to get lobby updates stats:', error);
       return {
         connected_clients: 0,
         room_exists: false,
@@ -253,13 +253,12 @@ class LobbySocketService {
       };
 
       const stats = this.getLobbyUpdatesStats();
-      clog('🔌 Test broadcast sent:', { eventData, stats });
 
       io.to('lobby-updates').emit('lobby:update', eventData);
 
       return { success: true, stats };
     } catch (error) {
-      cerror('❌ Failed to send test broadcast:', error);
+      error.lobby('❌ Failed to send test broadcast:', error);
       return { success: false, error: error.message };
     }
   }

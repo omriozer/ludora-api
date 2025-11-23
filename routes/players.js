@@ -11,7 +11,7 @@ import {
   createClearCookieConfig,
   logCookieConfig
 } from '../utils/cookieConfig.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const authService = new AuthService();
 const playerService = new PlayerService();
@@ -138,9 +138,8 @@ router.post('/login', studentsAccessMiddleware, rateLimiters.auth, validateBody(
       }
     });
 
-    clog(`🎮 Player logged in with dual tokens: ${result.player.display_name} (${privacy_code})`);
   } catch (error) {
-    cerror('Player login error:', error);
+    error.auth('Player login error:', error);
     res.status(401).json({ error: error.message || 'Authentication failed' });
   }
 });
@@ -201,9 +200,8 @@ router.post('/refresh', studentsAccessMiddleware, async (req, res) => {
       }
     });
 
-    clog(`🔄 Player token refreshed: ${player.display_name} (${player.privacy_code})`);
   } catch (error) {
-    cerror('Player token refresh error:', error);
+    error.auth('Player token refresh error:', error);
     res.status(401).json({ error: error.message || 'Token refresh failed' });
   }
 });
@@ -218,7 +216,7 @@ router.post('/logout', studentsAccessMiddleware, authenticateUserOrPlayer, async
       playerId = req.player.id;
     } else if (req.entityType === 'user' && req.user) {
       // Allow admin users to logout (clears their cookies)
-      clog('[Logout] Admin user logging out from student portal');
+
     }
 
     // For player tokens, we don't need to revoke from database
@@ -228,7 +226,7 @@ router.post('/logout', studentsAccessMiddleware, authenticateUserOrPlayer, async
     // Logout player and invalidate sessions
     if (playerId) {
       await playerService.logoutPlayer(playerId);
-      clog(`🚪 Player logged out: ${playerId}`);
+
     }
 
     // Clear all player cookies
@@ -240,7 +238,7 @@ router.post('/logout', studentsAccessMiddleware, authenticateUserOrPlayer, async
 
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
-    cerror('Player logout error:', error);
+    error.auth('Player logout error:', error);
     res.status(500).json({ error: 'Logout failed' });
   }
 });
@@ -280,7 +278,7 @@ router.get('/me', studentsAccessMiddleware, authenticateUserOrPlayer, async (req
       throw new Error('No valid authentication found');
     }
   } catch (error) {
-    cerror('Get player/user info error:', error);
+    error.api('Get player/user info error:', error);
     res.status(500).json({ error: 'Failed to fetch authentication information' });
   }
 });
@@ -319,9 +317,8 @@ router.post('/create-anonymous', studentsAccessMiddleware, rateLimiters.auth, va
       }
     });
 
-    clog(`🎮 Anonymous player created: ${player.display_name} (${player.privacy_code})`);
   } catch (error) {
-    cerror('Create anonymous player error:', error);
+    error.api('Create anonymous player error:', error);
     res.status(400).json({ error: error.message || 'Failed to create anonymous player' });
   }
 });
@@ -348,9 +345,8 @@ router.put('/update-profile', studentsAccessMiddleware, authenticateUserOrPlayer
       updated_at: updatedPlayer.updated_at
     });
 
-    clog(`👤 Player profile updated: ${updatedPlayer.id} (${updatedPlayer.display_name})`);
   } catch (error) {
-    cerror('Player profile update error:', error);
+    error.api('Player profile update error:', error);
     res.status(500).json({ error: error.message || 'Failed to update player profile' });
   }
 });
@@ -374,9 +370,8 @@ router.post('/assign-teacher', studentsAccessMiddleware, authenticateUserOrPlaye
       teacher: result.teacher
     });
 
-    clog(`👥 Teacher ${teacher_id} assigned to player: ${req.player.id}`);
   } catch (error) {
-    cerror('Assign teacher error:', error);
+    error.api('Assign teacher error:', error);
     res.status(400).json({ error: error.message || 'Failed to assign teacher' });
   }
 });
@@ -414,9 +409,8 @@ router.post('/create', authenticateToken, requireTeacher, validateBody(schemas.c
       }
     });
 
-    clog(`👤 Teacher ${teacherId} created player: ${player.display_name} (${player.privacy_code})`);
   } catch (error) {
-    cerror('Create player error:', error);
+    error.api('Create player error:', error);
     res.status(400).json({ error: error.message || 'Failed to create player' });
   }
 });
@@ -443,7 +437,7 @@ router.get('/', authenticateToken, requireTeacher, async (req, res) => {
       teacher_id: teacherId
     });
   } catch (error) {
-    cerror('Get teacher players error:', error);
+    error.api('Get teacher players error:', error);
     res.status(500).json({ error: 'Failed to retrieve players' });
   }
 });
@@ -480,7 +474,7 @@ router.get('/:playerId', authenticateToken, requireTeacher, async (req, res) => 
       updated_at: player.updated_at
     });
   } catch (error) {
-    cerror('Get player error:', error);
+    error.api('Get player error:', error);
     res.status(500).json({ error: 'Failed to retrieve player' });
   }
 });
@@ -506,9 +500,8 @@ router.put('/:playerId', authenticateToken, requireTeacher, validateBody(schemas
       updated_at: updatedPlayer.updated_at
     });
 
-    clog(`👤 Teacher ${teacherId} updated player: ${playerId}`);
   } catch (error) {
-    cerror('Update player error:', error);
+    error.api('Update player error:', error);
     res.status(400).json({ error: error.message || 'Failed to update player' });
   }
 });
@@ -527,9 +520,8 @@ router.post('/:playerId/regenerate-code', authenticateToken, requireTeacher, asy
       new_privacy_code: result.privacy_code
     });
 
-    clog(`🔄 Teacher ${teacherId} regenerated privacy code for player: ${playerId}`);
   } catch (error) {
-    cerror('Regenerate privacy code error:', error);
+    error.api('Regenerate privacy code error:', error);
     res.status(400).json({ error: error.message || 'Failed to regenerate privacy code' });
   }
 });
@@ -543,9 +535,9 @@ router.delete('/:playerId', authenticateToken, requireTeacher, async (req, res) 
     const result = await playerService.deactivatePlayer(playerId, teacherId);
 
     res.json(result);
-    clog(`👤 Teacher ${teacherId} deactivated player: ${playerId}`);
+
   } catch (error) {
-    cerror('Deactivate player error:', error);
+    error.api('Deactivate player error:', error);
     res.status(400).json({ error: error.message || 'Failed to deactivate player' });
   }
 });
@@ -564,7 +556,7 @@ router.get('/online/list', authenticateToken, requireTeacher, async (req, res) =
       timestamp: new Date()
     });
   } catch (error) {
-    cerror('Get online players error:', error);
+    error.api('Get online players error:', error);
     res.status(500).json({ error: 'Failed to retrieve online players' });
   }
 });
@@ -582,7 +574,7 @@ router.get('/stats/overview', authenticateToken, requireTeacher, async (req, res
       stats
     });
   } catch (error) {
-    cerror('Get player stats error:', error);
+    error.api('Get player stats error:', error);
     res.status(500).json({ error: 'Failed to retrieve player statistics' });
   }
 });
@@ -612,7 +604,7 @@ router.get('/:playerId/sessions', authenticateToken, requireTeacher, async (req,
       count: sessions.length
     });
   } catch (error) {
-    cerror('Get player sessions error:', error);
+    error.auth('Get player sessions error:', error);
     res.status(500).json({ error: 'Failed to retrieve player sessions' });
   }
 });
@@ -637,9 +629,8 @@ router.post('/:playerId/logout', authenticateToken, requireTeacher, async (req, 
       player_id: playerId
     });
 
-    clog(`👤 Teacher ${teacherId} logged out player: ${playerId}`);
   } catch (error) {
-    cerror('Logout player error:', error);
+    error.auth('Logout player error:', error);
     res.status(500).json({ error: 'Failed to logout player' });
   }
 });

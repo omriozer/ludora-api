@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const router = express.Router();
 
@@ -189,7 +189,7 @@ router.get('/', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error getting templates:', error);
+    error.template('SystemTemplates: Error getting templates:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -240,7 +240,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error getting template by ID:', error);
+    error.template('SystemTemplates: Error getting template by ID:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -288,7 +288,7 @@ router.get('/type/:templateType', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error getting templates by type:', error);
+    error.template('SystemTemplates: Error getting templates by type:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -316,7 +316,7 @@ router.get('/default/:templateType', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error getting default template:', error);
+    error.template('SystemTemplates: Error getting default template:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -406,7 +406,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error creating template:', error);
+    error.template('SystemTemplates: Error creating template:', error);
 
     // Handle unique constraint violations
     if (error.name === 'SequelizeUniqueConstraintError') {
@@ -502,7 +502,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error updating template:', error);
+    error.template('SystemTemplates: Error updating template:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -569,7 +569,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error deleting template:', error);
+    error.template('SystemTemplates: Error deleting template:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -591,7 +591,7 @@ router.post('/:id/set-default', authenticateToken, requireAdmin, async (req, res
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error setting template as default:', error);
+    error.template('SystemTemplates: Error setting template as default:', error);
 
     if (error.message === 'Template not found') {
       return res.status(404).json({ error: error.message });
@@ -636,7 +636,7 @@ router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) 
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error duplicating template:', error);
+    error.template('SystemTemplates: Error duplicating template:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -703,7 +703,7 @@ router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (r
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error saving file branding as template:', error);
+    error.template('SystemTemplates: Error saving file branding as template:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -773,7 +773,7 @@ router.post('/:id/preview-watermark', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error previewing watermark template:', error);
+    error.template('SystemTemplates: Error previewing watermark template:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -846,7 +846,7 @@ router.post('/test-variables', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error testing variables:', error);
+    error.template('SystemTemplates: Error testing variables:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -911,7 +911,7 @@ router.get('/:id/usage', authenticateToken, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error getting template usage:', error);
+    error.template('SystemTemplates: Error getting template usage:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -954,7 +954,7 @@ router.get('/:id/export', authenticateToken, requireAdmin, async (req, res) => {
     res.json(exportData);
 
   } catch (error) {
-    cerror('SystemTemplates: Error exporting template:', error);
+    error.template('SystemTemplates: Error exporting template:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1011,7 +1011,7 @@ router.post('/import', authenticateToken, requireAdmin, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('SystemTemplates: Error importing template:', error);
+    error.template('SystemTemplates: Error importing template:', error);
     res.status(500).json({ error: error.message });
   }
 });

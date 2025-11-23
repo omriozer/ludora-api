@@ -3,7 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import SubscriptionService from '../services/SubscriptionService.js';
 import SubscriptionPaymentService from '../services/SubscriptionPaymentService.js';
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const router = express.Router();
 
@@ -47,7 +47,7 @@ router.get('/user', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error getting user subscription data:', error);
+    error.payment('Subscriptions: Error getting user subscription data:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -76,7 +76,7 @@ router.get('/current', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error getting current subscription:', error);
+    error.payment('Subscriptions: Error getting current subscription:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -100,7 +100,7 @@ router.get('/plans', async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error getting subscription plans:', error);
+    error.payment('Subscriptions: Error getting subscription plans:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -162,7 +162,7 @@ router.post('/create-payment', authenticateToken, async (req, res) => {
     res.json(result);
 
   } catch (error) {
-    cerror('Subscriptions: Error creating subscription payment:', error);
+    error.payment('Subscriptions: Error creating subscription payment:', error);
 
     // Handle specific validation errors
     if (error.message.includes('already has an active subscription') ||
@@ -212,7 +212,7 @@ router.post('/cancel', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error cancelling subscription:', error);
+    error.payment('Subscriptions: Error cancelling subscription:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -243,7 +243,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error getting subscription:', error);
+    error.payment('Subscriptions: Error getting subscription:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -269,7 +269,7 @@ router.post('/validate', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error validating subscription:', error);
+    error.payment('Subscriptions: Error validating subscription:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -322,7 +322,7 @@ router.get('/plans-with-context', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error getting plans with context:', error);
+    error.payment('Subscriptions: Error getting plans with context:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -369,7 +369,7 @@ router.post('/change-plan', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error changing subscription plan:', error);
+    error.payment('Subscriptions: Error changing subscription plan:', error);
 
     // Handle specific validation errors
     if (error.message.includes('not found') ||
@@ -429,7 +429,7 @@ router.post('/cancel-pending/:id', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Subscriptions: Error cancelling pending subscription:', error);
+    error.payment('Subscriptions: Error cancelling pending subscription:', error);
     res.status(500).json({ error: error.message });
   }
 });

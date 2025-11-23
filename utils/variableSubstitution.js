@@ -8,7 +8,7 @@
  * - Consistent default variables across all services
  */
 
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * Substitute variables in content with proper Hebrew/RTL support
@@ -40,7 +40,6 @@ export function substituteVariables(content, variables = {}, options = {}) {
   const allVariables = { ...defaultVars, ...variables };
 
   if (enableLogging) {
-    clog('🔄 Variable substitution input:', {
       contentLength: content.length,
       variableKeys: Object.keys(allVariables),
       hasUserObj: !!variables.userObj,
@@ -67,10 +66,7 @@ export function substituteVariables(content, variables = {}, options = {}) {
   result = handleUserVariableSubstitution(result, variables, enableLogging);
 
   if (enableLogging) {
-    clog('✅ Variable substitution complete:', {
-      originalLength: content.length,
-      resultLength: result.length,
-      hasPlaceholders: /\{\{|\$\{/.test(result)
+
     });
   }
 
@@ -94,7 +90,7 @@ function handleUserVariableSubstitution(result, variables, enableLogging) {
     userEmail = variables.userObj.email || variables.userObj.name || '';
     userName = variables.userObj.name || variables.userObj.email || '';
     if (enableLogging) {
-      clog('📊 Using userObj for user data:', { userEmail: !!userEmail, userName: !!userName });
+
     }
   } else if (variables.user) {
     if (typeof variables.user === 'string') {
@@ -114,11 +110,7 @@ function handleUserVariableSubstitution(result, variables, enableLogging) {
       userName = variables.user.name || variables.user.email || '';
     }
     if (enableLogging) {
-      clog('📊 Using user string for user data:', {
-        originalUser: variables.user,
-        extractedEmail: !!userEmail,
-        extractedName: !!userName
-      });
+
     }
   }
 
@@ -145,7 +137,6 @@ function handleUserVariableSubstitution(result, variables, enableLogging) {
     result = result.replace(/\{\{user\.email\}\}/g, protectedEmail);
 
     if (enableLogging) {
-      clog('🔒 Protected email in Hebrew text (reversed for pdf-lib):', {
         originalEmail: finalUserEmail,
         reversedEmail: reversedEmail,
         method: 'manual string reversal'

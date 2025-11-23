@@ -14,6 +14,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
     "db:setup": "./scripts/setup-db.sh development setup",
     "db:setup:staging": "./scripts/setup-db.sh staging setup",
     "db:setup:prod": "./scripts/setup-db.sh production setup",
@@ -94,6 +96,7 @@
     "@xmldom/xmldom": "^0.8.11",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
+    "chalk": "^5.6.2",
     "compression": "^1.7.4",
     "cookie": "^1.0.2",
     "cookie-parser": "^1.4.7",
@@ -124,6 +127,8 @@
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-ludora": "file:../ludora-utils/eslint-plugin-ludora",
     "jest": "^29.7.0",
     "jest-extended": "^4.0.2",
     "supertest": "^6.3.4"

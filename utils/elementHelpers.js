@@ -4,7 +4,7 @@
  * Eliminates duplication and inconsistencies in rotation/styling logic
  */
 
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * Check if an element type is a builtin element
@@ -271,13 +271,4 @@ export function debugElementRotation(element, elementType, context = '') {
   const isBuiltin = isBuiltinElement(elementType);
   const rotation = getElementRotation(element, elementType);
 
-  clog(`🔄 Element Rotation Debug ${context}:`, {
-    elementType,
-    isBuiltin,
-    rotation,
-    elementRotationField: element?.rotation,
-    styleRotationField: element?.style?.rotation,
-    actualRotationUsed: rotation,
-    rotationSource: isBuiltin ? 'element.rotation' : 'element.style.rotation'
-  });
 }

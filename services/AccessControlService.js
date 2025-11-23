@@ -1,7 +1,7 @@
 import models from '../models/index.js';
 import { Op } from 'sequelize';
 import { NotFoundError, ForbiddenError } from '../middleware/errorHandler.js';
-import { cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 import { nowInIsrael, createExpirationDate, isExpired } from '../utils/dateUtils.js';
 
 class AccessControlService {
@@ -40,7 +40,7 @@ class AccessControlService {
         expiresAt: purchase ? purchase.access_expires_at : null
       };
     } catch (error) {
-      cerror('Error checking access:', error);
+      error.api('Error checking access:', error);
       throw new Error(`Failed to check access: ${error.message}`);
     }
   }
@@ -75,7 +75,7 @@ class AccessControlService {
 
       return purchases.map(purchase => this.formatPurchaseWithEntity(purchase));
     } catch (error) {
-      cerror('Error getting user purchases:', error);
+      error.payment('Error getting user purchases:', error);
       throw new Error(`Failed to get user purchases: ${error.message}`);
     }
   }
@@ -113,7 +113,7 @@ class AccessControlService {
         expiresAt: purchase.access_expires_at
       }));
     } catch (error) {
-      cerror('Error getting entity users:', error);
+      error.api('Error getting entity users:', error);
       throw new Error(`Failed to get entity users: ${error.message}`);
     }
   }
@@ -149,7 +149,7 @@ class AccessControlService {
       const purchase = await this.models.Purchase.create(purchaseData);
       return purchase;
     } catch (error) {
-      cerror('Error granting access:', error);
+      error.api('Error granting access:', error);
       throw new Error(`Failed to grant access: ${error.message}`);
     }
   }
@@ -167,7 +167,7 @@ class AccessControlService {
 
       return { revoked: deletedCount > 0, deletedCount };
     } catch (error) {
-      cerror('Error revoking access:', error);
+      error.api('Error revoking access:', error);
       throw new Error(`Failed to revoke access: ${error.message}`);
     }
   }
@@ -197,7 +197,7 @@ class AccessControlService {
         totalRevenue: 0
       };
     } catch (error) {
-      cerror('Error getting entity access stats:', error);
+      error.api('Error getting entity access stats:', error);
       throw new Error(`Failed to get entity access stats: ${error.message}`);
     }
   }

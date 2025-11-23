@@ -19,7 +19,7 @@ import {
 const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
 import SettingsService from '../services/SettingsService.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const verifyAdminPassword = (inputPassword) => {
   if (!process.env.ADMIN_PASSWORD) {
@@ -78,7 +78,7 @@ router.post('/register', rateLimiters.auth, validateBody(schemas.register), asyn
         }
       });
     } catch (emailError) {
-      clog('Failed to send registration email:', emailError);
+
     }
 
     // Return success and user data (without tokens)
@@ -447,7 +447,7 @@ router.post('/forgot-password', rateLimiters.auth, validateBody(schemas.password
         expiresIn: result.expiresIn
       });
     } catch (emailError) {
-      clog('Failed to send password reset email:', emailError);
+
     }
 
     res.json({
@@ -482,7 +482,7 @@ router.get('/sessions/stats', authenticateToken, requireAdmin, async (_req, res)
       stats
     });
   } catch (error) {
-    cerror('Failed to get session stats:', error);
+    error.auth('Failed to get session stats:', error);
     res.status(500).json({ error: 'Failed to retrieve session statistics' });
   }
 });
@@ -499,7 +499,7 @@ router.get('/sessions/user/:userId', authenticateToken, requireAdmin, async (req
       count: userSessions.length
     });
   } catch (error) {
-    cerror('Failed to get user sessions:', error);
+    error.auth('Failed to get user sessions:', error);
     res.status(500).json({ error: 'Failed to retrieve user sessions' });
   }
 });
@@ -515,7 +515,7 @@ router.post('/sessions/invalidate/:userId', authenticateToken, requireAdmin, asy
       invalidatedCount
     });
   } catch (error) {
-    cerror('Failed to invalidate user sessions:', error);
+    error.auth('Failed to invalidate user sessions:', error);
     res.status(500).json({ error: 'Failed to invalidate user sessions' });
   }
 });
@@ -532,7 +532,7 @@ router.post('/sessions/cleanup', authenticateToken, requireAdmin, async (_req, r
       currentStats: stats
     });
   } catch (error) {
-    cerror('Failed to cleanup sessions:', error);
+    error.auth('Failed to cleanup sessions:', error);
     res.status(500).json({ error: 'Failed to cleanup sessions' });
   }
 });
@@ -568,7 +568,6 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
       const isValidPassword = verifyAdminPassword(password);
       if (!isValidPassword) {
         // Audit log failed attempts
-        clog('Anonymous admin password validation failed:', {
           ip: req.ip,
           userAgent: req.get('User-Agent'),
           timestamp: new Date().toISOString(),
@@ -581,7 +580,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
         });
       }
     } catch (verificationError) {
-      cerror('Password verification error:', verificationError);
+      error.auth('Password verification error:', verificationError);
       return res.status(500).json({
         success: false,
         error: 'Admin password not configured'
@@ -616,7 +615,6 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     );
 
     // Audit log successful validation
-    clog('Anonymous admin password validation successful:', {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
       timestamp: new Date().toISOString(),
@@ -641,7 +639,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     });
 
   } catch (error) {
-    cerror('Anonymous admin password validation error:', error);
+    error.auth('Anonymous admin password validation error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error'

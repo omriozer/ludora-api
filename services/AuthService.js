@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { admin } from '../config/firebase.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { clog } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 class AuthService {
   constructor() {
@@ -557,7 +557,7 @@ class AuthService {
 
       // Development token support - ONLY in development environment
       if (token.startsWith('token_') && process.env.ENVIRONMENT === 'development') {
-        clog('🚨 DEVELOPMENT TOKEN USED - This should NEVER happen in production!');
+
         return {
           id: `dev_user_${Date.now()}`,
           email: 'dev@example.com',
@@ -817,11 +817,11 @@ class AuthService {
       });
 
       if (deletedSessions > 0 || deletedTokens > 0) {
-        clog(`Safety net cleanup: ${deletedSessions} expired sessions, ${deletedTokens} expired tokens`);
+
       }
     } catch (error) {
       // Silent failure for safety net cleanup
-      clog(`Safety net cleanup error: ${error.message}`);
+
     }
   }
 }

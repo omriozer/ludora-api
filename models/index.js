@@ -1,6 +1,6 @@
 import { Sequelize } from 'sequelize';
 import databaseConfig from '../config/database.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const env = process.env.ENVIRONMENT || 'development';
 const config = databaseConfig[env];
@@ -101,15 +101,12 @@ Object.keys(models).forEach(modelName => {
   }
 });
 
-
-
 // Test database connection
 const testDBConnection = async () => {
   try {
     await sequelize.authenticate();
-    clog(new Date().toISOString(), ' ✅ Database connection has been established successfully.');
-  } catch (error) {
-    cerror(new Date().toISOString(), ' ❌ Unable to connect to the database:', error);
+  } catch (err) {
+    error.system('❌ Unable to connect to the database:', err);
   }
 };
 

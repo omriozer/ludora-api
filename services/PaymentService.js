@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * PaymentService - Handles payment completion and transaction management
@@ -69,7 +69,7 @@ class PaymentService {
       return updatedPurchase;
 
     } catch (error) {
-      cerror('PaymentService: Error completing purchase:', error);
+      error.payment('PaymentService: Error completing purchase:', error);
       throw error;
     }
   }
@@ -119,7 +119,7 @@ class PaymentService {
       return price === 0;
 
     } catch (error) {
-      cerror('PaymentService: Error checking if product is free:', error);
+      error.payment('PaymentService: Error checking if product is free:', error);
       throw error;
     }
   }
@@ -174,7 +174,7 @@ class PaymentService {
       return { valid: true };
 
     } catch (error) {
-      cerror('PaymentService: Error validating purchase creation:', error);
+      error.payment('PaymentService: Error validating purchase creation:', error);
       throw error;
     }
   }
@@ -285,7 +285,7 @@ class PaymentService {
       return transaction;
 
     } catch (error) {
-      cerror('PaymentService: Error creating/updating PayPlus transaction:', error);
+      error.payment('PaymentService: Error creating/updating PayPlus transaction:', error);
       throw error;
     }
   }
@@ -326,7 +326,7 @@ class PaymentService {
             product = await models.SubscriptionPlan.findByPk(purchase.purchasable_id);
             break;
           default:
-            clog(`PaymentService: Unknown purchasable type: ${purchase.purchasable_type}`);
+
         }
 
         // Add the product data to the purchase
@@ -338,11 +338,11 @@ class PaymentService {
         populatedPurchases.push(populatedPurchase);
 
         if (!product) {
-          clog(`PaymentService: Product not found for ${purchase.purchasable_type} ${purchase.purchasable_id}`);
+
         }
 
       } catch (error) {
-        cerror(`PaymentService: Error fetching product for purchase ${purchase.id}:`, error);
+        error.payment(`PaymentService: Error fetching product for purchase ${purchase.id}:`, error);
         // Add purchase without product data as fallback
         populatedPurchases.push(purchase.toJSON ? purchase.toJSON() : purchase);
       }
@@ -361,8 +361,6 @@ class PaymentService {
       // Normalize environment for PayPlus credentials (test -> staging)
       const normalizedEnv = environment === 'test' ? 'staging' : environment;
       const isProd = normalizedEnv === 'production';
-
-
 
       const credentials = {
         payplusUrl: isProd
@@ -401,7 +399,7 @@ class PaymentService {
       return credentials;
 
     } catch (error) {
-      cerror('PaymentService: Error getting PayPlus credentials:', error);
+      error.auth('PaymentService: Error getting PayPlus credentials:', error);
       throw error;
     }
   }

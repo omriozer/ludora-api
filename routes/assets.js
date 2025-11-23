@@ -20,7 +20,7 @@ import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.j
 import { createFileLogger, createErrorResponse, createSuccessResponse } from '../utils/fileOperationLogger.js';
 import { createFileVerifier } from '../utils/fileOperationVerifier.js';
 import { createPreUploadValidator } from '../utils/preUploadValidator.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 // Import pptx2html library - try using dynamic import to handle the UMD build correctly
 let renderPptx;
 
@@ -56,7 +56,6 @@ const assetUpload = multer({
     fileSize: 5 * 1024 * 1024 * 1024 // 5GB limit
   }
 });
-
 
 /**
  * Helper: Process PDF with template-based watermarks and selective access control
@@ -209,7 +208,6 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
       date: new Date().toLocaleDateString(),
       time: new Date().toLocaleTimeString()
     };
-
 
     // Step 1: Apply branding if needed
     if (shouldMergeBranding && brandingSettings) {
@@ -381,7 +379,6 @@ async function deleteAllFileAssets(fileEntityId) {
   }
 }
 
-
 /**
  * Helper: Check if user has access to a File entity using AccessControlService
  *
@@ -392,14 +389,13 @@ async function deleteAllFileAssets(fileEntityId) {
 async function checkUserAccess(user, fileEntity) {
   // For asset-only files, they don't have Products - check via lesson plan ownership instead
   if (fileEntity.is_asset_only) {
-    clog('🔍 Asset-only file detected, checking lesson plan access for user:', user.id);
 
     // Asset-only files are internal to lesson plans, so we grant access if user has access
     // to any lesson plan that references this file. This is handled by the presentation
     // endpoint's access control, so if we reached here, access should be granted.
 
     // For security, we could add additional checks here in the future
-    clog('🔍 Access granted: Asset-only file in lesson plan context');
+
     return true;
   }
 
@@ -412,26 +408,18 @@ async function checkUserAccess(user, fileEntity) {
     });
 
   if (!product) {
-    clog('🔍 No product found for file entity:', fileEntity.id);
+
     return false;
   }
 
   if (product.creator_user_id === user.id) {
-    clog('🔍 Access granted: User is creator of file');
+
     return true;
   }
 
   // Use AccessControlService to check if user has purchased access
   try {
     const accessResult = await AccessControlService.checkAccess(user.id, 'file', fileEntity.id);
-
-    clog('🔍 Access control result:', {
-      userId: user.id,
-      fileId: fileEntity.id,
-      hasAccess: accessResult.hasAccess,
-      isLifetime: accessResult.isLifetimeAccess,
-      expiresAt: accessResult.expiresAt
-    });
 
     return accessResult.hasAccess;
   } catch (error) {
@@ -534,7 +522,6 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
         { contentType: req.headers['content-type'] }
       ));
     }
-
 
     // Create logger for this operation
     const logger = createFileLogger('Asset Upload', req.user, {
@@ -757,7 +744,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
   try {
     const { entityType, entityId, filename } = req.params;
 
-
     // VALIDATION: Check if entity should have an image according to database
     let shouldHaveImage = false;
     let entityData = null;
@@ -901,7 +887,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
           // POTENTIAL INCONSISTENCY: Image exists in S3 but database says has_image=false
           // This could be a normal race condition during upload (S3 upload completes before DB transaction commits)
           // OR it could be a genuine orphaned file issue
-
 
           // Check if this looks like a recent upload (file is less than 30 seconds old)
           const fileAge = new Date() - new Date(metadataResult.data.lastModified);
@@ -1166,7 +1151,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
         }
       });
 
-
     } catch (s3Error) {
       return res.status(404).json(createErrorResponse(
         'Image not found',
@@ -1222,7 +1206,6 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
   try {
     const { lessonPlanId, slideId } = req.params;
 
-
     // Get lesson plan with all necessary fields
     const lessonPlan = await db.LessonPlan.findByPk(lessonPlanId);
     if (!lessonPlan) {
@@ -1257,12 +1240,7 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
             // Use AccessControlService to check purchase access
             const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', lessonPlanId);
             hasAccess = accessResult.hasAccess;
-            clog('🔍 Access control result:', {
-              userId: req.user.id,
-              lessonPlanId,
-              hasAccess: accessResult.hasAccess,
-              isLifetime: accessResult.isLifetimeAccess
-            });
+
           }
         }
       } catch (accessError) {
@@ -1283,7 +1261,6 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
     const needsSelectiveAccess = !hasAccess && lessonPlan.allow_slide_preview && lessonPlan.accessible_slides;
     const isSlideAccessible = !needsSelectiveAccess || lessonPlan.accessible_slides.includes(slideId);
     const shouldApplyWatermarks = !hasAccess && lessonPlan.allow_slide_preview && isSlideAccessible;
-
 
     // Handle inaccessible slides
     if (!isSlideAccessible) {
@@ -1430,7 +1407,6 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
       // Send processed SVG content
       res.send(svgContent);
 
-
     } catch (s3Error) {
       return res.status(404).json(createErrorResponse(
         'Slide file not found in storage',
@@ -1530,7 +1506,6 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
         }
       ));
     }
-
 
     // Determine filename
     let targetFilename = filename;
@@ -1707,7 +1682,7 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
 
     // Check if ID is suspiciously short (likely not a valid file ID)
     if (entityId.length <= 4) {
-      clog('Assets: Rejecting very short file ID:', entityId);
+
       return res.status(400).json(createErrorResponse(
         'Invalid file ID format',
         'File ID appears to be too short',
@@ -1717,7 +1692,6 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
         }
       ));
     }
-
 
     // Get File entity
     const fileEntity = await FileModel.findByPk(entityId);
@@ -1754,7 +1728,6 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
       hasAccess = await checkUserAccess(req.user, fileEntity);
     }
     const isPreviewRequest = req.query.preview === 'true';
-
 
     // UPDATED access control requirements:
     // 1. ALL file downloads require authentication - enforced by authenticateToken middleware
@@ -2277,7 +2250,6 @@ router.post('/verify/:entityType/:entityId', authenticateToken, async (req, res)
       ));
     }
 
-
     // Create logger for this operation
     const logger = createFileLogger('File Integrity Verification', req.user, {
       entityType,
@@ -2463,7 +2435,6 @@ router.get('/metadata/:entityType/:entityId', authenticateToken, async (req, res
       ));
     }
 
-
     // Create logger for this operation
     const logger = createFileLogger('File Metadata Retrieval', req.user, {
       entityType,
@@ -2642,7 +2613,6 @@ router.get('/placeholders/:filename', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=86400'); // 24 hours
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
 
-
     // Stream the file
     const stream = fs.createReadStream(placeholderPath);
     stream.pipe(res);
@@ -2779,7 +2749,7 @@ router.get('/template-preview/:fileId', authenticateToken, async (req, res) => {
     }));
 
   } catch (error) {
-    cerror('❌ Error getting template preview:', error);
+    error.template('❌ Error getting template preview:', error);
     res.status(500).json(createErrorResponse('TEMPLATE_PREVIEW_ERROR', 'Failed to generate template preview'));
   }
 });

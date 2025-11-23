@@ -23,7 +23,7 @@ import {
 } from '../middleware/gameSessionValidation.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { checkStudentsAccess, checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 const router = express.Router();
 
@@ -40,11 +40,10 @@ const lobbyRateLimit = rateLimit({
  * Authentication helper for lobby ownership validation
  */
 async function validateGameOwnership(gameId, userId, userRole = null) {
-  clog(`🔍 Validating game ownership: gameId=${gameId}, userId=${userId}, userRole=${userRole}`);
 
   // Admin/sysadmin bypass - they can do anything an owner can
   if (userRole === 'admin' || userRole === 'sysadmin') {
-    clog(`✅ Admin/sysadmin bypass for game ${gameId}`);
+
     return true;
   }
 
@@ -53,17 +52,14 @@ async function validateGameOwnership(gameId, userId, userRole = null) {
     where: { product_type: 'game', entity_id: gameId }
   });
 
-  clog(`📦 Product search result: gameId=${gameId}, found=${!!product}, creator_user_id=${product?.creator_user_id}`);
-
   // No product OR no creator_user_id = Ludora-owned (allow access)
   if (!product || !product.creator_user_id) {
-    clog(`✅ Ludora-owned game (no product or no creator): gameId=${gameId}`);
     return true;
   }
 
   // Check ownership via Product.creator_user_id
   const isOwner = String(product.creator_user_id) === String(userId);
-  clog(`👤 Ownership check: gameId=${gameId}, creator=${product.creator_user_id}, user=${userId}, isOwner=${isOwner}`);
+
   return isOwner;
 }
 
@@ -87,9 +83,9 @@ router.get('/games/:gameId/lobbies',
       const user = req.user; // May be null for anonymous users
 
       if (user) {
-        clog(`📋 Listing lobbies for game ${gameId} by authenticated user ${user.id}`);
+
       } else {
-        clog(`📋 Listing lobbies for game ${gameId} by anonymous user`);
+
       }
 
       // For authenticated users, validate access. For anonymous users, allow public access.
@@ -154,7 +150,7 @@ router.get('/games/:gameId/lobbies',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to list lobbies:', error);
+      error.lobby('❌ Failed to list lobbies:', error);
       res.status(500).json({
         error: 'Failed to fetch lobbies',
         message: error.message
@@ -177,14 +173,6 @@ router.post('/games/:gameId/lobbies',
       const { gameId } = req.validatedParams;
       const lobbyData = req.validatedData;
       const user = req.user;
-
-      clog(`🏠 Creating lobby for game ${gameId} by user ${user.id}`);
-      clog(`👤 User object:`, {
-        id: user.id,
-        role: user.role,
-        userId_type: typeof user.id,
-        full_user: user
-      });
 
       // Validate user can create lobbies for this game
       const hasAccess = await validateGameOwnership(gameId, user.id, user.role);
@@ -209,7 +197,7 @@ router.post('/games/:gameId/lobbies',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to create lobby:', error);
+      error.lobby('❌ Failed to create lobby:', error);
 
       // Handle specific error cases
       if (error.message.includes('Game not found')) {
@@ -245,8 +233,6 @@ router.get('/game-lobbies/:lobbyId',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🔍 Getting lobby details for ${lobbyId} by user ${user.id}`);
-
       // Get lobby details
       const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
 
@@ -270,7 +256,7 @@ router.get('/game-lobbies/:lobbyId',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to get lobby details:', error);
+      error.lobby('❌ Failed to get lobby details:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -297,8 +283,6 @@ router.put('/game-lobbies/:lobbyId',
       const { lobbyId } = req.validatedParams;
       const updateData = req.validatedData;
       const user = req.user;
-
-      clog(`✏️ Updating lobby ${lobbyId} by user ${user.id}`);
 
       // Get current lobby to check permissions
       const currentLobby = await models.GameLobby.findByPk(lobbyId, { transaction });
@@ -335,7 +319,7 @@ router.put('/game-lobbies/:lobbyId',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to update lobby:', error);
+      error.lobby('❌ Failed to update lobby:', error);
       res.status(500).json({
         error: 'Failed to update lobby',
         message: error.message
@@ -358,17 +342,6 @@ router.put('/game-lobbies/:lobbyId/activate',
       const activationData = req.validatedData;
       const user = req.user;
 
-      clog(`🔄 [ROUTE] Activating lobby ${lobbyId} with enhanced settings by user ${user.id}`);
-      clog(`🔧 [ROUTE] Activation data:`, activationData);
-      clog(`👤 [ROUTE] User context:`, {
-        uid: user.id,
-        role: user.role,
-        uidType: typeof user.id,
-        fullUser: user
-      });
-      clog(`📋 [ROUTE] Validated params:`, req.validatedParams);
-      clog(`📋 [ROUTE] Validated data:`, req.validatedData);
-
       // Activate the lobby with enhanced configuration
       const updatedLobby = await GameLobbyService.activateLobby(
         lobbyId,
@@ -378,12 +351,12 @@ router.put('/game-lobbies/:lobbyId/activate',
       );
 
       await transaction.commit();
-      clog(`✅ [ROUTE] Lobby activation successful for ${lobbyId}`);
+
       res.status(200).json(updatedLobby);
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ [ROUTE] Failed to activate lobby in route handler:', {
+      error.lobby('❌ [ROUTE] Failed to activate lobby in route handler:', {
         lobbyId: req.validatedParams?.lobbyId,
         userId: req.user?.id,
         error: error.message,
@@ -421,8 +394,6 @@ router.put('/game-lobbies/:lobbyId/close',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🔄 Closing lobby ${lobbyId} by user ${user.id}`);
-
       // Close the lobby
       const updatedLobby = await GameLobbyService.closeLobby(
         lobbyId,
@@ -435,7 +406,7 @@ router.put('/game-lobbies/:lobbyId/close',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to close lobby:', error);
+      error.lobby('❌ Failed to close lobby:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -466,8 +437,6 @@ router.put('/game-lobbies/:lobbyId/expiration',
       const { expires_at } = req.validatedData; // Date, 'indefinite', or null
       const user = req.user;
 
-      clog(`🔄 Setting lobby ${lobbyId} expiration to ${expires_at} by user ${user.id}`);
-
       // Set lobby expiration
       const updatedLobby = await GameLobbyService.setLobbyExpiration(
         lobbyId,
@@ -481,7 +450,7 @@ router.put('/game-lobbies/:lobbyId/expiration',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to set lobby expiration:', error);
+      error.lobby('❌ Failed to set lobby expiration:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -511,8 +480,6 @@ router.delete('/game-lobbies/:lobbyId',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🗑️ Closing lobby ${lobbyId} by user ${user.id}`);
-
       // Close the lobby
       const closedLobby = await GameLobbyService.closeLobby(
         lobbyId,
@@ -528,7 +495,7 @@ router.delete('/game-lobbies/:lobbyId',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to close lobby:', error);
+      error.lobby('❌ Failed to close lobby:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -544,7 +511,6 @@ router.delete('/game-lobbies/:lobbyId',
     }
   }
 );
-
 
 // =============================================
 // LOBBY JOINING & DISCOVERY ROUTES
@@ -567,7 +533,7 @@ router.post('/game-lobbies/join-by-code',
       // NEW AUTH MODEL: If player is authenticated, validate teacher connection
       if (authenticatedPlayer && !authenticatedPlayer.teacher_id) {
         await transaction.rollback();
-        clog(`🚫 Player ${authenticatedPlayer.id} has no teacher connection - access denied`);
+
         return res.status(403).json({
           error: 'Teacher connection required',
           message: 'You must be connected to a teacher before accessing content',
@@ -578,12 +544,6 @@ router.post('/game-lobbies/join-by-code',
       // Use authenticated player data if available, otherwise fall back to participant data
       const effectiveDisplayName = authenticatedPlayer?.display_name || participant.display_name;
       const effectivePlayerId = authenticatedPlayer?.id || null;
-
-      clog(`🚪 Attempting to join lobby ${lobby_code} as ${effectiveDisplayName}`, {
-        isAuthenticated: !!authenticatedPlayer,
-        hasTeacher: !!authenticatedPlayer?.teacher_id,
-        playerId: effectivePlayerId
-      });
 
       // Find lobby by code
       const lobby = await GameLobbyService.findLobbyByCode(lobby_code, transaction);
@@ -631,7 +591,7 @@ router.post('/game-lobbies/join-by-code',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to join lobby by code:', error);
+      error.lobby('❌ Failed to join lobby by code:', error);
 
       if (error.message.includes('not open for joining')) {
         return res.status(403).json({ error: 'Lobby is not open for joining' });
@@ -666,7 +626,7 @@ router.post('/game-lobbies/:lobbyId/join',
       // NEW AUTH MODEL: If player is authenticated, validate teacher connection
       if (authenticatedPlayer && !authenticatedPlayer.teacher_id) {
         await transaction.rollback();
-        clog(`🚫 Player ${authenticatedPlayer.id} has no teacher connection - access denied`);
+
         return res.status(403).json({
           error: 'Teacher connection required',
           message: 'You must be connected to a teacher before joining games',
@@ -687,12 +647,6 @@ router.post('/game-lobbies/:lobbyId/join',
             ...participant,
             player_id: null // Fallback for legacy/guest behavior
           };
-
-      clog(`🚪 Joining lobby ${lobbyId} as ${effectiveParticipant.display_name} with invitation logic`, {
-        isAuthenticated: !!authenticatedPlayer,
-        hasTeacher: !!authenticatedPlayer?.teacher_id,
-        playerId: effectiveParticipant.player_id
-      });
 
       // Get lobby details with current sessions
       const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
@@ -722,10 +676,6 @@ router.post('/game-lobbies/:lobbyId/join',
       }
 
       const invitationType = lobby.settings.invitation_type || 'manual_selection';
-      clog(`📍 Processing join request with invitation_type: ${invitationType}`, {
-        isGuest,
-        playerId: effectiveParticipant.player_id
-      });
 
       let joinedSession;
 
@@ -759,7 +709,7 @@ router.post('/game-lobbies/:lobbyId/join',
             session_number: updatedManualSession.session_number,
             participants_count: updatedManualSession.participants.length
           };
-          clog(`📋 Added participant to manually selected session ${targetSession.session_number}`);
+
           break;
 
         case 'order':
@@ -784,7 +734,7 @@ router.post('/game-lobbies/:lobbyId/join',
               session_number: updatedSession.session_number,
               participants_count: updatedSession.participants.length
             };
-            clog(`📋 Added participant to existing session ${firstSession.session_number} in order`);
+
           } else {
             // Create new session for sequential assignment
             const newSession = await createSessionForJoining(lobbyId, lobby, transaction);
@@ -804,7 +754,7 @@ router.post('/game-lobbies/:lobbyId/join',
               participants_count: updatedSession.participants.length,
               created: true
             };
-            clog(`📋 Created new session ${newSession.session_number} and added participant in order`);
+
           }
           break;
 
@@ -850,7 +800,7 @@ router.post('/game-lobbies/:lobbyId/join',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to join lobby:', error);
+      error.lobby('❌ Failed to join lobby:', error);
 
       if (error.message.includes('not open for joining')) {
         return res.status(403).json({ error: 'Lobby is not open for joining' });
@@ -921,8 +871,6 @@ router.get('/game-lobbies/:lobbyId/sessions',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`📋 Listing sessions for lobby ${lobbyId} by user ${user.id}`);
-
       // Verify lobby exists and user has access
       const lobby = await models.GameLobby.findByPk(lobbyId, { transaction });
       if (!lobby) {
@@ -955,7 +903,7 @@ router.get('/game-lobbies/:lobbyId/sessions',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to list sessions:', error);
+      error.auth('❌ Failed to list sessions:', error);
       res.status(500).json({
         error: 'Failed to fetch sessions',
         message: error.message
@@ -978,8 +926,6 @@ router.post('/game-lobbies/:lobbyId/sessions',
       const sessionData = req.validatedData;
       const user = req.user;
 
-      clog(`🎮 Creating session in lobby ${lobbyId} by user ${user.id}`);
-
       // Create session using service
       const session = await GameSessionService.createSession(
         lobbyId,
@@ -993,7 +939,7 @@ router.post('/game-lobbies/:lobbyId/sessions',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to create session:', error);
+      error.auth('❌ Failed to create session:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -1031,7 +977,7 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
       // NEW AUTH MODEL: If player is authenticated, validate teacher connection
       if (authenticatedPlayer && !authenticatedPlayer.teacher_id) {
         await transaction.rollback();
-        clog(`🚫 Player ${authenticatedPlayer.id} has no teacher connection - access denied`);
+
         return res.status(403).json({
           error: 'Teacher connection required',
           message: 'You must be connected to a teacher before creating sessions',
@@ -1049,9 +995,6 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
             guest_token: null
           }
         : participant;
-
-      clog(`🎮 Student creating session in lobby ${lobbyId}${user ? ` by user ${user.id}` : authenticatedPlayer ? ` by player ${authenticatedPlayer.id}` : ' by anonymous user'}`);
-      clog(`👤 Effective participant data:`, effectiveParticipant);
 
       // Validate participant data
       if (!effectiveParticipant || !effectiveParticipant.display_name?.trim()) {
@@ -1137,8 +1080,6 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
 
       const session = await models.GameSession.create(sessionCreateData, { transaction });
 
-      clog(`✅ Student created session ${session.session_number} in lobby ${lobbyId}`);
-
       // Add the creator as a participant to the session
       // NEW AUTH MODEL: Use effective participant with player_id
       const updatedSession = await GameSessionService.addParticipant(
@@ -1159,8 +1100,6 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
         (effectiveParticipant.guest_token && p.guest_token === effectiveParticipant.guest_token) ||
         (!effectiveParticipant.player_id && !effectiveParticipant.user_id && !effectiveParticipant.guest_token && p.display_name === effectiveParticipant.display_name)
       );
-
-      clog(`👤 Added creator as participant:`, addedParticipant);
 
       // Return response in the format expected by frontend
       res.status(201).json({
@@ -1184,7 +1123,7 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ Failed to create student session:', error);
+      error.auth('❌ Failed to create student session:', error);
 
       res.status(500).json({
         error: 'Failed to create session',
@@ -1211,8 +1150,6 @@ router.get('/game-lobbies/:lobbyId/debug',
       const { lobbyId } = req.validatedParams;
       const user = req.user;
 
-      clog(`🔍 [ROUTE] Debug request for lobby ${lobbyId} by user ${user.id}`);
-
       // Get debug information
       const debugInfo = await GameLobbyService.debugLobby(lobbyId, transaction);
 
@@ -1226,7 +1163,7 @@ router.get('/game-lobbies/:lobbyId/debug',
 
     } catch (error) {
       await transaction.rollback();
-      cerror('❌ [ROUTE] Failed to debug lobby:', error);
+      error.lobby('❌ [ROUTE] Failed to debug lobby:', error);
       res.status(500).json({
         error: 'Failed to debug lobby',
         message: error.message

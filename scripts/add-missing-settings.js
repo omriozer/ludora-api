@@ -19,7 +19,7 @@ process.chdir(join(__dirname, '..'));
 // Import models and utilities
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 // Define all expected settings with their default values and types
 // Based on frontend /src/constants/settingsKeys.js
@@ -156,35 +156,22 @@ const EXPECTED_SETTINGS = [
  * Main function to add missing settings
  */
 async function addMissingSettings() {
-  clog('🔧 Add Missing Settings Script');
-  clog('================================');
-  clog(`Environment: ${process.env.ENVIRONMENT || 'development'}`);
-  clog(`Expected settings count: ${EXPECTED_SETTINGS.length}`);
-  clog('');
 
   try {
     // Get existing settings from database
     const existingSettings = await models.Settings.findAll();
     const existingKeys = new Set(existingSettings.map(s => s.key));
 
-    clog(`📊 Current database status:`);
-    clog(`   Existing settings: ${existingSettings.length}`);
-    clog('');
-
     // Find missing settings
     const missingSettings = EXPECTED_SETTINGS.filter(s => !existingKeys.has(s.key));
 
     if (missingSettings.length === 0) {
-      clog('✅ All settings are already present in the database!');
-      clog(`   Total settings: ${existingSettings.length}`);
+
       return;
     }
 
-    clog(`🔍 Missing settings (${missingSettings.length}):`);
     missingSettings.forEach(s => {
-      clog(`   - ${s.key} (${s.value_type})`);
     });
-    clog('');
 
     // Validate and prepare records to insert
     const recordsToInsert = missingSettings.map(setting => {
@@ -236,20 +223,13 @@ async function addMissingSettings() {
       await models.Settings.bulkCreate(recordsToInsert, { transaction });
       await transaction.commit();
 
-      clog(`✅ Successfully added ${recordsToInsert.length} missing settings!`);
-      clog('');
-
       // Verify final count
       const finalCount = await models.Settings.count();
-      clog(`📊 Final database status:`);
-      clog(`   Total settings: ${finalCount}`);
-      clog(`   Expected: ${EXPECTED_SETTINGS.length}`);
 
       if (finalCount >= EXPECTED_SETTINGS.length) {
-        clog('');
-        clog('✅ All expected settings are now in the database!');
+
       } else {
-        cerror(`⚠️  Warning: Final count (${finalCount}) is less than expected (${EXPECTED_SETTINGS.length})`);
+        error.api(`⚠️  Warning: Final count (${finalCount}) is less than expected (${EXPECTED_SETTINGS.length})`);
       }
 
     } catch (error) {
@@ -258,8 +238,8 @@ async function addMissingSettings() {
     }
 
   } catch (error) {
-    cerror('❌ Error adding missing settings:', error.message);
-    cerror(error.stack);
+    error.api('❌ Error adding missing settings:', error.message);
+    error.api(error.stack);
     process.exit(1);
   }
 }
@@ -272,13 +252,11 @@ async function listCurrentSettings() {
     order: [['key', 'ASC']]
   });
 
-  clog('\n📋 Current settings in database:');
   settings.forEach(s => {
     const value = typeof s.value === 'object' ? JSON.stringify(s.value) : s.value;
     const displayValue = value === null ? 'null' : (String(value).length > 40 ? String(value).substring(0, 40) + '...' : value);
-    clog(`   ${s.key} = ${displayValue} (${s.value_type})`);
   });
-  clog(`\nTotal: ${settings.length} settings`);
+
 }
 
 // Main execution
@@ -292,11 +270,10 @@ async function main() {
       await listCurrentSettings();
     }
 
-    clog('\n🎉 Script completed successfully!');
     process.exit(0);
 
   } catch (error) {
-    cerror('❌ Script failed:', error);
+    error.api('❌ Script failed:', error);
     process.exit(1);
   }
 }

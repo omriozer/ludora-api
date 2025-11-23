@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/utils.js';
+import { error } from '../lib/errorLogger.js';
 
 /**
  * Helper functions for lesson plan presentation handling
@@ -71,7 +71,7 @@ export async function getLessonPlanPresentationFiles(lessonPlanId) {
     };
 
   } catch (error) {
-    cerror('Error getting lesson plan presentation files:', error);
+    error.api('Error getting lesson plan presentation files:', error);
     throw error;
   }
 }
@@ -103,7 +103,7 @@ export async function checkLessonPlanAccess(userId, lessonPlanId) {
     return !!purchase;
 
   } catch (error) {
-    cerror('Error checking lesson plan access:', error);
+    error.api('Error checking lesson plan access:', error);
     return false;
   }
 }
