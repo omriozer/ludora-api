@@ -4,6 +4,7 @@ import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
+import { clog, cerror } from '../lib/utils.js';
 
 const router = express.Router();
 
@@ -90,31 +91,107 @@ router.post('/payplus',
     const startTime = Date.now();
     const webhookData = req.body;
 
+    // TODO remove debug - enhanced webhook logging for PayPlus analysis
+    clog('PayPlus webhook received - capturing comprehensive data for analysis');
+
+    // Capture raw request body for signature verification analysis
+    const rawBody = JSON.stringify(req.body);
+
+    // Capture ALL possible PayPlus signature headers
+    const possibleSignatureHeaders = [
+      'X-PayPlus-Signature',
+      'X-PayPlus-Webhook-Signature',
+      'PayPlus-Signature',
+      'Signature',
+      'X-Signature',
+      'X-Hub-Signature',
+      'X-Webhook-Signature',
+      'Authorization',
+      'X-PayPlus-Auth',
+      'PayPlus-Auth',
+      'X-PayPlus-Token',
+      'PayPlus-Token'
+    ];
+
+    const signatureHeaders = {};
+    possibleSignatureHeaders.forEach(header => {
+      const value = req.get(header);
+      if (value) {
+        signatureHeaders[header.toLowerCase()] = value; // Store actual value for analysis
+        // TODO remove debug - enhanced webhook logging for PayPlus analysis
+        clog(`Found signature header: ${header} = ${value.substring(0, 20)}...`);
+      }
+    });
+
     // Capture comprehensive sender information for security analysis
     const senderInfo = {
+      // Basic request info
       ip: req.ip,
       userAgent: req.get('User-Agent'),
+      method: req.method,
+      url: req.url,
+      protocol: req.protocol,
+      secure: req.secure,
+
+      // Forwarding and proxy headers
       forwarded: req.get('X-Forwarded-For'),
       realIp: req.get('X-Real-IP'),
+      forwardedProto: req.get('X-Forwarded-Proto'),
+      forwardedHost: req.get('X-Forwarded-Host'),
+      forwardedPort: req.get('X-Forwarded-Port'),
+
+      // Content headers
       host: req.get('Host'),
       origin: req.get('Origin'),
       referer: req.get('Referer'),
       contentType: req.get('Content-Type'),
       contentLength: req.get('Content-Length'),
+      contentEncoding: req.get('Content-Encoding'),
+      accept: req.get('Accept'),
+      acceptEncoding: req.get('Accept-Encoding'),
+      acceptLanguage: req.get('Accept-Language'),
+
+      // Timing and cache headers
       timestamp: new Date().toISOString(),
-      headers: {
-        'x-forwarded-for': req.get('X-Forwarded-For'),
-        'x-real-ip': req.get('X-Real-IP'),
-        'x-forwarded-proto': req.get('X-Forwarded-Proto'),
-        'x-forwarded-host': req.get('X-Forwarded-Host'),
-        'authorization': req.get('Authorization') ? '[REDACTED]' : null,
-        'x-webhook-signature': req.get('X-Webhook-Signature') ? '[REDACTED]' : null,
-      },
+      cacheControl: req.get('Cache-Control'),
+      ifModifiedSince: req.get('If-Modified-Since'),
+
+      // PayPlus specific headers we might be missing
+      payplusVersion: req.get('X-PayPlus-Version'),
+      payplusEvent: req.get('X-PayPlus-Event'),
+      payplusTimestamp: req.get('X-PayPlus-Timestamp'),
+      payplusRequestId: req.get('X-PayPlus-Request-Id'),
+
+      // All possible signature headers (with actual values for analysis)
+      signatureHeaders: signatureHeaders,
+
+      // Complete headers object for full analysis
+      allHeaders: req.headers,
+
+      // Request body analysis
+      rawBody: rawBody,
+      bodySize: Buffer.byteLength(rawBody, 'utf8'),
+      bodyContentType: typeof req.body,
+
+      // Query parameters and routing
       query: req.query,
-      method: req.method,
-      url: req.url,
-      protocol: req.protocol,
-      secure: req.secure
+      params: req.params,
+      baseUrl: req.baseUrl,
+      originalUrl: req.originalUrl,
+
+      // Express.js request metadata
+      fresh: req.fresh,
+      stale: req.stale,
+      xhr: req.xhr,
+
+      // Network and connection info
+      httpVersion: req.httpVersion,
+      socket: {
+        remoteAddress: req.socket?.remoteAddress,
+        remotePort: req.socket?.remotePort,
+        localAddress: req.socket?.localAddress,
+        localPort: req.socket?.localPort
+      }
     };
 
 
@@ -137,6 +214,82 @@ router.post('/payplus',
 
       webhookLog.addProcessLog('Webhook received and logged');
       webhookLog.addProcessLog(`Sender IP: ${senderInfo.ip}, User-Agent: ${senderInfo.userAgent}`);
+
+      // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
+      webhookLog.addProcessLog('=== WEBHOOK DATA STRUCTURE ANALYSIS ===');
+
+      // Analyze webhook data structure vs our code expectations
+      const expectedFields = [
+        'page_request_uid',
+        'transaction_uid',
+        'status',
+        'transaction_type',
+        'reason',
+        'amount',
+        'currency'
+      ];
+
+      const actualFields = Object.keys(webhookData || {});
+      const missingFields = expectedFields.filter(field => !(field in webhookData));
+      const extraFields = actualFields.filter(field => !expectedFields.includes(field));
+
+      // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
+      clog('PayPlus webhook data structure analysis:', {
+        expectedFields,
+        actualFields,
+        missingFields,
+        extraFields,
+        webhookDataKeys: actualFields.sort(),
+        webhookDataSample: Object.fromEntries(
+          actualFields.slice(0, 10).map(key => [key, typeof webhookData[key]])
+        )
+      });
+
+      webhookLog.addProcessLog(`Expected fields: ${expectedFields.join(', ')}`);
+      webhookLog.addProcessLog(`Actual fields received: ${actualFields.join(', ')}`);
+
+      if (missingFields.length > 0) {
+        webhookLog.addProcessLog(`⚠️  Missing expected fields: ${missingFields.join(', ')}`);
+        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
+        clog(`WARNING: Missing expected PayPlus fields: ${missingFields.join(', ')}`);
+      }
+
+      if (extraFields.length > 0) {
+        webhookLog.addProcessLog(`ℹ️  Extra fields from PayPlus: ${extraFields.join(', ')}`);
+        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
+        clog(`INFO: Extra PayPlus fields we don't expect: ${extraFields.join(', ')}`);
+      }
+
+      // Log signature analysis
+      if (Object.keys(signatureHeaders).length > 0) {
+        webhookLog.addProcessLog(`🔐 Found ${Object.keys(signatureHeaders).length} signature headers: ${Object.keys(signatureHeaders).join(', ')}`);
+        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
+        clog('PayPlus signature headers found:', Object.keys(signatureHeaders));
+      } else {
+        webhookLog.addProcessLog('⚠️  No signature headers found - webhook may be unsigned');
+        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
+        clog('WARNING: No PayPlus signature headers detected');
+      }
+
+      // Analyze specific field values and types
+      const fieldAnalysis = {};
+      expectedFields.forEach(field => {
+        if (field in webhookData) {
+          fieldAnalysis[field] = {
+            type: typeof webhookData[field],
+            value: String(webhookData[field]).substring(0, 50) + '...',
+            exists: true
+          };
+        } else {
+          fieldAnalysis[field] = {
+            exists: false
+          };
+        }
+      });
+
+      webhookLog.addProcessLog(`Field analysis: ${JSON.stringify(fieldAnalysis, null, 2)}`);
+      webhookLog.addProcessLog('=== END WEBHOOK DATA STRUCTURE ANALYSIS ===');
+
       await webhookLog.updateStatus('processing', 'Starting webhook processing');
 
       // Import services dynamically to avoid circular dependencies
@@ -318,12 +471,28 @@ router.post('/payplus',
       res.status(200).json(responseData);
 
     } catch (error) {
+      // TODO remove debug - enhanced webhook error logging for PayPlus analysis
+      cerror('PayPlus webhook processing failed:', {
+        error: error.message,
+        stack: error.stack,
+        webhookId: webhookLog?.id,
+        webhookData: webhookData,
+        signatureHeaders: signatureHeaders,
+        processingTime: Date.now() - startTime
+      });
 
       const errorResponse = {
         message: 'PayPlus webhook received but processing failed',
         error: error.message,
         timestamp: new Date().toISOString(),
-        webhookId: webhookLog?.id || null
+        webhookId: webhookLog?.id || null,
+        // TODO remove debug - enhanced webhook error logging for PayPlus analysis
+        debugInfo: {
+          hasWebhookData: !!webhookData,
+          webhookDataKeys: webhookData ? Object.keys(webhookData) : [],
+          hasSignatureHeaders: Object.keys(signatureHeaders).length > 0,
+          processingTimeMs: Date.now() - startTime
+        }
       };
 
       // Try to update webhook log if it exists
@@ -331,9 +500,19 @@ router.post('/payplus',
         if (webhookLog) {
           await webhookLog.failProcessing(startTime, error, `Webhook processing failed: ${error.message}`);
           await webhookLog.update({ response_data: errorResponse });
+
+          // TODO remove debug - enhanced webhook error logging for PayPlus analysis
+          webhookLog.addProcessLog(`❌ WEBHOOK PROCESSING FAILED: ${error.message}`);
+          webhookLog.addProcessLog(`Error stack: ${error.stack}`);
+          webhookLog.addProcessLog(`Processing time: ${Date.now() - startTime}ms`);
         }
       } catch (logError) {
+        // TODO remove debug - enhanced webhook error logging for PayPlus analysis
+        cerror('Failed to log webhook error:', logError.message);
       }
+
+      // TODO remove debug - enhanced webhook error logging for PayPlus analysis
+      clog('Sending error response to PayPlus (but with 200 status to prevent retries):', errorResponse);
 
       // Still respond with success to prevent PayPlus retries
       res.status(200).json(errorResponse);
