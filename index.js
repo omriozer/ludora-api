@@ -456,46 +456,95 @@ async function authenticateSocketWithFirebase(socket, portalType) {
 }
 
 /**
- * Attempt to authenticate socket using player session cookie
+ * Attempt to authenticate socket using player tokens (NEW SYSTEM)
  * @param {Object} socket - Socket.IO socket object
  * @returns {Promise<Object|null>} Player data or null if not authenticated
  */
-async function authenticateSocketWithPlayerSession(socket) {
+async function authenticateSocketWithPlayerTokens(socket) {
   try {
     // Parse cookies from handshake headers
     const cookieHeader = socket.handshake.headers.cookie || '';
     const cookies = cookie.parse(cookieHeader);
-    const playerSession = cookies.player_session;
+    const playerAccessToken = cookies.student_access_token;
+    const playerRefreshToken = cookies.student_refresh_token;
 
-    if (!playerSession) {
-      // TODO remove debug - update Socket.IO server for portal-aware authentication
-      clog('🔌 [SocketAuth] No player session cookie found');
-      return null;
+    // Try access token first
+    if (playerAccessToken) {
+      try {
+        const tokenData = await socketAuthService.verifyToken(playerAccessToken);
+
+        if (tokenData.type === 'player') {
+          // Get full player data
+          const player = await socketPlayerService.getPlayer(tokenData.id, true);
+          if (player) {
+            // TODO remove debug - update Socket.IO server for portal-aware authentication
+            clog('🔌 [SocketAuth] Player token authentication successful:', {
+              playerId: player.id,
+              displayName: player.display_name
+            });
+
+            return {
+              player: {
+                id: player.id,
+                display_name: player.display_name,
+                teacher_id: player.teacher_id,
+                teacher: player.teacher,
+                achievements: player.achievements,
+                preferences: player.preferences,
+                is_online: player.is_online
+              },
+              sessionType: 'player_token'
+            };
+          }
+        }
+      } catch (tokenError) {
+        // Access token invalid, try refresh token
+        // TODO remove debug - update Socket.IO server for portal-aware authentication
+        clog('🔌 [SocketAuth] Player access token invalid, trying refresh token');
+      }
     }
 
-    // Validate player session
-    const sessionData = await socketPlayerService.validateSession(playerSession);
+    // Try refresh token if access token failed
+    if (playerRefreshToken) {
+      try {
+        const jwt = await import('jsonwebtoken');
+        const refreshPayload = jwt.default.verify(playerRefreshToken, process.env.JWT_SECRET);
 
-    if (!sessionData) {
-      // TODO remove debug - update Socket.IO server for portal-aware authentication
-      clog('🔌 [SocketAuth] Invalid player session');
-      return null;
+        if (refreshPayload.type === 'player') {
+          const player = await socketPlayerService.getPlayer(refreshPayload.id, true);
+          if (player) {
+            // TODO remove debug - update Socket.IO server for portal-aware authentication
+            clog('🔌 [SocketAuth] Player refresh token authentication successful:', {
+              playerId: player.id,
+              displayName: player.display_name
+            });
+
+            return {
+              player: {
+                id: player.id,
+                display_name: player.display_name,
+                teacher_id: player.teacher_id,
+                teacher: player.teacher,
+                achievements: player.achievements,
+                preferences: player.preferences,
+                is_online: player.is_online
+              },
+              sessionType: 'player_token'
+            };
+          }
+        }
+      } catch (refreshError) {
+        // TODO remove debug - update Socket.IO server for portal-aware authentication
+        clog('🔌 [SocketAuth] Player refresh token authentication failed:', refreshError.message);
+      }
     }
 
     // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] Player session authentication successful:', {
-      playerId: sessionData.playerId,
-      displayName: sessionData.player?.display_name
-    });
-
-    return {
-      player: sessionData.player,
-      sessionId: sessionData.sessionId,
-      sessionType: 'player'
-    };
+    clog('🔌 [SocketAuth] No valid player tokens found');
+    return null;
   } catch (error) {
     // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] Player session authentication failed:', error.message);
+    clog('🔌 [SocketAuth] Player token authentication failed:', error.message);
     return null;
   }
 }
@@ -573,12 +622,12 @@ io.use(async (socket, next) => {
           return next(new Error('Teacher portal requires authentication'));
         }
 
-        // For student portal, allow anonymous but check for optional player session
-        const playerData = await authenticateSocketWithPlayerSession(socket);
+        // For student portal, allow anonymous but check for optional player tokens
+        const playerData = await authenticateSocketWithPlayerTokens(socket);
 
         if (playerData) {
           socket.player = playerData;
-          socket.authMethod = 'player_session';
+          socket.authMethod = 'student_access_token';
           // TODO remove debug - update Socket.IO server for portal-aware authentication
           clog('🔌 [SocketAuth] Anonymous connection with player session:', playerData.player?.display_name);
         } else {
@@ -603,18 +652,20 @@ io.use(async (socket, next) => {
           // TODO remove debug - update Socket.IO server for portal-aware authentication
           clog('🔌 [SocketAuth] TRY_BOTH: Authenticated via Firebase');
         } else {
-          // Try player session
-          const playerData = await authenticateSocketWithPlayerSession(socket);
+          // Try player tokens
+          const playerData = await authenticateSocketWithPlayerTokens(socket);
 
           if (playerData) {
             socket.player = playerData;
-            socket.authMethod = 'player_session';
+            socket.authMethod = 'student_access_token';
+            socket.isAuthenticated = true; // Player authentication succeeded!
             // TODO remove debug - update Socket.IO server for portal-aware authentication
-            clog('🔌 [SocketAuth] TRY_BOTH: Authenticated via player session');
+            clog('🔌 [SocketAuth] TRY_BOTH: Authenticated via player tokens');
           } else {
             // Allow anonymous for student portal
             if (portalType === SOCKET_PORTAL_TYPES.STUDENT) {
               socket.authMethod = 'anonymous';
+              socket.isAuthenticated = false; // Anonymous connection
               // TODO remove debug - update Socket.IO server for portal-aware authentication
               clog('🔌 [SocketAuth] TRY_BOTH: Anonymous connection allowed for student portal');
             } else {
@@ -624,8 +675,6 @@ io.use(async (socket, next) => {
               return next(new Error('Teacher portal requires authentication'));
             }
           }
-
-          socket.isAuthenticated = false;
         }
         break;
       }

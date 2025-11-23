@@ -14,7 +14,7 @@ class PlayerService {
 
   // Player Creation and Management
 
-  // Create a new player with unique privacy code
+  // Create a new player with unique privacy code (teacher-assigned)
   async createPlayer({ displayName, teacherId, metadata = {} }) {
     try {
       // Validate input
@@ -61,6 +61,42 @@ class PlayerService {
     }
   }
 
+  // Create an anonymous player without teacher assignment
+  async createAnonymousPlayer({ displayName, metadata = {} }) {
+    try {
+      // Validate input
+      if (!displayName || !displayName.trim()) {
+        throw new Error('Display name is required');
+      }
+
+      // Create player with unique privacy code but no teacher
+      const player = await models.Player.createWithUniqueCode({
+        display_name: displayName.trim(),
+        teacher_id: null, // Anonymous player - no teacher initially
+        preferences: {
+          created_via: 'anonymous_student',
+          ...metadata.preferences || {}
+        },
+        is_online: false,
+        last_seen: new Date(),
+        is_active: true,
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+
+      return {
+        id: player.id,
+        privacy_code: player.privacy_code,
+        display_name: player.display_name,
+        teacher_id: player.teacher_id, // Will be null
+        is_online: player.is_online,
+        created_at: player.created_at
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
   // Authenticate player using privacy code
   async authenticatePlayer(privacyCode, sessionMetadata = {}) {
     try {
@@ -83,8 +119,8 @@ class PlayerService {
         throw new Error('Invalid privacy code or player not found');
       }
 
-      // Verify teacher is still active
-      if (!player.teacher || !player.teacher.is_active) {
+      // Verify teacher is still active (if player has a teacher)
+      if (player.teacher_id && (!player.teacher || !player.teacher.is_active)) {
         throw new Error('Player\'s teacher is no longer active');
       }
 
@@ -106,10 +142,10 @@ class PlayerService {
           privacy_code: player.privacy_code,
           display_name: player.display_name,
           teacher_id: player.teacher_id,
-          teacher: {
+          teacher: player.teacher ? {
             id: player.teacher.id,
             full_name: player.teacher.full_name
-          },
+          } : null,
           achievements: player.achievements,
           preferences: player.preferences,
           is_online: player.is_online,
@@ -573,6 +609,60 @@ class PlayerService {
         averageSessionsPerPlayer: 0,
         timestamp: new Date()
       };
+    }
+  }
+
+  // Assign teacher to an anonymous player (when they enter teacher catalog)
+  async assignTeacherToPlayer(playerId, teacherId) {
+    try {
+      const player = await models.Player.findByPk(playerId, {
+        include: [
+          {
+            model: models.User,
+            as: 'teacher',
+            attributes: ['id', 'full_name', 'email', 'role']
+          }
+        ]
+      });
+
+      if (!player || !player.is_active) {
+        throw new Error('Player not found');
+      }
+
+      // Check if player already has a teacher
+      if (player.teacher_id) {
+        throw new Error('Player already assigned to a teacher');
+      }
+
+      // Verify new teacher exists and is active
+      const teacher = await models.User.findByPk(teacherId);
+      if (!teacher || !teacher.is_active || teacher.role !== 'teacher') {
+        throw new Error('Invalid or inactive teacher');
+      }
+
+      // Assign teacher to player
+      await player.update({
+        teacher_id: teacherId,
+        updated_at: new Date(),
+        preferences: {
+          ...player.preferences,
+          teacher_assigned_at: new Date(),
+          created_via: 'anonymous_then_assigned'
+        }
+      });
+
+      return {
+        success: true,
+        message: 'Teacher assigned to player successfully',
+        player_id: playerId,
+        teacher_id: teacherId,
+        teacher: {
+          id: teacher.id,
+          full_name: teacher.full_name
+        }
+      };
+    } catch (error) {
+      throw error;
     }
   }
 

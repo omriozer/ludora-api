@@ -1,6 +1,6 @@
 import express from 'express';
 import { admin } from '../config/firebase.js';
-import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { authenticateToken, authenticateUserOrPlayer, requireAdmin } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
 import AuthService from '../services/AuthService.js';
 import models from '../models/index.js';
@@ -152,38 +152,58 @@ router.post('/logout', async (req, res) => {
   }
 });
 
-// Get current user info
-router.get('/me', authenticateToken, async (req, res) => {
+// Get current user or player info (unified endpoint)
+router.get('/me', authenticateUserOrPlayer, async (req, res) => {
   try {
-    // Detect portal and get appropriate access token
-    const portal = detectPortal(req);
-    const cookieNames = getPortalCookieNames(portal);
-    const accessToken = req.cookies[cookieNames.accessToken];
+    // Check if authenticated as user or player
+    if (req.entityType === 'user' && req.user) {
+      // Return user data
+      const portal = detectPortal(req);
+      const cookieNames = getPortalCookieNames(portal);
+      const accessToken = req.cookies[cookieNames.accessToken];
 
-    const user = await authService.getUserByToken(accessToken);
-    
-    // Return clean user data - all from database
-    res.json({
-      id: user.id,
-      email: user.email,
-      full_name: user.full_name,
-      phone: user.phone,
-      education_level: user.education_level,
-      specializations: user.specializations,
-      content_creator_agreement_sign_date: user.content_creator_agreement_sign_date,
-      role: user.role,
-      user_type: user.user_type,
-      is_verified: user.is_verified,
-      is_active: user.is_active,
-      onboarding_completed: user.onboarding_completed,
-      birth_date: user.birth_date,
-      invitation_code: user.invitation_code,
-      created_at: user.created_at,
-      updated_at: user.updated_at,
-      last_login: user.last_login
-    });
+      const user = await authService.getUserByToken(accessToken);
+
+      // Return clean user data - all from database
+      return res.json({
+        entityType: 'user',
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        phone: user.phone,
+        education_level: user.education_level,
+        specializations: user.specializations,
+        content_creator_agreement_sign_date: user.content_creator_agreement_sign_date,
+        role: user.role,
+        user_type: user.user_type,
+        is_verified: user.is_verified,
+        is_active: user.is_active,
+        onboarding_completed: user.onboarding_completed,
+        birth_date: user.birth_date,
+        invitation_code: user.invitation_code,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        last_login: user.last_login
+      });
+    } else if (req.entityType === 'player' && req.player) {
+      // Return player data
+      return res.json({
+        entityType: 'player',
+        id: req.player.id,
+        privacy_code: req.player.privacy_code,
+        display_name: req.player.display_name,
+        teacher_id: req.player.teacher_id,
+        teacher: req.player.teacher,
+        achievements: req.player.achievements,
+        preferences: req.player.preferences,
+        is_online: req.player.is_online,
+        sessionType: req.player.sessionType
+      });
+    } else {
+      throw new Error('No valid authentication found');
+    }
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch user information' });
+    res.status(500).json({ error: 'Failed to fetch authentication information' });
   }
 });
 

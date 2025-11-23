@@ -8,7 +8,8 @@
  * @returns {string|undefined} Cookie domain or undefined for development
  */
 export function getCookieDomain() {
-  const environment = process.env.ENVIRONMENT || 'development';
+  const environment = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
+
 
   switch (environment) {
     case 'production':
@@ -17,10 +18,9 @@ export function getCookieDomain() {
       return '.ludora.app'; // Allows sharing between staging subdomains
     case 'development':
     default:
-      // For localhost development with cross-port requests (e.g., :5173 → :3003),
-      // don't set domain to allow cookies to work across different ports on localhost
-      // EventSource requires cookies to be available without explicit domain settings
-      return undefined;
+      // CRITICAL FIX: Use .localhost domain for cross-subdomain cookie sharing
+      // This enables cookies to be shared between localhost:3003 and my.localhost:5173
+      return '.localhost';
   }
 }
 
@@ -66,7 +66,7 @@ export function createAuthCookieConfig(options = {}) {
     ...options
   };
 
-  // Only set domain if we have one (don't set for development)
+  // Only set domain if we have one (undefined in development for proxy compatibility)
   if (domain) {
     config.domain = domain;
   }
@@ -108,9 +108,12 @@ export function detectPortal(req) {
     host.includes('my.ludora.app'),
     origin.includes('my.ludora.app'),
     referer.includes('my.ludora.app'),
-    host.includes('localhost:5174'), // Student portal dev port
-    origin.includes('localhost:5174'),
-    referer.includes('localhost:5174')
+    host.includes('localhost:5173'), // Student portal dev port (corrected from 5174)
+    origin.includes('localhost:5173'),
+    referer.includes('localhost:5173'),
+    host.includes('my.localhost'), // Cross-subdomain student portal access
+    origin.includes('my.localhost'),
+    referer.includes('my.localhost')
   ];
 
   if (studentIndicators.some(indicator => indicator)) {

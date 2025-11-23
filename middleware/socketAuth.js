@@ -156,7 +156,7 @@ export function authenticateSocketPlayer(socket, next) {
 
   try {
     const cookies = parseCookies(socket.handshake);
-    const playerSession = cookies.player_session;
+    const playerSession = cookies.student_access_token;
 
     if (!playerSession) {
       // No player session, continue as unauthenticated

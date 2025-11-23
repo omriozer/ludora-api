@@ -1,8 +1,9 @@
 import express from 'express';
-import { authenticateToken, requireTeacher } from '../middleware/auth.js';
+import { authenticateToken, requireTeacher, authenticatePlayer, authenticateUserOrPlayer } from '../middleware/auth.js';
 import { validateBody, rateLimiters, studentsAccessMiddleware } from '../middleware/validation.js';
 import AuthService from '../services/AuthService.js';
 import PlayerService from '../services/PlayerService.js';
+import { generateId } from '../models/baseModel.js';
 import Joi from 'joi';
 import {
   createAccessTokenConfig,
@@ -20,10 +21,10 @@ const router = express.Router();
 // Validation schemas for player routes
 const schemas = {
   playerLogin: Joi.object({
-    privacy_code: Joi.string().length(8).uppercase().pattern(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]+$/).required()
+    privacy_code: Joi.string().min(3).max(20).trim().required()
       .messages({
-        'string.length': 'Privacy code must be exactly 8 characters',
-        'string.pattern.base': 'Invalid privacy code format',
+        'string.min': 'Privacy code must be at least 3 characters',
+        'string.max': 'Privacy code must be at most 20 characters',
         'any.required': 'Privacy code is required'
       })
   }),
@@ -36,11 +37,26 @@ const schemas = {
       }),
     metadata: Joi.object().optional()
   }),
+  createAnonymousPlayer: Joi.object({
+    display_name: Joi.string().min(1).max(100).trim().required()
+      .messages({
+        'string.min': 'Display name must not be empty',
+        'string.max': 'Display name must be at most 100 characters',
+        'any.required': 'Display name is required'
+      }),
+    metadata: Joi.object().optional()
+  }),
   updatePlayer: Joi.object({
     display_name: Joi.string().min(1).max(100).trim().optional(),
     preferences: Joi.object().optional(),
     achievements: Joi.array().optional()
-  }).min(1)
+  }).min(1),
+  assignTeacher: Joi.object({
+    teacher_id: Joi.string().required()
+      .messages({
+        'any.required': 'Teacher ID is required'
+      })
+  })
 };
 
 // =============================================
@@ -67,21 +83,46 @@ router.post('/login', studentsAccessMiddleware, rateLimiters.auth, validateBody(
       return res.status(401).json({ error: 'Invalid privacy code' });
     }
 
-    // Note: Players use sessions but not JWT tokens like users
-    // The session ID will be used for authentication via cookies
-
-    // Set session ID as httpOnly cookie for player authentication
-    // Using a different cookie name to distinguish from user sessions
-    const playerSessionConfig = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      domain: process.env.NODE_ENV === 'production' ? '.ludora.app' : undefined
+    // Generate player access and refresh tokens like teacher authentication
+    const playerTokenData = {
+      id: result.player.id,
+      privacy_code: result.player.privacy_code,
+      display_name: result.player.display_name,
+      type: 'player' // Distinguish from user tokens
     };
 
-    logCookieConfig('Player Login - Session', playerSessionConfig);
-    res.cookie('player_session', result.sessionId, playerSessionConfig);
+    // Generate player access token
+    const accessToken = authService.createAccessToken(playerTokenData);
+
+    // Create player-specific refresh token (don't use user-focused AuthService)
+    const jwt = await import('jsonwebtoken');
+    const refreshTokenId = generateId(); // Use same ID generation as other parts
+    const refreshPayload = {
+      id: result.player.id,
+      type: 'player',
+      tokenId: refreshTokenId,
+      entityType: 'player'
+    };
+    const refreshToken = jwt.default.sign(refreshPayload, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+      issuer: 'ludora-api',
+      audience: 'ludora-student-portal'
+    });
+
+    // Set player access token as httpOnly cookie (15 minutes)
+    const playerAccessConfig = createAccessTokenConfig();
+    logCookieConfig('Player Login - Access Token', playerAccessConfig);
+    res.cookie('student_access_token', accessToken, playerAccessConfig);
+
+    // Set player refresh token as httpOnly cookie (7 days)
+    const playerRefreshConfig = createRefreshTokenConfig();
+    logCookieConfig('Player Login - Refresh Token', playerRefreshConfig);
+    res.cookie('student_refresh_token', refreshToken, playerRefreshConfig);
+
+    // Keep existing session for compatibility but will be phased out
+    const playerSessionConfig = createAccessTokenConfig();
+    playerSessionConfig.maxAge = 24 * 60 * 60 * 1000; // 24 hours for legacy compatibility
+    res.cookie('student_session', result.sessionId, playerSessionConfig);
 
     // Return success and player data (without sensitive info)
     res.status(200).json({
@@ -97,101 +138,231 @@ router.post('/login', studentsAccessMiddleware, rateLimiters.auth, validateBody(
       }
     });
 
-    clog(`🎮 Player logged in: ${result.player.display_name} (${privacy_code})`);
+    clog(`🎮 Player logged in with dual tokens: ${result.player.display_name} (${privacy_code})`);
   } catch (error) {
     cerror('Player login error:', error);
     res.status(401).json({ error: error.message || 'Authentication failed' });
   }
 });
 
-// Player logout
-router.post('/logout', studentsAccessMiddleware, async (req, res) => {
+// Player refresh token endpoint
+router.post('/refresh', studentsAccessMiddleware, async (req, res) => {
   try {
-    const playerSession = req.cookies.player_session;
+    const refreshToken = req.cookies.student_refresh_token;
 
-    if (playerSession) {
-      // Validate session to get player ID
-      const sessionData = await playerService.validateSession(playerSession);
-      if (sessionData) {
-        // Logout player using PlayerService
-        await playerService.logoutPlayer(sessionData.playerId, playerSession);
-        clog(`🚪 Player logged out from session ${playerSession}`);
-      }
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Player refresh token required' });
     }
 
-    // Clear player session cookie
-    const clearConfig = createClearCookieConfig();
-    logCookieConfig('Player Logout - Clear Cookie', clearConfig);
-    res.clearCookie('player_session', clearConfig);
+    // Verify player refresh token (using custom player token format)
+    const jwt = await import('jsonwebtoken');
+    let payload;
+    try {
+      payload = jwt.default.verify(refreshToken, process.env.JWT_SECRET);
+    } catch (tokenError) {
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
 
-    res.json({ success: true, message: 'Player logged out successfully' });
+    // Verify this is a player token
+    if (payload.type !== 'player') {
+      return res.status(401).json({ error: 'Invalid player token type' });
+    }
+
+    // Get player data to ensure player still exists and is active
+    const player = await playerService.getPlayer(payload.id, true);
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+
+    // Generate new access token
+    const playerTokenData = {
+      id: player.id,
+      privacy_code: player.privacy_code,
+      display_name: player.display_name,
+      type: 'player'
+    };
+    const newAccessToken = authService.createAccessToken(playerTokenData);
+
+    // Set new player access token as httpOnly cookie (15 minutes)
+    const playerAccessConfig = createAccessTokenConfig();
+    logCookieConfig('Player Refresh - Access Token', playerAccessConfig);
+    res.cookie('student_access_token', newAccessToken, playerAccessConfig);
+
+    // Return success and player data
+    res.json({
+      success: true,
+      player: {
+        id: player.id,
+        display_name: player.display_name,
+        teacher: player.teacher,
+        achievements: player.achievements,
+        preferences: player.preferences,
+        is_online: player.is_online
+      }
+    });
+
+    clog(`🔄 Player token refreshed: ${player.display_name} (${player.privacy_code})`);
+  } catch (error) {
+    cerror('Player token refresh error:', error);
+    res.status(401).json({ error: error.message || 'Token refresh failed' });
+  }
+});
+
+// Player logout
+router.post('/logout', studentsAccessMiddleware, authenticateUserOrPlayer, async (req, res) => {
+  try {
+    let playerId = null;
+
+    // Use unified authentication middleware to get player ID
+    if (req.entityType === 'player' && req.player) {
+      playerId = req.player.id;
+    } else if (req.entityType === 'user' && req.user) {
+      // Allow admin users to logout (clears their cookies)
+      clog('[Logout] Admin user logging out from student portal');
+    }
+
+    // For player tokens, we don't need to revoke from database
+    // since they're self-contained JWT tokens (not stored in refresh_token table)
+    // The act of clearing the cookies is sufficient for player logout
+
+    // Logout player and invalidate sessions
+    if (playerId) {
+      await playerService.logoutPlayer(playerId);
+      clog(`🚪 Player logged out: ${playerId}`);
+    }
+
+    // Clear all player cookies
+    const clearConfig = createClearCookieConfig();
+    logCookieConfig('Player Logout - Clear Cookies', clearConfig);
+    res.clearCookie('student_access_token', clearConfig);
+    res.clearCookie('student_refresh_token', clearConfig);
+    res.clearCookie('student_session', clearConfig); // Legacy cookie (for cleanup)
+
+    res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     cerror('Player logout error:', error);
     res.status(500).json({ error: 'Logout failed' });
   }
 });
 
-// Get current player info (equivalent to /auth/me for users)
-router.get('/me', studentsAccessMiddleware, async (req, res) => {
+// Get current player info (unified with /auth/me - supports both users and players)
+router.get('/me', studentsAccessMiddleware, authenticateUserOrPlayer, async (req, res) => {
   try {
-    const playerSession = req.cookies.player_session;
-
-    if (!playerSession) {
-      return res.status(401).json({ error: 'Player session required' });
-    }
-
-    // Validate session and get player data
-    const sessionData = await playerService.validateSession(playerSession);
-
-    if (!sessionData) {
-      // Clear invalid session cookie
-      const clearConfig = createClearCookieConfig();
-      res.clearCookie('player_session', clearConfig);
-      return res.status(401).json({ error: 'Invalid or expired session' });
-    }
-
-    // Get full player data
-    const player = await playerService.getPlayer(sessionData.playerId, true);
-
-    if (!player) {
-      return res.status(404).json({ error: 'Player not found' });
-    }
-
-    // Return player data (excluding privacy_code for security)
-    res.json({
-      id: player.id,
-      display_name: player.display_name,
-      teacher: player.teacher,
-      achievements: player.achievements,
-      preferences: player.preferences,
-      is_online: player.is_online,
-      last_seen: player.last_seen,
-      created_at: player.created_at
+    // TODO remove debug - fix player authentication persistence
+    clog('[DEBUG] /players/me called - checking auth state:', {
+      hasEntityType: !!req.entityType,
+      entityType: req.entityType,
+      hasUser: !!req.user,
+      hasPlayer: !!req.player,
+      cookies: Object.keys(req.cookies || {}),
+      userAgent: req.get('User-Agent')?.substring(0, 50)
     });
+
+    // Check if authenticated as user or player using unified middleware
+    if (req.entityType === 'user' && req.user) {
+      // TODO remove debug - fix player authentication persistence
+      clog('[DEBUG] /players/me - returning USER data:', {
+        userId: req.user.id,
+        email: req.user.email
+      });
+
+      // Return user data (teachers can access student portal)
+      return res.json({
+        entityType: 'user',
+        id: req.user.id,
+        email: req.user.email,
+        full_name: req.user.full_name,
+        role: req.user.role,
+        user_type: req.user.user_type,
+        is_verified: req.user.is_verified,
+        is_active: req.user.is_active
+      });
+    } else if (req.entityType === 'player' && req.player) {
+      // TODO remove debug - fix player authentication persistence
+      clog('[DEBUG] /players/me - returning PLAYER data:', {
+        playerId: req.player.id,
+        displayName: req.player.display_name
+      });
+
+      // Return player data (excluding privacy_code for security)
+      return res.json({
+        entityType: 'player',
+        id: req.player.id,
+        display_name: req.player.display_name,
+        teacher: req.player.teacher,
+        achievements: req.player.achievements,
+        preferences: req.player.preferences,
+        is_online: req.player.is_online,
+        last_seen: req.player.last_seen,
+        sessionType: req.player.sessionType
+      });
+    } else {
+      // TODO remove debug - fix player authentication persistence
+      cerror('[DEBUG] /players/me - NO VALID AUTH:', {
+        entityType: req.entityType,
+        hasUser: !!req.user,
+        hasPlayer: !!req.player
+      });
+
+      throw new Error('No valid authentication found');
+    }
   } catch (error) {
-    cerror('Get player info error:', error);
-    res.status(500).json({ error: 'Failed to fetch player information' });
+    cerror('Get player/user info error:', error);
+    res.status(500).json({ error: 'Failed to fetch authentication information' });
+  }
+});
+
+// Create anonymous player (no teacher required)
+router.post('/create-anonymous', studentsAccessMiddleware, rateLimiters.auth, validateBody(schemas.createAnonymousPlayer), async (req, res) => {
+  try {
+    const { display_name, metadata = {} } = req.body;
+
+    // Collect session metadata
+    const sessionMetadata = {
+      userAgent: req.get('User-Agent') || 'Unknown',
+      ipAddress: req.ip || req.connection.remoteAddress || 'Unknown',
+      timestamp: new Date(),
+      creation_context: 'anonymous_student_registration'
+    };
+
+    // Create anonymous player using PlayerService
+    const player = await playerService.createAnonymousPlayer({
+      displayName: display_name,
+      metadata: {
+        ...metadata,
+        session: sessionMetadata
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      player: {
+        id: player.id,
+        privacy_code: player.privacy_code, // Include privacy code for anonymous player
+        display_name: player.display_name,
+        teacher_id: player.teacher_id, // Will be null
+        is_online: player.is_online,
+        created_at: player.created_at
+      }
+    });
+
+    clog(`🎮 Anonymous player created: ${player.display_name} (${player.privacy_code})`);
+  } catch (error) {
+    cerror('Create anonymous player error:', error);
+    res.status(400).json({ error: error.message || 'Failed to create anonymous player' });
   }
 });
 
 // Update current player profile
-router.put('/update-profile', studentsAccessMiddleware, validateBody(schemas.updatePlayer), async (req, res) => {
+router.put('/update-profile', studentsAccessMiddleware, authenticateUserOrPlayer, validateBody(schemas.updatePlayer), async (req, res) => {
   try {
-    const playerSession = req.cookies.player_session;
-
-    if (!playerSession) {
-      return res.status(401).json({ error: 'Player session required' });
-    }
-
-    // Validate session
-    const sessionData = await playerService.validateSession(playerSession);
-
-    if (!sessionData) {
-      return res.status(401).json({ error: 'Invalid or expired session' });
+    // Check if authenticated as player (unified middleware handles this)
+    if (req.entityType !== 'player' || !req.player) {
+      return res.status(401).json({ error: 'Player authentication required' });
     }
 
     // Update player using PlayerService
-    const updatedPlayer = await playerService.updatePlayer(sessionData.playerId, req.body);
+    const updatedPlayer = await playerService.updatePlayer(req.player.id, req.body);
 
     // Return updated player data (excluding privacy_code)
     res.json({
@@ -208,6 +379,32 @@ router.put('/update-profile', studentsAccessMiddleware, validateBody(schemas.upd
   } catch (error) {
     cerror('Player profile update error:', error);
     res.status(500).json({ error: error.message || 'Failed to update player profile' });
+  }
+});
+
+// Assign teacher to current player (for anonymous players entering teacher catalogs)
+router.post('/assign-teacher', studentsAccessMiddleware, authenticateUserOrPlayer, validateBody(schemas.assignTeacher), async (req, res) => {
+  try {
+    const { teacher_id } = req.body;
+
+    // Check if authenticated as player (unified middleware handles this)
+    if (req.entityType !== 'player' || !req.player) {
+      return res.status(401).json({ error: 'Player authentication required' });
+    }
+
+    // Assign teacher to player using PlayerService
+    const result = await playerService.assignTeacherToPlayer(req.player.id, teacher_id);
+
+    res.json({
+      success: result.success,
+      message: result.message,
+      teacher: result.teacher
+    });
+
+    clog(`👥 Teacher ${teacher_id} assigned to player: ${req.player.id}`);
+  } catch (error) {
+    cerror('Assign teacher error:', error);
+    res.status(400).json({ error: error.message || 'Failed to assign teacher' });
   }
 });
 

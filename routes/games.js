@@ -1,6 +1,6 @@
 import express from 'express';
 import Joi from 'joi';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, authenticateUserOrPlayer } from '../middleware/auth.js';
 import { checkStudentsAccess } from '../middleware/studentsAccessMiddleware.js';
 import models from '../models/index.js';
 import EntityService from '../services/EntityService.js';
@@ -177,18 +177,72 @@ router.get('/teacher/:code', checkStudentsAccess, async (req, res) => {
   }
 });
 
-// Apply auth middleware to all other routes
-router.use(authenticateToken);
+// Apply unified auth middleware to all other routes (supports both users and players)
+router.use(authenticateUserOrPlayer);
 
-// GET /api/games - Get games for authenticated user
-// Returns user's games (or all games if admin) with associated product data
+// GET /api/games - Get games for authenticated user or player
+// Returns entity's games (or all games if admin) with associated product data
 router.get('/', async (req, res) => {
   try {
-    const { user } = req;
+    const { entity, entityType } = req;
 
-    console.log(`🔍 [DEBUG] GET /api/games called by user ${user.id} (${user.role})`);
+    console.log(`🔍 [DEBUG] GET /api/games called by ${entityType} ${entity.id} (${entity.role || 'player'})`);
 
-    const gamesWithProducts = await getGamesWithProducts(user.id, user.role);
+    // For players, we return all available games since they don't "own" games
+    // For users, we return their games based on Product ownership
+    let gamesWithProducts;
+
+    if (entityType === 'player') {
+      // Players can see all games - they don't have ownership restrictions
+      console.log(`🎮 [DEBUG] Player request - returning all available games`);
+      const allGames = await models.Game.findAll({
+        order: [['created_at', 'DESC']]
+      });
+
+      gamesWithProducts = await Promise.all(allGames.map(async (game) => {
+        const gameData = game.toJSON();
+
+        // Find associated product
+        const product = await models.Product.findOne({
+          where: {
+            product_type: 'game',
+            entity_id: game.id
+          },
+          include: [
+            {
+              model: models.User,
+              as: 'creator',
+              attributes: ['id', 'full_name', 'email']
+            }
+          ]
+        });
+
+        // Get lobby information for this game
+        let lobbies = [];
+        try {
+          lobbies = await GameLobbyService.getLobbiesByGame(game.id);
+          console.log(`📋 Found ${lobbies.length} lobbies for game ${game.id}`);
+        } catch (error) {
+          cerror(`❌ Error fetching lobbies for game ${game.id}:`, error);
+        }
+
+        console.log(`🔍 [DEBUG] Game ${game.id} - Product data:`, {
+          hasProduct: !!product,
+          productTitle: product?.title,
+          productName: product?.name,
+          productId: product?.id
+        });
+
+        return {
+          ...gameData,
+          product: product ? product.toJSON() : null,
+          lobbies: lobbies
+        };
+      }));
+    } else {
+      // Users see games based on ownership
+      gamesWithProducts = await getGamesWithProducts(entity.id, entity.role);
+    }
 
     console.log(`🔍 [DEBUG] Returning ${gamesWithProducts.length} games to frontend`);
 
@@ -204,17 +258,20 @@ router.get('/', async (req, res) => {
 // GET /api/games/:id - Get specific game with product data
 router.get('/:id', async (req, res) => {
   try {
-    const { user } = req;
+    const { entity, entityType } = req;
     const { id } = req.params;
 
-    // Validate game ownership via Product table
-    try {
-      await validateGameOwnership(id, user.id, user.role);
-    } catch (error) {
-      if (error.message === 'Game not found') {
-        return res.status(404).json({ error: 'Game not found' });
+    // For players, we allow access to any game (no ownership restrictions)
+    // For users, validate game ownership via Product table
+    if (entityType === 'user') {
+      try {
+        await validateGameOwnership(id, entity.id, entity.role);
+      } catch (error) {
+        if (error.message === 'Game not found') {
+          return res.status(404).json({ error: 'Game not found' });
+        }
+        return res.status(403).json({ error: 'Access denied' });
       }
-      return res.status(403).json({ error: 'Access denied' });
     }
 
     const game = await models.Game.findByPk(id);
@@ -254,11 +311,19 @@ router.get('/:id', async (req, res) => {
 // POST /api/games - Create new game
 router.post('/', async (req, res) => {
   try {
-    const { user } = req;
+    const { entity, entityType } = req;
     const gameData = req.body;
 
+    // Only users (teachers) can create games, not players
+    if (entityType !== 'user') {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only teachers can create games'
+      });
+    }
+
     // Create game using EntityService
-    const game = await EntityService.create('game', gameData, user.id);
+    const game = await EntityService.create('game', gameData, entity.id);
 
     // Return game with creator info
     const gameWithCreator = await models.Game.findOne({
@@ -287,13 +352,21 @@ router.post('/', async (req, res) => {
 // PUT /api/games/:id - Update game
 router.put('/:id', async (req, res) => {
   try {
-    const { user } = req;
+    const { entity, entityType } = req;
     const { id } = req.params;
     const updateData = req.body;
 
+    // Only users (teachers) can update games, not players
+    if (entityType !== 'user') {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only teachers can update games'
+      });
+    }
+
     // Validate game ownership via Product table
     try {
-      await validateGameOwnership(id, user.id, user.role);
+      await validateGameOwnership(id, entity.id, entity.role);
     } catch (error) {
       if (error.message === 'Game not found') {
         return res.status(404).json({ error: 'Game not found' });
@@ -302,7 +375,7 @@ router.put('/:id', async (req, res) => {
     }
 
     // Update game using EntityService
-    const updatedGame = await EntityService.update('game', id, updateData, user.id);
+    const updatedGame = await EntityService.update('game', id, updateData, entity.id);
 
     // Return updated game with product info
     const gameWithDetails = await models.Game.findByPk(id);
@@ -337,12 +410,20 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/games/:id - Delete game
 router.delete('/:id', async (req, res) => {
   try {
-    const { user } = req;
+    const { entity, entityType } = req;
     const { id } = req.params;
+
+    // Only users (teachers) can delete games, not players
+    if (entityType !== 'user') {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only teachers can delete games'
+      });
+    }
 
     // Validate game ownership via Product table
     try {
-      await validateGameOwnership(id, user.id, user.role);
+      await validateGameOwnership(id, entity.id, entity.role);
     } catch (error) {
       if (error.message === 'Game not found') {
         return res.status(404).json({ error: 'Game not found' });
@@ -506,16 +587,24 @@ router.post('/:gameId/content-use',
 
     try {
       const { gameId } = req.params;
-      const { user } = req;
+      const { entity, entityType } = req;
+
+      // Only users (teachers) can create content for games, not players
+      if (entityType !== 'user') {
+        return res.status(403).json({
+          error: 'Access denied',
+          message: 'Only teachers can create game content'
+        });
+      }
 
       clog(`Creating content use for game ${gameId}`);
 
       const contentUse = await GameContentService.createContentUse(
         gameId,
         req.validatedData,
-        user.id,
+        entity.id,
         transaction,
-        user.role
+        entity.role
       );
 
       await transaction.commit();
@@ -561,7 +650,15 @@ router.put('/:gameId/content-use/:useId',
 
     try {
       const { gameId, useId } = req.params;
-      const { user } = req;
+      const { entity, entityType } = req;
+
+      // Only users (teachers) can update content for games, not players
+      if (entityType !== 'user') {
+        return res.status(403).json({
+          error: 'Access denied',
+          message: 'Only teachers can update game content'
+        });
+      }
 
       clog(`Updating content use ${useId} for game ${gameId}`);
 
@@ -569,9 +666,9 @@ router.put('/:gameId/content-use/:useId',
         gameId,
         useId,
         req.validatedData,
-        user.id,
+        entity.id,
         transaction,
-        user.role
+        entity.role
       );
 
       await transaction.commit();
@@ -615,11 +712,19 @@ router.delete('/:gameId/content-use/:useId', async (req, res) => {
 
   try {
     const { gameId, useId } = req.params;
-    const { user } = req;
+    const { entity, entityType } = req;
+
+    // Only users (teachers) can delete content from games, not players
+    if (entityType !== 'user') {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only teachers can delete game content'
+      });
+    }
 
     clog(`Deleting content use ${useId} from game ${gameId}`);
 
-    await GameContentService.deleteContentUse(gameId, useId, user.id, transaction, user.role);
+    await GameContentService.deleteContentUse(gameId, useId, entity.id, transaction, entity.role);
 
     await transaction.commit();
 

@@ -38,8 +38,9 @@ class AuthService {
 
   // Create short-lived access token (15 minutes)
   createAccessToken(payload) {
+    const finalPayload = { ...payload, type: payload.type || 'access' };
     return jwt.sign(
-      { ...payload, type: 'access' },
+      finalPayload,
       this.jwtSecret,
       { expiresIn: '15m' }
     );
@@ -554,20 +555,38 @@ class AuthService {
         try {
           const payload = this.verifyJWTToken(token);
 
-          // Get fresh user data
-          const user = await models.User.findByPk(payload.id);
+          if (payload.type === 'player') {
+            // Handle player token - look up in Player table
+            const PlayerService = await import('../services/PlayerService.js');
+            const playerService = new PlayerService.default();
+            const player = await playerService.getPlayer(payload.id, true);
 
-          if (!user || !user.is_active) {
-            throw new Error('User not found or inactive');
+            if (!player) {
+              throw new Error('Player not found or inactive');
+            }
+
+            return {
+              id: player.id,
+              privacy_code: player.privacy_code,
+              display_name: player.display_name,
+              type: 'player'
+            };
+          } else {
+            // Handle user token - look up in User table
+            const user = await models.User.findByPk(payload.id);
+
+            if (!user || !user.is_active) {
+              throw new Error('User not found or inactive');
+            }
+
+            return {
+              id: user.id,
+              email: user.email,
+              role: user.role,
+              type: 'jwt',
+              user: user.toJSON()
+            };
           }
-
-          return {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            type: 'jwt',
-            user: user.toJSON()
-          };
         } catch (jwtError) {
           // If JWT fails, try Firebase
         }

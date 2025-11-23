@@ -4,9 +4,15 @@ import {
   logCookieConfig,
   detectPortal,
   getPortalCookieNames,
-  createPortalAccessTokenConfig
+  createPortalAccessTokenConfig,
+  createAccessTokenConfig,
+  createClearCookieConfig
 } from '../utils/cookieConfig.js';
-import { clog } from '../lib/utils.js';
+import {
+  PLAYER_AUTH_ERRORS,
+  createPlayerAuthError,
+  getPlayerAuthErrorCode
+} from '../utils/playerAuthErrors.js';
 
 const authService = new AuthService();
 const playerService = new PlayerService();
@@ -229,65 +235,64 @@ export function validateApiKey(req, res, next) {
 // UNIFIED AUTHENTICATION MIDDLEWARE (USERS & PLAYERS)
 // =============================================
 
-// Middleware to authenticate players using player_session cookie
-export async function authenticatePlayer(req, res, next) {
+// Unified middleware to authenticate both users and players
+// This middleware tries user authentication first, then player authentication
+// Sets req.entity (unified) and req.entityType ('user' | 'player')
+export async function authenticateUserOrPlayer(req, res, next) {
   try {
-    const playerSession = req.cookies.player_session;
+    // Detect portal and get appropriate cookie names
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
 
-    if (!playerSession) {
-      return res.status(401).json({ error: 'Player session required' });
-    }
+    // Try user authentication first
+    const userToken = req.cookies[cookieNames.accessToken];
+    const userRefreshToken = req.cookies[cookieNames.refreshToken];
 
-    // Validate player session
-    const sessionData = await playerService.validateSession(playerSession);
-
-    if (!sessionData) {
-      // Clear invalid session cookie
-      res.clearCookie('player_session');
-      return res.status(401).json({ error: 'Invalid or expired player session' });
-    }
-
-    // Get full player data
-    const player = await playerService.getPlayer(sessionData.playerId, true);
-
-    if (!player) {
-      return res.status(404).json({ error: 'Player not found' });
-    }
-
-    // Set player data on request object
-    req.player = {
-      id: player.id,
-      privacy_code: player.privacy_code,
-      display_name: player.display_name,
-      teacher_id: player.teacher_id,
-      teacher: player.teacher,
-      achievements: player.achievements,
-      preferences: player.preferences,
-      is_online: player.is_online,
-      sessionType: 'player'
-    };
-
-    // Also set as unified entity
-    req.entity = req.player;
-    req.entityType = 'player';
-
-    clog(`🎮 Player authenticated: ${player.display_name} (${player.privacy_code})`);
-    next();
-  } catch (error) {
-    res.status(403).json({ error: error.message || 'Player authentication failed' });
-  }
-}
-
-// Optional player auth - continues if no player session provided
-export async function optionalPlayerAuth(req, res, next) {
-  try {
-    const playerSession = req.cookies.player_session;
-
-    if (playerSession) {
+    if (userToken) {
       try {
-        const sessionData = await playerService.validateSession(playerSession);
-        if (sessionData) {
-          const player = await playerService.getPlayer(sessionData.playerId, true);
+        const tokenData = await authService.verifyToken(userToken);
+
+        // Check if this is actually a player token
+        if (tokenData.type === 'player') {
+          // This is a player token, skip to player auth section
+        } else {
+          // This is a user token
+          req.user = tokenData;
+          req.entity = tokenData;
+          req.entityType = 'user';
+          return next();
+        }
+      } catch (tokenError) {
+        // User token invalid, fall through to player auth
+      }
+    }
+
+    // Try user refresh if we have refresh token but access failed
+    if (!req.user && userRefreshToken) {
+      try {
+        const refreshResult = await authService.refreshAccessToken(userRefreshToken);
+        const accessConfig = createPortalAccessTokenConfig(portal);
+        res.cookie(cookieNames.accessToken, refreshResult.accessToken, accessConfig);
+
+        const newTokenData = await authService.verifyToken(refreshResult.accessToken);
+        req.user = newTokenData;
+        req.entity = newTokenData;
+        req.entityType = 'user';
+        return next();
+      } catch (refreshError) {
+        // User refresh failed, continue to player auth
+      }
+    }
+
+    // Try player authentication
+    const playerAccessToken = req.cookies.student_access_token;
+    const playerRefreshToken = req.cookies.student_refresh_token;
+
+    if (playerAccessToken) {
+      try {
+        const tokenData = await authService.verifyToken(playerAccessToken);
+        if (tokenData.type === 'player') {
+          const player = await playerService.getPlayer(tokenData.id, true);
           if (player) {
             req.player = {
               id: player.id,
@@ -302,17 +307,211 @@ export async function optionalPlayerAuth(req, res, next) {
             };
             req.entity = req.player;
             req.entityType = 'player';
+            return next();
           }
         }
-      } catch (error) {
-        // Continue without player authentication if validation fails
+      } catch (tokenError) {
+        // Player token invalid, try refresh
       }
     }
 
-    next();
+    // Try player refresh if we have refresh token but access failed
+    if (!req.player && playerRefreshToken) {
+      try {
+        const jwt = await import('jsonwebtoken');
+        const refreshPayload = jwt.default.verify(playerRefreshToken, process.env.JWT_SECRET);
+
+        if (refreshPayload.type === 'player') {
+          const player = await playerService.getPlayer(refreshPayload.id, true);
+          if (player) {
+            const playerTokenData = {
+              id: player.id,
+              privacy_code: player.privacy_code,
+              display_name: player.display_name,
+              type: 'player'
+            };
+            const newAccessToken = authService.createAccessToken(playerTokenData);
+
+            const playerAccessConfig = createAccessTokenConfig();
+            res.cookie('student_access_token', newAccessToken, playerAccessConfig);
+
+            req.player = {
+              id: player.id,
+              privacy_code: player.privacy_code,
+              display_name: player.display_name,
+              teacher_id: player.teacher_id,
+              teacher: player.teacher,
+              achievements: player.achievements,
+              preferences: player.preferences,
+              is_online: player.is_online,
+              sessionType: 'player'
+            };
+            req.entity = req.player;
+            req.entityType = 'player';
+            return next();
+          }
+        }
+      } catch (refreshError) {
+        // Both user and player auth failed
+      }
+    }
+
+    // No valid authentication found
+    return res.status(401).json({ error: 'Authentication required' });
   } catch (error) {
-    // Continue without authentication if any error occurs
+    return res.status(403).json({ error: error.message || 'Authentication failed' });
+  }
+}
+
+// Optional unified authentication - continues if no auth provided
+export async function optionalUserOrPlayer(req, res, next) {
+  try {
+    // Try the unified authentication, but don't fail if no auth found
+    await authenticateUserOrPlayer(req, res, () => {
+      // Success - authenticated as user or player
+      next();
+    });
+  } catch (error) {
+    // No authentication or failed - continue without auth
+    req.entity = null;
+    req.entityType = null;
     next();
   }
 }
 
+// Middleware to authenticate players using dual token system with automatic refresh
+// COOKIE PERSISTENCE FIX: Enhanced with specific error types for better debugging
+export async function authenticatePlayer(req, res, next) {
+  try {
+    // Get player-specific tokens
+    const accessToken = req.cookies.student_access_token;
+    const refreshToken = req.cookies.student_refresh_token;
+
+    // Try to authenticate with access token first (if present)
+    if (accessToken) {
+      try {
+        const tokenData = await authService.verifyToken(accessToken);
+
+        // Verify this is a player token
+        if (tokenData.type !== 'player') {
+          const error = createPlayerAuthError.tokenInvalid('Not a player token');
+          return res.status(error.statusCode).json(error.toJSON());
+        }
+
+        // Get full player data
+        const player = await playerService.getPlayer(tokenData.id, true);
+        if (!player) {
+          const error = createPlayerAuthError.playerNotFound(tokenData.id);
+          return res.status(error.statusCode).json(error.toJSON());
+        }
+
+        // Check if player is active
+        if (player.is_active === false) {
+          const error = createPlayerAuthError.playerInactive();
+          return res.status(error.statusCode).json(error.toJSON());
+        }
+
+        // Set player data on request object
+        req.player = {
+          id: player.id,
+          privacy_code: player.privacy_code,
+          display_name: player.display_name,
+          teacher_id: player.teacher_id,
+          teacher: player.teacher,
+          achievements: player.achievements,
+          preferences: player.preferences,
+          is_online: player.is_online,
+          sessionType: 'player'
+        };
+
+        // Also set as unified entity
+        req.entity = req.player;
+        req.entityType = 'player';
+
+        return next();
+      } catch (tokenError) {
+        // Access token is invalid/expired, fall through to refresh token logic below
+        // Debug logging removed for production security
+      }
+    }
+
+    // If access token is missing or invalid, try to refresh using refresh token
+    if (!refreshToken) {
+      const error = createPlayerAuthError.tokenMissing();
+      return res.status(error.statusCode).json(error.toJSON());
+    }
+
+    try {
+      // Verify player refresh token (using custom player token format)
+      const jwt = await import('jsonwebtoken');
+      let refreshPayload;
+      try {
+        refreshPayload = jwt.default.verify(refreshToken, process.env.JWT_SECRET);
+      } catch (tokenError) {
+        const errorCode = getPlayerAuthErrorCode(tokenError);
+        const error = errorCode === PLAYER_AUTH_ERRORS.TOKEN_EXPIRED
+          ? createPlayerAuthError.tokenExpired()
+          : createPlayerAuthError.tokenInvalid('Invalid refresh token');
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+
+      // Verify this is a player token
+      if (refreshPayload.type !== 'player') {
+        const error = createPlayerAuthError.tokenInvalid('Refresh token is not a player token');
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+
+      // Get player data to ensure player still exists and is active
+      const player = await playerService.getPlayer(refreshPayload.id, true);
+      if (!player) {
+        const error = createPlayerAuthError.playerNotFound(refreshPayload.id);
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+
+      // Check if player is active
+      if (player.is_active === false) {
+        const error = createPlayerAuthError.playerInactive();
+        return res.status(error.statusCode).json(error.toJSON());
+      }
+
+      // Generate new access token
+      const playerTokenData = {
+        id: player.id,
+        privacy_code: player.privacy_code,
+        display_name: player.display_name,
+        type: 'player'
+      };
+      const newAccessToken = authService.createAccessToken(playerTokenData);
+
+      // Set new player access token cookie
+      const playerAccessConfig = createAccessTokenConfig();
+      logCookieConfig('Player Auth Middleware - Refresh', playerAccessConfig);
+      res.cookie('student_access_token', newAccessToken, playerAccessConfig);
+
+      // Set player data on request object
+      req.player = {
+        id: player.id,
+        privacy_code: player.privacy_code,
+        display_name: player.display_name,
+        teacher_id: player.teacher_id,
+        teacher: player.teacher,
+        achievements: player.achievements,
+        preferences: player.preferences,
+        is_online: player.is_online,
+        sessionType: 'player'
+      };
+
+      // Also set as unified entity
+      req.entity = req.player;
+      req.entityType = 'player';
+
+      next();
+    } catch (refreshError) {
+      const error = createPlayerAuthError.refreshFailed(refreshError.message);
+      return res.status(error.statusCode).json(error.toJSON());
+    }
+  } catch (error) {
+    const playerError = createPlayerAuthError.serverError(error.message);
+    res.status(playerError.statusCode).json(playerError.toJSON());
+  }
+}
