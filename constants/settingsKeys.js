@@ -189,7 +189,8 @@ export const NAV_VISIBILITY_OPTIONS = {
   PUBLIC: 'public',
   LOGGED_IN_USERS: 'logged_in_users',
   ADMINS_AND_CREATORS: 'admins_and_creators',
-  ADMIN_ONLY: 'admin_only'
+  ADMIN_ONLY: 'admin_only',
+  HIDDEN: 'hidden'  // Completely hidden from all users
 };
 
 /**
