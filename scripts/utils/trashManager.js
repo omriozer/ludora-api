@@ -3,13 +3,13 @@
  * Handles moving files to trash and managing trash operations
  */
 
-import AWS from 'aws-sdk';
+import { S3Client, CopyObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import path from 'path';
 
 /**
  * Initialize S3 client with environment-specific configuration
  * @param {string} environment - Environment (development, staging, production)
- * @returns {AWS.S3} Configured S3 client
+ * @returns {S3Client} Configured S3 client
  */
 function initS3Client(environment) {
   // Configure S3 based on environment
@@ -19,11 +19,13 @@ function initS3Client(environment) {
 
   // Add credentials if not using IAM roles
   if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-    config.accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    config.secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    config.credentials = {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    };
   }
 
-  return new AWS.S3(config);
+  return new S3Client(config);
 }
 
 /**
@@ -76,7 +78,7 @@ function isInTrash(key) {
 
 /**
  * Move a file to trash (S3 copy then delete)
- * @param {AWS.S3} s3Client - S3 client
+ * @param {S3Client} s3Client - S3 client
  * @param {string} bucketName - S3 bucket name
  * @param {string} originalKey - Original S3 key
  * @returns {Promise<Object>} Result object with success status
@@ -86,7 +88,7 @@ async function moveToTrash(s3Client, bucketName, originalKey) {
     const trashKey = getTrashPath(originalKey);
 
     // Copy to trash location
-    await s3Client.copyObject({
+    await s3Client.send(new CopyObjectCommand({
       Bucket: bucketName,
       CopySource: `${bucketName}/${originalKey}`,
       Key: trashKey,
@@ -96,13 +98,13 @@ async function moveToTrash(s3Client, bucketName, originalKey) {
         'moved-to-trash': new Date().toISOString(),
         'original-path': originalKey
       }
-    }).promise();
+    }));
 
     // Delete original file
-    await s3Client.deleteObject({
+    await s3Client.send(new DeleteObjectCommand({
       Bucket: bucketName,
       Key: originalKey
-    }).promise();
+    }));
 
     return {
       success: true,
@@ -122,7 +124,7 @@ async function moveToTrash(s3Client, bucketName, originalKey) {
 
 /**
  * Permanently delete file from trash
- * @param {AWS.S3} s3Client - S3 client
+ * @param {S3Client} s3Client - S3 client
  * @param {string} bucketName - S3 bucket name
  * @param {string} trashKey - Trash S3 key
  * @returns {Promise<Object>} Result object with success status
@@ -133,10 +135,10 @@ async function deleteFromTrash(s3Client, bucketName, trashKey) {
       throw new Error(`Key is not in trash: ${trashKey}`);
     }
 
-    await s3Client.deleteObject({
+    await s3Client.send(new DeleteObjectCommand({
       Bucket: bucketName,
       Key: trashKey
-    }).promise();
+    }));
 
     return {
       success: true,
@@ -156,7 +158,7 @@ async function deleteFromTrash(s3Client, bucketName, trashKey) {
 
 /**
  * Restore file from trash to original location
- * @param {AWS.S3} s3Client - S3 client
+ * @param {S3Client} s3Client - S3 client
  * @param {string} bucketName - S3 bucket name
  * @param {string} trashKey - Trash S3 key
  * @returns {Promise<Object>} Result object with success status
@@ -170,7 +172,7 @@ async function restoreFromTrash(s3Client, bucketName, trashKey) {
     const originalKey = getOriginalPath(trashKey);
 
     // Copy back to original location
-    await s3Client.copyObject({
+    await s3Client.send(new CopyObjectCommand({
       Bucket: bucketName,
       CopySource: `${bucketName}/${trashKey}`,
       Key: originalKey,
@@ -178,13 +180,13 @@ async function restoreFromTrash(s3Client, bucketName, trashKey) {
       Metadata: {
         'restored-from-trash': new Date().toISOString()
       }
-    }).promise();
+    }));
 
     // Delete from trash
-    await s3Client.deleteObject({
+    await s3Client.send(new DeleteObjectCommand({
       Bucket: bucketName,
       Key: trashKey
-    }).promise();
+    }));
 
     return {
       success: true,
@@ -204,7 +206,7 @@ async function restoreFromTrash(s3Client, bucketName, trashKey) {
 
 /**
  * List files in trash for an environment
- * @param {AWS.S3} s3Client - S3 client
+ * @param {S3Client} s3Client - S3 client
  * @param {string} bucketName - S3 bucket name
  * @param {string} environment - Environment name (for filtering)
  * @param {string} continuationToken - S3 continuation token for pagination
@@ -222,7 +224,7 @@ async function listTrashFiles(s3Client, bucketName, environment, continuationTok
       params.ContinuationToken = continuationToken;
     }
 
-    const result = await s3Client.listObjectsV2(params).promise();
+    const result = await s3Client.send(new ListObjectsV2Command(params));
 
     const files = result.Contents.map(obj => ({
       key: obj.Key,
@@ -266,7 +268,7 @@ function formatBytes(bytes) {
 
 /**
  * Get trash statistics for an environment
- * @param {AWS.S3} s3Client - S3 client
+ * @param {S3Client} s3Client - S3 client
  * @param {string} bucketName - S3 bucket name
  * @param {string} environment - Environment name
  * @returns {Promise<Object>} Trash statistics

@@ -1,4 +1,4 @@
-import AWS from 'aws-sdk';
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
@@ -24,13 +24,13 @@ class FileService {
   // Initialize AWS S3
   initializeS3() {
     try {
-      AWS.config.update({
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        region: process.env.AWS_REGION || 'us-east-1'
+      this.s3 = new S3Client({
+        region: process.env.AWS_REGION || 'us-east-1',
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        }
       });
-
-      this.s3 = new AWS.S3();
     } catch (error) {
       this.useS3 = false;
     }
@@ -204,10 +204,10 @@ class FileService {
     try {
       // Delete from storage
       if (this.useS3 && this.s3 && filePath) {
-        await this.s3.deleteObject({
+        await this.s3.send(new DeleteObjectCommand({
           Bucket: this.bucketName,
           Key: filePath
-        }).promise();
+        }));
       } else if (filePath) {
         const fullPath = path.join(this.localStoragePath, filePath);
         if (fs.existsSync(fullPath)) {
@@ -247,8 +247,9 @@ class FileService {
         params.Range = `bytes=${range.start}-${range.end}`;
       }
 
-      // Return the S3 stream object
-      return this.s3.getObject(params).createReadStream();
+      // In AWS SDK v3, the response Body is already a readable stream
+      const response = await this.s3.send(new GetObjectCommand(params));
+      return response.Body;
     } catch (error) {
       throw error;
     }
@@ -266,8 +267,10 @@ class FileService {
         Key: s3Key
       };
 
-      const data = await this.s3.getObject(params).promise();
-      return data.Body; // Returns Buffer
+      const response = await this.s3.send(new GetObjectCommand(params));
+      // In AWS SDK v3, Body is a readable stream - convert to Buffer
+      const byteArray = await response.Body.transformToByteArray();
+      return Buffer.from(byteArray);
     } catch (error) {
       throw error;
     }
@@ -285,7 +288,7 @@ class FileService {
         Key: s3Key
       };
 
-      const metadata = await this.s3.headObject(params).promise();
+      const metadata = await this.s3.send(new HeadObjectCommand(params));
       return {
         success: true,
         data: {
@@ -549,18 +552,22 @@ class FileService {
         }
       }
 
-      const result = await this.s3.upload(uploadParams).promise();
+      const result = await this.s3.send(new PutObjectCommand(uploadParams));
+
+      // In AWS SDK v3, PutObjectCommand doesn't return Location/Key like v2's upload
+      // We construct them from the params we already have
+      const location = `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
 
       logger?.info('S3 upload completed successfully', {
-        key: result.Key,
+        key: key,
         etag: result.ETag,
         size: buffer.length
       });
 
       return {
         success: true,
-        url: result.Location,
-        key: result.Key,
+        url: location,
+        key: key,
         etag: result.ETag,
         size: buffer.length
       };
@@ -569,13 +576,13 @@ class FileService {
       logger?.error('S3 upload failed', {
         key,
         error: error.message,
-        errorCode: error.code
+        errorCode: error.name  // AWS SDK v3 uses error.name instead of error.code
       });
 
       return {
         success: false,
         error: error.message,
-        errorCode: error.code,
+        errorCode: error.name,  // AWS SDK v3 uses error.name instead of error.code
         key
       };
     }
@@ -786,7 +793,7 @@ class FileService {
         }
       }
 
-      await this.s3.deleteObject(params).promise();
+      await this.s3.send(new DeleteObjectCommand(params));
 
       logger?.info('S3 deletion completed successfully', { key });
 
@@ -798,7 +805,8 @@ class FileService {
 
     } catch (error) {
       // Handle "not found" errors gracefully for delete operations
-      if (error.code === 'NoSuchKey' || error.statusCode === 404) {
+      // AWS SDK v3 uses error.name instead of error.code, and error.$metadata?.httpStatusCode for status
+      if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
         logger?.info('S3 object not found - treating as successful deletion', { key });
         return {
           success: true,
@@ -811,13 +819,13 @@ class FileService {
       logger?.error('S3 deletion failed', {
         key,
         error: error.message,
-        errorCode: error.code
+        errorCode: error.name  // AWS SDK v3 uses error.name instead of error.code
       });
 
       return {
         success: false,
         error: error.message,
-        errorCode: error.code,
+        errorCode: error.name,  // AWS SDK v3 uses error.name instead of error.code
         key
       };
     }

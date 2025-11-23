@@ -53,25 +53,28 @@ export default function(sequelize) {
     for (const config of configRecords) {
       let value = config.value;
 
-      // Cast values based on type hint
-      switch (config.value_type) {
-        case 'boolean':
-          value = Boolean(value);
-          break;
-        case 'number':
-          value = Number(value);
-          break;
-        case 'string':
-          value = String(value);
-          break;
-        case 'object':
-        case 'array':
-          // JSONB already parsed, use as-is
-          break;
-        default:
-          // Keep original value
-          break;
+      // Cast values based on type hint, but preserve null values
+      if (value !== null && value !== undefined) {
+        switch (config.value_type) {
+          case 'boolean':
+            value = Boolean(value);
+            break;
+          case 'number':
+            value = Number(value);
+            break;
+          case 'string':
+            value = String(value);
+            break;
+          case 'object':
+          case 'array':
+            // JSONB already parsed, use as-is
+            break;
+          default:
+            // Keep original value
+            break;
+        }
       }
+      // If value is null or undefined, keep it as-is (don't cast to string)
 
       settings[config.key] = value;
     }

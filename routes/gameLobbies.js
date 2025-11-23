@@ -553,6 +553,7 @@ router.delete('/game-lobbies/:lobbyId',
 /**
  * POST /api/game-lobbies/join-by-code
  * Join a lobby using lobby code (student-facing with access control)
+ * NEW AUTH MODEL: Uses authenticated player from req.player, validates teacher connection
  */
 router.post('/game-lobbies/join-by-code',
   checkStudentsAccess, // Student access control with rate limiting
@@ -561,8 +562,28 @@ router.post('/game-lobbies/join-by-code',
     const transaction = await models.sequelize.transaction();
     try {
       const { lobby_code, participant } = req.validatedData;
+      const authenticatedPlayer = req.player; // From authentication middleware
 
-      clog(`🚪 Attempting to join lobby ${lobby_code} as ${participant.display_name}`);
+      // NEW AUTH MODEL: If player is authenticated, validate teacher connection
+      if (authenticatedPlayer && !authenticatedPlayer.teacher_id) {
+        await transaction.rollback();
+        clog(`🚫 Player ${authenticatedPlayer.id} has no teacher connection - access denied`);
+        return res.status(403).json({
+          error: 'Teacher connection required',
+          message: 'You must be connected to a teacher before accessing content',
+          code: 'TEACHER_CONNECTION_REQUIRED'
+        });
+      }
+
+      // Use authenticated player data if available, otherwise fall back to participant data
+      const effectiveDisplayName = authenticatedPlayer?.display_name || participant.display_name;
+      const effectivePlayerId = authenticatedPlayer?.id || null;
+
+      clog(`🚪 Attempting to join lobby ${lobby_code} as ${effectiveDisplayName}`, {
+        isAuthenticated: !!authenticatedPlayer,
+        hasTeacher: !!authenticatedPlayer?.teacher_id,
+        playerId: effectivePlayerId
+      });
 
       // Find lobby by code
       const lobby = await GameLobbyService.findLobbyByCode(lobby_code, transaction);
@@ -574,10 +595,13 @@ router.post('/game-lobbies/join-by-code',
       }
 
       // Check if lobby allows the type of user trying to join
-      if (!participant.user_id && !lobby.settings.allow_guest_users) {
+      // NEW AUTH MODEL: Authenticated players are not guests
+      const isGuest = !authenticatedPlayer && !participant.user_id;
+      if (isGuest && !lobby.settings.allow_guest_users) {
         await transaction.rollback();
         return res.status(403).json({
-          error: 'Guest users are not allowed in this lobby'
+          error: 'Guest users are not allowed in this lobby',
+          message: 'Please log in to join this lobby'
         });
       }
 
@@ -627,6 +651,7 @@ router.post('/game-lobbies/join-by-code',
 /**
  * POST /api/game-lobbies/:lobbyId/join
  * Join a lobby with on-demand session creation based on invitation_type (student-facing with access control)
+ * NEW AUTH MODEL: Uses authenticated player from req.player, validates teacher connection
  */
 router.post('/game-lobbies/:lobbyId/join',
   checkStudentsAccess, // Student access control with rate limiting
@@ -636,8 +661,38 @@ router.post('/game-lobbies/:lobbyId/join',
     try {
       const { lobbyId } = req.params;
       const { participant, session_id } = req.validatedData; // session_id optional for manual_selection
+      const authenticatedPlayer = req.player; // From authentication middleware
 
-      clog(`🚪 Joining lobby ${lobbyId} as ${participant.display_name} with invitation logic`);
+      // NEW AUTH MODEL: If player is authenticated, validate teacher connection
+      if (authenticatedPlayer && !authenticatedPlayer.teacher_id) {
+        await transaction.rollback();
+        clog(`🚫 Player ${authenticatedPlayer.id} has no teacher connection - access denied`);
+        return res.status(403).json({
+          error: 'Teacher connection required',
+          message: 'You must be connected to a teacher before joining games',
+          code: 'TEACHER_CONNECTION_REQUIRED'
+        });
+      }
+
+      // Build effective participant data from authenticated player or request
+      const effectiveParticipant = authenticatedPlayer
+        ? {
+            display_name: authenticatedPlayer.display_name,
+            user_id: null, // Players are not users
+            player_id: authenticatedPlayer.id, // NEW: Use player ID
+            teacher_id: authenticatedPlayer.teacher_id, // Include teacher reference
+            guest_token: null // Not a guest
+          }
+        : {
+            ...participant,
+            player_id: null // Fallback for legacy/guest behavior
+          };
+
+      clog(`🚪 Joining lobby ${lobbyId} as ${effectiveParticipant.display_name} with invitation logic`, {
+        isAuthenticated: !!authenticatedPlayer,
+        hasTeacher: !!authenticatedPlayer?.teacher_id,
+        playerId: effectiveParticipant.player_id
+      });
 
       // Get lobby details with current sessions
       const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
@@ -656,15 +711,21 @@ router.post('/game-lobbies/:lobbyId/join',
       }
 
       // Check guest user restrictions
-      if (!participant.user_id && !lobby.settings.allow_guest_users) {
+      // NEW AUTH MODEL: Authenticated players are not guests
+      const isGuest = !authenticatedPlayer && !participant.user_id;
+      if (isGuest && !lobby.settings.allow_guest_users) {
         await transaction.rollback();
         return res.status(403).json({
-          error: 'Guest users are not allowed in this lobby'
+          error: 'Guest users are not allowed in this lobby',
+          message: 'Please log in to join this lobby'
         });
       }
 
       const invitationType = lobby.settings.invitation_type || 'manual_selection';
-      clog(`📍 Processing join request with invitation_type: ${invitationType}`);
+      clog(`📍 Processing join request with invitation_type: ${invitationType}`, {
+        isGuest,
+        playerId: effectiveParticipant.player_id
+      });
 
       let joinedSession;
 
@@ -685,10 +746,11 @@ router.post('/game-lobbies/:lobbyId/join',
           }
 
           // Add participant to the specified session
+          // NEW AUTH MODEL: Use effective participant with player_id
           const updatedManualSession = await GameSessionService.addParticipant(
             session_id,
-            participant,
-            participant.user_id || 'anonymous', // Use user_id or 'anonymous' for guest
+            effectiveParticipant,
+            effectiveParticipant.player_id || effectiveParticipant.user_id || 'anonymous',
             transaction
           );
 
@@ -709,11 +771,12 @@ router.post('/game-lobbies/:lobbyId/join',
 
           if (availableSessionsOrder.length > 0) {
             // Take the first (lowest numbered) available session and add participant
+            // NEW AUTH MODEL: Use effective participant with player_id
             const firstSession = availableSessionsOrder[0];
             const updatedSession = await GameSessionService.addParticipant(
               firstSession.id,
-              participant,
-              participant.user_id || 'anonymous', // Use user_id or 'anonymous' for guest
+              effectiveParticipant,
+              effectiveParticipant.player_id || effectiveParticipant.user_id || 'anonymous',
               transaction
             );
             joinedSession = {
@@ -727,10 +790,11 @@ router.post('/game-lobbies/:lobbyId/join',
             const newSession = await createSessionForJoining(lobbyId, lobby, transaction);
 
             // Add participant to the newly created session
+            // NEW AUTH MODEL: Use effective participant with player_id
             const updatedSession = await GameSessionService.addParticipant(
               newSession.id,
-              participant,
-              participant.user_id || 'anonymous', // Use user_id or 'anonymous' for guest
+              effectiveParticipant,
+              effectiveParticipant.player_id || effectiveParticipant.user_id || 'anonymous',
               transaction
             );
 
@@ -754,11 +818,13 @@ router.post('/game-lobbies/:lobbyId/join',
       await transaction.commit();
 
       // Get the actual participant data from the session (includes generated participant.id)
+      // NEW AUTH MODEL: Support finding by player_id
       const sessionDetails = await GameSessionService.getSessionDetails(joinedSession.id);
       const addedParticipant = sessionDetails.participants.find(p =>
-        (participant.user_id && p.user_id === participant.user_id) ||
+        (effectiveParticipant.player_id && p.player_id === effectiveParticipant.player_id) ||
+        (effectiveParticipant.user_id && p.user_id === effectiveParticipant.user_id) ||
         (participant.guest_token && p.guest_token === participant.guest_token) ||
-        (!participant.user_id && !participant.guest_token && p.display_name === participant.display_name)
+        (!effectiveParticipant.player_id && !effectiveParticipant.user_id && !participant.guest_token && p.display_name === effectiveParticipant.display_name)
       );
 
       res.status(200).json({
@@ -950,6 +1016,7 @@ router.post('/game-lobbies/:lobbyId/sessions',
 /**
  * POST /api/game-lobbies/:lobbyId/sessions/create-student
  * Create a new session in a lobby (student-facing with conditional access control)
+ * NEW AUTH MODEL: Uses authenticated player from req.player, validates teacher connection
  */
 router.post('/game-lobbies/:lobbyId/sessions/create-student',
   checkStudentsAccess, // Student conditional authentication middleware
@@ -959,12 +1026,35 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
       const { lobbyId } = req.params;
       const { participant } = req.body; // Extract participant data from request
       const user = req.user; // May be null for anonymous users
+      const authenticatedPlayer = req.player; // From authentication middleware
 
-      clog(`🎮 Student creating session in lobby ${lobbyId}${user ? ` by user ${user.id}` : ' by anonymous user'}`);
-      clog(`👤 Participant data:`, participant);
+      // NEW AUTH MODEL: If player is authenticated, validate teacher connection
+      if (authenticatedPlayer && !authenticatedPlayer.teacher_id) {
+        await transaction.rollback();
+        clog(`🚫 Player ${authenticatedPlayer.id} has no teacher connection - access denied`);
+        return res.status(403).json({
+          error: 'Teacher connection required',
+          message: 'You must be connected to a teacher before creating sessions',
+          code: 'TEACHER_CONNECTION_REQUIRED'
+        });
+      }
+
+      // Build effective participant data from authenticated player or request
+      const effectiveParticipant = authenticatedPlayer
+        ? {
+            display_name: authenticatedPlayer.display_name,
+            user_id: null,
+            player_id: authenticatedPlayer.id,
+            teacher_id: authenticatedPlayer.teacher_id,
+            guest_token: null
+          }
+        : participant;
+
+      clog(`🎮 Student creating session in lobby ${lobbyId}${user ? ` by user ${user.id}` : authenticatedPlayer ? ` by player ${authenticatedPlayer.id}` : ' by anonymous user'}`);
+      clog(`👤 Effective participant data:`, effectiveParticipant);
 
       // Validate participant data
-      if (!participant || !participant.display_name?.trim()) {
+      if (!effectiveParticipant || !effectiveParticipant.display_name?.trim()) {
         await transaction.rollback();
         return res.status(400).json({
           error: 'Participant display name is required'
@@ -996,7 +1086,9 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
       }
 
       // Check guest user restrictions
-      if (!participant.user_id && !lobby.settings.allow_guest_users) {
+      // NEW AUTH MODEL: Authenticated players are not guests
+      const isGuest = !authenticatedPlayer && !effectiveParticipant.user_id;
+      if (isGuest && !lobby.settings.allow_guest_users) {
         await transaction.rollback();
         return res.status(403).json({
           error: 'Guest users are not allowed in this lobby'
@@ -1048,21 +1140,24 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
       clog(`✅ Student created session ${session.session_number} in lobby ${lobbyId}`);
 
       // Add the creator as a participant to the session
+      // NEW AUTH MODEL: Use effective participant with player_id
       const updatedSession = await GameSessionService.addParticipant(
         session.id,
-        participant,
-        participant.user_id || 'anonymous',
+        effectiveParticipant,
+        effectiveParticipant.player_id || effectiveParticipant.user_id || 'anonymous',
         transaction
       );
 
       await transaction.commit();
 
       // Get the actual participant data from the session (includes generated participant.id)
+      // NEW AUTH MODEL: Support finding by player_id
       const sessionDetails = await GameSessionService.getSessionDetails(updatedSession.id);
       const addedParticipant = sessionDetails.participants.find(p =>
-        (participant.user_id && p.user_id === participant.user_id) ||
-        (participant.guest_token && p.guest_token === participant.guest_token) ||
-        (!participant.user_id && !participant.guest_token && p.display_name === participant.display_name)
+        (effectiveParticipant.player_id && p.player_id === effectiveParticipant.player_id) ||
+        (effectiveParticipant.user_id && p.user_id === effectiveParticipant.user_id) ||
+        (effectiveParticipant.guest_token && p.guest_token === effectiveParticipant.guest_token) ||
+        (!effectiveParticipant.player_id && !effectiveParticipant.user_id && !effectiveParticipant.guest_token && p.display_name === effectiveParticipant.display_name)
       );
 
       clog(`👤 Added creator as participant:`, addedParticipant);

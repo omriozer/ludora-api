@@ -377,12 +377,6 @@ function parseSocketPortalContext(socket) {
   // Merge query and auth objects (auth takes precedence)
   const combined = { ...query, ...auth };
 
-  // TODO remove debug - update Socket.IO server for portal-aware authentication
-  clog('🔌 [SocketAuth] Parsing portal context from handshake:', {
-    query: Object.keys(query),
-    auth: Object.keys(auth)
-  });
-
   return {
     portalType: combined.portalType || SOCKET_PORTAL_TYPES.TEACHER,
     credentialPolicy: combined.credentialPolicy || SOCKET_CREDENTIAL_POLICIES.WITH_CREDENTIALS,
@@ -433,24 +427,14 @@ async function authenticateSocketWithFirebase(socket, portalType) {
     const accessToken = cookies[cookieNames.accessToken];
 
     if (!accessToken) {
-      // TODO remove debug - update Socket.IO server for portal-aware authentication
-      clog('🔌 [SocketAuth] No access token cookie found for portal:', portalType);
       return null;
     }
 
     // Verify the token
     const tokenData = await socketAuthService.verifyToken(accessToken);
 
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] Firebase authentication successful:', {
-      userId: tokenData.id || tokenData.user?.id,
-      portalType
-    });
-
     return tokenData;
   } catch (error) {
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] Firebase authentication failed:', error.message);
     return null;
   }
 }
@@ -477,12 +461,6 @@ async function authenticateSocketWithPlayerTokens(socket) {
           // Get full player data
           const player = await socketPlayerService.getPlayer(tokenData.id, true);
           if (player) {
-            // TODO remove debug - update Socket.IO server for portal-aware authentication
-            clog('🔌 [SocketAuth] Player token authentication successful:', {
-              playerId: player.id,
-              displayName: player.display_name
-            });
-
             return {
               player: {
                 id: player.id,
@@ -499,8 +477,6 @@ async function authenticateSocketWithPlayerTokens(socket) {
         }
       } catch (tokenError) {
         // Access token invalid, try refresh token
-        // TODO remove debug - update Socket.IO server for portal-aware authentication
-        clog('🔌 [SocketAuth] Player access token invalid, trying refresh token');
       }
     }
 
@@ -513,12 +489,6 @@ async function authenticateSocketWithPlayerTokens(socket) {
         if (refreshPayload.type === 'player') {
           const player = await socketPlayerService.getPlayer(refreshPayload.id, true);
           if (player) {
-            // TODO remove debug - update Socket.IO server for portal-aware authentication
-            clog('🔌 [SocketAuth] Player refresh token authentication successful:', {
-              playerId: player.id,
-              displayName: player.display_name
-            });
-
             return {
               player: {
                 id: player.id,
@@ -534,17 +504,12 @@ async function authenticateSocketWithPlayerTokens(socket) {
           }
         }
       } catch (refreshError) {
-        // TODO remove debug - update Socket.IO server for portal-aware authentication
-        clog('🔌 [SocketAuth] Player refresh token authentication failed:', refreshError.message);
+        // Player refresh token authentication failed
       }
     }
 
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] No valid player tokens found');
     return null;
   } catch (error) {
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] Player token authentication failed:', error.message);
     return null;
   }
 }
@@ -576,14 +541,6 @@ io.use(async (socket, next) => {
     // Also detect portal from headers for validation
     const detectedPortal = detectSocketPortal(socket);
 
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] Connection attempt:', {
-      socketId: socket.id,
-      portalContext,
-      detectedPortal,
-      origin: socket.handshake.headers.origin
-    });
-
     // Initialize socket authentication context
     socket.portalContext = portalContext;
     socket.isAuthenticated = false;
@@ -595,30 +552,37 @@ io.use(async (socket, next) => {
 
     switch (credentialPolicy) {
       case SOCKET_CREDENTIAL_POLICIES.WITH_CREDENTIALS: {
-        // Firebase authentication required
+        // Try Firebase authentication first
         const userData = await authenticateSocketWithFirebase(socket, portalType);
 
-        if (!userData) {
-          // TODO remove debug - update Socket.IO server for portal-aware authentication
-          clog('🔌 [SocketAuth] Rejecting connection: Firebase auth required but not provided');
-          return next(new Error('Authentication required'));
+        if (userData) {
+          socket.isAuthenticated = true;
+          socket.user = userData;
+          socket.authMethod = 'firebase';
+          break;
         }
 
-        socket.isAuthenticated = true;
-        socket.user = userData;
-        socket.authMethod = 'firebase';
+        // For student portal, also try player token authentication (aligned with HTTP auth)
+        // This aligns WebSocket auth with authenticateUserOrPlayer middleware behavior
+        if (portalType === SOCKET_PORTAL_TYPES.STUDENT) {
+          const playerData = await authenticateSocketWithPlayerTokens(socket);
 
-        // TODO remove debug - update Socket.IO server for portal-aware authentication
-        clog('🔌 [SocketAuth] Connection authenticated via Firebase');
-        break;
+          if (playerData) {
+            socket.player = playerData;
+            socket.authMethod = 'student_access_token';
+            socket.isAuthenticated = true;
+            break;
+          }
+        }
+
+        // No authentication succeeded - reject connection
+        return next(new Error('Authentication required'));
       }
 
       case SOCKET_CREDENTIAL_POLICIES.WITHOUT_CREDENTIALS: {
         // Anonymous connection allowed (for student portal invite_only mode)
         // Verify this is actually a student portal connection
         if (portalType === SOCKET_PORTAL_TYPES.TEACHER) {
-          // TODO remove debug - update Socket.IO server for portal-aware authentication
-          clog('🔌 [SocketAuth] Rejecting: Teacher portal cannot use anonymous connections');
           return next(new Error('Teacher portal requires authentication'));
         }
 
@@ -628,12 +592,8 @@ io.use(async (socket, next) => {
         if (playerData) {
           socket.player = playerData;
           socket.authMethod = 'student_access_token';
-          // TODO remove debug - update Socket.IO server for portal-aware authentication
-          clog('🔌 [SocketAuth] Anonymous connection with player session:', playerData.player?.display_name);
         } else {
           socket.authMethod = 'anonymous';
-          // TODO remove debug - update Socket.IO server for portal-aware authentication
-          clog('🔌 [SocketAuth] Fully anonymous connection allowed');
         }
 
         // Anonymous connections are allowed, mark as not authenticated but valid
@@ -649,8 +609,6 @@ io.use(async (socket, next) => {
           socket.isAuthenticated = true;
           socket.user = userData;
           socket.authMethod = 'firebase';
-          // TODO remove debug - update Socket.IO server for portal-aware authentication
-          clog('🔌 [SocketAuth] TRY_BOTH: Authenticated via Firebase');
         } else {
           // Try player tokens
           const playerData = await authenticateSocketWithPlayerTokens(socket);
@@ -659,19 +617,13 @@ io.use(async (socket, next) => {
             socket.player = playerData;
             socket.authMethod = 'student_access_token';
             socket.isAuthenticated = true; // Player authentication succeeded!
-            // TODO remove debug - update Socket.IO server for portal-aware authentication
-            clog('🔌 [SocketAuth] TRY_BOTH: Authenticated via player tokens');
           } else {
             // Allow anonymous for student portal
             if (portalType === SOCKET_PORTAL_TYPES.STUDENT) {
               socket.authMethod = 'anonymous';
               socket.isAuthenticated = false; // Anonymous connection
-              // TODO remove debug - update Socket.IO server for portal-aware authentication
-              clog('🔌 [SocketAuth] TRY_BOTH: Anonymous connection allowed for student portal');
             } else {
               // Teacher portal requires authentication
-              // TODO remove debug - update Socket.IO server for portal-aware authentication
-              clog('🔌 [SocketAuth] TRY_BOTH: Rejecting anonymous teacher portal connection');
               return next(new Error('Teacher portal requires authentication'));
             }
           }
@@ -681,9 +633,6 @@ io.use(async (socket, next) => {
 
       default: {
         // Unknown credential policy - default to requiring authentication
-        // TODO remove debug - update Socket.IO server for portal-aware authentication
-        clog('🔌 [SocketAuth] Unknown credential policy, requiring authentication:', credentialPolicy);
-
         const userData = await authenticateSocketWithFirebase(socket, portalType);
 
         if (!userData) {
@@ -695,16 +644,6 @@ io.use(async (socket, next) => {
         socket.authMethod = 'firebase';
       }
     }
-
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 [SocketAuth] Connection authorized:', {
-      socketId: socket.id,
-      portalType,
-      authMethod: socket.authMethod,
-      isAuthenticated: socket.isAuthenticated,
-      userId: socket.user?.id || socket.user?.user?.id || null,
-      playerId: socket.player?.player?.id || null
-    });
 
     next();
   } catch (error) {
@@ -719,68 +658,37 @@ io.use(async (socket, next) => {
 
 // Socket.IO connection handling with portal-aware context
 io.on('connection', (socket) => {
-  // TODO remove debug - update Socket.IO server for portal-aware authentication
-  clog('🔌 Socket.IO client connected:', {
-    id: socket.id,
-    origin: socket.handshake.headers.origin,
-    portalType: socket.portalContext?.portalType,
-    authMethod: socket.authMethod,
-    isAuthenticated: socket.isAuthenticated,
-    userId: socket.user?.id || socket.user?.user?.id || null,
-    playerId: socket.player?.player?.id || null
-  });
-
   // Join lobby updates channel
   socket.on('join-lobby-updates', () => {
     socket.join('lobby-updates');
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog(`🔌 Socket ${socket.id} joined lobby-updates channel (auth: ${socket.authMethod})`);
   });
 
   // Legacy event handler for backward compatibility
   socket.on('join', (channel) => {
     if (channel === 'lobby-updates') {
       socket.join('lobby-updates');
-      // TODO remove debug - update Socket.IO server for portal-aware authentication
-      clog(`🔌 Socket ${socket.id} joined ${channel} via legacy 'join' event`);
     }
   });
 
   // Leave lobby updates channel
   socket.on('leave-lobby-updates', () => {
     socket.leave('lobby-updates');
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog(`🔌 Socket ${socket.id} left lobby-updates channel`);
   });
 
   // Legacy event handler for backward compatibility
   socket.on('leave', (channel) => {
     if (channel === 'lobby-updates') {
       socket.leave('lobby-updates');
-      // TODO remove debug - update Socket.IO server for portal-aware authentication
-      clog(`🔌 Socket ${socket.id} left ${channel} via legacy 'leave' event`);
     }
   });
 
   // Handle test messages (for debugging)
   socket.on('test', (data) => {
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 Socket test message received:', {
-      socketId: socket.id,
-      data,
-      authMethod: socket.authMethod
-    });
+    // Test handler - can be used for debugging socket connections
   });
 
   socket.on('disconnect', (reason) => {
-    // TODO remove debug - update Socket.IO server for portal-aware authentication
-    clog('🔌 Socket.IO client disconnected:', {
-      id: socket.id,
-      reason,
-      portalType: socket.portalContext?.portalType,
-      authMethod: socket.authMethod,
-      timestamp: new Date().toISOString()
-    });
+    // Client disconnected - cleanup is handled automatically by Socket.IO
   });
 
   // Handle connection errors

@@ -36,13 +36,6 @@ class LobbySocketService {
         timestamp: new Date().toISOString()
       };
 
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting lobby created:', {
-        lobbyId: lobbyData.id,
-        lobbyCode: lobbyData.lobby_code,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
-
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
@@ -63,13 +56,6 @@ class LobbySocketService {
         data: lobbyData,
         timestamp: new Date().toISOString()
       };
-
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting lobby activated:', {
-        lobbyId: lobbyData.id,
-        lobbyCode: lobbyData.lobby_code,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
 
       io.to('lobby-updates').emit('lobby:update', eventData);
 
@@ -92,13 +78,6 @@ class LobbySocketService {
         timestamp: new Date().toISOString()
       };
 
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting lobby closed:', {
-        lobbyId: lobbyData.id,
-        lobbyCode: lobbyData.lobby_code,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
-
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
@@ -119,13 +98,6 @@ class LobbySocketService {
         data: sessionData,
         timestamp: new Date().toISOString()
       };
-
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting session created:', {
-        sessionId: sessionData.id,
-        lobbyId: sessionData.lobby_id,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
 
       io.to('lobby-updates').emit('lobby:update', eventData);
 
@@ -148,13 +120,6 @@ class LobbySocketService {
         timestamp: new Date().toISOString()
       };
 
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting participant joined:', {
-        sessionId: sessionData.id,
-        participantCount: sessionData.participants?.length || 0,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
-
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
@@ -175,13 +140,6 @@ class LobbySocketService {
         data: sessionData,
         timestamp: new Date().toISOString()
       };
-
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting participant left:', {
-        sessionId: sessionData.id,
-        participantCount: sessionData.participants?.length || 0,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
 
       io.to('lobby-updates').emit('lobby:update', eventData);
 
@@ -204,13 +162,6 @@ class LobbySocketService {
         timestamp: new Date().toISOString()
       };
 
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting game state updated:', {
-        sessionId: sessionData.id,
-        lobbyId: sessionData.lobby_id,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
-
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
@@ -232,13 +183,6 @@ class LobbySocketService {
         timestamp: new Date().toISOString()
       };
 
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting session started:', {
-        sessionId: sessionData.id,
-        lobbyId: sessionData.lobby_id,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
-
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
@@ -259,13 +203,6 @@ class LobbySocketService {
         data: sessionData,
         timestamp: new Date().toISOString()
       };
-
-      // TODO remove debug - create LobbySocketService for lobby updates
-      clog('🔌 Broadcasting session finished:', {
-        sessionId: sessionData.id,
-        lobbyId: sessionData.lobby_id,
-        clientsCount: io.sockets.adapter.rooms.get('lobby-updates')?.size || 0
-      });
 
       io.to('lobby-updates').emit('lobby:update', eventData);
 

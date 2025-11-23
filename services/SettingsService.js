@@ -1,4 +1,5 @@
 import models from '../models/index.js';
+import { generateId } from '../models/baseModel.js';
 
 class SettingsService {
   constructor() {
@@ -68,8 +69,8 @@ class SettingsService {
    */
   async createDefaultSettings() {
     const defaultConfigs = [
-      { key: 'students_access', value: 'all', value_type: 'string', description: 'Student portal access mode' },
-      { key: 'maintenance_mode', value: false, value_type: 'boolean', description: 'System maintenance mode' }
+      { id: generateId(), key: 'students_access', value: 'all', value_type: 'string', description: 'Student portal access mode' },
+      { id: generateId(), key: 'maintenance_mode', value: false, value_type: 'boolean', description: 'System maintenance mode' }
     ];
 
     const transaction = await models.sequelize.transaction();
@@ -181,26 +182,53 @@ class SettingsService {
     const transaction = await models.sequelize.transaction();
 
     try {
-      // Update individual settings records
+      // Convert empty strings and string "null" to actual null for string-type fields
+      const processedUpdates = {};
       for (const [key, value] of Object.entries(updates)) {
+        if (typeof value === 'string' && (value === '' || value === 'null')) {
+          processedUpdates[key] = null;  // Convert empty string or string "null" to null
+        } else {
+          processedUpdates[key] = value;
+        }
+      }
+
+      // Update individual settings records
+      for (const [key, value] of Object.entries(processedUpdates)) {
         if (value !== undefined) {
           // Determine value type
           let valueType = 'string';
-          if (typeof value === 'boolean') {
+          if (value === null) {
+            // For null values, try to preserve existing value_type or default to string
+            const existingRecord = await models.Settings.findOne({ where: { key }, transaction });
+            valueType = existingRecord?.value_type || 'string';
+          } else if (typeof value === 'boolean') {
             valueType = 'boolean';
           } else if (typeof value === 'number') {
             valueType = 'number';
-          } else if (typeof value === 'object' && value !== null) {
+          } else if (typeof value === 'object') {
             valueType = Array.isArray(value) ? 'array' : 'object';
           }
 
-          // Update or create settings record
-          await models.Settings.upsert({
-            key: key,
-            value: value,
-            value_type: valueType,
-            description: `Updated settings for ${key}`
-          }, { transaction });
+          // Update or create settings record using findOrCreate
+          const [record, created] = await models.Settings.findOrCreate({
+            where: { key: key },
+            defaults: {
+              id: generateId(), // Generate custom string ID
+              key: key,
+              value: value,
+              value_type: valueType,
+              description: `Updated settings for ${key}`
+            },
+            transaction
+          });
+
+          // If record already exists, update it
+          if (!created) {
+            await record.update({
+              value: value,
+              value_type: valueType
+            }, { transaction });
+          }
         }
       }
 

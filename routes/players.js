@@ -248,24 +248,8 @@ router.post('/logout', studentsAccessMiddleware, authenticateUserOrPlayer, async
 // Get current player info (unified with /auth/me - supports both users and players)
 router.get('/me', studentsAccessMiddleware, authenticateUserOrPlayer, async (req, res) => {
   try {
-    // TODO remove debug - fix player authentication persistence
-    clog('[DEBUG] /players/me called - checking auth state:', {
-      hasEntityType: !!req.entityType,
-      entityType: req.entityType,
-      hasUser: !!req.user,
-      hasPlayer: !!req.player,
-      cookies: Object.keys(req.cookies || {}),
-      userAgent: req.get('User-Agent')?.substring(0, 50)
-    });
-
     // Check if authenticated as user or player using unified middleware
     if (req.entityType === 'user' && req.user) {
-      // TODO remove debug - fix player authentication persistence
-      clog('[DEBUG] /players/me - returning USER data:', {
-        userId: req.user.id,
-        email: req.user.email
-      });
-
       // Return user data (teachers can access student portal)
       return res.json({
         entityType: 'user',
@@ -278,17 +262,13 @@ router.get('/me', studentsAccessMiddleware, authenticateUserOrPlayer, async (req
         is_active: req.user.is_active
       });
     } else if (req.entityType === 'player' && req.player) {
-      // TODO remove debug - fix player authentication persistence
-      clog('[DEBUG] /players/me - returning PLAYER data:', {
-        playerId: req.player.id,
-        displayName: req.player.display_name
-      });
-
       // Return player data (excluding privacy_code for security)
+      // CRITICAL: Include teacher_id field for frontend teacher assignment modal logic
       return res.json({
         entityType: 'player',
         id: req.player.id,
         display_name: req.player.display_name,
+        teacher_id: req.player.teacher_id,  // Include teacher_id for assignment checks
         teacher: req.player.teacher,
         achievements: req.player.achievements,
         preferences: req.player.preferences,
@@ -297,13 +277,6 @@ router.get('/me', studentsAccessMiddleware, authenticateUserOrPlayer, async (req
         sessionType: req.player.sessionType
       });
     } else {
-      // TODO remove debug - fix player authentication persistence
-      cerror('[DEBUG] /players/me - NO VALID AUTH:', {
-        entityType: req.entityType,
-        hasUser: !!req.user,
-        hasPlayer: !!req.player
-      });
-
       throw new Error('No valid authentication found');
     }
   } catch (error) {

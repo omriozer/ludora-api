@@ -810,8 +810,35 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
         req.body.copyright_text = req.body.copyright_footer_text;
         delete req.body.copyright_footer_text;
       }
-    }
 
+      // Special handling for settings updates - use SettingsService instead of EntityService
+      try {
+        // Get user information to verify admin access
+        const user = await models.User.findOne({ where: { id: req.user.id } });
+        if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
+          return res.status(403).json({ error: 'Only admins can update settings' });
+        }
+
+        // Call SettingsService.updateSettings() instead of EntityService
+        const updatedSettings = await SettingsService.updateSettings(req.body);
+
+        // Return settings object with enhancements (like GET does)
+        const enhancedSettings = {
+          ...updatedSettings,
+          file_types_config: getFileTypesForFrontend(),
+          study_subjects: STUDY_SUBJECTS,
+          audiance_targets: AUDIANCE_TARGETS,
+          school_grades: SCHOOL_GRADES,
+          game_types: GAME_TYPES,
+          languade_options: LANGUAGES_OPTIONS
+        };
+
+        return res.json(enhancedSettings);
+      } catch (error) {
+        cerror('Settings update error:', error);
+        return res.status(400).json({ error: error.message });
+      }
+    }
 
     // Special handling for product updates
     if (entityType === 'product') {

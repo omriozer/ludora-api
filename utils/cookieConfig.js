@@ -18,9 +18,11 @@ export function getCookieDomain() {
       return '.ludora.app'; // Allows sharing between staging subdomains
     case 'development':
     default:
-      // CRITICAL FIX: Use .localhost domain for cross-subdomain cookie sharing
-      // This enables cookies to be shared between localhost:3003 and my.localhost:5173
-      return '.localhost';
+      // COOKIE PERSISTENCE FIX: Don't set domain in development
+      // When domain is undefined, browser stores cookie for the exact origin
+      // Vite proxy forwards requests to API, so cookies for localhost:5173 include API calls
+      // This is simpler and more reliable than cross-subdomain sharing in dev
+      return undefined;
   }
 }
 

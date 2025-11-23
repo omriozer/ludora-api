@@ -38,9 +38,6 @@ function parseCookies(handshake) {
  * Supports both teacher and student portals with automatic portal detection
  */
 export function authenticateSocketUser(socket, next) {
-  // TODO remove debug - setup Socket.IO authentication middleware
-  clog('🔌 Authenticating Socket.IO user connection...');
-
   try {
     const cookies = parseCookies(socket.handshake);
     const origin = socket.handshake.headers.origin;
@@ -53,16 +50,11 @@ export function authenticateSocketUser(socket, next) {
     const accessToken = cookies[cookieNames.accessToken];
     const refreshToken = cookies[cookieNames.refreshToken];
 
-    // TODO remove debug - setup Socket.IO authentication middleware
-    clog('🔌 Socket auth - Portal:', portal, 'AccessToken present:', !!accessToken, 'RefreshToken present:', !!refreshToken);
-
     // If no tokens present, continue as unauthenticated (guest)
     if (!accessToken && !refreshToken) {
       socket.authenticated = false;
       socket.authType = 'guest';
       socket.portal = portal;
-      // TODO remove debug - setup Socket.IO authentication middleware
-      clog('🔌 Socket connection allowed as guest');
       return next();
     }
 
@@ -74,8 +66,6 @@ export function authenticateSocketUser(socket, next) {
           socket.authType = 'user';
           socket.user = tokenData;
           socket.portal = portal;
-          // TODO remove debug - setup Socket.IO authentication middleware
-          clog('🔌 Socket user authenticated:', tokenData.email || tokenData.id);
           next();
         })
         .catch(tokenError => {
@@ -90,8 +80,6 @@ export function authenticateSocketUser(socket, next) {
                 socket.authType = 'user';
                 socket.user = newTokenData;
                 socket.portal = portal;
-                // TODO remove debug - setup Socket.IO authentication middleware
-                clog('🔌 Socket user authenticated via refresh token:', newTokenData.email || newTokenData.id);
                 next();
               })
               .catch(refreshError => {
@@ -99,8 +87,6 @@ export function authenticateSocketUser(socket, next) {
                 socket.authenticated = false;
                 socket.authType = 'guest';
                 socket.portal = portal;
-                // TODO remove debug - setup Socket.IO authentication middleware
-                clog('🔌 Socket auth failed, continuing as guest:', refreshError.message);
                 next();
               });
           } else {
@@ -108,8 +94,6 @@ export function authenticateSocketUser(socket, next) {
             socket.authenticated = false;
             socket.authType = 'guest';
             socket.portal = portal;
-            // TODO remove debug - setup Socket.IO authentication middleware
-            clog('🔌 Socket auth failed (no refresh token), continuing as guest');
             next();
           }
         });
@@ -124,16 +108,12 @@ export function authenticateSocketUser(socket, next) {
           socket.authType = 'user';
           socket.user = tokenData;
           socket.portal = portal;
-          // TODO remove debug - setup Socket.IO authentication middleware
-          clog('🔌 Socket user authenticated via refresh token only:', tokenData.email || tokenData.id);
           next();
         })
         .catch(error => {
           socket.authenticated = false;
           socket.authType = 'guest';
           socket.portal = portal;
-          // TODO remove debug - setup Socket.IO authentication middleware
-          clog('🔌 Socket refresh failed, continuing as guest:', error.message);
           next();
         });
     }
@@ -151,9 +131,6 @@ export function authenticateSocketUser(socket, next) {
  * Used for student game sessions
  */
 export function authenticateSocketPlayer(socket, next) {
-  // TODO remove debug - setup Socket.IO authentication middleware
-  clog('🎮 Authenticating Socket.IO player connection...');
-
   try {
     const cookies = parseCookies(socket.handshake);
     const playerSession = cookies.student_access_token;
@@ -162,8 +139,6 @@ export function authenticateSocketPlayer(socket, next) {
       // No player session, continue as unauthenticated
       socket.playerAuthenticated = false;
       socket.authType = 'guest';
-      // TODO remove debug - setup Socket.IO authentication middleware
-      clog('🎮 No player session found, continuing as guest');
       return next();
     }
 
@@ -173,8 +148,6 @@ export function authenticateSocketPlayer(socket, next) {
         if (!sessionData) {
           socket.playerAuthenticated = false;
           socket.authType = 'guest';
-          // TODO remove debug - setup Socket.IO authentication middleware
-          clog('🎮 Invalid player session, continuing as guest');
           return next();
         }
 
@@ -185,8 +158,6 @@ export function authenticateSocketPlayer(socket, next) {
         if (!player) {
           socket.playerAuthenticated = false;
           socket.authType = 'guest';
-          // TODO remove debug - setup Socket.IO authentication middleware
-          clog('🎮 Player not found, continuing as guest');
           return next();
         }
 
@@ -203,8 +174,6 @@ export function authenticateSocketPlayer(socket, next) {
           is_online: player.is_online
         };
 
-        // TODO remove debug - setup Socket.IO authentication middleware
-        clog('🎮 Socket player authenticated:', player.display_name, '(' + player.privacy_code + ')');
         next();
       })
       .catch(error => {
@@ -228,9 +197,6 @@ export function authenticateSocketPlayer(socket, next) {
  * Allows guests if both fail
  */
 export function authenticateSocket(socket, next) {
-  // TODO remove debug - setup Socket.IO authentication middleware
-  clog('🔌 Starting combined Socket.IO authentication for:', socket.id);
-
   // First try user authentication
   authenticateSocketUser(socket, (userAuthError) => {
     if (userAuthError) {
@@ -249,15 +215,6 @@ export function authenticateSocket(socket, next) {
         socket.entity = socket.user || socket.player || null;
         socket.entityType = socket.authType;
 
-        // TODO remove debug - setup Socket.IO authentication middleware
-        clog('🔌 Socket final auth state:', {
-          id: socket.id,
-          authenticated: socket.isAuthenticated,
-          type: socket.entityType,
-          entityId: socket.entity?.id || 'none',
-          portal: socket.portal || 'unknown'
-        });
-
         next();
       });
     } else {
@@ -266,8 +223,6 @@ export function authenticateSocket(socket, next) {
       socket.entity = socket.user;
       socket.entityType = socket.authType;
 
-      // TODO remove debug - setup Socket.IO authentication middleware
-      clog('🔌 Socket authenticated as user:', socket.entity.id);
       next();
     }
   });

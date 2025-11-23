@@ -164,6 +164,7 @@ router.get('/teacher/:code', checkStudentsAccess, async (req, res) => {
     // Return response in a format that includes teacher info for consistency with old endpoint
     res.json({
       teacher: {
+        id: teacher.id,
         name: teacher.full_name,
         invitation_code: code
       },

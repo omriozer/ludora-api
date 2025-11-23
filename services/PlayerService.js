@@ -28,7 +28,9 @@ class PlayerService {
 
       // Verify teacher exists and is active
       const teacher = await models.User.findByPk(teacherId);
-      if (!teacher || !teacher.is_active || teacher.role !== 'teacher') {
+      // Note: user_type indicates the type of user (teacher, student, parent, headmaster)
+      // role indicates permission level (user, admin, sysadmin) - not the same thing!
+      if (!teacher || !teacher.is_active || teacher.user_type !== 'teacher') {
         throw new Error('Invalid or inactive teacher');
       }
 
@@ -636,7 +638,9 @@ class PlayerService {
 
       // Verify new teacher exists and is active
       const teacher = await models.User.findByPk(teacherId);
-      if (!teacher || !teacher.is_active || teacher.role !== 'teacher') {
+      // Note: user_type indicates the type of user (teacher, student, parent, headmaster)
+      // role indicates permission level (user, admin, sysadmin) - not the same thing!
+      if (!teacher || !teacher.is_active || teacher.user_type !== 'teacher') {
         throw new Error('Invalid or inactive teacher');
       }
 

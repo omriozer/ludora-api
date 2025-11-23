@@ -45,9 +45,6 @@ router.get('/', optionalAuth, async (req, res) => {
 // GET /settings/public - Public endpoint for Socket.IO client to get students_access setting
 router.get('/public', async (req, res) => {
   try {
-    // TODO remove debug - setup Socket.IO portal-aware authentication
-    console.log('📡 [SettingsPublic] Request for public settings');
-
     // Get only the students_access setting - no authentication required
     const studentsAccessMode = await SettingsService.getStudentsAccessMode();
 
@@ -56,7 +53,6 @@ router.get('/public', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('📡 [SettingsPublic] Error fetching public settings:', error);
     res.status(500).json({
       error: 'Failed to fetch public settings',
       students_access: 'all' // Safe fallback for privacy compliance

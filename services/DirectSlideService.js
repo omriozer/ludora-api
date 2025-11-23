@@ -1,4 +1,4 @@
-import AWS from 'aws-sdk';
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
@@ -27,13 +27,13 @@ class DirectSlideService {
   // Initialize AWS S3
   initializeS3() {
     try {
-      AWS.config.update({
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        region: process.env.AWS_REGION || 'us-east-1'
+      this.s3 = new S3Client({
+        region: process.env.AWS_REGION || 'us-east-1',
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        }
       });
-
-      this.s3 = new AWS.S3();
     } catch (error) {
       throw new Error('S3 initialization failed');
     }
@@ -344,16 +344,16 @@ class DirectSlideService {
         throw new Error('S3 not configured');
       }
 
-      const params = {
+      const command = new GetObjectCommand({
         Bucket: this.bucketName,
         Key: s3Key
-      };
+      });
 
-      const result = await this.s3.getObject(params).promise();
-      return result.Body.toString('utf-8');
+      const result = await this.s3.send(command);
+      return await result.Body.transformToString('utf-8');
 
     } catch (error) {
-      if (error.code === 'NoSuchKey' || error.statusCode === 404) {
+      if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
         throw new Error(`Slide content not found: ${s3Key}`);
       }
       throw new Error(`Failed to load slide content: ${error.message}`);
@@ -448,13 +448,13 @@ class DirectSlideService {
         stringMetadata[k] = String(metadata[k]);
       });
 
-      const uploadParams = {
+      const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         Body: buffer,
         ContentType: contentType,
         Metadata: stringMetadata
-      };
+      });
 
       // Transaction coordination (same pattern as FileService)
       if (transaction) {
@@ -474,18 +474,18 @@ class DirectSlideService {
         }
       }
 
-      const result = await this.s3.upload(uploadParams).promise();
+      const result = await this.s3.send(command);
 
       logger?.info('S3 slide upload completed', {
-        key: result.Key,
+        key: key,
         etag: result.ETag,
         size: buffer.length
       });
 
       return {
         success: true,
-        url: result.Location,
-        key: result.Key,
+        url: `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`,
+        key: key,
         etag: result.ETag,
         size: buffer.length
       };
@@ -494,13 +494,13 @@ class DirectSlideService {
       logger?.error('S3 slide upload failed', {
         key,
         error: error.message,
-        errorCode: error.code
+        errorCode: error.name
       });
 
       return {
         success: false,
         error: error.message,
-        errorCode: error.code,
+        errorCode: error.name,
         key
       };
     }
@@ -519,12 +519,12 @@ class DirectSlideService {
         throw new Error('S3 not configured');
       }
 
-      const params = {
+      const command = new DeleteObjectCommand({
         Bucket: this.bucketName,
         Key: key
-      };
+      });
 
-      await this.s3.deleteObject(params).promise();
+      await this.s3.send(command);
       logger?.info('S3 slide deletion completed', { key });
 
       return {
@@ -535,7 +535,7 @@ class DirectSlideService {
 
     } catch (error) {
       // Handle "not found" errors gracefully
-      if (error.code === 'NoSuchKey' || error.statusCode === 404) {
+      if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
         logger?.info('S3 slide not found - treating as successful deletion', { key });
         return {
           success: true,
@@ -548,13 +548,13 @@ class DirectSlideService {
       logger?.error('S3 slide deletion failed', {
         key,
         error: error.message,
-        errorCode: error.code
+        errorCode: error.name
       });
 
       return {
         success: false,
         error: error.message,
-        errorCode: error.code,
+        errorCode: error.name,
         key
       };
     }
