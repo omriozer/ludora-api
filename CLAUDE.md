@@ -512,24 +512,63 @@ const getGamesWithContent = async (userId, limit = 50) => {
 };
 ```
 
-### Caching Patterns
+### Caching Patterns (CRITICAL: Data-Driven Only)
+
+**🚨 HARD RULE: Never use time-based cache expiration. This blocks PR approval.**
+
+**🚨 MANDATORY: New API endpoints must be consulted regarding ETag implementation.**
+
 ```javascript
-// ✅ CORRECT: Memory caching for frequently accessed data
+// ❌ PROHIBITED: Time-based cache expiration (BLOCKS PR)
+const cache = new Map();
+const getGameTypes = async () => {
+  cache.set('types', types);
+  setTimeout(() => cache.delete('types'), 3600000); // ❌ NEVER DO THIS
+  return types;
+};
+
+// ✅ REQUIRED: Data-driven cache invalidation
 const gameTypesCache = new Map();
 
 const getGameTypes = async () => {
-  if (gameTypesCache.has('types')) {
-    return gameTypesCache.get('types');
+  // Include data version in cache key
+  const configVersion = await models.SystemConfig.findOne({
+    where: { key: 'game_types_version' }
+  });
+  const cacheKey = `types:${configVersion?.value || 'default'}`;
+
+  if (gameTypesCache.has(cacheKey)) {
+    return gameTypesCache.get(cacheKey);
   }
 
   const types = require('../config/gameTypes.js');
-  gameTypesCache.set('types', types);
-
-  // Cache expires in 1 hour
-  setTimeout(() => gameTypesCache.delete('types'), 3600000);
+  gameTypesCache.set(cacheKey, types);
 
   return types;
 };
+
+// ✅ CORRECT: Event-driven cache clearing
+models.SystemConfig.addHook('afterUpdate', (instance) => {
+  if (instance.key === 'game_types_version') {
+    gameTypesCache.clear(); // Clear on config change
+  }
+});
+
+// ✅ CORRECT: Database-driven cache validation
+class CachedService {
+  async getCachedData(key) {
+    const maxUpdated = await models.DataTable.max('updated_at');
+    const cacheKey = `${key}:${maxUpdated}`;
+
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey);
+    }
+
+    const freshData = await this.fetchData(key);
+    this.cache.set(cacheKey, freshData);
+    return freshData;
+  }
+}
 ```
 
 ---

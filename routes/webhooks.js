@@ -4,7 +4,7 @@ import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { clog, cerror } from '../lib/utils.js';
+import { cerror } from '../lib/utils.js';
 
 const router = express.Router();
 
@@ -91,13 +91,10 @@ router.post('/payplus',
     const startTime = Date.now();
     const webhookData = req.body;
 
-    // TODO remove debug - enhanced webhook logging for PayPlus analysis
-    clog('PayPlus webhook received - capturing comprehensive data for analysis');
-
-    // Capture raw request body for signature verification analysis
+    // Capture raw request body for signature verification
     const rawBody = JSON.stringify(req.body);
 
-    // Capture ALL possible PayPlus signature headers
+    // Capture PayPlus signature headers
     const possibleSignatureHeaders = [
       'X-PayPlus-Signature',
       'X-PayPlus-Webhook-Signature',
@@ -117,9 +114,7 @@ router.post('/payplus',
     possibleSignatureHeaders.forEach(header => {
       const value = req.get(header);
       if (value) {
-        signatureHeaders[header.toLowerCase()] = value; // Store actual value for analysis
-        // TODO remove debug - enhanced webhook logging for PayPlus analysis
-        clog(`Found signature header: ${header} = ${value.substring(0, 20)}...`);
+        signatureHeaders[header.toLowerCase()] = value;
       }
     });
 
@@ -214,81 +209,6 @@ router.post('/payplus',
 
       webhookLog.addProcessLog('Webhook received and logged');
       webhookLog.addProcessLog(`Sender IP: ${senderInfo.ip}, User-Agent: ${senderInfo.userAgent}`);
-
-      // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
-      webhookLog.addProcessLog('=== WEBHOOK DATA STRUCTURE ANALYSIS ===');
-
-      // Analyze webhook data structure vs our code expectations
-      const expectedFields = [
-        'page_request_uid',
-        'transaction_uid',
-        'status',
-        'transaction_type',
-        'reason',
-        'amount',
-        'currency'
-      ];
-
-      const actualFields = Object.keys(webhookData || {});
-      const missingFields = expectedFields.filter(field => !(field in webhookData));
-      const extraFields = actualFields.filter(field => !expectedFields.includes(field));
-
-      // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
-      clog('PayPlus webhook data structure analysis:', {
-        expectedFields,
-        actualFields,
-        missingFields,
-        extraFields,
-        webhookDataKeys: actualFields.sort(),
-        webhookDataSample: Object.fromEntries(
-          actualFields.slice(0, 10).map(key => [key, typeof webhookData[key]])
-        )
-      });
-
-      webhookLog.addProcessLog(`Expected fields: ${expectedFields.join(', ')}`);
-      webhookLog.addProcessLog(`Actual fields received: ${actualFields.join(', ')}`);
-
-      if (missingFields.length > 0) {
-        webhookLog.addProcessLog(`⚠️  Missing expected fields: ${missingFields.join(', ')}`);
-        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
-        clog(`WARNING: Missing expected PayPlus fields: ${missingFields.join(', ')}`);
-      }
-
-      if (extraFields.length > 0) {
-        webhookLog.addProcessLog(`ℹ️  Extra fields from PayPlus: ${extraFields.join(', ')}`);
-        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
-        clog(`INFO: Extra PayPlus fields we don't expect: ${extraFields.join(', ')}`);
-      }
-
-      // Log signature analysis
-      if (Object.keys(signatureHeaders).length > 0) {
-        webhookLog.addProcessLog(`🔐 Found ${Object.keys(signatureHeaders).length} signature headers: ${Object.keys(signatureHeaders).join(', ')}`);
-        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
-        clog('PayPlus signature headers found:', Object.keys(signatureHeaders));
-      } else {
-        webhookLog.addProcessLog('⚠️  No signature headers found - webhook may be unsigned');
-        // TODO remove debug - enhanced webhook data structure analysis for PayPlus integration
-        clog('WARNING: No PayPlus signature headers detected');
-      }
-
-      // Analyze specific field values and types
-      const fieldAnalysis = {};
-      expectedFields.forEach(field => {
-        if (field in webhookData) {
-          fieldAnalysis[field] = {
-            type: typeof webhookData[field],
-            value: String(webhookData[field]).substring(0, 50) + '...',
-            exists: true
-          };
-        } else {
-          fieldAnalysis[field] = {
-            exists: false
-          };
-        }
-      });
-
-      webhookLog.addProcessLog(`Field analysis: ${JSON.stringify(fieldAnalysis, null, 2)}`);
-      webhookLog.addProcessLog('=== END WEBHOOK DATA STRUCTURE ANALYSIS ===');
 
       await webhookLog.updateStatus('processing', 'Starting webhook processing');
 
@@ -471,28 +391,13 @@ router.post('/payplus',
       res.status(200).json(responseData);
 
     } catch (error) {
-      // TODO remove debug - enhanced webhook error logging for PayPlus analysis
-      cerror('PayPlus webhook processing failed:', {
-        error: error.message,
-        stack: error.stack,
-        webhookId: webhookLog?.id,
-        webhookData: webhookData,
-        signatureHeaders: signatureHeaders,
-        processingTime: Date.now() - startTime
-      });
+      cerror('PayPlus webhook processing failed:', error.message);
 
       const errorResponse = {
         message: 'PayPlus webhook received but processing failed',
         error: error.message,
         timestamp: new Date().toISOString(),
-        webhookId: webhookLog?.id || null,
-        // TODO remove debug - enhanced webhook error logging for PayPlus analysis
-        debugInfo: {
-          hasWebhookData: !!webhookData,
-          webhookDataKeys: webhookData ? Object.keys(webhookData) : [],
-          hasSignatureHeaders: Object.keys(signatureHeaders).length > 0,
-          processingTimeMs: Date.now() - startTime
-        }
+        webhookId: webhookLog?.id || null
       };
 
       // Try to update webhook log if it exists
@@ -500,19 +405,10 @@ router.post('/payplus',
         if (webhookLog) {
           await webhookLog.failProcessing(startTime, error, `Webhook processing failed: ${error.message}`);
           await webhookLog.update({ response_data: errorResponse });
-
-          // TODO remove debug - enhanced webhook error logging for PayPlus analysis
-          webhookLog.addProcessLog(`❌ WEBHOOK PROCESSING FAILED: ${error.message}`);
-          webhookLog.addProcessLog(`Error stack: ${error.stack}`);
-          webhookLog.addProcessLog(`Processing time: ${Date.now() - startTime}ms`);
         }
       } catch (logError) {
-        // TODO remove debug - enhanced webhook error logging for PayPlus analysis
         cerror('Failed to log webhook error:', logError.message);
       }
-
-      // TODO remove debug - enhanced webhook error logging for PayPlus analysis
-      clog('Sending error response to PayPlus (but with 200 status to prevent retries):', errorResponse);
 
       // Still respond with success to prevent PayPlus retries
       res.status(200).json(errorResponse);
@@ -535,13 +431,5 @@ router.post('/generic/:provider',
   })
 );
 
-// Webhook health check
-router.get('/health', (req, res) => {
-  res.status(200).json({
-    message: 'Webhook endpoint is healthy',
-    timestamp: new Date().toISOString(),
-    supportedProviders: ['github', 'stripe', 'paypal', 'generic']
-  });
-});
 
 export default router;

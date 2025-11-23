@@ -1,5 +1,6 @@
 import express from 'express';
 import { optionalAuth } from '../middleware/auth.js';
+import { addETagSupport } from '../middleware/etagMiddleware.js';
 import EntityService from '../services/EntityService.js';
 import SettingsService from '../services/SettingsService.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
@@ -11,7 +12,7 @@ import { ACCESS_CONTROL_KEYS, ALL_SETTINGS_KEYS_ARRAY } from '../constants/setti
 const router = express.Router();
 
 // GET /settings - Get system settings (forwards to entities/settings with enhancements)
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', optionalAuth, addETagSupport('settings'), async (req, res) => {
   try {
     const { limit, offset, ...query } = req.query;
     const options = {};

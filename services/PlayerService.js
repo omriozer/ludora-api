@@ -5,11 +5,11 @@ import { clog } from '../lib/utils.js';
 
 class PlayerService {
   constructor() {
-    // Clean up expired player sessions every hour
-    this.cleanupInterval = setInterval(async () => {
-      await this.cleanupExpiredSessions();
-      await this.cleanupInactivePlayers();
-    }, 60 * 60 * 1000);
+    // 12-hour safety net cleanup (not frequent interval)
+    // This is only a safety net - primary cleanup happens lazily on access
+    this.safetyNetInterval = setInterval(async () => {
+      await this.safetyNetCleanup();
+    }, 12 * 60 * 60 * 1000);
   }
 
   // Player Creation and Management
@@ -342,6 +342,18 @@ class PlayerService {
 
       if (!session || !session.isPlayerSession()) {
         return null;
+      }
+
+      // Lazy cleanup: Clean expired sessions for this player only (with performance limit)
+      // 10% probability to reduce overhead
+      if (Math.random() < 0.1 && session.player_id) {
+        await models.UserSession.destroy({
+          where: {
+            player_id: session.player_id,
+            expires_at: { [models.Sequelize.Op.lt]: new Date() }
+          },
+          limit: 100 // Performance limit
+        });
       }
 
       // Check if session is active
@@ -702,6 +714,40 @@ class PlayerService {
       };
     } catch (error) {
       throw error;
+    }
+  }
+
+  // 12-hour safety net cleanup (not a frequent cleanup)
+  // This only runs as a safety net - primary cleanup is lazy on access
+  async safetyNetCleanup() {
+    try {
+      // Clean expired player sessions with batch limit
+      const deletedSessions = await models.UserSession.destroy({
+        where: {
+          player_id: { [models.Sequelize.Op.ne]: null }, // Only player sessions
+          expires_at: { [models.Sequelize.Op.lt]: new Date() }
+        },
+        limit: 1000 // Batch limit to prevent blocking
+      });
+
+      // Clean inactive players (365 days) with batch limit
+      const inactiveCutoff = new Date();
+      inactiveCutoff.setDate(inactiveCutoff.getDate() - 365);
+
+      const deletedPlayers = await models.Player.destroy({
+        where: {
+          last_seen: { [models.Sequelize.Op.lt]: inactiveCutoff },
+          is_active: false
+        },
+        limit: 100 // Lower limit for player cleanup
+      });
+
+      if (deletedSessions > 0 || deletedPlayers > 0) {
+        clog(`Player safety net cleanup: ${deletedSessions} expired sessions, ${deletedPlayers} inactive players`);
+      }
+    } catch (error) {
+      // Silent failure for safety net cleanup
+      clog(`Player safety net cleanup error: ${error.message}`);
     }
   }
 }

@@ -15,11 +15,11 @@ class AuthService {
     this.jwtSecret = process.env.JWT_SECRET;
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
 
-    // ✅ FIXED: Clean up expired tokens and sessions every 6 hours (reduced frequency)
-    this.cleanupInterval = setInterval(async () => {
-      await this.cleanupExpiredTokens();
-      await this.cleanupExpiredSessions();
-    }, 6 * 60 * 60 * 1000);
+    // 12-hour safety net cleanup (not frequent interval)
+    // This is only a safety net - primary cleanup happens lazily on access
+    this.safetyNetInterval = setInterval(async () => {
+      await this.safetyNetCleanup();
+    }, 12 * 60 * 60 * 1000);
   }
 
   // Create JWT token
@@ -247,6 +247,27 @@ class AuthService {
 
       if (!session) {
         return null;
+      }
+
+      // Lazy cleanup: Clean expired sessions for this user only (with performance limit)
+      // 10% probability to reduce overhead
+      if (Math.random() < 0.1 && session.user_id) {
+        await models.UserSession.destroy({
+          where: {
+            user_id: session.user_id,
+            expires_at: { [models.Sequelize.Op.lt]: new Date() }
+          },
+          limit: 100 // Performance limit
+        });
+
+        // Also clean expired refresh tokens for this user
+        await models.RefreshToken.destroy({
+          where: {
+            user_id: session.user_id,
+            expires_at: { [models.Sequelize.Op.lt]: new Date() }
+          },
+          limit: 100 // Performance limit
+        });
       }
 
       // Check if session is active (not expired, not invalidated, and is_active flag is true)
@@ -772,6 +793,35 @@ class AuthService {
       };
     } catch (error) {
       throw error;
+    }
+  }
+
+  // 12-hour safety net cleanup (not a frequent cleanup)
+  // This only runs as a safety net - primary cleanup is lazy on access
+  async safetyNetCleanup() {
+    try {
+      // Clean expired sessions with batch limit
+      const deletedSessions = await models.UserSession.destroy({
+        where: {
+          expires_at: { [models.Sequelize.Op.lt]: new Date() }
+        },
+        limit: 1000 // Batch limit to prevent blocking
+      });
+
+      // Clean expired refresh tokens with batch limit
+      const deletedTokens = await models.RefreshToken.destroy({
+        where: {
+          expires_at: { [models.Sequelize.Op.lt]: new Date() }
+        },
+        limit: 1000 // Batch limit to prevent blocking
+      });
+
+      if (deletedSessions > 0 || deletedTokens > 0) {
+        clog(`Safety net cleanup: ${deletedSessions} expired sessions, ${deletedTokens} expired tokens`);
+      }
+    } catch (error) {
+      // Silent failure for safety net cleanup
+      clog(`Safety net cleanup error: ${error.message}`);
     }
   }
 }

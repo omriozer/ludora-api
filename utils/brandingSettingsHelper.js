@@ -201,7 +201,6 @@ export async function resolveBrandingSettingsFromTemplate(fileEntity, configurat
 
   // Ensure unified structure
   if (!brandingSettings.elements) {
-    console.warn('Template does not have unified structure - using defaults');
     return getDefaultBrandingSettings();
   }
 
@@ -238,27 +237,14 @@ export async function resolveBrandingSettingsFromTemplate(fileEntity, configurat
  * @returns {Promise<Object>} Complete branding settings ready for PDF rendering
  */
 export async function resolveBrandingSettingsWithFallback(fileEntity, configurationSettings = null) {
-  console.log('🔍 Resolving branding template for file:', fileEntity?.id);
-  console.log('- File details:', {
-    id: fileEntity?.id,
-    title: fileEntity?.title,
-    branding_template_id: fileEntity?.branding_template_id,
-    has_branding_settings: !!(fileEntity?.branding_settings && Object.keys(fileEntity.branding_settings).length > 0),
-    target_format: fileEntity?.target_format
-  });
-
   // PRIORITY 1: Check if file has custom branding_settings
   if (fileEntity?.branding_settings && Object.keys(fileEntity.branding_settings).length > 0) {
-    console.log('✅ Using file-specific branding_settings');
-    console.log('- branding_settings content:', Object.keys(fileEntity.branding_settings));
-
     // Apply copyright text from Configuration settings
     let result = JSON.parse(JSON.stringify(fileEntity.branding_settings));
     if (configurationSettings?.copyright_text && result.elements?.['copyright-text']) {
       result.elements['copyright-text'].forEach(element => {
         element.content = configurationSettings.copyright_text;
       });
-      console.log('- Applied copyright text from Configuration settings');
     }
 
     return result;
@@ -269,40 +255,28 @@ export async function resolveBrandingSettingsWithFallback(fileEntity, configurat
     try {
       const template = await models.SystemTemplate.findByPk(fileEntity.branding_template_id);
       if (template) {
-        console.log('✅ Using template by ID:', template.id, '-', template.name);
         const result = await resolveBrandingSettingsFromTemplate(fileEntity, configurationSettings);
         return result;
-      } else {
-        console.log('⚠️ Template ID not found in database:', fileEntity.branding_template_id);
       }
     } catch (error) {
-      console.log('⚠️ Error fetching template by ID:', error.message);
+      // Template fetch failed, continue to fallback
     }
   }
 
   // PRIORITY 3: Look for default template by type + target_format
   const targetFormat = fileEntity?.target_format || 'pdf-a4-landscape';
-  console.log('- Looking for default branding template for format:', targetFormat);
 
   try {
     const defaultTemplate = await models.SystemTemplate.findDefaultByType('branding', targetFormat);
     if (defaultTemplate) {
-      console.log('✅ Using default template:', defaultTemplate.id, '-', defaultTemplate.name, 'for format:', targetFormat);
       const result = await resolveBrandingSettingsFromTemplate(fileEntity, configurationSettings);
       return result;
-    } else {
-      console.log('⚠️ No default template found for branding + format:', targetFormat);
     }
   } catch (error) {
-    console.log('⚠️ Error fetching default template:', error.message);
+    // Default template fetch failed
   }
 
   // PRIORITY 4: FAIL - No template configuration found
-  console.log('❌ No branding template found for file:', fileEntity?.id);
-  console.log('- No branding_settings');
-  console.log('- No valid branding_template_id');
-  console.log('- No default template for format:', targetFormat);
-
   throw new Error(`No branding template configured for file ${fileEntity?.id}. Please configure branding_settings, branding_template_id, or set a default template for format: ${targetFormat}`);
 }
 

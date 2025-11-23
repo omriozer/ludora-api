@@ -113,19 +113,10 @@ async function getGamesWithProducts(userId, userRole) {
     let lobbies = [];
     try {
       lobbies = await GameLobbyService.getLobbiesByGame(game.id);
-      clog(`📋 Found ${lobbies.length} lobbies for game ${game.id}`);
     } catch (error) {
-      cerror(`❌ Error fetching lobbies for game ${game.id}:`, error);
+      cerror(`Error fetching lobbies for game ${game.id}:`, error);
       // Continue with empty lobbies array if fetch fails
     }
-
-    // DEBUG: Log game and product data
-    console.log(`🔍 [DEBUG] Game ${game.id} - Product data:`, {
-      hasProduct: !!product,
-      productTitle: product?.title,
-      productName: product?.name,
-      productId: product?.id
-    });
 
     return {
       ...gameData,
@@ -187,15 +178,12 @@ router.get('/', async (req, res) => {
   try {
     const { entity, entityType } = req;
 
-    console.log(`🔍 [DEBUG] GET /api/games called by ${entityType} ${entity.id} (${entity.role || 'player'})`);
-
     // For players, we return all available games since they don't "own" games
     // For users, we return their games based on Product ownership
     let gamesWithProducts;
 
     if (entityType === 'player') {
       // Players can see all games - they don't have ownership restrictions
-      console.log(`🎮 [DEBUG] Player request - returning all available games`);
       const allGames = await models.Game.findAll({
         order: [['created_at', 'DESC']]
       });
@@ -222,17 +210,9 @@ router.get('/', async (req, res) => {
         let lobbies = [];
         try {
           lobbies = await GameLobbyService.getLobbiesByGame(game.id);
-          console.log(`📋 Found ${lobbies.length} lobbies for game ${game.id}`);
         } catch (error) {
-          cerror(`❌ Error fetching lobbies for game ${game.id}:`, error);
+          cerror(`Error fetching lobbies for game ${game.id}:`, error);
         }
-
-        console.log(`🔍 [DEBUG] Game ${game.id} - Product data:`, {
-          hasProduct: !!product,
-          productTitle: product?.title,
-          productName: product?.name,
-          productId: product?.id
-        });
 
         return {
           ...gameData,
@@ -244,8 +224,6 @@ router.get('/', async (req, res) => {
       // Users see games based on ownership
       gamesWithProducts = await getGamesWithProducts(entity.id, entity.role);
     }
-
-    console.log(`🔍 [DEBUG] Returning ${gamesWithProducts.length} games to frontend`);
 
     res.json(gamesWithProducts);
   } catch (error) {

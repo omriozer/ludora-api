@@ -297,7 +297,7 @@ router.get(
             brandingTemplateSettings = brandingTemplate.template_data;
           }
         } catch (error) {
-          console.log('⚠️ Failed to load branding template settings:', error.message);
+          // Template error - continue without branding elements
         }
       }
 
@@ -314,7 +314,7 @@ router.get(
             watermarkTemplateSettings = watermarkTemplate.template_data;
           }
         } catch (error) {
-          console.log('⚠️ Failed to load watermark template settings:', error.message);
+          // Template error - continue without watermark elements
         }
       }
 
@@ -338,8 +338,7 @@ router.get(
               templateVariables
             );
           } catch (error) {
-            console.log('⚠️ Branding template processing failed:', error.message);
-            // Continue with original content if branding fails
+            // Branding template processing failed - continue with original content
           }
         }
 
@@ -352,8 +351,7 @@ router.get(
               templateVariables
             );
           } catch (error) {
-            console.log('⚠️ Watermark template processing failed:', error.message);
-            // Use content with branding (or original if branding also failed)
+            // Watermark template processing failed - continue with branding-processed content
           }
         }
 

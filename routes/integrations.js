@@ -166,19 +166,5 @@ router.post('/extractDataFromUploadedFile', authenticateToken, rateLimiters.uplo
   }
 });
 
-// Health check for integrations
-router.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    integrations: {
-      email: 'available',
-      fileUpload: 'available',
-      imageGeneration: 'available',
-      dataExtraction: 'available',
-      signedUrls: 'available'
-    },
-    timestamp: new Date().toISOString()
-  });
-});
 
 export default router;

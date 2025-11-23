@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { admin } from '../config/firebase.js';
 import { authenticateToken, authenticateUserOrPlayer, requireAdmin } from '../middleware/auth.js';
+import { addETagSupport } from '../middleware/etagMiddleware.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
 import AuthService from '../services/AuthService.js';
 import models from '../models/index.js';
@@ -173,7 +174,7 @@ router.post('/logout', async (req, res) => {
 });
 
 // Get current user or player info (unified endpoint)
-router.get('/me', authenticateUserOrPlayer, async (req, res) => {
+router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (req, res) => {
   try {
     // Check if authenticated as user or player
     if (req.entityType === 'user' && req.user) {

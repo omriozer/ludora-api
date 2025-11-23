@@ -115,8 +115,5 @@ const testDBConnection = async () => {
 
 testDBConnection();
 
-// Debug: Log all loaded models
-clog('🔍 DEBUG: Available models in index.js:', Object.keys(models));
-
 export { sequelize };
 export default models;

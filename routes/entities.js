@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import Joi from 'joi';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
+import { addETagSupport } from '../middleware/etagMiddleware.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
 import EntityService from '../services/EntityService.js';
 import GameDetailsService from '../services/GameDetailsService.js';
@@ -649,7 +650,18 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
 });
 
 // GET /entities/:type/:id - Find entity by ID
-router.get('/:type/:id', optionalAuth, customValidators.validateEntityType, async (req, res) => {
+// Apply ETag support conditionally for user entities
+router.get('/:type/:id',
+  optionalAuth,
+  customValidators.validateEntityType,
+  // Conditionally apply ETag middleware for user entities
+  (req, res, next) => {
+    if (req.params.type === 'user') {
+      return addETagSupport('user')(req, res, next);
+    }
+    next();
+  },
+  async (req, res) => {
   const entityType = req.params.type;
   const id = req.params.id;
 
