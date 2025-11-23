@@ -1,5 +1,16 @@
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
+import {
+  ACCESS_CONTROL_KEYS,
+  SYSTEM_KEYS,
+  CONTACT_INFO_KEYS,
+  BRANDING_KEYS,
+  NAVIGATION_KEYS,
+  CONTENT_CREATOR_KEYS,
+  ACCESS_DURATION_KEYS,
+  ADVANCED_FEATURES_KEYS
+} from '../constants/settingsKeys.js';
+import { cerror } from '../lib/utils.js';
 
 class SettingsService {
   constructor() {
@@ -8,6 +19,52 @@ class SettingsService {
       lastFetch: null,
       cacheValidDuration: 5 * 60 * 1000 // 5 minutes in milliseconds
     };
+
+    // Create whitelist of allowed setting keys for security
+    this.allowedSettingsKeys = new Set([
+      ...Object.values(ACCESS_CONTROL_KEYS),
+      ...Object.values(SYSTEM_KEYS),
+      ...Object.values(CONTACT_INFO_KEYS),
+      ...Object.values(BRANDING_KEYS),
+      ...Object.values(NAVIGATION_KEYS),
+      ...Object.values(CONTENT_CREATOR_KEYS),
+      ...Object.values(ACCESS_DURATION_KEYS),
+      ...Object.values(ADVANCED_FEATURES_KEYS)
+    ]);
+  }
+
+  /**
+   * Validate setting key and value for security
+   * @param {string} key - Setting key
+   * @param {any} value - Setting value
+   * @throws {Error} If validation fails
+   */
+  validateSetting(key, value) {
+    // Validate key format
+    if (!key || typeof key !== 'string') {
+      throw new Error('Setting key must be a non-empty string');
+    }
+
+    // Validate key length
+    if (key.length > 255) {
+      throw new Error(`Setting key too long: ${key.substring(0, 50)}...`);
+    }
+
+    // Whitelist validation
+    if (!this.allowedSettingsKeys.has(key)) {
+      throw new Error(`Invalid setting key: ${key}`);
+    }
+
+    // Validate value constraints
+    if (value !== null) {
+      if (typeof value === 'string' && value.length > 10000) {
+        throw new Error(`Setting value too long for key: ${key}`);
+      }
+
+      if (typeof value === 'object' && JSON.stringify(value).length > 50000) {
+        throw new Error(`Setting object too large for key: ${key}`);
+      }
+    }
   }
 
   /**
@@ -54,7 +111,7 @@ class SettingsService {
       this.cache.lastFetch = Date.now();
       return this.cache.settings;
     } catch (error) {
-      console.error('Error refreshing settings cache:', error);
+      cerror('Error refreshing settings cache:', error);
       // If cache exists, return it as fallback
       if (this.cache.settings) {
         return this.cache.settings;
@@ -69,8 +126,8 @@ class SettingsService {
    */
   async createDefaultSettings() {
     const defaultConfigs = [
-      { id: generateId(), key: 'students_access', value: 'all', value_type: 'string', description: 'Student portal access mode' },
-      { id: generateId(), key: 'maintenance_mode', value: false, value_type: 'boolean', description: 'System maintenance mode' }
+      { id: generateId(), key: ACCESS_CONTROL_KEYS.STUDENTS_ACCESS, value: 'all', value_type: 'string', description: 'Student portal access mode' },
+      { id: generateId(), key: SYSTEM_KEYS.MAINTENANCE_MODE, value: false, value_type: 'boolean', description: 'System maintenance mode' }
     ];
 
     const transaction = await models.sequelize.transaction();
@@ -101,7 +158,7 @@ class SettingsService {
       const settings = await this.getSettings();
       return settings[key] || null;
     } catch (error) {
-      console.error(`Error getting setting '${key}':`, error);
+      cerror(`Error getting setting '${key}':`, error);
       return null;
     }
   }
@@ -115,9 +172,9 @@ class SettingsService {
       const settings = await this.getSettings();
       return settings.getStudentsAccessMode ?
         settings.getStudentsAccessMode() :
-        (settings.students_access || 'all');
+        (settings[ACCESS_CONTROL_KEYS.STUDENTS_ACCESS] || 'all');
     } catch (error) {
-      console.error('Error getting students access mode:', error);
+      cerror('Error getting students access mode:', error);
       // Safe fallback to 'all' to maintain current functionality
       return 'all';
     }
@@ -134,7 +191,7 @@ class SettingsService {
         settings.isStudentsAccessEnabled() :
         true; // Default to enabled
     } catch (error) {
-      console.error('Error checking students access status:', error);
+      cerror('Error checking students access status:', error);
       return true; // Safe fallback to enabled
     }
   }
@@ -158,10 +215,29 @@ class SettingsService {
       const settings = await this.getSettings();
       return settings.isMaintenanceMode ?
         settings.isMaintenanceMode() :
-        !!settings.maintenance_mode;
+        !!settings[SYSTEM_KEYS.MAINTENANCE_MODE];
     } catch (error) {
-      console.error('Error checking maintenance mode:', error);
+      cerror('Error checking maintenance mode:', error);
       return false;
+    }
+  }
+
+  /**
+   * Check if teacher onboarding feature is enabled
+   * @returns {Promise<boolean>} True if teacher onboarding is enabled (default: true)
+   */
+  async isTeacherOnboardingEnabled() {
+    try {
+      const settings = await this.getSettings();
+      // Default to true if setting doesn't exist
+      if (settings[SYSTEM_KEYS.TEACHER_ONBOARDING_ENABLED] === undefined || settings[SYSTEM_KEYS.TEACHER_ONBOARDING_ENABLED] === null) {
+        return true;
+      }
+      return !!settings[SYSTEM_KEYS.TEACHER_ONBOARDING_ENABLED];
+    } catch (error) {
+      cerror('Error checking teacher onboarding status:', error);
+      // Default to enabled on error to not break onboarding flow
+      return true;
     }
   }
 
@@ -182,6 +258,11 @@ class SettingsService {
     const transaction = await models.sequelize.transaction();
 
     try {
+      // Validate all settings before processing
+      for (const [key, value] of Object.entries(updates)) {
+        this.validateSetting(key, value);
+      }
+
       // Convert empty strings and string "null" to actual null for string-type fields
       const processedUpdates = {};
       for (const [key, value] of Object.entries(updates)) {
@@ -240,7 +321,7 @@ class SettingsService {
       return this.cache.settings;
     } catch (error) {
       await transaction.rollback();
-      console.error('Error updating settings:', error);
+      cerror('Error updating settings:', error);
       throw error;
     }
   }

@@ -1,4 +1,6 @@
 import express from 'express';
+import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { admin } from '../config/firebase.js';
 import { authenticateToken, authenticateUserOrPlayer, requireAdmin } from '../middleware/auth.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
@@ -15,7 +17,25 @@ import {
 
 const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
+import SettingsService from '../services/SettingsService.js';
 import { clog, cerror } from '../lib/utils.js';
+
+const verifyAdminPassword = (inputPassword) => {
+  if (!process.env.ADMIN_PASSWORD) {
+    throw new Error('Admin password not configured');
+  }
+
+  // Use timing-safe comparison to prevent timing attacks
+  const envPassword = Buffer.from(process.env.ADMIN_PASSWORD, 'utf8');
+  const inputBuffer = Buffer.from(inputPassword, 'utf8');
+
+  // Ensure both buffers are same length to prevent timing attacks
+  if (envPassword.length !== inputBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(envPassword, inputBuffer);
+};
 
 const router = express.Router();
 
@@ -164,7 +184,13 @@ router.get('/me', authenticateUserOrPlayer, async (req, res) => {
 
       const user = await authService.getUserByToken(accessToken);
 
-      // Return clean user data - all from database
+      // Get cached settings once to avoid N+1 query
+      const cachedSettings = await SettingsService.getSettings();
+
+      // Compute onboarding_completed based on required fields and feature flag with cached settings
+      const onboardingCompleted = await user.getOnboardingCompleted(cachedSettings);
+
+      // Return clean user data - all from database except computed fields
       return res.json({
         entityType: 'user',
         id: user.id,
@@ -178,7 +204,7 @@ router.get('/me', authenticateUserOrPlayer, async (req, res) => {
         user_type: user.user_type,
         is_verified: user.is_verified,
         is_active: user.is_active,
-        onboarding_completed: user.onboarding_completed,
+        onboarding_completed: onboardingCompleted,
         birth_date: user.birth_date,
         invitation_code: user.invitation_code,
         created_at: user.created_at,
@@ -222,13 +248,14 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       education_level,
       specializations,
       content_creator_agreement_sign_date,
-      onboarding_completed,
+      // Note: onboarding_completed is now computed, not stored - removed from destructuring
       birth_date,
       user_type,
       invitation_code
     } = req.body;
 
     // Only allow updating specific fields
+    // Note: onboarding_completed is now computed based on required fields and feature flag
     const updateData = {};
     if (full_name !== undefined) updateData.full_name = full_name;
     if (phone !== undefined) updateData.phone = phone;
@@ -238,19 +265,24 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       updateData.content_creator_agreement_sign_date = new Date(content_creator_agreement_sign_date);
     }
 
-    // Onboarding fields
-    if (onboarding_completed !== undefined) updateData.onboarding_completed = onboarding_completed;
+    // Onboarding-related fields (these affect computed onboarding_completed)
     if (birth_date !== undefined) updateData.birth_date = birth_date;
     if (user_type !== undefined) updateData.user_type = user_type;
     if (invitation_code !== undefined) updateData.invitation_code = invitation_code;
 
     // Add updated timestamp
     updateData.updated_at = new Date();
-    
+
     // Update the user
     await user.update(updateData);
-    
-    // Return updated user data
+
+    // Get cached settings once to avoid N+1 query
+    const cachedSettings = await SettingsService.getSettings();
+
+    // Compute onboarding_completed based on updated data and feature flag with cached settings
+    const onboardingCompleted = await user.getOnboardingCompleted(cachedSettings);
+
+    // Return updated user data with computed onboarding_completed
     res.json({
       id: user.id,
       email: user.email,
@@ -263,7 +295,7 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       user_type: user.user_type,
       is_verified: user.is_verified,
       is_active: user.is_active,
-      onboarding_completed: user.onboarding_completed,
+      onboarding_completed: onboardingCompleted,
       birth_date: user.birth_date,
       invitation_code: user.invitation_code,
       created_at: user.created_at,
@@ -530,37 +562,45 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
       });
     }
 
-    // Validate password against environment variable
-    if (!process.env.ADMIN_PASSWORD) {
-      cerror('ADMIN_PASSWORD not configured in environment');
+    // Validate password using secure comparison
+    try {
+      const isValidPassword = verifyAdminPassword(password);
+      if (!isValidPassword) {
+        // Audit log failed attempts
+        clog('Anonymous admin password validation failed:', {
+          ip: req.ip,
+          userAgent: req.get('User-Agent'),
+          timestamp: new Date().toISOString(),
+          portal: 'student' // Only used on student portal
+        });
+
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid admin password'
+        });
+      }
+    } catch (verificationError) {
+      cerror('Password verification error:', verificationError);
       return res.status(500).json({
         success: false,
         error: 'Admin password not configured'
       });
     }
 
-    // Compare password
-    if (password !== process.env.ADMIN_PASSWORD) {
-      // Audit log failed attempts
-      clog('Anonymous admin password validation failed:', {
-        ip: req.ip,
-        userAgent: req.get('User-Agent'),
-        timestamp: new Date().toISOString(),
-        portal: 'student' // Only used on student portal
-      });
-
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid admin password'
-      });
-    }
-
-    // Password is correct - create signed token for localStorage
+    // Password is correct - create signed token for httpOnly cookie
     const jwt = await import('jsonwebtoken');
+
+    // Generate cryptographically secure random components for token uniqueness
+    const nonce = crypto.randomBytes(32).toString('hex');
+    const sessionId = crypto.randomUUID();
+    const now = Date.now();
+
     const tokenPayload = {
       type: 'anonymous_admin',
-      timestamp: Date.now(),
-      expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
+      sessionId: sessionId,
+      nonce: nonce,
+      timestamp: now,
+      expiresAt: now + (24 * 60 * 60 * 1000), // 24 hours
       portal: 'student'
     };
 
@@ -583,9 +623,19 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
       tokenExpiresAt: new Date(tokenPayload.expiresAt).toISOString()
     });
 
+    // Set token as httpOnly cookie for security (prevents XSS attacks)
+    res.cookie('anonymous_admin_token', anonymousAdminToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/'
+    });
+
+    // Return success without token (token is in httpOnly cookie)
     res.json({
       success: true,
-      anonymousAdminToken,
+      message: 'Admin access granted',
       expiresAt: new Date(tokenPayload.expiresAt).toISOString()
     });
 

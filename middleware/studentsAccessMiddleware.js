@@ -1,7 +1,7 @@
 import SettingsService from '../services/SettingsService.js';
 import { authenticateToken, optionalAuth } from './auth.js';
-import models from '../models/index.js';
-import { STUDENTS_ACCESS_MODES } from '../constants/settingsKeys.js';
+import { STUDENTS_ACCESS_MODES, ACCESS_CONTROL_KEYS } from '../constants/settingsKeys.js';
+import { clog, cerror } from '../lib/utils.js';
 
 /**
  * Main students access control middleware
@@ -22,11 +22,11 @@ export async function checkStudentsAccess(req, res, next) {
         return await validateAllAccess(req, res, next);
       default:
         // Fallback to 'all' for any unrecognized mode
-        console.warn(`Unrecognized students_access mode: ${accessMode}, falling back to 'all'`);
+        clog(`Unrecognized ${ACCESS_CONTROL_KEYS.STUDENTS_ACCESS} mode: ${accessMode}, falling back to 'all'`);
         return await validateAllAccess(req, res, next);
     }
   } catch (error) {
-    console.error('Error in checkStudentsAccess middleware:', error);
+    cerror('Error in checkStudentsAccess middleware:', error);
     // Fallback to allow access to maintain functionality
     return await validateAllAccess(req, res, next);
   }
@@ -43,7 +43,7 @@ async function validateInviteOnlyAccess(req, res, next) {
     // So treat this like public access with optional auth
     return await optionalAuth(req, res, next);
   } catch (error) {
-    console.error('Error in validateInviteOnlyAccess:', error);
+    cerror('Error in validateInviteOnlyAccess:', error);
     // Fallback to allowing access to maintain functionality
     return next();
   }
@@ -57,7 +57,7 @@ async function validateAuthedOnlyAccess(req, res, next) {
     // Use standard authentication middleware
     return await authenticateToken(req, res, next);
   } catch (error) {
-    console.error('Error in validateAuthedOnlyAccess:', error);
+    cerror('Error in validateAuthedOnlyAccess:', error);
     return res.status(401).json({
       error: 'Student portal requires authentication',
       message: 'Please log in to access the student portal',
@@ -74,7 +74,7 @@ async function validateAllAccess(req, res, next) {
     // Use optional auth - allows both authenticated and anonymous access
     return await optionalAuth(req, res, next);
   } catch (error) {
-    console.error('Error in validateAllAccess:', error);
+    cerror('Error in validateAllAccess:', error);
     // Continue without auth if any error occurs
     return next();
   }
@@ -99,7 +99,7 @@ export async function checkStudentsLobbyAccess(req, res, next) {
     // For 'invite_only' and 'all', use optional auth
     return await optionalAuth(req, res, next);
   } catch (error) {
-    console.error('Error in checkStudentsLobbyAccess:', error);
+    cerror('Error in checkStudentsLobbyAccess:', error);
     return await optionalAuth(req, res, next);
   }
 }
@@ -112,7 +112,7 @@ export async function getCurrentAccessMode() {
   try {
     return await SettingsService.getStudentsAccessMode();
   } catch (error) {
-    console.error('Error getting current access mode:', error);
+    cerror('Error getting current access mode:', error);
     return STUDENTS_ACCESS_MODES.ALL; // Safe fallback
   }
 }
@@ -126,7 +126,7 @@ export async function addAccessModeHeader(req, res, next) {
     res.set('X-Students-Access-Mode', accessMode);
     next();
   } catch (error) {
-    console.error('Error setting access mode header:', error);
+    cerror('Error setting access mode header:', error);
     next();
   }
 }

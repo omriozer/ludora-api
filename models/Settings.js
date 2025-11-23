@@ -126,6 +126,14 @@ export default function(sequelize) {
       return !!this.maintenance_mode;
     };
 
+    settings.isTeacherOnboardingEnabled = function() {
+      // Default to true if setting doesn't exist
+      if (this.teacher_onboarding_enabled === undefined || this.teacher_onboarding_enabled === null) {
+        return true;
+      }
+      return !!this.teacher_onboarding_enabled;
+    };
+
     settings.getStudentsAccessMode = function() {
       return this.students_access || 'all';
     };
@@ -153,6 +161,7 @@ export default function(sequelize) {
       delete obj.getLogoUrl;
       delete obj.getLegacyLogoUrl;
       delete obj.isMaintenanceMode;
+      delete obj.isTeacherOnboardingEnabled;
       delete obj.getStudentsAccessMode;
       delete obj.isStudentsAccessEnabled;
       delete obj.getContactInfo;

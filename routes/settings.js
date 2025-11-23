@@ -6,6 +6,7 @@ import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
 import { GAME_TYPES } from '../config/gameTypes.js';
 import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
+import { ACCESS_CONTROL_KEYS, ALL_SETTINGS_KEYS_ARRAY } from '../constants/settingsKeys.js';
 
 const router = express.Router();
 
@@ -20,6 +21,24 @@ router.get('/', optionalAuth, async (req, res) => {
 
     // Get settings from EntityService
     const results = await EntityService.find('settings', query, options);
+
+    // Validate that all required settings keys exist (system integrity check)
+    const existingKeys = results.map(setting => setting.key || setting.get?.('key')).filter(Boolean);
+    const missingKeys = ALL_SETTINGS_KEYS_ARRAY.filter(requiredKey => !existingKeys.includes(requiredKey));
+
+    if (missingKeys.length > 0) {
+      // Log missing keys for system tracking (not displayed to user)
+      console.error('[SETTINGS_VALIDATION] Missing settings keys detected:', {
+        missing: missingKeys,
+        timestamp: new Date().toISOString(),
+        endpoint: '/api/settings',
+        totalExpected: ALL_SETTINGS_KEYS_ARRAY.length,
+        totalFound: existingKeys.length
+      });
+
+      // Add system validation header for debugging (not visible to frontend)
+      res.set('X-Settings-Validation-Warning', `${missingKeys.length} missing keys`);
+    }
 
     // Add enhanced configuration like the entities route does
     const enhancedResults = results.map(setting => {
@@ -49,13 +68,13 @@ router.get('/public', async (req, res) => {
     const studentsAccessMode = await SettingsService.getStudentsAccessMode();
 
     res.json({
-      students_access: studentsAccessMode
+      [ACCESS_CONTROL_KEYS.STUDENTS_ACCESS]: studentsAccessMode
     });
 
   } catch (error) {
     res.status(500).json({
       error: 'Failed to fetch public settings',
-      students_access: 'all' // Safe fallback for privacy compliance
+      [ACCESS_CONTROL_KEYS.STUDENTS_ACCESS]: 'all' // Safe fallback for privacy compliance
     });
   }
 });

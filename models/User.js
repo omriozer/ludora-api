@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import SettingsService from '../services/SettingsService.js';
 
 export default function(sequelize) {
   const User = sequelize.define('User', {
@@ -245,6 +246,36 @@ export default function(sequelize) {
     const hasRole = this.role === role;
     if (userType === null) return hasRole;
     return hasRole && this.user_type === userType;
+  };
+
+  /**
+   * Compute onboarding completion status based on required fields and feature flag.
+   * This is a computed value - the database column is kept for backwards compatibility
+   * but should not be written to anymore.
+   *
+   * @param {Object} cachedSettings - Optional pre-fetched settings to avoid N+1 queries
+   * @returns {Promise<boolean>} True if onboarding is complete
+   */
+  User.prototype.getOnboardingCompleted = async function(cachedSettings = null) {
+    let isOnboardingEnabled;
+
+    if (cachedSettings && cachedSettings.teacher_onboarding_enabled !== undefined) {
+      // Use pre-fetched settings (fast path) - avoid N+1 query
+      isOnboardingEnabled = cachedSettings.teacher_onboarding_enabled !== false;
+    } else {
+      // Fallback to service call for backwards compatibility
+      isOnboardingEnabled = await SettingsService.isTeacherOnboardingEnabled();
+    }
+
+    if (!isOnboardingEnabled) {
+      return true;
+    }
+
+    // Since this is teacher-only onboarding, users need to complete onboarding to become teachers
+    // Required fields for completion: birth_date, education_level, user_type = 'teacher'
+    const hasRequiredFields = !!(this.birth_date && this.education_level && this.user_type === 'teacher');
+
+    return hasRequiredFields;
   };
 
   return User;
