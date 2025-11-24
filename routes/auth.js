@@ -585,6 +585,10 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     // Password is correct - create signed token for httpOnly cookie
     const jwt = await import('jsonwebtoken');
 
+    // Detect portal from request
+    const portal = detectPortal(req);
+    const audience = portal === 'student' ? 'ludora-student-portal' : 'ludora-teacher-portal';
+
     // Generate cryptographically secure random components for token uniqueness
     const nonce = crypto.randomBytes(32).toString('hex');
     const sessionId = crypto.randomUUID();
@@ -596,7 +600,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
       nonce: nonce,
       timestamp: now,
       expiresAt: now + (24 * 60 * 60 * 1000), // 24 hours
-      portal: 'student'
+      portal: portal
     };
 
     const anonymousAdminToken = jwt.default.sign(
@@ -605,7 +609,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
       {
         expiresIn: '24h',
         issuer: 'ludora-api',
-        audience: 'ludora-student-portal'
+        audience: audience
       }
     );
 
@@ -620,11 +624,12 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
       path: '/'
     });
 
-    // Return success without token (token is in httpOnly cookie)
+    // Return success with token
     res.json({
       success: true,
       message: 'Admin access granted',
-      expiresAt: new Date(tokenPayload.expiresAt).toISOString()
+      expiresAt: new Date(tokenPayload.expiresAt).toISOString(),
+      anonymousAdminToken: anonymousAdminToken
     });
 
   } catch (error) {
