@@ -40,12 +40,7 @@ export function substituteVariables(content, variables = {}, options = {}) {
   const allVariables = { ...defaultVars, ...variables };
 
   if (enableLogging) {
-      contentLength: content.length,
-      variableKeys: Object.keys(allVariables),
-      hasUserObj: !!variables.userObj,
-      hasUser: !!variables.user,
-      supportSystemTemplates
-    });
+    // Debug logging for variable substitution
   }
 
   // Replace standard {{variable}} patterns
@@ -66,8 +61,7 @@ export function substituteVariables(content, variables = {}, options = {}) {
   result = handleUserVariableSubstitution(result, variables, enableLogging);
 
   if (enableLogging) {
-
-    });
+    // Debug logging completion
   }
 
   return result;
@@ -90,7 +84,7 @@ function handleUserVariableSubstitution(result, variables, enableLogging) {
     userEmail = variables.userObj.email || variables.userObj.name || '';
     userName = variables.userObj.name || variables.userObj.email || '';
     if (enableLogging) {
-
+      // Debug logging for userObj
     }
   } else if (variables.user) {
     if (typeof variables.user === 'string') {
@@ -110,7 +104,7 @@ function handleUserVariableSubstitution(result, variables, enableLogging) {
       userName = variables.user.name || variables.user.email || '';
     }
     if (enableLogging) {
-
+      // Debug logging for user parsing
     }
   }
 
@@ -137,10 +131,7 @@ function handleUserVariableSubstitution(result, variables, enableLogging) {
     result = result.replace(/\{\{user\.email\}\}/g, protectedEmail);
 
     if (enableLogging) {
-        originalEmail: finalUserEmail,
-        reversedEmail: reversedEmail,
-        method: 'manual string reversal'
-      });
+      // Debug logging for email reversal
     }
   } else {
     // Standard email substitution for non-Hebrew text or non-email content

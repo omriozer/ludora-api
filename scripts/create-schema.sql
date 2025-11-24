@@ -1,5 +1,5 @@
 -- Ludora Database Schema - Consolidated Version
--- Generated: Fri Nov  7 16:16:04 +07 2025
+-- Generated: Mon Nov 24 12:46:41 +07 2025
 -- Source: development database ludora_development
 --
 -- This schema represents the consolidated structure after all migrations
@@ -11,7 +11,7 @@
 
 -- Ensure we're using the correct database
 \connect ludora_development;
--- Started on 2025-11-07 16:16:04 +07
+-- Started on 2025-11-24 12:46:41 +07
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -25,8 +25,8 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- TOC entry 4333 (class 0 OID 0)
--- Dependencies: 5
+-- TOC entry 4474 (class 0 OID 0)
+-- Dependencies: 6
 -- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
 --
 
@@ -34,7 +34,63 @@ COMMENT ON SCHEMA public IS '';
 
 
 --
--- TOC entry 1005 (class 1247 OID 46609)
+-- TOC entry 2 (class 3079 OID 47054)
+-- Name: uuid-ossp; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
+
+
+--
+-- TOC entry 4475 (class 0 OID 0)
+-- Dependencies: 2
+-- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
+
+
+--
+-- TOC entry 1059 (class 1247 OID 47186)
+-- Name: enum_configuration_value_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.enum_configuration_value_type AS ENUM (
+    'string',
+    'number',
+    'boolean',
+    'object',
+    'array'
+);
+
+
+--
+-- TOC entry 1029 (class 1247 OID 46843)
+-- Name: enum_edu_content_element_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.enum_edu_content_element_type AS ENUM (
+    'playing_card_complete',
+    'playing_card_bg',
+    'data'
+);
+
+
+--
+-- TOC entry 1035 (class 1247 OID 46858)
+-- Name: enum_edu_content_use_use_type; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.enum_edu_content_use_use_type AS ENUM (
+    'single_content',
+    'pair',
+    'group',
+    'mixed_edu_contents'
+);
+
+
+--
+-- TOC entry 1011 (class 1247 OID 46609)
 -- Name: enum_game_content_link_link_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -45,7 +101,7 @@ CREATE TYPE public.enum_game_content_link_link_type AS ENUM (
 
 
 --
--- TOC entry 999 (class 1247 OID 46579)
+-- TOC entry 1008 (class 1247 OID 46579)
 -- Name: enum_game_content_relation_items_role; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -61,7 +117,7 @@ CREATE TYPE public.enum_game_content_relation_items_role AS ENUM (
 
 
 --
--- TOC entry 993 (class 1247 OID 46552)
+-- TOC entry 1005 (class 1247 OID 46552)
 -- Name: enum_game_content_relation_relation_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -77,7 +133,7 @@ CREATE TYPE public.enum_game_content_relation_relation_type AS ENUM (
 
 
 --
--- TOC entry 873 (class 1247 OID 45887)
+-- TOC entry 891 (class 1247 OID 45887)
 -- Name: enum_game_content_rule_instance_rule_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -90,7 +146,7 @@ CREATE TYPE public.enum_game_content_rule_instance_rule_type AS ENUM (
 
 
 --
--- TOC entry 876 (class 1247 OID 45896)
+-- TOC entry 894 (class 1247 OID 45896)
 -- Name: enum_game_content_rule_rule_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -103,7 +159,7 @@ CREATE TYPE public.enum_game_content_rule_rule_type AS ENUM (
 
 
 --
--- TOC entry 879 (class 1247 OID 45906)
+-- TOC entry 897 (class 1247 OID 45906)
 -- Name: enum_memory_pairing_rules_rule_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -116,7 +172,7 @@ CREATE TYPE public.enum_memory_pairing_rules_rule_type AS ENUM (
 
 
 --
--- TOC entry 882 (class 1247 OID 45916)
+-- TOC entry 900 (class 1247 OID 45916)
 -- Name: enum_product_marketing_video_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -127,7 +183,19 @@ CREATE TYPE public.enum_product_marketing_video_type AS ENUM (
 
 
 --
--- TOC entry 885 (class 1247 OID 45922)
+-- TOC entry 1047 (class 1247 OID 46960)
+-- Name: enum_settings_students_access; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.enum_settings_students_access AS ENUM (
+    'invite_only',
+    'authed_only',
+    'all'
+);
+
+
+--
+-- TOC entry 903 (class 1247 OID 45922)
 -- Name: enum_subscription_status; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -141,7 +209,7 @@ CREATE TYPE public.enum_subscription_status AS ENUM (
 
 
 --
--- TOC entry 888 (class 1247 OID 45934)
+-- TOC entry 906 (class 1247 OID 45934)
 -- Name: enum_subscriptionhistory_action_type; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -157,7 +225,7 @@ CREATE TYPE public.enum_subscriptionhistory_action_type AS ENUM (
 
 
 --
--- TOC entry 891 (class 1247 OID 45950)
+-- TOC entry 909 (class 1247 OID 45950)
 -- Name: enum_transaction_environment; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -169,7 +237,7 @@ CREATE TYPE public.enum_transaction_environment AS ENUM (
 
 
 --
--- TOC entry 894 (class 1247 OID 45958)
+-- TOC entry 912 (class 1247 OID 45958)
 -- Name: enum_transaction_final_environment; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -180,7 +248,7 @@ CREATE TYPE public.enum_transaction_final_environment AS ENUM (
 
 
 --
--- TOC entry 897 (class 1247 OID 45964)
+-- TOC entry 915 (class 1247 OID 45964)
 -- Name: enum_transaction_final_payment_status; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -194,7 +262,7 @@ CREATE TYPE public.enum_transaction_final_payment_status AS ENUM (
 
 
 --
--- TOC entry 900 (class 1247 OID 45976)
+-- TOC entry 918 (class 1247 OID 45976)
 -- Name: enum_transaction_payment_status; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -208,7 +276,7 @@ CREATE TYPE public.enum_transaction_payment_status AS ENUM (
 
 
 --
--- TOC entry 903 (class 1247 OID 45988)
+-- TOC entry 921 (class 1247 OID 45988)
 -- Name: enum_transaction_temp_environment; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -219,7 +287,7 @@ CREATE TYPE public.enum_transaction_temp_environment AS ENUM (
 
 
 --
--- TOC entry 906 (class 1247 OID 45994)
+-- TOC entry 924 (class 1247 OID 45994)
 -- Name: enum_transaction_temp_payment_status; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -237,7 +305,7 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- TOC entry 214 (class 1259 OID 46005)
+-- TOC entry 217 (class 1259 OID 46005)
 -- Name: SequelizeMeta; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -247,7 +315,7 @@ CREATE TABLE public."SequelizeMeta" (
 
 
 --
--- TOC entry 215 (class 1259 OID 46008)
+-- TOC entry 218 (class 1259 OID 46008)
 -- Name: audiofile; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -269,8 +337,8 @@ CREATE TABLE public.audiofile (
 
 
 --
--- TOC entry 4334 (class 0 OID 0)
--- Dependencies: 215
+-- TOC entry 4476 (class 0 OID 0)
+-- Dependencies: 218
 -- Name: COLUMN audiofile.file_url; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -278,8 +346,8 @@ COMMENT ON COLUMN public.audiofile.file_url IS 'DEPRECATED: Use has_file and fil
 
 
 --
--- TOC entry 4335 (class 0 OID 0)
--- Dependencies: 215
+-- TOC entry 4477 (class 0 OID 0)
+-- Dependencies: 218
 -- Name: COLUMN audiofile.has_file; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -287,8 +355,8 @@ COMMENT ON COLUMN public.audiofile.has_file IS 'Clear boolean indicator for audi
 
 
 --
--- TOC entry 4336 (class 0 OID 0)
--- Dependencies: 215
+-- TOC entry 4478 (class 0 OID 0)
+-- Dependencies: 218
 -- Name: COLUMN audiofile.file_filename; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -296,7 +364,7 @@ COMMENT ON COLUMN public.audiofile.file_filename IS 'Standardized audio filename
 
 
 --
--- TOC entry 216 (class 1259 OID 46015)
+-- TOC entry 219 (class 1259 OID 46015)
 -- Name: category; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -311,7 +379,7 @@ CREATE TABLE public.category (
 
 
 --
--- TOC entry 217 (class 1259 OID 46022)
+-- TOC entry 220 (class 1259 OID 46022)
 -- Name: classroom; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -331,8 +399,8 @@ CREATE TABLE public.classroom (
 
 
 --
--- TOC entry 4337 (class 0 OID 0)
--- Dependencies: 217
+-- TOC entry 4479 (class 0 OID 0)
+-- Dependencies: 220
 -- Name: COLUMN classroom.school_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -340,7 +408,7 @@ COMMENT ON COLUMN public.classroom.school_id IS 'School that this classroom belo
 
 
 --
--- TOC entry 218 (class 1259 OID 46029)
+-- TOC entry 221 (class 1259 OID 46029)
 -- Name: classroommembership; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -360,7 +428,58 @@ CREATE TABLE public.classroommembership (
 
 
 --
--- TOC entry 219 (class 1259 OID 46048)
+-- TOC entry 249 (class 1259 OID 46772)
+-- Name: content_topic; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_topic (
+    id character varying(255) NOT NULL,
+    name character varying(255) NOT NULL,
+    description text,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+
+--
+-- TOC entry 4480 (class 0 OID 0)
+-- Dependencies: 249
+-- Name: COLUMN content_topic.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.content_topic.id IS 'Primary key for content topic';
+
+
+--
+-- TOC entry 4481 (class 0 OID 0)
+-- Dependencies: 249
+-- Name: COLUMN content_topic.name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.content_topic.name IS 'Unique name of the content topic';
+
+
+--
+-- TOC entry 4482 (class 0 OID 0)
+-- Dependencies: 249
+-- Name: COLUMN content_topic.description; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.content_topic.description IS 'Optional description of the content topic';
+
+
+--
+-- TOC entry 4483 (class 0 OID 0)
+-- Dependencies: 249
+-- Name: COLUMN content_topic.is_active; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.content_topic.is_active IS 'Whether this content topic is active';
+
+
+--
+-- TOC entry 222 (class 1259 OID 46048)
 -- Name: coupon; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -400,7 +519,7 @@ CREATE TABLE public.coupon (
 
 
 --
--- TOC entry 220 (class 1259 OID 46068)
+-- TOC entry 223 (class 1259 OID 46068)
 -- Name: course; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -429,8 +548,8 @@ CREATE TABLE public.course (
 
 
 --
--- TOC entry 4338 (class 0 OID 0)
--- Dependencies: 220
+-- TOC entry 4484 (class 0 OID 0)
+-- Dependencies: 223
 -- Name: TABLE course; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -438,8 +557,8 @@ COMMENT ON TABLE public.course IS 'Educational courses available in the platform
 
 
 --
--- TOC entry 4339 (class 0 OID 0)
--- Dependencies: 220
+-- TOC entry 4485 (class 0 OID 0)
+-- Dependencies: 223
 -- Name: COLUMN course.has_video; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -447,8 +566,8 @@ COMMENT ON COLUMN public.course.has_video IS 'Clear boolean indicator for conten
 
 
 --
--- TOC entry 4340 (class 0 OID 0)
--- Dependencies: 220
+-- TOC entry 4486 (class 0 OID 0)
+-- Dependencies: 223
 -- Name: COLUMN course.video_filename; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -456,7 +575,7 @@ COMMENT ON COLUMN public.course.video_filename IS 'Standardized video filename s
 
 
 --
--- TOC entry 221 (class 1259 OID 46078)
+-- TOC entry 224 (class 1259 OID 46078)
 -- Name: curriculum; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -477,8 +596,8 @@ CREATE TABLE public.curriculum (
 
 
 --
--- TOC entry 4341 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4487 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.subject; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -486,8 +605,8 @@ COMMENT ON COLUMN public.curriculum.subject IS 'Study subject from STUDY_SUBJECT
 
 
 --
--- TOC entry 4342 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4488 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.grade; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -495,8 +614,8 @@ COMMENT ON COLUMN public.curriculum.grade IS 'Grade level 1-12';
 
 
 --
--- TOC entry 4343 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4489 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.teacher_user_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -504,8 +623,8 @@ COMMENT ON COLUMN public.curriculum.teacher_user_id IS 'null = system default cu
 
 
 --
--- TOC entry 4344 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4490 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.class_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -513,8 +632,8 @@ COMMENT ON COLUMN public.curriculum.class_id IS 'null = system default curriculu
 
 
 --
--- TOC entry 4345 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4491 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.original_curriculum_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -522,8 +641,8 @@ COMMENT ON COLUMN public.curriculum.original_curriculum_id IS 'ID of the system 
 
 
 --
--- TOC entry 4346 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4492 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.grade_from; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -531,8 +650,8 @@ COMMENT ON COLUMN public.curriculum.grade_from IS 'Starting grade for range (1-1
 
 
 --
--- TOC entry 4347 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4493 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.grade_to; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -540,8 +659,8 @@ COMMENT ON COLUMN public.curriculum.grade_to IS 'Ending grade for range (1-12)';
 
 
 --
--- TOC entry 4348 (class 0 OID 0)
--- Dependencies: 221
+-- TOC entry 4494 (class 0 OID 0)
+-- Dependencies: 224
 -- Name: COLUMN curriculum.is_grade_range; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -549,7 +668,7 @@ COMMENT ON COLUMN public.curriculum.is_grade_range IS 'Whether this curriculum a
 
 
 --
--- TOC entry 222 (class 1259 OID 46085)
+-- TOC entry 225 (class 1259 OID 46085)
 -- Name: curriculum_item; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -557,7 +676,6 @@ CREATE TABLE public.curriculum_item (
     id character varying(255) NOT NULL,
     curriculum_id character varying(255) NOT NULL,
     study_topic character varying(255) NOT NULL,
-    content_topic character varying(255) NOT NULL,
     is_mandatory boolean DEFAULT true NOT NULL,
     mandatory_order integer,
     custom_order integer,
@@ -570,8 +688,8 @@ CREATE TABLE public.curriculum_item (
 
 
 --
--- TOC entry 4349 (class 0 OID 0)
--- Dependencies: 222
+-- TOC entry 4495 (class 0 OID 0)
+-- Dependencies: 225
 -- Name: COLUMN curriculum_item.study_topic; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -579,17 +697,8 @@ COMMENT ON COLUMN public.curriculum_item.study_topic IS 'Main study topic';
 
 
 --
--- TOC entry 4350 (class 0 OID 0)
--- Dependencies: 222
--- Name: COLUMN curriculum_item.content_topic; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.curriculum_item.content_topic IS 'Specific content topic within study topic';
-
-
---
--- TOC entry 4351 (class 0 OID 0)
--- Dependencies: 222
+-- TOC entry 4496 (class 0 OID 0)
+-- Dependencies: 225
 -- Name: COLUMN curriculum_item.is_mandatory; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -597,8 +706,8 @@ COMMENT ON COLUMN public.curriculum_item.is_mandatory IS 'Whether this item is m
 
 
 --
--- TOC entry 4352 (class 0 OID 0)
--- Dependencies: 222
+-- TOC entry 4497 (class 0 OID 0)
+-- Dependencies: 225
 -- Name: COLUMN curriculum_item.mandatory_order; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -606,8 +715,8 @@ COMMENT ON COLUMN public.curriculum_item.mandatory_order IS 'Order for mandatory
 
 
 --
--- TOC entry 4353 (class 0 OID 0)
--- Dependencies: 222
+-- TOC entry 4498 (class 0 OID 0)
+-- Dependencies: 225
 -- Name: COLUMN curriculum_item.custom_order; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -615,8 +724,8 @@ COMMENT ON COLUMN public.curriculum_item.custom_order IS 'Custom order set by te
 
 
 --
--- TOC entry 4354 (class 0 OID 0)
--- Dependencies: 222
+-- TOC entry 4499 (class 0 OID 0)
+-- Dependencies: 225
 -- Name: COLUMN curriculum_item.description; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -624,8 +733,8 @@ COMMENT ON COLUMN public.curriculum_item.description IS 'Additional description 
 
 
 --
--- TOC entry 4355 (class 0 OID 0)
--- Dependencies: 222
+-- TOC entry 4500 (class 0 OID 0)
+-- Dependencies: 225
 -- Name: COLUMN curriculum_item.is_completed; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -633,8 +742,8 @@ COMMENT ON COLUMN public.curriculum_item.is_completed IS 'Whether teacher has ma
 
 
 --
--- TOC entry 4356 (class 0 OID 0)
--- Dependencies: 222
+-- TOC entry 4501 (class 0 OID 0)
+-- Dependencies: 225
 -- Name: COLUMN curriculum_item.completed_at; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -642,7 +751,7 @@ COMMENT ON COLUMN public.curriculum_item.completed_at IS 'When the item was mark
 
 
 --
--- TOC entry 223 (class 1259 OID 46092)
+-- TOC entry 226 (class 1259 OID 46092)
 -- Name: curriculum_product; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -655,8 +764,8 @@ CREATE TABLE public.curriculum_product (
 
 
 --
--- TOC entry 4357 (class 0 OID 0)
--- Dependencies: 223
+-- TOC entry 4502 (class 0 OID 0)
+-- Dependencies: 226
 -- Name: COLUMN curriculum_product.id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -664,7 +773,7 @@ COMMENT ON COLUMN public.curriculum_product.id IS 'Primary key for curriculum-pr
 
 
 --
--- TOC entry 224 (class 1259 OID 46097)
+-- TOC entry 227 (class 1259 OID 46097)
 -- Name: curriculum_product_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -678,8 +787,8 @@ CREATE SEQUENCE public.curriculum_product_id_seq
 
 
 --
--- TOC entry 4358 (class 0 OID 0)
--- Dependencies: 224
+-- TOC entry 4503 (class 0 OID 0)
+-- Dependencies: 227
 -- Name: curriculum_product_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
@@ -687,7 +796,111 @@ ALTER SEQUENCE public.curriculum_product_id_seq OWNED BY public.curriculum_produ
 
 
 --
--- TOC entry 249 (class 1259 OID 46668)
+-- TOC entry 250 (class 1259 OID 46849)
+-- Name: edu_content; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.edu_content (
+    id character varying(255) NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    element_type public.enum_edu_content_element_type NOT NULL,
+    content text NOT NULL,
+    content_metadata jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+
+
+--
+-- TOC entry 4504 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN edu_content.element_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content.element_type IS 'Type of educational content element';
+
+
+--
+-- TOC entry 4505 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN edu_content.content; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content.content IS 'The actual content - image URL, text value, etc.';
+
+
+--
+-- TOC entry 4506 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN edu_content.content_metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content.content_metadata IS 'Flexible metadata for content (language, difficulty, represents_data_id, etc.)';
+
+
+--
+-- TOC entry 251 (class 1259 OID 46865)
+-- Name: edu_content_use; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.edu_content_use (
+    id character varying(255) NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    game_id character varying(255) NOT NULL,
+    use_type public.enum_edu_content_use_use_type NOT NULL,
+    contents_data jsonb DEFAULT '[]'::jsonb NOT NULL,
+    content_order jsonb,
+    usage_metadata jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+
+
+--
+-- TOC entry 4507 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN edu_content_use.game_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content_use.game_id IS 'Reference to the game using this content';
+
+
+--
+-- TOC entry 4508 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN edu_content_use.use_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content_use.use_type IS 'How the content is grouped/used in the game';
+
+
+--
+-- TOC entry 4509 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN edu_content_use.contents_data; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content_use.contents_data IS 'Array of edu_content IDs in this grouping';
+
+
+--
+-- TOC entry 4510 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN edu_content_use.content_order; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content_use.content_order IS 'Optional: array defining order when sequence matters';
+
+
+--
+-- TOC entry 4511 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN edu_content_use.usage_metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.edu_content_use.usage_metadata IS 'Additional metadata about how content is used';
+
+
+--
+-- TOC entry 246 (class 1259 OID 46668)
 -- Name: emaillog; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -710,8 +923,8 @@ CREATE TABLE public.emaillog (
 
 
 --
--- TOC entry 4359 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4512 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.template_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -719,8 +932,8 @@ COMMENT ON COLUMN public.emaillog.template_id IS 'Reference to emailtemplate use
 
 
 --
--- TOC entry 4360 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4513 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.recipient_email; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -728,8 +941,8 @@ COMMENT ON COLUMN public.emaillog.recipient_email IS 'Email address of the recip
 
 
 --
--- TOC entry 4361 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4514 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.subject; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -737,8 +950,8 @@ COMMENT ON COLUMN public.emaillog.subject IS 'Actual email subject that was sent
 
 
 --
--- TOC entry 4362 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4515 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.content; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -746,8 +959,8 @@ COMMENT ON COLUMN public.emaillog.content IS 'Actual email content that was sent
 
 
 --
--- TOC entry 4363 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4516 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.trigger_type; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -755,8 +968,8 @@ COMMENT ON COLUMN public.emaillog.trigger_type IS 'Event that triggered this ema
 
 
 --
--- TOC entry 4364 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4517 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.related_product_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -764,8 +977,8 @@ COMMENT ON COLUMN public.emaillog.related_product_id IS 'Product related to this
 
 
 --
--- TOC entry 4365 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4518 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.related_registration_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -773,8 +986,8 @@ COMMENT ON COLUMN public.emaillog.related_registration_id IS 'Registration relat
 
 
 --
--- TOC entry 4366 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4519 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.related_purchase_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -782,8 +995,8 @@ COMMENT ON COLUMN public.emaillog.related_purchase_id IS 'Purchase transaction r
 
 
 --
--- TOC entry 4367 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4520 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.status; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -791,8 +1004,8 @@ COMMENT ON COLUMN public.emaillog.status IS 'Email delivery status (sent, failed
 
 
 --
--- TOC entry 4368 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4521 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.error_message; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -800,8 +1013,8 @@ COMMENT ON COLUMN public.emaillog.error_message IS 'Error message if email sendi
 
 
 --
--- TOC entry 4369 (class 0 OID 0)
--- Dependencies: 249
+-- TOC entry 4522 (class 0 OID 0)
+-- Dependencies: 246
 -- Name: COLUMN emaillog.scheduled_for; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -809,7 +1022,7 @@ COMMENT ON COLUMN public.emaillog.scheduled_for IS 'When email is scheduled to b
 
 
 --
--- TOC entry 248 (class 1259 OID 46655)
+-- TOC entry 245 (class 1259 OID 46655)
 -- Name: emailtemplate; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -833,8 +1046,8 @@ CREATE TABLE public.emailtemplate (
 
 
 --
--- TOC entry 4370 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4523 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.name; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -842,8 +1055,8 @@ COMMENT ON COLUMN public.emailtemplate.name IS 'Human-readable template name';
 
 
 --
--- TOC entry 4371 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4524 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.subject; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -851,8 +1064,8 @@ COMMENT ON COLUMN public.emailtemplate.subject IS 'Email subject line template';
 
 
 --
--- TOC entry 4372 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4525 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.html_content; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -860,8 +1073,8 @@ COMMENT ON COLUMN public.emailtemplate.html_content IS 'HTML email body content 
 
 
 --
--- TOC entry 4373 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4526 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.trigger_type; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -869,8 +1082,8 @@ COMMENT ON COLUMN public.emailtemplate.trigger_type IS 'Event type that triggers
 
 
 --
--- TOC entry 4374 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4527 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.trigger_hours_before; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -878,8 +1091,8 @@ COMMENT ON COLUMN public.emailtemplate.trigger_hours_before IS 'Hours before eve
 
 
 --
--- TOC entry 4375 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4528 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.trigger_hours_after; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -887,8 +1100,8 @@ COMMENT ON COLUMN public.emailtemplate.trigger_hours_after IS 'Hours after event
 
 
 --
--- TOC entry 4376 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4529 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.target_product_types; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -896,8 +1109,8 @@ COMMENT ON COLUMN public.emailtemplate.target_product_types IS 'Array of product
 
 
 --
--- TOC entry 4377 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4530 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.target_product_ids; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -905,8 +1118,8 @@ COMMENT ON COLUMN public.emailtemplate.target_product_ids IS 'Array of specific 
 
 
 --
--- TOC entry 4378 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4531 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.target_admin_emails; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -914,8 +1127,8 @@ COMMENT ON COLUMN public.emailtemplate.target_admin_emails IS 'Array of admin em
 
 
 --
--- TOC entry 4379 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4532 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.is_active; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -923,8 +1136,8 @@ COMMENT ON COLUMN public.emailtemplate.is_active IS 'Whether this template is cu
 
 
 --
--- TOC entry 4380 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4533 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.send_to_admins; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -932,8 +1145,8 @@ COMMENT ON COLUMN public.emailtemplate.send_to_admins IS 'Whether to send this e
 
 
 --
--- TOC entry 4381 (class 0 OID 0)
--- Dependencies: 248
+-- TOC entry 4534 (class 0 OID 0)
+-- Dependencies: 245
 -- Name: COLUMN emailtemplate.access_expiry_days_before; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -941,7 +1154,7 @@ COMMENT ON COLUMN public.emailtemplate.access_expiry_days_before IS 'Days before
 
 
 --
--- TOC entry 225 (class 1259 OID 46098)
+-- TOC entry 228 (class 1259 OID 46098)
 -- Name: file; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -954,19 +1167,21 @@ CREATE TABLE public.file (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     allow_preview boolean DEFAULT true NOT NULL,
-    add_copyrights_footer boolean DEFAULT true NOT NULL,
-    footer_settings jsonb,
+    add_branding boolean DEFAULT true NOT NULL,
+    branding_settings jsonb,
     is_asset_only boolean DEFAULT false NOT NULL,
-    footer_overrides jsonb,
-    footer_template_id character varying(255),
+    branding_template_id character varying(255),
     accessible_pages jsonb,
-    watermark_template_id character varying(255)
+    watermark_template_id character varying(255),
+    watermark_settings jsonb,
+    target_format character varying(255),
+    CONSTRAINT chk_file_target_format CHECK (((target_format)::text = ANY ((ARRAY['pdf-a4-portrait'::character varying, 'pdf-a4-landscape'::character varying, 'svg-lessonplan'::character varying, 'unknown'::character varying])::text[])))
 );
 
 
 --
--- TOC entry 4382 (class 0 OID 0)
--- Dependencies: 225
+-- TOC entry 4535 (class 0 OID 0)
+-- Dependencies: 228
 -- Name: TABLE file; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -974,8 +1189,8 @@ COMMENT ON TABLE public.file IS 'Downloadable files and resources';
 
 
 --
--- TOC entry 4383 (class 0 OID 0)
--- Dependencies: 225
+-- TOC entry 4536 (class 0 OID 0)
+-- Dependencies: 228
 -- Name: COLUMN file.file_name; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -983,17 +1198,17 @@ COMMENT ON COLUMN public.file.file_name IS 'Original filename of uploaded docume
 
 
 --
--- TOC entry 4384 (class 0 OID 0)
--- Dependencies: 225
--- Name: COLUMN file.footer_settings; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4537 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: COLUMN file.branding_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.file.footer_settings IS 'DEPRECATED: Use footer_overrides instead. Complete footer config now in Settings. Kept for backward compatibility.';
+COMMENT ON COLUMN public.file.branding_settings IS 'File-specific branding settings (positioning, styling). Content comes from SystemTemplate.';
 
 
 --
--- TOC entry 4385 (class 0 OID 0)
--- Dependencies: 225
+-- TOC entry 4538 (class 0 OID 0)
+-- Dependencies: 228
 -- Name: COLUMN file.is_asset_only; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1001,26 +1216,17 @@ COMMENT ON COLUMN public.file.is_asset_only IS 'true = asset only (not standalon
 
 
 --
--- TOC entry 4386 (class 0 OID 0)
--- Dependencies: 225
--- Name: COLUMN file.footer_overrides; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4539 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: COLUMN file.branding_template_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.file.footer_overrides IS 'File-specific footer overrides (positioning, styling). Content comes from Settings.';
-
-
---
--- TOC entry 4387 (class 0 OID 0)
--- Dependencies: 225
--- Name: COLUMN file.footer_template_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.file.footer_template_id IS 'Reference to system_templates for footer configuration';
+COMMENT ON COLUMN public.file.branding_template_id IS 'Reference to system_templates for footer configuration';
 
 
 --
--- TOC entry 4388 (class 0 OID 0)
--- Dependencies: 225
+-- TOC entry 4540 (class 0 OID 0)
+-- Dependencies: 228
 -- Name: COLUMN file.accessible_pages; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1028,8 +1234,8 @@ COMMENT ON COLUMN public.file.accessible_pages IS 'Array of page numbers accessi
 
 
 --
--- TOC entry 4389 (class 0 OID 0)
--- Dependencies: 225
+-- TOC entry 4541 (class 0 OID 0)
+-- Dependencies: 228
 -- Name: COLUMN file.watermark_template_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1037,7 +1243,16 @@ COMMENT ON COLUMN public.file.watermark_template_id IS 'Reference to system_temp
 
 
 --
--- TOC entry 226 (class 1259 OID 46106)
+-- TOC entry 4542 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: COLUMN file.target_format; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.file.target_format IS 'File format orientation matching system_templates.target_format for template filtering';
+
+
+--
+-- TOC entry 229 (class 1259 OID 46106)
 -- Name: game; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1048,15 +1263,14 @@ CREATE TABLE public.game (
     game_type character varying(255),
     game_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     difficulty_level character varying(255),
-    creator_user_id character varying(255),
     content_query jsonb DEFAULT '{}'::jsonb,
     digital boolean DEFAULT true NOT NULL
 );
 
 
 --
--- TOC entry 4390 (class 0 OID 0)
--- Dependencies: 226
+-- TOC entry 4543 (class 0 OID 0)
+-- Dependencies: 229
 -- Name: TABLE game; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1064,8 +1278,8 @@ COMMENT ON TABLE public.game IS 'Educational games and interactive content';
 
 
 --
--- TOC entry 4391 (class 0 OID 0)
--- Dependencies: 226
+-- TOC entry 4544 (class 0 OID 0)
+-- Dependencies: 229
 -- Name: COLUMN game.digital; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1073,148 +1287,199 @@ COMMENT ON COLUMN public.game.digital IS 'true = דיגיטלי, false = גרס�
 
 
 --
--- TOC entry 246 (class 1259 OID 46613)
--- Name: game_content_link; Type: TABLE; Schema: public; Owner: -
+-- TOC entry 252 (class 1259 OID 46893)
+-- Name: gamelobby; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.game_content_link (
+CREATE TABLE public.gamelobby (
     id character varying(255) NOT NULL,
     game_id character varying(255) NOT NULL,
-    link_type public.enum_game_content_link_link_type NOT NULL,
-    target_id character varying(255) NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    owner_user_id character varying(255) NOT NULL,
+    host_user_id character varying(255) NOT NULL,
+    lobby_code character varying(6) NOT NULL,
+    settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    expires_at timestamp with time zone,
+    closed_at timestamp with time zone,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
 );
 
 
 --
--- TOC entry 4392 (class 0 OID 0)
--- Dependencies: 246
--- Name: COLUMN game_content_link.id; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4545 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.game_content_link.id IS 'Unique identifier for this link';
-
-
---
--- TOC entry 4393 (class 0 OID 0)
--- Dependencies: 246
--- Name: COLUMN game_content_link.game_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.game_content_link.game_id IS 'The game this link belongs to';
+COMMENT ON COLUMN public.gamelobby.id IS 'Primary key for game lobby';
 
 
 --
--- TOC entry 4394 (class 0 OID 0)
--- Dependencies: 246
--- Name: COLUMN game_content_link.link_type; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4546 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.game_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.game_content_link.link_type IS 'Defines whether the link points to a single content item or a content relation';
-
-
---
--- TOC entry 4395 (class 0 OID 0)
--- Dependencies: 246
--- Name: COLUMN game_content_link.target_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.game_content_link.target_id IS 'References either gamecontent.id or game_content_relation.id depending on link_type';
+COMMENT ON COLUMN public.gamelobby.game_id IS 'Reference to the game being played in this lobby';
 
 
 --
--- TOC entry 4396 (class 0 OID 0)
--- Dependencies: 246
--- Name: COLUMN game_content_link.metadata; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4547 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.owner_user_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.game_content_link.metadata IS 'Optional JSON data for storing additional info about the link';
+COMMENT ON COLUMN public.gamelobby.owner_user_id IS 'User who bought/has access to the game';
 
 
 --
--- TOC entry 244 (class 1259 OID 46567)
--- Name: game_content_relation; Type: TABLE; Schema: public; Owner: -
+-- TOC entry 4548 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.host_user_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-CREATE TABLE public.game_content_relation (
-    id character varying(255) NOT NULL,
-    relation_type public.enum_game_content_relation_relation_type NOT NULL,
-    is_bidirectional boolean DEFAULT false NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+COMMENT ON COLUMN public.gamelobby.host_user_id IS 'User who opened this specific lobby session';
+
+
+--
+-- TOC entry 4549 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.lobby_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamelobby.lobby_code IS 'Short unique code for joining lobby (e.g., ABC123)';
+
+
+--
+-- TOC entry 4550 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.settings; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamelobby.settings IS 'Lobby settings including max_players, invitation_type, game rules, etc.';
+
+
+--
+-- TOC entry 4551 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.expires_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamelobby.expires_at IS 'When this lobby will automatically close (null = pending activation)';
+
+
+--
+-- TOC entry 4552 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: COLUMN gamelobby.closed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamelobby.closed_at IS 'When the lobby was manually closed (if applicable)';
+
+
+--
+-- TOC entry 253 (class 1259 OID 46933)
+-- Name: gamesession; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gamesession (
+    id uuid NOT NULL,
+    lobby_id character varying(255) NOT NULL,
+    session_number integer NOT NULL,
+    participants jsonb DEFAULT '[]'::jsonb NOT NULL,
+    current_state jsonb,
+    data jsonb,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone
 );
 
 
 --
--- TOC entry 4397 (class 0 OID 0)
--- Dependencies: 244
--- Name: COLUMN game_content_relation.relation_type; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4553 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.game_content_relation.relation_type IS 'Defines what kind of relationship this is (e.g., translation, synonym, etc.)';
-
-
---
--- TOC entry 4398 (class 0 OID 0)
--- Dependencies: 244
--- Name: COLUMN game_content_relation.is_bidirectional; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.game_content_relation.is_bidirectional IS 'Whether the relation applies in both directions (e.g., synonyms are bidirectional, Q/A are not)';
+COMMENT ON COLUMN public.gamesession.id IS 'UUID primary key for game session';
 
 
 --
--- TOC entry 4399 (class 0 OID 0)
--- Dependencies: 244
--- Name: COLUMN game_content_relation.metadata; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4554 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.lobby_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.game_content_relation.metadata IS 'Optional JSON for storing extra data (e.g., confidence score, source, etc.)';
-
-
---
--- TOC entry 245 (class 1259 OID 46589)
--- Name: game_content_relation_items; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.game_content_relation_items (
-    relation_id character varying(255) NOT NULL,
-    content_id character varying(255) NOT NULL,
-    role public.enum_game_content_relation_items_role,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
+COMMENT ON COLUMN public.gamesession.lobby_id IS 'Reference to the game lobby this session belongs to';
 
 
 --
--- TOC entry 4400 (class 0 OID 0)
--- Dependencies: 245
--- Name: COLUMN game_content_relation_items.role; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4555 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.session_number; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.game_content_relation_items.role IS 'Optional label describing the content’s function within the relation';
-
-
---
--- TOC entry 243 (class 1259 OID 46536)
--- Name: gamecontent; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.gamecontent (
-    id character varying(255) NOT NULL,
-    semantic_type character varying(255) NOT NULL,
-    data_type character varying(255) NOT NULL,
-    value text NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
-);
+COMMENT ON COLUMN public.gamesession.session_number IS 'Sequential number of this session within the lobby (1, 2, 3...)';
 
 
 --
--- TOC entry 227 (class 1259 OID 46115)
+-- TOC entry 4556 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.participants; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamesession.participants IS 'Array of participant objects with id, isAuthedUser, display_name, user_id?, guest_token?, team_assignment?, joined_at';
+
+
+--
+-- TOC entry 4557 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.current_state; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamesession.current_state IS 'Current live game state while the game is active';
+
+
+--
+-- TOC entry 4558 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.data; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamesession.data IS 'Final results, scores, winners, and detailed game data when completed';
+
+
+--
+-- TOC entry 4559 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.started_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamesession.started_at IS 'When this game session started';
+
+
+--
+-- TOC entry 4560 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.finished_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamesession.finished_at IS 'When this game session finished (null if still active)';
+
+
+--
+-- TOC entry 4561 (class 0 OID 0)
+-- Dependencies: 253
+-- Name: COLUMN gamesession.expires_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.gamesession.expires_at IS 'When this session expires (inherits from lobby or independent)';
+
+
+--
+-- TOC entry 230 (class 1259 OID 46115)
 -- Name: lesson_plan; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1230,13 +1495,16 @@ CREATE TABLE public.lesson_plan (
     teacher_notes text,
     accessible_slides integer[],
     allow_slide_preview boolean DEFAULT true NOT NULL,
-    watermark_template_id character varying(255)
+    watermark_template_id character varying(255),
+    branding_template_id character varying(255),
+    branding_settings jsonb,
+    add_branding boolean DEFAULT true NOT NULL
 );
 
 
 --
--- TOC entry 4401 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4562 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.context; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1244,8 +1512,8 @@ COMMENT ON COLUMN public.lesson_plan.context IS 'Theme context like "animals", "
 
 
 --
--- TOC entry 4402 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4563 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.file_configs; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1253,8 +1521,8 @@ COMMENT ON COLUMN public.lesson_plan.file_configs IS 'JSON configuration for fil
 
 
 --
--- TOC entry 4403 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4564 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.is_active; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1262,8 +1530,8 @@ COMMENT ON COLUMN public.lesson_plan.is_active IS 'Whether this lesson plan is a
 
 
 --
--- TOC entry 4404 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4565 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.estimated_duration; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1271,8 +1539,8 @@ COMMENT ON COLUMN public.lesson_plan.estimated_duration IS 'Estimated duration o
 
 
 --
--- TOC entry 4405 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4566 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.total_slides; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1280,8 +1548,8 @@ COMMENT ON COLUMN public.lesson_plan.total_slides IS 'Total number of slides in 
 
 
 --
--- TOC entry 4406 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4567 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.teacher_notes; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1289,8 +1557,8 @@ COMMENT ON COLUMN public.lesson_plan.teacher_notes IS 'Notes and instructions fo
 
 
 --
--- TOC entry 4407 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4568 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.accessible_slides; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1298,8 +1566,8 @@ COMMENT ON COLUMN public.lesson_plan.accessible_slides IS 'Array of slide indice
 
 
 --
--- TOC entry 4408 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4569 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.allow_slide_preview; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1307,8 +1575,8 @@ COMMENT ON COLUMN public.lesson_plan.allow_slide_preview IS 'Whether slides can 
 
 
 --
--- TOC entry 4409 (class 0 OID 0)
--- Dependencies: 227
+-- TOC entry 4570 (class 0 OID 0)
+-- Dependencies: 230
 -- Name: COLUMN lesson_plan.watermark_template_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1316,7 +1584,7 @@ COMMENT ON COLUMN public.lesson_plan.watermark_template_id IS 'Reference to syst
 
 
 --
--- TOC entry 228 (class 1259 OID 46122)
+-- TOC entry 231 (class 1259 OID 46122)
 -- Name: logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1331,8 +1599,8 @@ CREATE TABLE public.logs (
 
 
 --
--- TOC entry 4410 (class 0 OID 0)
--- Dependencies: 228
+-- TOC entry 4571 (class 0 OID 0)
+-- Dependencies: 231
 -- Name: TABLE logs; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1340,7 +1608,7 @@ COMMENT ON TABLE public.logs IS 'Application logging and audit trail';
 
 
 --
--- TOC entry 229 (class 1259 OID 46129)
+-- TOC entry 232 (class 1259 OID 46129)
 -- Name: logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -1354,8 +1622,8 @@ CREATE SEQUENCE public.logs_id_seq
 
 
 --
--- TOC entry 4411 (class 0 OID 0)
--- Dependencies: 229
+-- TOC entry 4572 (class 0 OID 0)
+-- Dependencies: 232
 -- Name: logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
@@ -1363,303 +1631,11 @@ ALTER SEQUENCE public.logs_id_seq OWNED BY public.logs.id;
 
 
 --
--- TOC entry 230 (class 1259 OID 46130)
--- Name: product; Type: TABLE; Schema: public; Owner: -
+-- TOC entry 257 (class 1259 OID 47146)
+-- Name: old_settings; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.product (
-    id character varying(255) NOT NULL,
-    title character varying(255),
-    description text,
-    category character varying(255),
-    product_type character varying(255),
-    entity_id character varying(255) NOT NULL,
-    price numeric,
-    is_published boolean,
-    image_url character varying(500),
-    tags jsonb,
-    target_audience character varying(255),
-    access_days numeric,
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now(),
-    creator_user_id character varying(255),
-    short_description character varying(255),
-    marketing_video_url character varying(255),
-    marketing_video_title character varying(255),
-    marketing_video_duration integer,
-    marketing_video_type public.enum_product_marketing_video_type,
-    marketing_video_id character varying(255),
-    type_attributes jsonb DEFAULT '{}'::jsonb,
-    image_filename character varying(255),
-    has_image boolean DEFAULT false NOT NULL
-);
-
-
---
--- TOC entry 4412 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.image_url; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.image_url IS 'DEPRECATED: Use image_filename and has_image instead. Kept for backward compatibility.';
-
-
---
--- TOC entry 4413 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.marketing_video_url; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.marketing_video_url IS 'URL for uploaded marketing video file';
-
-
---
--- TOC entry 4414 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.marketing_video_title; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.marketing_video_title IS 'Title for uploaded marketing video';
-
-
---
--- TOC entry 4415 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.marketing_video_duration; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.marketing_video_duration IS 'Duration of uploaded marketing video in seconds';
-
-
---
--- TOC entry 4416 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.marketing_video_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.marketing_video_type IS 'Type of marketing video: youtube or uploaded file';
-
-
---
--- TOC entry 4417 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.marketing_video_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.marketing_video_id IS 'YouTube video ID or entity ID for uploaded videos';
-
-
---
--- TOC entry 4418 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.type_attributes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.type_attributes IS 'Type-specific attributes based on product_type';
-
-
---
--- TOC entry 4419 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.image_filename; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.image_filename IS 'Standardized image filename storage (replaces image_url placeholder)';
-
-
---
--- TOC entry 4420 (class 0 OID 0)
--- Dependencies: 230
--- Name: COLUMN product.has_image; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.product.has_image IS 'Clear boolean indicator for image existence';
-
-
---
--- TOC entry 231 (class 1259 OID 46138)
--- Name: purchase; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.purchase (
-    id character varying(255) NOT NULL,
-    buyer_user_id character varying(255) NOT NULL,
-    purchasable_type character varying(50) NOT NULL,
-    purchasable_id character varying(255) NOT NULL,
-    payment_amount numeric(10,2) NOT NULL,
-    original_price numeric(10,2) NOT NULL,
-    discount_amount numeric(10,2) DEFAULT 0,
-    coupon_code character varying(100),
-    payment_method character varying(50),
-    payment_status character varying(50) DEFAULT 'cart'::character varying NOT NULL,
-    transaction_id character varying(255),
-    access_expires_at timestamp with time zone,
-    download_count integer DEFAULT 0,
-    first_accessed_at timestamp with time zone,
-    last_accessed_at timestamp with time zone,
-    metadata jsonb DEFAULT '{}'::jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- TOC entry 4421 (class 0 OID 0)
--- Dependencies: 231
--- Name: TABLE purchase; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.purchase IS 'Purchase records and access tracking';
-
-
---
--- TOC entry 232 (class 1259 OID 46149)
--- Name: school; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.school (
-    id character varying(255) NOT NULL,
-    name character varying(255) NOT NULL,
-    city character varying(255) NOT NULL,
-    address character varying(255) NOT NULL,
-    institution_symbol character varying(255) NOT NULL,
-    email character varying(255),
-    phone_numbers jsonb DEFAULT '[]'::jsonb,
-    education_levels jsonb DEFAULT '[]'::jsonb,
-    district character varying(255),
-    logo_url character varying(500),
-    school_headmaster_id character varying(255),
-    edu_system_id character varying(255),
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    has_logo boolean DEFAULT false NOT NULL,
-    logo_filename character varying(255)
-);
-
-
---
--- TOC entry 4422 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.name IS 'School name';
-
-
---
--- TOC entry 4423 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.city; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.city IS 'City where the school is located';
-
-
---
--- TOC entry 4424 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.address; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.address IS 'Full address of the school';
-
-
---
--- TOC entry 4425 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.institution_symbol; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.institution_symbol IS 'Unique institution symbol/code';
-
-
---
--- TOC entry 4426 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.email; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.email IS 'Primary email address';
-
-
---
--- TOC entry 4427 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.phone_numbers; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.phone_numbers IS 'Array of phone objects with phone and description fields';
-
-
---
--- TOC entry 4428 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.education_levels; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.education_levels IS 'Array of education levels (elementary, middle_school, high_school, academic)';
-
-
---
--- TOC entry 4429 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.district; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.district IS 'Educational district (צפון, חיפה, מרכז, etc.)';
-
-
---
--- TOC entry 4430 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.logo_url; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.logo_url IS 'DEPRECATED: Use has_logo and logo_filename instead. Kept for backward compatibility.';
-
-
---
--- TOC entry 4431 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.school_headmaster_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.school_headmaster_id IS 'School headmaster user ID';
-
-
---
--- TOC entry 4432 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.edu_system_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.edu_system_id IS 'Education system identifier';
-
-
---
--- TOC entry 4433 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.has_logo; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.has_logo IS 'Clear boolean indicator for logo image existence';
-
-
---
--- TOC entry 4434 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN school.logo_filename; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.school.logo_filename IS 'Standardized logo filename storage (replaces logo_url)';
-
-
---
--- TOC entry 233 (class 1259 OID 46156)
--- Name: settings; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.settings (
+CREATE TABLE public.old_settings (
     id character varying(255) NOT NULL,
     subscription_system_enabled boolean,
     default_course_access_days numeric,
@@ -1711,7 +1687,7 @@ CREATE TABLE public.settings (
     allow_content_creator_files boolean DEFAULT true,
     allow_content_creator_tools boolean DEFAULT true,
     allow_content_creator_games boolean DEFAULT true,
-    copyright_footer_text text DEFAULT 'כל הזכויות שמורות. תוכן זה מוגן בזכויות יוצרים ואסור להעתיקו, להפיצו או לשתפו ללא אישור בכתב מהמחבר או מלודורה.'::text,
+    copyright_text text DEFAULT 'כל הזכויות שמורות. תוכן זה מוגן בזכויות יוצרים ואסור להעתיקו, להפיצו או לשתפו ללא אישור בכתב מהמחבר או מלודורה.'::text,
     nav_tools_text character varying(255),
     nav_tools_icon character varying(255),
     nav_tools_visibility character varying(255) DEFAULT 'admin_only'::character varying,
@@ -1737,138 +1713,676 @@ CREATE TABLE public.settings (
     default_tool_access_days integer,
     tool_lifetime_access boolean,
     has_logo boolean DEFAULT false NOT NULL,
+    logo_filename character varying(255),
+    students_access public.enum_settings_students_access DEFAULT 'all'::public.enum_settings_students_access
+);
+
+
+--
+-- TOC entry 4573 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.logo_url; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.logo_url IS 'DEPRECATED: Use has_logo and logo_filename instead. Kept for backward compatibility.';
+
+
+--
+-- TOC entry 4574 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.copyright_text; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.copyright_text IS 'Copyright text to be dynamically merged into PDF files';
+
+
+--
+-- TOC entry 4575 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.nav_tools_text; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.nav_tools_text IS 'Custom text for tools navigation item';
+
+
+--
+-- TOC entry 4576 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.nav_tools_icon; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.nav_tools_icon IS 'Custom icon for tools navigation item';
+
+
+--
+-- TOC entry 4577 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.nav_tools_visibility; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.nav_tools_visibility IS 'Visibility setting for tools navigation item (public, logged_in_users, admin_only, admins_and_creators, hidden)';
+
+
+--
+-- TOC entry 4578 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.nav_tools_enabled; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.nav_tools_enabled IS 'Whether tools navigation item is enabled';
+
+
+--
+-- TOC entry 4579 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.available_dashboard_widgets; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.available_dashboard_widgets IS 'Available widgets for user dashboards';
+
+
+--
+-- TOC entry 4580 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.available_specializations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.available_specializations IS 'Available specializations for teacher onboarding';
+
+
+--
+-- TOC entry 4581 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.available_grade_levels; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.available_grade_levels IS 'Available grade levels for classroom creation';
+
+
+--
+-- TOC entry 4582 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.default_game_access_days; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.default_game_access_days IS 'Default access days for game products';
+
+
+--
+-- TOC entry 4583 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.game_lifetime_access; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.game_lifetime_access IS 'Whether game products have lifetime access by default';
+
+
+--
+-- TOC entry 4584 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.has_logo; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.has_logo IS 'Clear boolean indicator for system logo existence';
+
+
+--
+-- TOC entry 4585 (class 0 OID 0)
+-- Dependencies: 257
+-- Name: COLUMN old_settings.logo_filename; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.old_settings.logo_filename IS 'Standardized system logo filename storage (replaces logo_url)';
+
+
+--
+-- TOC entry 256 (class 1259 OID 47008)
+-- Name: player; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.player (
+    id uuid NOT NULL,
+    privacy_code character varying(8) NOT NULL,
+    display_name character varying(100) NOT NULL,
+    user_id character varying(255),
+    teacher_id character varying(255),
+    achievements jsonb DEFAULT '[]'::jsonb NOT NULL,
+    preferences jsonb DEFAULT '{}'::jsonb NOT NULL,
+    is_online boolean DEFAULT false NOT NULL,
+    last_seen timestamp with time zone NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+
+--
+-- TOC entry 4586 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.id IS 'Unique player identifier';
+
+
+--
+-- TOC entry 4587 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.privacy_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.privacy_code IS 'Unique privacy code for anonymous player authentication (e.g. AB3X7KM9)';
+
+
+--
+-- TOC entry 4588 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.display_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.display_name IS 'Display name shown in games and to teachers';
+
+
+--
+-- TOC entry 4589 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.user_id IS 'Associated user account (null for anonymous players)';
+
+
+--
+-- TOC entry 4590 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.teacher_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.teacher_id IS 'Teacher who owns/manages this player';
+
+
+--
+-- TOC entry 4591 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.achievements; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.achievements IS 'Array of player achievements and badges';
+
+
+--
+-- TOC entry 4592 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.preferences; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.preferences IS 'Player preferences and settings';
+
+
+--
+-- TOC entry 4593 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.is_online; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.is_online IS 'Whether player is currently connected via SSE';
+
+
+--
+-- TOC entry 4594 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.last_seen; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.last_seen IS 'Last time player was active or seen online';
+
+
+--
+-- TOC entry 4595 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: COLUMN player.is_active; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.player.is_active IS 'Whether player account is active (soft delete)';
+
+
+--
+-- TOC entry 233 (class 1259 OID 46130)
+-- Name: product; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product (
+    id character varying(255) NOT NULL,
+    title character varying(255),
+    description text,
+    category character varying(255),
+    product_type character varying(255),
+    entity_id character varying(255) NOT NULL,
+    price numeric,
+    is_published boolean,
+    image_url character varying(500),
+    tags jsonb,
+    target_audience character varying(255),
+    access_days numeric,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    creator_user_id character varying(255),
+    short_description character varying(255),
+    marketing_video_url character varying(255),
+    marketing_video_title character varying(255),
+    marketing_video_duration integer,
+    marketing_video_type public.enum_product_marketing_video_type,
+    marketing_video_id character varying(255),
+    type_attributes jsonb DEFAULT '{}'::jsonb,
+    image_filename character varying(255),
+    has_image boolean DEFAULT false NOT NULL,
+    content_topic_id character varying(255)
+);
+
+
+--
+-- TOC entry 4596 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.image_url; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.image_url IS 'DEPRECATED: Use image_filename and has_image instead. Kept for backward compatibility.';
+
+
+--
+-- TOC entry 4597 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.marketing_video_url; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.marketing_video_url IS 'URL for uploaded marketing video file';
+
+
+--
+-- TOC entry 4598 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.marketing_video_title; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.marketing_video_title IS 'Title for uploaded marketing video';
+
+
+--
+-- TOC entry 4599 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.marketing_video_duration; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.marketing_video_duration IS 'Duration of uploaded marketing video in seconds';
+
+
+--
+-- TOC entry 4600 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.marketing_video_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.marketing_video_type IS 'Type of marketing video: youtube or uploaded file';
+
+
+--
+-- TOC entry 4601 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.marketing_video_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.marketing_video_id IS 'YouTube video ID or entity ID for uploaded videos';
+
+
+--
+-- TOC entry 4602 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.type_attributes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.type_attributes IS 'Type-specific attributes based on product_type';
+
+
+--
+-- TOC entry 4603 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.image_filename; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.image_filename IS 'Standardized image filename storage (replaces image_url placeholder)';
+
+
+--
+-- TOC entry 4604 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: COLUMN product.has_image; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product.has_image IS 'Clear boolean indicator for image existence';
+
+
+--
+-- TOC entry 234 (class 1259 OID 46138)
+-- Name: purchase; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.purchase (
+    id character varying(255) NOT NULL,
+    buyer_user_id character varying(255) NOT NULL,
+    purchasable_type character varying(50) NOT NULL,
+    purchasable_id character varying(255) NOT NULL,
+    payment_amount numeric(10,2) NOT NULL,
+    original_price numeric(10,2) NOT NULL,
+    discount_amount numeric(10,2) DEFAULT 0,
+    coupon_code character varying(100),
+    payment_method character varying(50),
+    payment_status character varying(50) DEFAULT 'cart'::character varying NOT NULL,
+    transaction_id character varying(255),
+    access_expires_at timestamp with time zone,
+    download_count integer DEFAULT 0,
+    first_accessed_at timestamp with time zone,
+    last_accessed_at timestamp with time zone,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- TOC entry 4605 (class 0 OID 0)
+-- Dependencies: 234
+-- Name: TABLE purchase; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.purchase IS 'Purchase records and access tracking';
+
+
+--
+-- TOC entry 254 (class 1259 OID 46968)
+-- Name: refresh_token; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.refresh_token (
+    id character varying(255) NOT NULL,
+    user_id character varying(255) NOT NULL,
+    token_hash character varying(255) NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    last_used_at timestamp with time zone,
+    metadata jsonb DEFAULT '"{}"'::jsonb NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+
+--
+-- TOC entry 4606 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: COLUMN refresh_token.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.refresh_token.id IS 'Unique identifier for the refresh token';
+
+
+--
+-- TOC entry 4607 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: COLUMN refresh_token.user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.refresh_token.user_id IS 'ID of the user this refresh token belongs to';
+
+
+--
+-- TOC entry 4608 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: COLUMN refresh_token.token_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.refresh_token.token_hash IS 'SHA256 hash of the refresh token for security';
+
+
+--
+-- TOC entry 4609 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: COLUMN refresh_token.expires_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.refresh_token.expires_at IS 'When this refresh token expires';
+
+
+--
+-- TOC entry 4610 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: COLUMN refresh_token.revoked_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.refresh_token.revoked_at IS 'When this token was manually revoked (soft delete)';
+
+
+--
+-- TOC entry 4611 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: COLUMN refresh_token.last_used_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.refresh_token.last_used_at IS 'When this token was last used to refresh access token';
+
+
+--
+-- TOC entry 4612 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: COLUMN refresh_token.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.refresh_token.metadata IS 'Additional metadata like user agent, IP, device info';
+
+
+--
+-- TOC entry 235 (class 1259 OID 46149)
+-- Name: school; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.school (
+    id character varying(255) NOT NULL,
+    name character varying(255) NOT NULL,
+    city character varying(255) NOT NULL,
+    address character varying(255) NOT NULL,
+    institution_symbol character varying(255) NOT NULL,
+    email character varying(255),
+    phone_numbers jsonb DEFAULT '[]'::jsonb,
+    education_levels jsonb DEFAULT '[]'::jsonb,
+    district character varying(255),
+    logo_url character varying(500),
+    school_headmaster_id character varying(255),
+    edu_system_id character varying(255),
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    has_logo boolean DEFAULT false NOT NULL,
     logo_filename character varying(255)
 );
 
 
 --
--- TOC entry 4435 (class 0 OID 0)
--- Dependencies: 233
--- Name: TABLE settings; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4613 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.name; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.settings IS 'Application configuration and settings';
-
-
---
--- TOC entry 4436 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.logo_url; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.settings.logo_url IS 'DEPRECATED: Use has_logo and logo_filename instead. Kept for backward compatibility.';
+COMMENT ON COLUMN public.school.name IS 'School name';
 
 
 --
--- TOC entry 4437 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.copyright_footer_text; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4614 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.city; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.settings.copyright_footer_text IS 'Copyright text to be dynamically merged into PDF files';
-
-
---
--- TOC entry 4438 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.nav_tools_text; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.settings.nav_tools_text IS 'Custom text for tools navigation item';
+COMMENT ON COLUMN public.school.city IS 'City where the school is located';
 
 
 --
--- TOC entry 4439 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.nav_tools_icon; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4615 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.address; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.settings.nav_tools_icon IS 'Custom icon for tools navigation item';
-
-
---
--- TOC entry 4440 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.nav_tools_visibility; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.settings.nav_tools_visibility IS 'Visibility setting for tools navigation item (public, logged_in_users, admin_only, admins_and_creators, hidden)';
+COMMENT ON COLUMN public.school.address IS 'Full address of the school';
 
 
 --
--- TOC entry 4441 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.nav_tools_enabled; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4616 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.institution_symbol; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.settings.nav_tools_enabled IS 'Whether tools navigation item is enabled';
-
-
---
--- TOC entry 4442 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.available_dashboard_widgets; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.settings.available_dashboard_widgets IS 'Available widgets for user dashboards';
+COMMENT ON COLUMN public.school.institution_symbol IS 'Unique institution symbol/code';
 
 
 --
--- TOC entry 4443 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.available_specializations; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4617 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.email; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.settings.available_specializations IS 'Available specializations for teacher onboarding';
-
-
---
--- TOC entry 4444 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.available_grade_levels; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.settings.available_grade_levels IS 'Available grade levels for classroom creation';
+COMMENT ON COLUMN public.school.email IS 'Primary email address';
 
 
 --
--- TOC entry 4445 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.default_game_access_days; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4618 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.phone_numbers; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.settings.default_game_access_days IS 'Default access days for game products';
-
-
---
--- TOC entry 4446 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.game_lifetime_access; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.settings.game_lifetime_access IS 'Whether game products have lifetime access by default';
+COMMENT ON COLUMN public.school.phone_numbers IS 'Array of phone objects with phone and description fields';
 
 
 --
--- TOC entry 4447 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.has_logo; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4619 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.education_levels; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.settings.has_logo IS 'Clear boolean indicator for system logo existence';
-
-
---
--- TOC entry 4448 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN settings.logo_filename; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.settings.logo_filename IS 'Standardized system logo filename storage (replaces logo_url)';
+COMMENT ON COLUMN public.school.education_levels IS 'Array of education levels (elementary, middle_school, high_school, academic)';
 
 
 --
--- TOC entry 234 (class 1259 OID 46179)
+-- TOC entry 4620 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.district; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.school.district IS 'Educational district (צפון, חיפה, מרכז, etc.)';
+
+
+--
+-- TOC entry 4621 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.logo_url; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.school.logo_url IS 'DEPRECATED: Use has_logo and logo_filename instead. Kept for backward compatibility.';
+
+
+--
+-- TOC entry 4622 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.school_headmaster_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.school.school_headmaster_id IS 'School headmaster user ID';
+
+
+--
+-- TOC entry 4623 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.edu_system_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.school.edu_system_id IS 'Education system identifier';
+
+
+--
+-- TOC entry 4624 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.has_logo; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.school.has_logo IS 'Clear boolean indicator for logo image existence';
+
+
+--
+-- TOC entry 4625 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: COLUMN school.logo_filename; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.school.logo_filename IS 'Standardized logo filename storage (replaces logo_url)';
+
+
+--
+-- TOC entry 258 (class 1259 OID 47197)
+-- Name: settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.settings (
+    id character varying(255) NOT NULL,
+    key character varying(255) NOT NULL,
+    value jsonb,
+    value_type public.enum_configuration_value_type DEFAULT 'string'::public.enum_configuration_value_type NOT NULL,
+    description text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- TOC entry 4626 (class 0 OID 0)
+-- Dependencies: 258
+-- Name: COLUMN settings.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.settings.id IS 'Configuration record UUID';
+
+
+--
+-- TOC entry 4627 (class 0 OID 0)
+-- Dependencies: 258
+-- Name: COLUMN settings.key; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.settings.key IS 'Configuration key (e.g., subscription_system_enabled, contact_email)';
+
+
+--
+-- TOC entry 4628 (class 0 OID 0)
+-- Dependencies: 258
+-- Name: COLUMN settings.value; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.settings.value IS 'Configuration value stored as JSON (supports strings, numbers, booleans, objects, arrays)';
+
+
+--
+-- TOC entry 4629 (class 0 OID 0)
+-- Dependencies: 258
+-- Name: COLUMN settings.value_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.settings.value_type IS 'Type hint for value casting';
+
+
+--
+-- TOC entry 4630 (class 0 OID 0)
+-- Dependencies: 258
+-- Name: COLUMN settings.description; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.settings.description IS 'Human-readable description of this configuration setting';
+
+
+--
+-- TOC entry 236 (class 1259 OID 46179)
 -- Name: studentinvitation; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1895,7 +2409,7 @@ CREATE TABLE public.studentinvitation (
 
 
 --
--- TOC entry 235 (class 1259 OID 46186)
+-- TOC entry 237 (class 1259 OID 46186)
 -- Name: subscription; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1922,8 +2436,8 @@ CREATE TABLE public.subscription (
 
 
 --
--- TOC entry 4449 (class 0 OID 0)
--- Dependencies: 235
+-- TOC entry 4631 (class 0 OID 0)
+-- Dependencies: 237
 -- Name: COLUMN subscription.original_price; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1931,8 +2445,8 @@ COMMENT ON COLUMN public.subscription.original_price IS 'Original price before d
 
 
 --
--- TOC entry 4450 (class 0 OID 0)
--- Dependencies: 235
+-- TOC entry 4632 (class 0 OID 0)
+-- Dependencies: 237
 -- Name: COLUMN subscription.discount_amount; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1940,7 +2454,7 @@ COMMENT ON COLUMN public.subscription.discount_amount IS 'Discount amount applie
 
 
 --
--- TOC entry 236 (class 1259 OID 46194)
+-- TOC entry 238 (class 1259 OID 46194)
 -- Name: subscriptionhistory; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1964,8 +2478,8 @@ CREATE TABLE public.subscriptionhistory (
 
 
 --
--- TOC entry 4451 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4633 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1973,8 +2487,8 @@ COMMENT ON COLUMN public.subscriptionhistory.id IS 'Unique identifier for subscr
 
 
 --
--- TOC entry 4452 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4634 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.user_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1982,8 +2496,8 @@ COMMENT ON COLUMN public.subscriptionhistory.user_id IS 'ID of the user this his
 
 
 --
--- TOC entry 4453 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4635 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.subscription_plan_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -1991,8 +2505,8 @@ COMMENT ON COLUMN public.subscriptionhistory.subscription_plan_id IS 'ID of the 
 
 
 --
--- TOC entry 4454 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4636 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.subscription_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2000,8 +2514,8 @@ COMMENT ON COLUMN public.subscriptionhistory.subscription_id IS 'ID of the subsc
 
 
 --
--- TOC entry 4455 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4637 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.action_type; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2009,8 +2523,8 @@ COMMENT ON COLUMN public.subscriptionhistory.action_type IS 'Type of subscriptio
 
 
 --
--- TOC entry 4456 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4638 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.previous_plan_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2018,8 +2532,8 @@ COMMENT ON COLUMN public.subscriptionhistory.previous_plan_id IS 'ID of the prev
 
 
 --
--- TOC entry 4457 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4639 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.start_date; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2027,8 +2541,8 @@ COMMENT ON COLUMN public.subscriptionhistory.start_date IS 'Start date of the su
 
 
 --
--- TOC entry 4458 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4640 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.end_date; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2036,8 +2550,8 @@ COMMENT ON COLUMN public.subscriptionhistory.end_date IS 'End date of the subscr
 
 
 --
--- TOC entry 4459 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4641 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.purchased_price; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2045,8 +2559,8 @@ COMMENT ON COLUMN public.subscriptionhistory.purchased_price IS 'Price paid for 
 
 
 --
--- TOC entry 4460 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4642 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.payplus_subscription_uid; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2054,8 +2568,8 @@ COMMENT ON COLUMN public.subscriptionhistory.payplus_subscription_uid IS 'PayPlu
 
 
 --
--- TOC entry 4461 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4643 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.transaction_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2063,8 +2577,8 @@ COMMENT ON COLUMN public.subscriptionhistory.transaction_id IS 'ID of the transa
 
 
 --
--- TOC entry 4462 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4644 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.notes; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2072,8 +2586,8 @@ COMMENT ON COLUMN public.subscriptionhistory.notes IS 'Additional notes about th
 
 
 --
--- TOC entry 4463 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4645 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.metadata; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2081,8 +2595,8 @@ COMMENT ON COLUMN public.subscriptionhistory.metadata IS 'Additional metadata fo
 
 
 --
--- TOC entry 4464 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4646 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.created_at; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2090,8 +2604,8 @@ COMMENT ON COLUMN public.subscriptionhistory.created_at IS 'Timestamp when this 
 
 
 --
--- TOC entry 4465 (class 0 OID 0)
--- Dependencies: 236
+-- TOC entry 4647 (class 0 OID 0)
+-- Dependencies: 238
 -- Name: COLUMN subscriptionhistory.updated_at; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2099,7 +2613,7 @@ COMMENT ON COLUMN public.subscriptionhistory.updated_at IS 'Timestamp when this 
 
 
 --
--- TOC entry 237 (class 1259 OID 46199)
+-- TOC entry 239 (class 1259 OID 46199)
 -- Name: subscriptionplan; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2125,7 +2639,7 @@ CREATE TABLE public.subscriptionplan (
 
 
 --
--- TOC entry 250 (class 1259 OID 46691)
+-- TOC entry 247 (class 1259 OID 46691)
 -- Name: supportmessage; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2143,8 +2657,8 @@ CREATE TABLE public.supportmessage (
 
 
 --
--- TOC entry 4466 (class 0 OID 0)
--- Dependencies: 250
+-- TOC entry 4648 (class 0 OID 0)
+-- Dependencies: 247
 -- Name: COLUMN supportmessage.name; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2152,8 +2666,8 @@ COMMENT ON COLUMN public.supportmessage.name IS 'Name of the person submitting t
 
 
 --
--- TOC entry 4467 (class 0 OID 0)
--- Dependencies: 250
+-- TOC entry 4649 (class 0 OID 0)
+-- Dependencies: 247
 -- Name: COLUMN supportmessage.email; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2161,8 +2675,8 @@ COMMENT ON COLUMN public.supportmessage.email IS 'Email address of the person su
 
 
 --
--- TOC entry 4468 (class 0 OID 0)
--- Dependencies: 250
+-- TOC entry 4650 (class 0 OID 0)
+-- Dependencies: 247
 -- Name: COLUMN supportmessage.phone; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2170,8 +2684,8 @@ COMMENT ON COLUMN public.supportmessage.phone IS 'Phone number of the person sub
 
 
 --
--- TOC entry 4469 (class 0 OID 0)
--- Dependencies: 250
+-- TOC entry 4651 (class 0 OID 0)
+-- Dependencies: 247
 -- Name: COLUMN supportmessage.subject; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2179,8 +2693,8 @@ COMMENT ON COLUMN public.supportmessage.subject IS 'Subject line of the support 
 
 
 --
--- TOC entry 4470 (class 0 OID 0)
--- Dependencies: 250
+-- TOC entry 4652 (class 0 OID 0)
+-- Dependencies: 247
 -- Name: COLUMN supportmessage.content; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2188,8 +2702,8 @@ COMMENT ON COLUMN public.supportmessage.content IS 'Detailed content of the supp
 
 
 --
--- TOC entry 4471 (class 0 OID 0)
--- Dependencies: 250
+-- TOC entry 4653 (class 0 OID 0)
+-- Dependencies: 247
 -- Name: COLUMN supportmessage.is_read; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2197,7 +2711,7 @@ COMMENT ON COLUMN public.supportmessage.is_read IS 'Whether this message has bee
 
 
 --
--- TOC entry 247 (class 1259 OID 46633)
+-- TOC entry 248 (class 1259 OID 46752)
 -- Name: system_templates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2206,28 +2720,30 @@ CREATE TABLE public.system_templates (
     name character varying(255) NOT NULL,
     description text,
     template_type character varying(100) NOT NULL,
-    category character varying(100),
+    target_format character varying(50) NOT NULL,
     is_default boolean DEFAULT false NOT NULL,
     template_data jsonb NOT NULL,
+    target_file_types character varying(255)[] DEFAULT NULL::character varying[],
     created_by character varying(255),
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    target_file_types character varying(255)[] DEFAULT NULL::character varying[]
+    CONSTRAINT chk_target_format CHECK (((target_format)::text = ANY ((ARRAY['pdf-a4-landscape'::character varying, 'pdf-a4-portrait'::character varying, 'svg-lessonplan'::character varying])::text[]))),
+    CONSTRAINT chk_template_type CHECK (((template_type)::text = ANY ((ARRAY['branding'::character varying, 'watermark'::character varying])::text[])))
 );
 
 
 --
--- TOC entry 4472 (class 0 OID 0)
--- Dependencies: 247
+-- TOC entry 4654 (class 0 OID 0)
+-- Dependencies: 248
 -- Name: COLUMN system_templates.name; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.system_templates.name IS 'Human-readable template name (e.g., "Landscape Footer", "Portrait Minimal")';
+COMMENT ON COLUMN public.system_templates.name IS 'Human-readable template name in Hebrew';
 
 
 --
--- TOC entry 4473 (class 0 OID 0)
--- Dependencies: 247
+-- TOC entry 4655 (class 0 OID 0)
+-- Dependencies: 248
 -- Name: COLUMN system_templates.description; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2235,61 +2751,61 @@ COMMENT ON COLUMN public.system_templates.description IS 'Optional description o
 
 
 --
--- TOC entry 4474 (class 0 OID 0)
--- Dependencies: 247
+-- TOC entry 4656 (class 0 OID 0)
+-- Dependencies: 248
 -- Name: COLUMN system_templates.template_type; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.system_templates.template_type IS 'Type of template (footer, header, watermark, etc.)';
+COMMENT ON COLUMN public.system_templates.template_type IS 'Type of template: branding or watermark';
 
 
 --
--- TOC entry 4475 (class 0 OID 0)
--- Dependencies: 247
--- Name: COLUMN system_templates.category; Type: COMMENT; Schema: public; Owner: -
+-- TOC entry 4657 (class 0 OID 0)
+-- Dependencies: 248
+-- Name: COLUMN system_templates.target_format; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.system_templates.category IS 'Template category (landscape, portrait, minimal, logo-only, corporate, etc.)';
+COMMENT ON COLUMN public.system_templates.target_format IS 'Target format: pdf-a4-portrait, pdf-a4-landscape, or svg-lessonplan';
 
 
 --
--- TOC entry 4476 (class 0 OID 0)
--- Dependencies: 247
+-- TOC entry 4658 (class 0 OID 0)
+-- Dependencies: 248
 -- Name: COLUMN system_templates.is_default; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.system_templates.is_default IS 'Whether this template is the default for its template_type';
+COMMENT ON COLUMN public.system_templates.is_default IS 'Whether this template is the default for its type+format combination';
 
 
 --
--- TOC entry 4477 (class 0 OID 0)
--- Dependencies: 247
+-- TOC entry 4659 (class 0 OID 0)
+-- Dependencies: 248
 -- Name: COLUMN system_templates.template_data; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.system_templates.template_data IS 'Flexible template configuration data structure, varies by template_type';
+COMMENT ON COLUMN public.system_templates.template_data IS 'Complete template configuration including all elements and styling';
 
 
 --
--- TOC entry 4478 (class 0 OID 0)
--- Dependencies: 247
--- Name: COLUMN system_templates.created_by; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.system_templates.created_by IS 'Email of user who created this template (admin user)';
-
-
---
--- TOC entry 4479 (class 0 OID 0)
--- Dependencies: 247
+-- TOC entry 4660 (class 0 OID 0)
+-- Dependencies: 248
 -- Name: COLUMN system_templates.target_file_types; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.system_templates.target_file_types IS 'Array of file types this template applies to: [pdf, svg, both] - null for footer/header templates';
+COMMENT ON COLUMN public.system_templates.target_file_types IS 'Array of file types for watermark templates: [pdf, svg] or null for branding';
 
 
 --
--- TOC entry 238 (class 1259 OID 46206)
+-- TOC entry 4661 (class 0 OID 0)
+-- Dependencies: 248
+-- Name: COLUMN system_templates.created_by; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.system_templates.created_by IS 'Email of user who created this template';
+
+
+--
+-- TOC entry 240 (class 1259 OID 46206)
 -- Name: tool; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2304,8 +2820,8 @@ CREATE TABLE public.tool (
 
 
 --
--- TOC entry 4480 (class 0 OID 0)
--- Dependencies: 238
+-- TOC entry 4662 (class 0 OID 0)
+-- Dependencies: 240
 -- Name: COLUMN tool.tool_key; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2313,8 +2829,8 @@ COMMENT ON COLUMN public.tool.tool_key IS 'Unique identifier for the tool (e.g.,
 
 
 --
--- TOC entry 4481 (class 0 OID 0)
--- Dependencies: 238
+-- TOC entry 4663 (class 0 OID 0)
+-- Dependencies: 240
 -- Name: COLUMN tool.category; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2322,8 +2838,8 @@ COMMENT ON COLUMN public.tool.category IS 'Category of the tool (e.g., generator
 
 
 --
--- TOC entry 4482 (class 0 OID 0)
--- Dependencies: 238
+-- TOC entry 4664 (class 0 OID 0)
+-- Dependencies: 240
 -- Name: COLUMN tool.default_access_days; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2331,7 +2847,7 @@ COMMENT ON COLUMN public.tool.default_access_days IS 'Default access duration wh
 
 
 --
--- TOC entry 239 (class 1259 OID 46215)
+-- TOC entry 241 (class 1259 OID 46215)
 -- Name: transaction; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2357,7 +2873,7 @@ CREATE TABLE public.transaction (
 
 
 --
--- TOC entry 240 (class 1259 OID 46229)
+-- TOC entry 242 (class 1259 OID 46229)
 -- Name: user; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2380,13 +2896,14 @@ CREATE TABLE public."user" (
     onboarding_completed boolean DEFAULT false NOT NULL,
     birth_date date,
     specializations jsonb DEFAULT '[]'::jsonb,
-    school_id character varying(255)
+    school_id character varying(255),
+    invitation_code character varying(8)
 );
 
 
 --
--- TOC entry 4483 (class 0 OID 0)
--- Dependencies: 240
+-- TOC entry 4665 (class 0 OID 0)
+-- Dependencies: 242
 -- Name: TABLE "user"; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2394,8 +2911,8 @@ COMMENT ON TABLE public."user" IS 'User accounts and authentication information'
 
 
 --
--- TOC entry 4484 (class 0 OID 0)
--- Dependencies: 240
+-- TOC entry 4666 (class 0 OID 0)
+-- Dependencies: 242
 -- Name: COLUMN "user".dashboard_settings; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2403,8 +2920,8 @@ COMMENT ON COLUMN public."user".dashboard_settings IS 'User dashboard configurat
 
 
 --
--- TOC entry 4485 (class 0 OID 0)
--- Dependencies: 240
+-- TOC entry 4667 (class 0 OID 0)
+-- Dependencies: 242
 -- Name: COLUMN "user".onboarding_completed; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2412,8 +2929,8 @@ COMMENT ON COLUMN public."user".onboarding_completed IS 'Flag indicating whether
 
 
 --
--- TOC entry 4486 (class 0 OID 0)
--- Dependencies: 240
+-- TOC entry 4668 (class 0 OID 0)
+-- Dependencies: 242
 -- Name: COLUMN "user".birth_date; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2421,8 +2938,8 @@ COMMENT ON COLUMN public."user".birth_date IS 'User birth date for age verificat
 
 
 --
--- TOC entry 4487 (class 0 OID 0)
--- Dependencies: 240
+-- TOC entry 4669 (class 0 OID 0)
+-- Dependencies: 242
 -- Name: COLUMN "user".specializations; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2430,8 +2947,8 @@ COMMENT ON COLUMN public."user".specializations IS 'Teacher specializations and 
 
 
 --
--- TOC entry 4488 (class 0 OID 0)
--- Dependencies: 240
+-- TOC entry 4670 (class 0 OID 0)
+-- Dependencies: 242
 -- Name: COLUMN "user".school_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2439,7 +2956,119 @@ COMMENT ON COLUMN public."user".school_id IS 'School that this user belongs to (
 
 
 --
--- TOC entry 241 (class 1259 OID 46240)
+-- TOC entry 4671 (class 0 OID 0)
+-- Dependencies: 242
+-- Name: COLUMN "user".invitation_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public."user".invitation_code IS 'Unique invitation code for teachers to share their catalog with students';
+
+
+--
+-- TOC entry 255 (class 1259 OID 46988)
+-- Name: user_session; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_session (
+    id character varying(255) NOT NULL,
+    user_id character varying(255),
+    expires_at timestamp with time zone NOT NULL,
+    last_accessed_at timestamp with time zone NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    invalidated_at timestamp with time zone,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    player_id uuid,
+    portal character varying(20) DEFAULT 'teacher'::character varying NOT NULL,
+    CONSTRAINT user_session_entity_check CHECK ((((user_id IS NOT NULL) AND (player_id IS NULL)) OR ((user_id IS NULL) AND (player_id IS NOT NULL)))),
+    CONSTRAINT user_session_portal_check CHECK (((portal)::text = ANY ((ARRAY['teacher'::character varying, 'student'::character varying])::text[])))
+);
+
+
+--
+-- TOC entry 4672 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.id IS 'Unique session identifier';
+
+
+--
+-- TOC entry 4673 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.user_id IS 'ID of the user this session belongs to (null for player sessions)';
+
+
+--
+-- TOC entry 4674 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.expires_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.expires_at IS 'When this session expires';
+
+
+--
+-- TOC entry 4675 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.last_accessed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.last_accessed_at IS 'When this session was last accessed';
+
+
+--
+-- TOC entry 4676 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.is_active; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.is_active IS 'Whether this session is active';
+
+
+--
+-- TOC entry 4677 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.invalidated_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.invalidated_at IS 'When this session was manually invalidated';
+
+
+--
+-- TOC entry 4678 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.metadata IS 'Session metadata like user agent, IP, login method';
+
+
+--
+-- TOC entry 4679 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.player_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.player_id IS 'ID of the player this session belongs to (null for user sessions)';
+
+
+--
+-- TOC entry 4680 (class 0 OID 0)
+-- Dependencies: 255
+-- Name: COLUMN user_session.portal; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.user_session.portal IS 'Portal context where this session was created (teacher or student)';
+
+
+--
+-- TOC entry 243 (class 1259 OID 46240)
 -- Name: webhook_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2464,8 +3093,8 @@ CREATE TABLE public.webhook_log (
 
 
 --
--- TOC entry 4489 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4681 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.provider; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2473,8 +3102,8 @@ COMMENT ON COLUMN public.webhook_log.provider IS 'Webhook provider (payplus, str
 
 
 --
--- TOC entry 4490 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4682 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.event_type; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2482,8 +3111,8 @@ COMMENT ON COLUMN public.webhook_log.event_type IS 'Type of webhook event';
 
 
 --
--- TOC entry 4491 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4683 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.event_data; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2491,8 +3120,8 @@ COMMENT ON COLUMN public.webhook_log.event_data IS 'Complete webhook payload dat
 
 
 --
--- TOC entry 4492 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4684 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.sender_info; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2500,8 +3129,8 @@ COMMENT ON COLUMN public.webhook_log.sender_info IS 'Information about who sent 
 
 
 --
--- TOC entry 4493 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4685 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.response_data; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2509,8 +3138,8 @@ COMMENT ON COLUMN public.webhook_log.response_data IS 'Response data sent back t
 
 
 --
--- TOC entry 4494 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4686 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.process_log; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2518,8 +3147,8 @@ COMMENT ON COLUMN public.webhook_log.process_log IS 'Log of processing steps and
 
 
 --
--- TOC entry 4495 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4687 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.status; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2527,8 +3156,8 @@ COMMENT ON COLUMN public.webhook_log.status IS 'Status: received, processing, co
 
 
 --
--- TOC entry 4496 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4688 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.page_request_uid; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2536,8 +3165,8 @@ COMMENT ON COLUMN public.webhook_log.page_request_uid IS 'PayPlus page request U
 
 
 --
--- TOC entry 4497 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4689 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.payplus_transaction_uid; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2545,8 +3174,8 @@ COMMENT ON COLUMN public.webhook_log.payplus_transaction_uid IS 'PayPlus transac
 
 
 --
--- TOC entry 4498 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4690 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.transaction_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2554,8 +3183,8 @@ COMMENT ON COLUMN public.webhook_log.transaction_id IS 'Related transaction ID i
 
 
 --
--- TOC entry 4499 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4691 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.subscription_id; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2563,8 +3192,8 @@ COMMENT ON COLUMN public.webhook_log.subscription_id IS 'Related subscription ID
 
 
 --
--- TOC entry 4500 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4692 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.error_message; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2572,8 +3201,8 @@ COMMENT ON COLUMN public.webhook_log.error_message IS 'Error message if processi
 
 
 --
--- TOC entry 4501 (class 0 OID 0)
--- Dependencies: 241
+-- TOC entry 4693 (class 0 OID 0)
+-- Dependencies: 243
 -- Name: COLUMN webhook_log.processing_duration_ms; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2581,7 +3210,7 @@ COMMENT ON COLUMN public.webhook_log.processing_duration_ms IS 'Time taken to pr
 
 
 --
--- TOC entry 242 (class 1259 OID 46246)
+-- TOC entry 244 (class 1259 OID 46246)
 -- Name: workshop; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2616,8 +3245,8 @@ CREATE TABLE public.workshop (
 
 
 --
--- TOC entry 4502 (class 0 OID 0)
--- Dependencies: 242
+-- TOC entry 4694 (class 0 OID 0)
+-- Dependencies: 244
 -- Name: TABLE workshop; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2625,8 +3254,8 @@ COMMENT ON TABLE public.workshop IS 'Workshop content (recorded and live)';
 
 
 --
--- TOC entry 4503 (class 0 OID 0)
--- Dependencies: 242
+-- TOC entry 4695 (class 0 OID 0)
+-- Dependencies: 244
 -- Name: COLUMN workshop.video_file_url; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2634,8 +3263,8 @@ COMMENT ON COLUMN public.workshop.video_file_url IS 'DEPRECATED: Use has_video a
 
 
 --
--- TOC entry 4504 (class 0 OID 0)
--- Dependencies: 242
+-- TOC entry 4696 (class 0 OID 0)
+-- Dependencies: 244
 -- Name: COLUMN workshop.has_video; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2643,8 +3272,8 @@ COMMENT ON COLUMN public.workshop.has_video IS 'Clear boolean indicator for cont
 
 
 --
--- TOC entry 4505 (class 0 OID 0)
--- Dependencies: 242
+-- TOC entry 4697 (class 0 OID 0)
+-- Dependencies: 244
 -- Name: COLUMN workshop.video_filename; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -2652,7 +3281,7 @@ COMMENT ON COLUMN public.workshop.video_filename IS 'Standardized video filename
 
 
 --
--- TOC entry 3874 (class 2604 OID 46256)
+-- TOC entry 3920 (class 2604 OID 46256)
 -- Name: logs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2660,7 +3289,7 @@ ALTER TABLE ONLY public.logs ALTER COLUMN id SET DEFAULT nextval('public.logs_id
 
 
 --
--- TOC entry 3951 (class 2606 OID 46263)
+-- TOC entry 4009 (class 2606 OID 46263)
 -- Name: SequelizeMeta SequelizeMeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2669,7 +3298,7 @@ ALTER TABLE ONLY public."SequelizeMeta"
 
 
 --
--- TOC entry 3953 (class 2606 OID 46265)
+-- TOC entry 4011 (class 2606 OID 46265)
 -- Name: audiofile audiofile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2678,7 +3307,7 @@ ALTER TABLE ONLY public.audiofile
 
 
 --
--- TOC entry 3957 (class 2606 OID 46267)
+-- TOC entry 4015 (class 2606 OID 46267)
 -- Name: category category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2687,7 +3316,7 @@ ALTER TABLE ONLY public.category
 
 
 --
--- TOC entry 3959 (class 2606 OID 46269)
+-- TOC entry 4017 (class 2606 OID 46269)
 -- Name: classroom classroom_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2696,7 +3325,7 @@ ALTER TABLE ONLY public.classroom
 
 
 --
--- TOC entry 3965 (class 2606 OID 46271)
+-- TOC entry 4023 (class 2606 OID 46271)
 -- Name: classroommembership classroommembership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2705,7 +3334,43 @@ ALTER TABLE ONLY public.classroommembership
 
 
 --
--- TOC entry 3969 (class 2606 OID 46275)
+-- TOC entry 4292 (class 2606 OID 47208)
+-- Name: settings configuration_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT configuration_key_key UNIQUE (key);
+
+
+--
+-- TOC entry 4294 (class 2606 OID 47206)
+-- Name: settings configuration_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT configuration_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4217 (class 2606 OID 46781)
+-- Name: content_topic content_topic_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_topic
+    ADD CONSTRAINT content_topic_name_key UNIQUE (name);
+
+
+--
+-- TOC entry 4220 (class 2606 OID 46779)
+-- Name: content_topic content_topic_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_topic
+    ADD CONSTRAINT content_topic_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4027 (class 2606 OID 46275)
 -- Name: coupon coupon_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2714,7 +3379,7 @@ ALTER TABLE ONLY public.coupon
 
 
 --
--- TOC entry 3976 (class 2606 OID 46277)
+-- TOC entry 4034 (class 2606 OID 46277)
 -- Name: course course_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2723,7 +3388,7 @@ ALTER TABLE ONLY public.course
 
 
 --
--- TOC entry 4000 (class 2606 OID 46279)
+-- TOC entry 4057 (class 2606 OID 46279)
 -- Name: curriculum_item curriculum_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2732,7 +3397,7 @@ ALTER TABLE ONLY public.curriculum_item
 
 
 --
--- TOC entry 3986 (class 2606 OID 46281)
+-- TOC entry 4044 (class 2606 OID 46281)
 -- Name: curriculum curriculum_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2741,7 +3406,7 @@ ALTER TABLE ONLY public.curriculum
 
 
 --
--- TOC entry 4004 (class 2606 OID 46283)
+-- TOC entry 4061 (class 2606 OID 46283)
 -- Name: curriculum_product curriculum_product_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2750,7 +3415,25 @@ ALTER TABLE ONLY public.curriculum_product
 
 
 --
--- TOC entry 4152 (class 2606 OID 46674)
+-- TOC entry 4222 (class 2606 OID 46856)
+-- Name: edu_content edu_content_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.edu_content
+    ADD CONSTRAINT edu_content_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4227 (class 2606 OID 46873)
+-- Name: edu_content_use edu_content_use_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.edu_content_use
+    ADD CONSTRAINT edu_content_use_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4192 (class 2606 OID 46674)
 -- Name: emaillog emaillog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2759,7 +3442,7 @@ ALTER TABLE ONLY public.emaillog
 
 
 --
--- TOC entry 4146 (class 2606 OID 46663)
+-- TOC entry 4186 (class 2606 OID 46663)
 -- Name: emailtemplate emailtemplate_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2768,7 +3451,7 @@ ALTER TABLE ONLY public.emailtemplate
 
 
 --
--- TOC entry 4008 (class 2606 OID 46285)
+-- TOC entry 4065 (class 2606 OID 46285)
 -- Name: file file_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2777,25 +3460,7 @@ ALTER TABLE ONLY public.file
 
 
 --
--- TOC entry 4136 (class 2606 OID 46622)
--- Name: game_content_link game_content_link_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.game_content_link
-    ADD CONSTRAINT game_content_link_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 4129 (class 2606 OID 46577)
--- Name: game_content_relation game_content_relation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.game_content_relation
-    ADD CONSTRAINT game_content_relation_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 4015 (class 2606 OID 46287)
+-- TOC entry 4074 (class 2606 OID 46287)
 -- Name: game game_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2804,16 +3469,34 @@ ALTER TABLE ONLY public.game
 
 
 --
--- TOC entry 4127 (class 2606 OID 46545)
--- Name: gamecontent gamecontent_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- TOC entry 4236 (class 2606 OID 46903)
+-- Name: gamelobby gamelobby_lobby_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.gamecontent
-    ADD CONSTRAINT gamecontent_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.gamelobby
+    ADD CONSTRAINT gamelobby_lobby_code_key UNIQUE (lobby_code);
 
 
 --
--- TOC entry 4025 (class 2606 OID 46289)
+-- TOC entry 4240 (class 2606 OID 46901)
+-- Name: gamelobby gamelobby_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gamelobby
+    ADD CONSTRAINT gamelobby_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4246 (class 2606 OID 46941)
+-- Name: gamesession gamesession_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gamesession
+    ADD CONSTRAINT gamesession_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4085 (class 2606 OID 46289)
 -- Name: lesson_plan lesson_plan_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2822,7 +3505,7 @@ ALTER TABLE ONLY public.lesson_plan
 
 
 --
--- TOC entry 4031 (class 2606 OID 46291)
+-- TOC entry 4091 (class 2606 OID 46291)
 -- Name: logs logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2831,7 +3514,25 @@ ALTER TABLE ONLY public.logs
 
 
 --
--- TOC entry 4035 (class 2606 OID 46293)
+-- TOC entry 4279 (class 2606 OID 47018)
+-- Name: player player_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player
+    ADD CONSTRAINT player_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4281 (class 2606 OID 47020)
+-- Name: player player_privacy_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player
+    ADD CONSTRAINT player_privacy_code_key UNIQUE (privacy_code);
+
+
+--
+-- TOC entry 4096 (class 2606 OID 46293)
 -- Name: product product_entity_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2840,7 +3541,7 @@ ALTER TABLE ONLY public.product
 
 
 --
--- TOC entry 4037 (class 2606 OID 46295)
+-- TOC entry 4098 (class 2606 OID 46295)
 -- Name: product product_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2849,7 +3550,7 @@ ALTER TABLE ONLY public.product
 
 
 --
--- TOC entry 4044 (class 2606 OID 46297)
+-- TOC entry 4105 (class 2606 OID 46297)
 -- Name: purchase purchase_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2858,7 +3559,16 @@ ALTER TABLE ONLY public.purchase
 
 
 --
--- TOC entry 4054 (class 2606 OID 46299)
+-- TOC entry 4254 (class 2606 OID 46975)
+-- Name: refresh_token refresh_token_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refresh_token
+    ADD CONSTRAINT refresh_token_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4115 (class 2606 OID 46299)
 -- Name: school school_institution_symbol_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2867,7 +3577,7 @@ ALTER TABLE ONLY public.school
 
 
 --
--- TOC entry 4056 (class 2606 OID 46301)
+-- TOC entry 4117 (class 2606 OID 46301)
 -- Name: school school_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2876,16 +3586,16 @@ ALTER TABLE ONLY public.school
 
 
 --
--- TOC entry 4063 (class 2606 OID 46303)
--- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- TOC entry 4290 (class 2606 OID 47171)
+-- Name: old_settings settings_pkey1; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.settings
-    ADD CONSTRAINT settings_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.old_settings
+    ADD CONSTRAINT settings_pkey1 PRIMARY KEY (id);
 
 
 --
--- TOC entry 4066 (class 2606 OID 46305)
+-- TOC entry 4122 (class 2606 OID 46305)
 -- Name: studentinvitation studentinvitation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2894,7 +3604,7 @@ ALTER TABLE ONLY public.studentinvitation
 
 
 --
--- TOC entry 4078 (class 2606 OID 46307)
+-- TOC entry 4134 (class 2606 OID 46307)
 -- Name: subscription subscription_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2903,7 +3613,7 @@ ALTER TABLE ONLY public.subscription
 
 
 --
--- TOC entry 4087 (class 2606 OID 46309)
+-- TOC entry 4143 (class 2606 OID 46309)
 -- Name: subscriptionhistory subscriptionhistory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2912,7 +3622,7 @@ ALTER TABLE ONLY public.subscriptionhistory
 
 
 --
--- TOC entry 4089 (class 2606 OID 46311)
+-- TOC entry 4145 (class 2606 OID 46311)
 -- Name: subscriptionplan subscriptionplan_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2921,7 +3631,7 @@ ALTER TABLE ONLY public.subscriptionplan
 
 
 --
--- TOC entry 4164 (class 2606 OID 46698)
+-- TOC entry 4204 (class 2606 OID 46698)
 -- Name: supportmessage supportmessage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2930,7 +3640,7 @@ ALTER TABLE ONLY public.supportmessage
 
 
 --
--- TOC entry 4144 (class 2606 OID 46640)
+-- TOC entry 4213 (class 2606 OID 46760)
 -- Name: system_templates system_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2939,7 +3649,7 @@ ALTER TABLE ONLY public.system_templates
 
 
 --
--- TOC entry 4092 (class 2606 OID 46313)
+-- TOC entry 4148 (class 2606 OID 46313)
 -- Name: tool tool_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2948,7 +3658,7 @@ ALTER TABLE ONLY public.tool
 
 
 --
--- TOC entry 4094 (class 2606 OID 46315)
+-- TOC entry 4150 (class 2606 OID 46315)
 -- Name: tool tool_tool_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2957,7 +3667,7 @@ ALTER TABLE ONLY public.tool
 
 
 --
--- TOC entry 4098 (class 2606 OID 46317)
+-- TOC entry 4154 (class 2606 OID 46317)
 -- Name: transaction transaction_final_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2966,7 +3676,7 @@ ALTER TABLE ONLY public.transaction
 
 
 --
--- TOC entry 4058 (class 2606 OID 46321)
+-- TOC entry 4119 (class 2606 OID 46321)
 -- Name: school unique_school_location; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2975,7 +3685,16 @@ ALTER TABLE ONLY public.school
 
 
 --
--- TOC entry 4109 (class 2606 OID 46323)
+-- TOC entry 4165 (class 2606 OID 46957)
+-- Name: user user_invitation_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."user"
+    ADD CONSTRAINT user_invitation_code_key UNIQUE (invitation_code);
+
+
+--
+-- TOC entry 4168 (class 2606 OID 46323)
 -- Name: user user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2984,7 +3703,16 @@ ALTER TABLE ONLY public."user"
 
 
 --
--- TOC entry 4118 (class 2606 OID 46325)
+-- TOC entry 4269 (class 2606 OID 46996)
+-- Name: user_session user_session_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_session
+    ADD CONSTRAINT user_session_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4177 (class 2606 OID 46325)
 -- Name: webhook_log webhook_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2993,7 +3721,7 @@ ALTER TABLE ONLY public.webhook_log
 
 
 --
--- TOC entry 4125 (class 2606 OID 46327)
+-- TOC entry 4184 (class 2606 OID 46327)
 -- Name: workshop workshop_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3002,7 +3730,23 @@ ALTER TABLE ONLY public.workshop
 
 
 --
--- TOC entry 3981 (class 1259 OID 46330)
+-- TOC entry 4215 (class 1259 OID 46783)
+-- Name: content_topic_is_active_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX content_topic_is_active_idx ON public.content_topic USING btree (is_active);
+
+
+--
+-- TOC entry 4218 (class 1259 OID 46782)
+-- Name: content_topic_name_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX content_topic_name_unique ON public.content_topic USING btree (name);
+
+
+--
+-- TOC entry 4039 (class 1259 OID 46330)
 -- Name: curriculum_class_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3010,7 +3754,7 @@ CREATE INDEX curriculum_class_id ON public.curriculum USING btree (class_id);
 
 
 --
--- TOC entry 3982 (class 1259 OID 46331)
+-- TOC entry 4040 (class 1259 OID 46331)
 -- Name: curriculum_grade; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3018,7 +3762,7 @@ CREATE INDEX curriculum_grade ON public.curriculum USING btree (grade);
 
 
 --
--- TOC entry 3983 (class 1259 OID 46332)
+-- TOC entry 4041 (class 1259 OID 46332)
 -- Name: curriculum_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3026,15 +3770,7 @@ CREATE INDEX curriculum_is_active ON public.curriculum USING btree (is_active);
 
 
 --
--- TOC entry 3991 (class 1259 OID 46333)
--- Name: curriculum_item_content_topic; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX curriculum_item_content_topic ON public.curriculum_item USING btree (content_topic);
-
-
---
--- TOC entry 3992 (class 1259 OID 46334)
+-- TOC entry 4049 (class 1259 OID 46334)
 -- Name: curriculum_item_curriculum_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3042,7 +3778,7 @@ CREATE INDEX curriculum_item_curriculum_id ON public.curriculum_item USING btree
 
 
 --
--- TOC entry 3993 (class 1259 OID 46335)
+-- TOC entry 4050 (class 1259 OID 46335)
 -- Name: curriculum_item_curriculum_id_custom_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3050,7 +3786,7 @@ CREATE INDEX curriculum_item_curriculum_id_custom_order ON public.curriculum_ite
 
 
 --
--- TOC entry 3994 (class 1259 OID 46336)
+-- TOC entry 4051 (class 1259 OID 46336)
 -- Name: curriculum_item_curriculum_id_mandatory_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3058,7 +3794,7 @@ CREATE INDEX curriculum_item_curriculum_id_mandatory_order ON public.curriculum_
 
 
 --
--- TOC entry 3995 (class 1259 OID 46337)
+-- TOC entry 4052 (class 1259 OID 46337)
 -- Name: curriculum_item_custom_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3066,7 +3802,7 @@ CREATE INDEX curriculum_item_custom_order ON public.curriculum_item USING btree 
 
 
 --
--- TOC entry 3996 (class 1259 OID 46338)
+-- TOC entry 4053 (class 1259 OID 46338)
 -- Name: curriculum_item_is_completed; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3074,7 +3810,7 @@ CREATE INDEX curriculum_item_is_completed ON public.curriculum_item USING btree 
 
 
 --
--- TOC entry 3997 (class 1259 OID 46339)
+-- TOC entry 4054 (class 1259 OID 46339)
 -- Name: curriculum_item_is_mandatory; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3082,7 +3818,7 @@ CREATE INDEX curriculum_item_is_mandatory ON public.curriculum_item USING btree 
 
 
 --
--- TOC entry 3998 (class 1259 OID 46340)
+-- TOC entry 4055 (class 1259 OID 46340)
 -- Name: curriculum_item_mandatory_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3090,7 +3826,7 @@ CREATE INDEX curriculum_item_mandatory_order ON public.curriculum_item USING btr
 
 
 --
--- TOC entry 4001 (class 1259 OID 46341)
+-- TOC entry 4058 (class 1259 OID 46341)
 -- Name: curriculum_item_study_topic; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3098,7 +3834,7 @@ CREATE INDEX curriculum_item_study_topic ON public.curriculum_item USING btree (
 
 
 --
--- TOC entry 3984 (class 1259 OID 46342)
+-- TOC entry 4042 (class 1259 OID 46342)
 -- Name: curriculum_original_curriculum_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3106,7 +3842,7 @@ CREATE INDEX curriculum_original_curriculum_id_idx ON public.curriculum USING bt
 
 
 --
--- TOC entry 4002 (class 1259 OID 46343)
+-- TOC entry 4059 (class 1259 OID 46343)
 -- Name: curriculum_product_curriculum_item_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3114,7 +3850,7 @@ CREATE INDEX curriculum_product_curriculum_item_id ON public.curriculum_product 
 
 
 --
--- TOC entry 4005 (class 1259 OID 46344)
+-- TOC entry 4062 (class 1259 OID 46344)
 -- Name: curriculum_product_product_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3122,7 +3858,7 @@ CREATE INDEX curriculum_product_product_id ON public.curriculum_product USING bt
 
 
 --
--- TOC entry 3987 (class 1259 OID 46345)
+-- TOC entry 4045 (class 1259 OID 46345)
 -- Name: curriculum_subject; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3130,7 +3866,7 @@ CREATE INDEX curriculum_subject ON public.curriculum USING btree (subject);
 
 
 --
--- TOC entry 3988 (class 1259 OID 46346)
+-- TOC entry 4046 (class 1259 OID 46346)
 -- Name: curriculum_subject_grade; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3138,7 +3874,7 @@ CREATE INDEX curriculum_subject_grade ON public.curriculum USING btree (subject,
 
 
 --
--- TOC entry 3989 (class 1259 OID 46347)
+-- TOC entry 4047 (class 1259 OID 46347)
 -- Name: curriculum_teacher_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3146,7 +3882,7 @@ CREATE INDEX curriculum_teacher_user_id ON public.curriculum USING btree (teache
 
 
 --
--- TOC entry 3990 (class 1259 OID 46348)
+-- TOC entry 4048 (class 1259 OID 46348)
 -- Name: curriculum_teacher_user_id_class_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3154,7 +3890,7 @@ CREATE INDEX curriculum_teacher_user_id_class_id ON public.curriculum USING btre
 
 
 --
--- TOC entry 4006 (class 1259 OID 46349)
+-- TOC entry 4063 (class 1259 OID 46349)
 -- Name: file_is_asset_only; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3162,47 +3898,87 @@ CREATE INDEX file_is_asset_only ON public.file USING btree (is_asset_only);
 
 
 --
--- TOC entry 4133 (class 1259 OID 46628)
--- Name: game_content_link_game_id; Type: INDEX; Schema: public; Owner: -
+-- TOC entry 4232 (class 1259 OID 46953)
+-- Name: gamelobby_expires_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX game_content_link_game_id ON public.game_content_link USING btree (game_id);
-
-
---
--- TOC entry 4134 (class 1259 OID 46629)
--- Name: game_content_link_link_type; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX game_content_link_link_type ON public.game_content_link USING btree (link_type);
+CREATE INDEX gamelobby_expires_at_idx ON public.gamelobby USING btree (expires_at);
 
 
 --
--- TOC entry 4131 (class 1259 OID 46607)
--- Name: game_content_relation_items_content_id; Type: INDEX; Schema: public; Owner: -
+-- TOC entry 4233 (class 1259 OID 46919)
+-- Name: gamelobby_game_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX game_content_relation_items_content_id ON public.game_content_relation_items USING btree (content_id);
-
-
---
--- TOC entry 4132 (class 1259 OID 46606)
--- Name: game_content_relation_items_relation_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX game_content_relation_items_relation_id ON public.game_content_relation_items USING btree (relation_id);
+CREATE INDEX gamelobby_game_id_idx ON public.gamelobby USING btree (game_id);
 
 
 --
--- TOC entry 4130 (class 1259 OID 46605)
--- Name: game_content_relation_relation_type; Type: INDEX; Schema: public; Owner: -
+-- TOC entry 4234 (class 1259 OID 46921)
+-- Name: gamelobby_host_user_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX game_content_relation_relation_type ON public.game_content_relation USING btree (relation_type);
+CREATE INDEX gamelobby_host_user_id_idx ON public.gamelobby USING btree (host_user_id);
 
 
 --
--- TOC entry 3954 (class 1259 OID 46523)
+-- TOC entry 4237 (class 1259 OID 46922)
+-- Name: gamelobby_lobby_code_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX gamelobby_lobby_code_unique ON public.gamelobby USING btree (lobby_code);
+
+
+--
+-- TOC entry 4238 (class 1259 OID 46920)
+-- Name: gamelobby_owner_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX gamelobby_owner_user_id_idx ON public.gamelobby USING btree (owner_user_id);
+
+
+--
+-- TOC entry 4241 (class 1259 OID 46954)
+-- Name: gamesession_expires_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX gamesession_expires_at_idx ON public.gamesession USING btree (expires_at);
+
+
+--
+-- TOC entry 4242 (class 1259 OID 46951)
+-- Name: gamesession_finished_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX gamesession_finished_at_idx ON public.gamesession USING btree (finished_at);
+
+
+--
+-- TOC entry 4243 (class 1259 OID 46947)
+-- Name: gamesession_lobby_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX gamesession_lobby_id_idx ON public.gamesession USING btree (lobby_id);
+
+
+--
+-- TOC entry 4244 (class 1259 OID 46948)
+-- Name: gamesession_lobby_session_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX gamesession_lobby_session_unique ON public.gamesession USING btree (lobby_id, session_number);
+
+
+--
+-- TOC entry 4247 (class 1259 OID 46950)
+-- Name: gamesession_started_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX gamesession_started_at_idx ON public.gamesession USING btree (started_at);
+
+
+--
+-- TOC entry 4012 (class 1259 OID 46523)
 -- Name: idx_audiofile_file_filename; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3210,7 +3986,7 @@ CREATE INDEX idx_audiofile_file_filename ON public.audiofile USING btree (file_f
 
 
 --
--- TOC entry 3955 (class 1259 OID 46522)
+-- TOC entry 4013 (class 1259 OID 46522)
 -- Name: idx_audiofile_has_file; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3218,7 +3994,7 @@ CREATE INDEX idx_audiofile_has_file ON public.audiofile USING btree (has_file);
 
 
 --
--- TOC entry 3960 (class 1259 OID 46350)
+-- TOC entry 4018 (class 1259 OID 46350)
 -- Name: idx_classroom_school_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3226,7 +4002,7 @@ CREATE INDEX idx_classroom_school_id ON public.classroom USING btree (school_id)
 
 
 --
--- TOC entry 3961 (class 1259 OID 46351)
+-- TOC entry 4019 (class 1259 OID 46351)
 -- Name: idx_classroom_school_teacher; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3234,7 +4010,7 @@ CREATE INDEX idx_classroom_school_teacher ON public.classroom USING btree (schoo
 
 
 --
--- TOC entry 3962 (class 1259 OID 46352)
+-- TOC entry 4020 (class 1259 OID 46352)
 -- Name: idx_classroom_teacher_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3242,7 +4018,7 @@ CREATE INDEX idx_classroom_teacher_active ON public.classroom USING btree (teach
 
 
 --
--- TOC entry 3963 (class 1259 OID 46353)
+-- TOC entry 4021 (class 1259 OID 46353)
 -- Name: idx_classroom_teacher_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3250,7 +4026,7 @@ CREATE INDEX idx_classroom_teacher_id ON public.classroom USING btree (teacher_i
 
 
 --
--- TOC entry 3966 (class 1259 OID 46354)
+-- TOC entry 4024 (class 1259 OID 46354)
 -- Name: idx_classroommembership_classroom_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3258,7 +4034,7 @@ CREATE INDEX idx_classroommembership_classroom_id ON public.classroommembership 
 
 
 --
--- TOC entry 3967 (class 1259 OID 46355)
+-- TOC entry 4025 (class 1259 OID 46355)
 -- Name: idx_classroommembership_student_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3266,7 +4042,7 @@ CREATE INDEX idx_classroommembership_student_user_id ON public.classroommembersh
 
 
 --
--- TOC entry 3970 (class 1259 OID 46356)
+-- TOC entry 4028 (class 1259 OID 46356)
 -- Name: idx_coupon_active_visibility; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3274,7 +4050,7 @@ CREATE INDEX idx_coupon_active_visibility ON public.coupon USING btree (is_activ
 
 
 --
--- TOC entry 3971 (class 1259 OID 46357)
+-- TOC entry 4029 (class 1259 OID 46357)
 -- Name: idx_coupon_priority_level; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3282,7 +4058,7 @@ CREATE INDEX idx_coupon_priority_level ON public.coupon USING btree (priority_le
 
 
 --
--- TOC entry 3972 (class 1259 OID 46358)
+-- TOC entry 4030 (class 1259 OID 46358)
 -- Name: idx_coupon_targeting_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3290,7 +4066,7 @@ CREATE INDEX idx_coupon_targeting_type ON public.coupon USING btree (targeting_t
 
 
 --
--- TOC entry 3973 (class 1259 OID 46359)
+-- TOC entry 4031 (class 1259 OID 46359)
 -- Name: idx_coupon_valid_until; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3298,7 +4074,7 @@ CREATE INDEX idx_coupon_valid_until ON public.coupon USING btree (valid_until);
 
 
 --
--- TOC entry 3974 (class 1259 OID 46360)
+-- TOC entry 4032 (class 1259 OID 46360)
 -- Name: idx_coupon_visibility; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3306,7 +4082,7 @@ CREATE INDEX idx_coupon_visibility ON public.coupon USING btree (visibility);
 
 
 --
--- TOC entry 3977 (class 1259 OID 46361)
+-- TOC entry 4035 (class 1259 OID 46361)
 -- Name: idx_course_category; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3314,7 +4090,7 @@ CREATE INDEX idx_course_category ON public.course USING btree (category);
 
 
 --
--- TOC entry 3978 (class 1259 OID 46515)
+-- TOC entry 4036 (class 1259 OID 46515)
 -- Name: idx_course_has_video; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3322,7 +4098,7 @@ CREATE INDEX idx_course_has_video ON public.course USING btree (has_video);
 
 
 --
--- TOC entry 3979 (class 1259 OID 46362)
+-- TOC entry 4037 (class 1259 OID 46362)
 -- Name: idx_course_is_published; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3330,7 +4106,7 @@ CREATE INDEX idx_course_is_published ON public.course USING btree (is_published)
 
 
 --
--- TOC entry 3980 (class 1259 OID 46516)
+-- TOC entry 4038 (class 1259 OID 46516)
 -- Name: idx_course_video_filename; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3338,7 +4114,63 @@ CREATE INDEX idx_course_video_filename ON public.course USING btree (video_filen
 
 
 --
--- TOC entry 4153 (class 1259 OID 46680)
+-- TOC entry 4223 (class 1259 OID 46881)
+-- Name: idx_edu_content_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_edu_content_created_at ON public.edu_content USING btree (created_at);
+
+
+--
+-- TOC entry 4224 (class 1259 OID 46879)
+-- Name: idx_edu_content_element_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_edu_content_element_type ON public.edu_content USING btree (element_type);
+
+
+--
+-- TOC entry 4225 (class 1259 OID 46880)
+-- Name: idx_edu_content_metadata; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_edu_content_metadata ON public.edu_content USING gin (content_metadata);
+
+
+--
+-- TOC entry 4228 (class 1259 OID 46884)
+-- Name: idx_edu_content_use_contents_data; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_edu_content_use_contents_data ON public.edu_content_use USING gin (contents_data);
+
+
+--
+-- TOC entry 4229 (class 1259 OID 46885)
+-- Name: idx_edu_content_use_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_edu_content_use_created_at ON public.edu_content_use USING btree (created_at);
+
+
+--
+-- TOC entry 4230 (class 1259 OID 46882)
+-- Name: idx_edu_content_use_game_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_edu_content_use_game_id ON public.edu_content_use USING btree (game_id);
+
+
+--
+-- TOC entry 4231 (class 1259 OID 46883)
+-- Name: idx_edu_content_use_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_edu_content_use_type ON public.edu_content_use USING btree (use_type);
+
+
+--
+-- TOC entry 4193 (class 1259 OID 46680)
 -- Name: idx_emaillog_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3346,7 +4178,7 @@ CREATE INDEX idx_emaillog_created_at ON public.emaillog USING btree (created_at)
 
 
 --
--- TOC entry 4154 (class 1259 OID 46675)
+-- TOC entry 4194 (class 1259 OID 46675)
 -- Name: idx_emaillog_recipient_email; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3354,7 +4186,7 @@ CREATE INDEX idx_emaillog_recipient_email ON public.emaillog USING btree (recipi
 
 
 --
--- TOC entry 4155 (class 1259 OID 46679)
+-- TOC entry 4195 (class 1259 OID 46679)
 -- Name: idx_emaillog_related_purchase_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3362,7 +4194,7 @@ CREATE INDEX idx_emaillog_related_purchase_id ON public.emaillog USING btree (re
 
 
 --
--- TOC entry 4156 (class 1259 OID 46677)
+-- TOC entry 4196 (class 1259 OID 46677)
 -- Name: idx_emaillog_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3370,7 +4202,7 @@ CREATE INDEX idx_emaillog_status ON public.emaillog USING btree (status);
 
 
 --
--- TOC entry 4157 (class 1259 OID 46676)
+-- TOC entry 4197 (class 1259 OID 46676)
 -- Name: idx_emaillog_template_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3378,7 +4210,7 @@ CREATE INDEX idx_emaillog_template_id ON public.emaillog USING btree (template_i
 
 
 --
--- TOC entry 4158 (class 1259 OID 46678)
+-- TOC entry 4198 (class 1259 OID 46678)
 -- Name: idx_emaillog_trigger_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3386,7 +4218,7 @@ CREATE INDEX idx_emaillog_trigger_type ON public.emaillog USING btree (trigger_t
 
 
 --
--- TOC entry 4147 (class 1259 OID 46665)
+-- TOC entry 4187 (class 1259 OID 46665)
 -- Name: idx_emailtemplate_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3394,7 +4226,7 @@ CREATE INDEX idx_emailtemplate_is_active ON public.emailtemplate USING btree (is
 
 
 --
--- TOC entry 4148 (class 1259 OID 46667)
+-- TOC entry 4188 (class 1259 OID 46667)
 -- Name: idx_emailtemplate_send_to_admins; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3402,7 +4234,7 @@ CREATE INDEX idx_emailtemplate_send_to_admins ON public.emailtemplate USING btre
 
 
 --
--- TOC entry 4149 (class 1259 OID 46666)
+-- TOC entry 4189 (class 1259 OID 46666)
 -- Name: idx_emailtemplate_trigger_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3410,7 +4242,7 @@ CREATE INDEX idx_emailtemplate_trigger_active ON public.emailtemplate USING btre
 
 
 --
--- TOC entry 4150 (class 1259 OID 46664)
+-- TOC entry 4190 (class 1259 OID 46664)
 -- Name: idx_emailtemplate_trigger_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3418,7 +4250,7 @@ CREATE INDEX idx_emailtemplate_trigger_type ON public.emailtemplate USING btree 
 
 
 --
--- TOC entry 4009 (class 1259 OID 46649)
+-- TOC entry 4066 (class 1259 OID 46649)
 -- Name: idx_file_accessible_pages; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3426,7 +4258,23 @@ CREATE INDEX idx_file_accessible_pages ON public.file USING btree (accessible_pa
 
 
 --
--- TOC entry 4010 (class 1259 OID 46363)
+-- TOC entry 4067 (class 1259 OID 46730)
+-- Name: idx_file_branding_settings; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_file_branding_settings ON public.file USING btree (branding_settings);
+
+
+--
+-- TOC entry 4068 (class 1259 OID 46771)
+-- Name: idx_file_branding_template_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_file_branding_template_id ON public.file USING btree (branding_template_id);
+
+
+--
+-- TOC entry 4069 (class 1259 OID 46363)
 -- Name: idx_file_category; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3434,23 +4282,23 @@ CREATE INDEX idx_file_category ON public.file USING btree (category);
 
 
 --
--- TOC entry 4011 (class 1259 OID 46526)
--- Name: idx_file_footer_overrides; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_file_footer_overrides ON public.file USING btree (footer_overrides);
-
-
---
--- TOC entry 4012 (class 1259 OID 46646)
+-- TOC entry 4070 (class 1259 OID 46646)
 -- Name: idx_file_footer_template_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_file_footer_template_id ON public.file USING btree (footer_template_id);
+CREATE INDEX idx_file_footer_template_id ON public.file USING btree (branding_template_id);
 
 
 --
--- TOC entry 4013 (class 1259 OID 46650)
+-- TOC entry 4071 (class 1259 OID 46727)
+-- Name: idx_file_target_format; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_file_target_format ON public.file USING btree (target_format);
+
+
+--
+-- TOC entry 4072 (class 1259 OID 46650)
 -- Name: idx_file_watermark_template_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3458,15 +4306,7 @@ CREATE INDEX idx_file_watermark_template_id ON public.file USING btree (watermar
 
 
 --
--- TOC entry 4016 (class 1259 OID 46364)
--- Name: idx_game_creator_user_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_game_creator_user_id ON public.game USING btree (creator_user_id);
-
-
---
--- TOC entry 4017 (class 1259 OID 46365)
+-- TOC entry 4075 (class 1259 OID 46365)
 -- Name: idx_game_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3474,7 +4314,7 @@ CREATE INDEX idx_game_type ON public.game USING btree (game_type);
 
 
 --
--- TOC entry 4018 (class 1259 OID 46652)
+-- TOC entry 4076 (class 1259 OID 46652)
 -- Name: idx_lesson_plan_accessible_slides; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3482,7 +4322,15 @@ CREATE INDEX idx_lesson_plan_accessible_slides ON public.lesson_plan USING btree
 
 
 --
--- TOC entry 4019 (class 1259 OID 46653)
+-- TOC entry 4077 (class 1259 OID 46831)
+-- Name: idx_lesson_plan_add_branding; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lesson_plan_add_branding ON public.lesson_plan USING btree (add_branding);
+
+
+--
+-- TOC entry 4078 (class 1259 OID 46653)
 -- Name: idx_lesson_plan_allow_slide_preview; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3490,7 +4338,15 @@ CREATE INDEX idx_lesson_plan_allow_slide_preview ON public.lesson_plan USING btr
 
 
 --
--- TOC entry 4020 (class 1259 OID 46366)
+-- TOC entry 4079 (class 1259 OID 46829)
+-- Name: idx_lesson_plan_branding_template_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lesson_plan_branding_template_id ON public.lesson_plan USING btree (branding_template_id);
+
+
+--
+-- TOC entry 4080 (class 1259 OID 46366)
 -- Name: idx_lesson_plan_file_configs_gin; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3498,7 +4354,7 @@ CREATE INDEX idx_lesson_plan_file_configs_gin ON public.lesson_plan USING gin (f
 
 
 --
--- TOC entry 4021 (class 1259 OID 46654)
+-- TOC entry 4081 (class 1259 OID 46654)
 -- Name: idx_lesson_plan_watermark_template_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3506,7 +4362,7 @@ CREATE INDEX idx_lesson_plan_watermark_template_id ON public.lesson_plan USING b
 
 
 --
--- TOC entry 4026 (class 1259 OID 46367)
+-- TOC entry 4086 (class 1259 OID 46367)
 -- Name: idx_logs_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3514,7 +4370,7 @@ CREATE INDEX idx_logs_created_at ON public.logs USING btree (created_at);
 
 
 --
--- TOC entry 4027 (class 1259 OID 46368)
+-- TOC entry 4087 (class 1259 OID 46368)
 -- Name: idx_logs_log_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3522,7 +4378,7 @@ CREATE INDEX idx_logs_log_type ON public.logs USING btree (log_type);
 
 
 --
--- TOC entry 4028 (class 1259 OID 46369)
+-- TOC entry 4088 (class 1259 OID 46369)
 -- Name: idx_logs_source_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3530,7 +4386,7 @@ CREATE INDEX idx_logs_source_type ON public.logs USING btree (source_type);
 
 
 --
--- TOC entry 4029 (class 1259 OID 46370)
+-- TOC entry 4089 (class 1259 OID 46370)
 -- Name: idx_logs_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3538,7 +4394,111 @@ CREATE INDEX idx_logs_user_id ON public.logs USING btree (user_id);
 
 
 --
--- TOC entry 4032 (class 1259 OID 46509)
+-- TOC entry 4282 (class 1259 OID 47215)
+-- Name: idx_old_settings_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_old_settings_created_at ON public.old_settings USING btree (created_at);
+
+
+--
+-- TOC entry 4283 (class 1259 OID 47212)
+-- Name: idx_old_settings_has_logo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_old_settings_has_logo ON public.old_settings USING btree (has_logo);
+
+
+--
+-- TOC entry 4284 (class 1259 OID 47213)
+-- Name: idx_old_settings_logo_filename; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_old_settings_logo_filename ON public.old_settings USING btree (logo_filename);
+
+
+--
+-- TOC entry 4285 (class 1259 OID 47214)
+-- Name: idx_old_settings_maintenance_mode; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_old_settings_maintenance_mode ON public.old_settings USING btree (maintenance_mode);
+
+
+--
+-- TOC entry 4270 (class 1259 OID 47038)
+-- Name: idx_player_display_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_display_name ON public.player USING btree (display_name);
+
+
+--
+-- TOC entry 4271 (class 1259 OID 47036)
+-- Name: idx_player_last_seen; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_last_seen ON public.player USING btree (last_seen);
+
+
+--
+-- TOC entry 4272 (class 1259 OID 47035)
+-- Name: idx_player_online; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_online ON public.player USING btree (is_online);
+
+
+--
+-- TOC entry 4273 (class 1259 OID 47031)
+-- Name: idx_player_privacy_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_player_privacy_code ON public.player USING btree (privacy_code);
+
+
+--
+-- TOC entry 4274 (class 1259 OID 47034)
+-- Name: idx_player_teacher_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_teacher_active ON public.player USING btree (teacher_id, is_active);
+
+
+--
+-- TOC entry 4275 (class 1259 OID 47033)
+-- Name: idx_player_teacher_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_teacher_id ON public.player USING btree (teacher_id);
+
+
+--
+-- TOC entry 4276 (class 1259 OID 47037)
+-- Name: idx_player_teacher_online; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_teacher_online ON public.player USING btree (teacher_id, is_online);
+
+
+--
+-- TOC entry 4277 (class 1259 OID 47032)
+-- Name: idx_player_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_user_id ON public.player USING btree (user_id);
+
+
+--
+-- TOC entry 4092 (class 1259 OID 46828)
+-- Name: idx_product_content_topic_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_product_content_topic_id ON public.product USING btree (content_topic_id);
+
+
+--
+-- TOC entry 4093 (class 1259 OID 46509)
 -- Name: idx_product_has_image; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3546,7 +4506,7 @@ CREATE INDEX idx_product_has_image ON public.product USING btree (has_image);
 
 
 --
--- TOC entry 4033 (class 1259 OID 46510)
+-- TOC entry 4094 (class 1259 OID 46510)
 -- Name: idx_product_image_filename; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3554,7 +4514,7 @@ CREATE INDEX idx_product_image_filename ON public.product USING btree (image_fil
 
 
 --
--- TOC entry 4038 (class 1259 OID 46371)
+-- TOC entry 4099 (class 1259 OID 46371)
 -- Name: idx_purchase_access_expires; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3562,7 +4522,7 @@ CREATE INDEX idx_purchase_access_expires ON public.purchase USING btree (access_
 
 
 --
--- TOC entry 4039 (class 1259 OID 46372)
+-- TOC entry 4100 (class 1259 OID 46372)
 -- Name: idx_purchase_buyer_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3570,7 +4530,7 @@ CREATE INDEX idx_purchase_buyer_user_id ON public.purchase USING btree (buyer_us
 
 
 --
--- TOC entry 4040 (class 1259 OID 46373)
+-- TOC entry 4101 (class 1259 OID 46373)
 -- Name: idx_purchase_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3578,7 +4538,7 @@ CREATE INDEX idx_purchase_created_at ON public.purchase USING btree (created_at)
 
 
 --
--- TOC entry 4041 (class 1259 OID 46374)
+-- TOC entry 4102 (class 1259 OID 46374)
 -- Name: idx_purchase_payment_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3586,7 +4546,7 @@ CREATE INDEX idx_purchase_payment_status ON public.purchase USING btree (payment
 
 
 --
--- TOC entry 4042 (class 1259 OID 46375)
+-- TOC entry 4103 (class 1259 OID 46375)
 -- Name: idx_purchase_polymorphic; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3594,7 +4554,47 @@ CREATE INDEX idx_purchase_polymorphic ON public.purchase USING btree (purchasabl
 
 
 --
--- TOC entry 4045 (class 1259 OID 46376)
+-- TOC entry 4248 (class 1259 OID 46982)
+-- Name: idx_refresh_token_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_refresh_token_expires_at ON public.refresh_token USING btree (expires_at);
+
+
+--
+-- TOC entry 4249 (class 1259 OID 46983)
+-- Name: idx_refresh_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_refresh_token_hash ON public.refresh_token USING btree (token_hash);
+
+
+--
+-- TOC entry 4250 (class 1259 OID 46984)
+-- Name: idx_refresh_token_revoked_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_refresh_token_revoked_at ON public.refresh_token USING btree (revoked_at);
+
+
+--
+-- TOC entry 4251 (class 1259 OID 46985)
+-- Name: idx_refresh_token_user_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_refresh_token_user_active ON public.refresh_token USING btree (user_id, revoked_at);
+
+
+--
+-- TOC entry 4252 (class 1259 OID 46981)
+-- Name: idx_refresh_token_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_refresh_token_user_id ON public.refresh_token USING btree (user_id);
+
+
+--
+-- TOC entry 4106 (class 1259 OID 46376)
 -- Name: idx_school_city; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3602,7 +4602,7 @@ CREATE INDEX idx_school_city ON public.school USING btree (city);
 
 
 --
--- TOC entry 4046 (class 1259 OID 46377)
+-- TOC entry 4107 (class 1259 OID 46377)
 -- Name: idx_school_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3610,7 +4610,7 @@ CREATE INDEX idx_school_created_at ON public.school USING btree (created_at);
 
 
 --
--- TOC entry 4047 (class 1259 OID 46378)
+-- TOC entry 4108 (class 1259 OID 46378)
 -- Name: idx_school_district; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3618,7 +4618,7 @@ CREATE INDEX idx_school_district ON public.school USING btree (district);
 
 
 --
--- TOC entry 4048 (class 1259 OID 46379)
+-- TOC entry 4109 (class 1259 OID 46379)
 -- Name: idx_school_edu_system_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3626,7 +4626,7 @@ CREATE INDEX idx_school_edu_system_id ON public.school USING btree (edu_system_i
 
 
 --
--- TOC entry 4049 (class 1259 OID 46520)
+-- TOC entry 4110 (class 1259 OID 46520)
 -- Name: idx_school_has_logo; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3634,7 +4634,7 @@ CREATE INDEX idx_school_has_logo ON public.school USING btree (has_logo);
 
 
 --
--- TOC entry 4050 (class 1259 OID 46380)
+-- TOC entry 4111 (class 1259 OID 46380)
 -- Name: idx_school_headmaster_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3642,7 +4642,7 @@ CREATE INDEX idx_school_headmaster_id ON public.school USING btree (school_headm
 
 
 --
--- TOC entry 4051 (class 1259 OID 46381)
+-- TOC entry 4112 (class 1259 OID 46381)
 -- Name: idx_school_institution_symbol; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3650,7 +4650,7 @@ CREATE UNIQUE INDEX idx_school_institution_symbol ON public.school USING btree (
 
 
 --
--- TOC entry 4052 (class 1259 OID 46521)
+-- TOC entry 4113 (class 1259 OID 46521)
 -- Name: idx_school_logo_filename; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3658,23 +4658,31 @@ CREATE INDEX idx_school_logo_filename ON public.school USING btree (logo_filenam
 
 
 --
--- TOC entry 4059 (class 1259 OID 46524)
--- Name: idx_settings_has_logo; Type: INDEX; Schema: public; Owner: -
+-- TOC entry 4295 (class 1259 OID 47218)
+-- Name: idx_settings_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_settings_has_logo ON public.settings USING btree (has_logo);
-
-
---
--- TOC entry 4060 (class 1259 OID 46525)
--- Name: idx_settings_logo_filename; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_settings_logo_filename ON public.settings USING btree (logo_filename);
+CREATE INDEX idx_settings_created_at ON public.settings USING btree (created_at);
 
 
 --
--- TOC entry 4070 (class 1259 OID 46382)
+-- TOC entry 4296 (class 1259 OID 47216)
+-- Name: idx_settings_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_settings_key ON public.settings USING btree (key);
+
+
+--
+-- TOC entry 4297 (class 1259 OID 47217)
+-- Name: idx_settings_value_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_settings_value_type ON public.settings USING btree (value_type);
+
+
+--
+-- TOC entry 4126 (class 1259 OID 46382)
 -- Name: idx_subscription_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3682,7 +4690,7 @@ CREATE INDEX idx_subscription_created_at ON public.subscription USING btree (cre
 
 
 --
--- TOC entry 4071 (class 1259 OID 46383)
+-- TOC entry 4127 (class 1259 OID 46383)
 -- Name: idx_subscription_next_billing; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3690,7 +4698,7 @@ CREATE INDEX idx_subscription_next_billing ON public.subscription USING btree (n
 
 
 --
--- TOC entry 4072 (class 1259 OID 46384)
+-- TOC entry 4128 (class 1259 OID 46384)
 -- Name: idx_subscription_original_price; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3698,7 +4706,7 @@ CREATE INDEX idx_subscription_original_price ON public.subscription USING btree 
 
 
 --
--- TOC entry 4073 (class 1259 OID 46385)
+-- TOC entry 4129 (class 1259 OID 46385)
 -- Name: idx_subscription_payplus_uid; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3706,7 +4714,7 @@ CREATE INDEX idx_subscription_payplus_uid ON public.subscription USING btree (pa
 
 
 --
--- TOC entry 4074 (class 1259 OID 46386)
+-- TOC entry 4130 (class 1259 OID 46386)
 -- Name: idx_subscription_plan_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3714,7 +4722,7 @@ CREATE INDEX idx_subscription_plan_id ON public.subscription USING btree (subscr
 
 
 --
--- TOC entry 4075 (class 1259 OID 46387)
+-- TOC entry 4131 (class 1259 OID 46387)
 -- Name: idx_subscription_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3722,7 +4730,7 @@ CREATE INDEX idx_subscription_status ON public.subscription USING btree (status)
 
 
 --
--- TOC entry 4076 (class 1259 OID 46388)
+-- TOC entry 4132 (class 1259 OID 46388)
 -- Name: idx_subscription_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3730,7 +4738,7 @@ CREATE INDEX idx_subscription_user_id ON public.subscription USING btree (user_i
 
 
 --
--- TOC entry 4079 (class 1259 OID 46389)
+-- TOC entry 4135 (class 1259 OID 46389)
 -- Name: idx_subscriptionhistory_action_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3738,7 +4746,7 @@ CREATE INDEX idx_subscriptionhistory_action_type ON public.subscriptionhistory U
 
 
 --
--- TOC entry 4080 (class 1259 OID 46390)
+-- TOC entry 4136 (class 1259 OID 46390)
 -- Name: idx_subscriptionhistory_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3746,7 +4754,7 @@ CREATE INDEX idx_subscriptionhistory_created_at ON public.subscriptionhistory US
 
 
 --
--- TOC entry 4081 (class 1259 OID 46391)
+-- TOC entry 4137 (class 1259 OID 46391)
 -- Name: idx_subscriptionhistory_payplus_uid; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3754,7 +4762,7 @@ CREATE INDEX idx_subscriptionhistory_payplus_uid ON public.subscriptionhistory U
 
 
 --
--- TOC entry 4082 (class 1259 OID 46392)
+-- TOC entry 4138 (class 1259 OID 46392)
 -- Name: idx_subscriptionhistory_plan_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3762,7 +4770,7 @@ CREATE INDEX idx_subscriptionhistory_plan_id ON public.subscriptionhistory USING
 
 
 --
--- TOC entry 4083 (class 1259 OID 46393)
+-- TOC entry 4139 (class 1259 OID 46393)
 -- Name: idx_subscriptionhistory_subscription_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3770,7 +4778,7 @@ CREATE INDEX idx_subscriptionhistory_subscription_id ON public.subscriptionhisto
 
 
 --
--- TOC entry 4084 (class 1259 OID 46394)
+-- TOC entry 4140 (class 1259 OID 46394)
 -- Name: idx_subscriptionhistory_user_date; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3778,7 +4786,7 @@ CREATE INDEX idx_subscriptionhistory_user_date ON public.subscriptionhistory USI
 
 
 --
--- TOC entry 4085 (class 1259 OID 46395)
+-- TOC entry 4141 (class 1259 OID 46395)
 -- Name: idx_subscriptionhistory_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3786,7 +4794,7 @@ CREATE INDEX idx_subscriptionhistory_user_id ON public.subscriptionhistory USING
 
 
 --
--- TOC entry 4159 (class 1259 OID 46701)
+-- TOC entry 4199 (class 1259 OID 46701)
 -- Name: idx_supportmessage_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3794,7 +4802,7 @@ CREATE INDEX idx_supportmessage_created_at ON public.supportmessage USING btree 
 
 
 --
--- TOC entry 4160 (class 1259 OID 46699)
+-- TOC entry 4200 (class 1259 OID 46699)
 -- Name: idx_supportmessage_email; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3802,7 +4810,7 @@ CREATE INDEX idx_supportmessage_email ON public.supportmessage USING btree (emai
 
 
 --
--- TOC entry 4161 (class 1259 OID 46700)
+-- TOC entry 4201 (class 1259 OID 46700)
 -- Name: idx_supportmessage_is_read; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3810,7 +4818,7 @@ CREATE INDEX idx_supportmessage_is_read ON public.supportmessage USING btree (is
 
 
 --
--- TOC entry 4162 (class 1259 OID 46702)
+-- TOC entry 4202 (class 1259 OID 46702)
 -- Name: idx_supportmessage_read_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3818,15 +4826,7 @@ CREATE INDEX idx_supportmessage_read_created ON public.supportmessage USING btre
 
 
 --
--- TOC entry 4137 (class 1259 OID 46642)
--- Name: idx_system_templates_category; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_system_templates_category ON public.system_templates USING btree (category);
-
-
---
--- TOC entry 4138 (class 1259 OID 46645)
+-- TOC entry 4205 (class 1259 OID 46769)
 -- Name: idx_system_templates_created_by; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3834,7 +4834,7 @@ CREATE INDEX idx_system_templates_created_by ON public.system_templates USING bt
 
 
 --
--- TOC entry 4139 (class 1259 OID 46643)
+-- TOC entry 4206 (class 1259 OID 46765)
 -- Name: idx_system_templates_default; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3842,7 +4842,7 @@ CREATE INDEX idx_system_templates_default ON public.system_templates USING btree
 
 
 --
--- TOC entry 4140 (class 1259 OID 46648)
+-- TOC entry 4207 (class 1259 OID 46768)
 -- Name: idx_system_templates_file_types; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3850,7 +4850,15 @@ CREATE INDEX idx_system_templates_file_types ON public.system_templates USING bt
 
 
 --
--- TOC entry 4141 (class 1259 OID 46641)
+-- TOC entry 4208 (class 1259 OID 46764)
+-- Name: idx_system_templates_format; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_system_templates_format ON public.system_templates USING btree (target_format);
+
+
+--
+-- TOC entry 4209 (class 1259 OID 46763)
 -- Name: idx_system_templates_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3858,7 +4866,7 @@ CREATE INDEX idx_system_templates_type ON public.system_templates USING btree (t
 
 
 --
--- TOC entry 4142 (class 1259 OID 46644)
+-- TOC entry 4210 (class 1259 OID 46766)
 -- Name: idx_system_templates_type_default; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3866,7 +4874,15 @@ CREATE INDEX idx_system_templates_type_default ON public.system_templates USING 
 
 
 --
--- TOC entry 4096 (class 1259 OID 46396)
+-- TOC entry 4211 (class 1259 OID 46767)
+-- Name: idx_system_templates_type_format; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_system_templates_type_format ON public.system_templates USING btree (template_type, target_format);
+
+
+--
+-- TOC entry 4152 (class 1259 OID 46396)
 -- Name: idx_transaction_page_request_uid; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3874,7 +4890,7 @@ CREATE INDEX idx_transaction_page_request_uid ON public.transaction USING btree 
 
 
 --
--- TOC entry 4099 (class 1259 OID 46397)
+-- TOC entry 4155 (class 1259 OID 46397)
 -- Name: idx_user_email; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3882,7 +4898,15 @@ CREATE INDEX idx_user_email ON public."user" USING btree (email);
 
 
 --
--- TOC entry 4100 (class 1259 OID 46398)
+-- TOC entry 4156 (class 1259 OID 46958)
+-- Name: idx_user_invitation_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_user_invitation_code ON public."user" USING btree (invitation_code);
+
+
+--
+-- TOC entry 4157 (class 1259 OID 46398)
 -- Name: idx_user_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3890,7 +4914,7 @@ CREATE INDEX idx_user_is_active ON public."user" USING btree (is_active);
 
 
 --
--- TOC entry 4101 (class 1259 OID 46399)
+-- TOC entry 4158 (class 1259 OID 46399)
 -- Name: idx_user_role; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3898,7 +4922,7 @@ CREATE INDEX idx_user_role ON public."user" USING btree (role);
 
 
 --
--- TOC entry 4102 (class 1259 OID 46400)
+-- TOC entry 4159 (class 1259 OID 46400)
 -- Name: idx_user_school_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3906,7 +4930,7 @@ CREATE INDEX idx_user_school_id ON public."user" USING btree (school_id);
 
 
 --
--- TOC entry 4103 (class 1259 OID 46401)
+-- TOC entry 4160 (class 1259 OID 46401)
 -- Name: idx_user_school_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3914,7 +4938,111 @@ CREATE INDEX idx_user_school_type ON public."user" USING btree (school_id, user_
 
 
 --
--- TOC entry 4104 (class 1259 OID 46402)
+-- TOC entry 4255 (class 1259 OID 47003)
+-- Name: idx_user_session_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_expires_at ON public.user_session USING btree (expires_at);
+
+
+--
+-- TOC entry 4256 (class 1259 OID 47004)
+-- Name: idx_user_session_is_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_is_active ON public.user_session USING btree (is_active);
+
+
+--
+-- TOC entry 4257 (class 1259 OID 47005)
+-- Name: idx_user_session_last_accessed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_last_accessed ON public.user_session USING btree (last_accessed_at);
+
+
+--
+-- TOC entry 4258 (class 1259 OID 47051)
+-- Name: idx_user_session_player_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_player_active ON public.user_session USING btree (player_id, is_active);
+
+
+--
+-- TOC entry 4259 (class 1259 OID 47052)
+-- Name: idx_user_session_player_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_player_expires ON public.user_session USING btree (player_id, expires_at);
+
+
+--
+-- TOC entry 4260 (class 1259 OID 47050)
+-- Name: idx_user_session_player_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_player_id ON public.user_session USING btree (player_id);
+
+
+--
+-- TOC entry 4261 (class 1259 OID 47067)
+-- Name: idx_user_session_portal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_portal ON public.user_session USING btree (portal);
+
+
+--
+-- TOC entry 4262 (class 1259 OID 47070)
+-- Name: idx_user_session_portal_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_portal_active ON public.user_session USING btree (portal, is_active);
+
+
+--
+-- TOC entry 4263 (class 1259 OID 47069)
+-- Name: idx_user_session_portal_player; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_portal_player ON public.user_session USING btree (portal, player_id);
+
+
+--
+-- TOC entry 4264 (class 1259 OID 47068)
+-- Name: idx_user_session_portal_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_portal_user ON public.user_session USING btree (portal, user_id);
+
+
+--
+-- TOC entry 4265 (class 1259 OID 47006)
+-- Name: idx_user_session_user_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_user_active ON public.user_session USING btree (user_id, is_active);
+
+
+--
+-- TOC entry 4266 (class 1259 OID 47007)
+-- Name: idx_user_session_user_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_user_expires ON public.user_session USING btree (user_id, expires_at);
+
+
+--
+-- TOC entry 4267 (class 1259 OID 47002)
+-- Name: idx_user_session_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_session_user_id ON public.user_session USING btree (user_id);
+
+
+--
+-- TOC entry 4161 (class 1259 OID 46402)
 -- Name: idx_user_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3922,7 +5050,7 @@ CREATE INDEX idx_user_type ON public."user" USING btree (user_type);
 
 
 --
--- TOC entry 4110 (class 1259 OID 46403)
+-- TOC entry 4169 (class 1259 OID 46403)
 -- Name: idx_webhook_log_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3930,7 +5058,7 @@ CREATE INDEX idx_webhook_log_created_at ON public.webhook_log USING btree (creat
 
 
 --
--- TOC entry 4111 (class 1259 OID 46404)
+-- TOC entry 4170 (class 1259 OID 46404)
 -- Name: idx_webhook_log_page_request_uid; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3938,7 +5066,7 @@ CREATE INDEX idx_webhook_log_page_request_uid ON public.webhook_log USING btree 
 
 
 --
--- TOC entry 4112 (class 1259 OID 46405)
+-- TOC entry 4171 (class 1259 OID 46405)
 -- Name: idx_webhook_log_payplus_transaction_uid; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3946,7 +5074,7 @@ CREATE INDEX idx_webhook_log_payplus_transaction_uid ON public.webhook_log USING
 
 
 --
--- TOC entry 4113 (class 1259 OID 46406)
+-- TOC entry 4172 (class 1259 OID 46406)
 -- Name: idx_webhook_log_provider; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3954,7 +5082,7 @@ CREATE INDEX idx_webhook_log_provider ON public.webhook_log USING btree (provide
 
 
 --
--- TOC entry 4114 (class 1259 OID 46407)
+-- TOC entry 4173 (class 1259 OID 46407)
 -- Name: idx_webhook_log_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3962,7 +5090,7 @@ CREATE INDEX idx_webhook_log_status ON public.webhook_log USING btree (status);
 
 
 --
--- TOC entry 4115 (class 1259 OID 46408)
+-- TOC entry 4174 (class 1259 OID 46408)
 -- Name: idx_webhook_log_subscription_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3970,7 +5098,7 @@ CREATE INDEX idx_webhook_log_subscription_id ON public.webhook_log USING btree (
 
 
 --
--- TOC entry 4116 (class 1259 OID 46409)
+-- TOC entry 4175 (class 1259 OID 46409)
 -- Name: idx_webhook_log_transaction_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3978,7 +5106,7 @@ CREATE INDEX idx_webhook_log_transaction_id ON public.webhook_log USING btree (t
 
 
 --
--- TOC entry 4119 (class 1259 OID 46410)
+-- TOC entry 4178 (class 1259 OID 46410)
 -- Name: idx_workshop_category; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3986,7 +5114,7 @@ CREATE INDEX idx_workshop_category ON public.workshop USING btree (category);
 
 
 --
--- TOC entry 4120 (class 1259 OID 46513)
+-- TOC entry 4179 (class 1259 OID 46513)
 -- Name: idx_workshop_has_video; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3994,7 +5122,7 @@ CREATE INDEX idx_workshop_has_video ON public.workshop USING btree (has_video);
 
 
 --
--- TOC entry 4121 (class 1259 OID 46411)
+-- TOC entry 4180 (class 1259 OID 46411)
 -- Name: idx_workshop_is_published; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4002,7 +5130,7 @@ CREATE INDEX idx_workshop_is_published ON public.workshop USING btree (is_publis
 
 
 --
--- TOC entry 4122 (class 1259 OID 46412)
+-- TOC entry 4181 (class 1259 OID 46412)
 -- Name: idx_workshop_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4010,7 +5138,7 @@ CREATE INDEX idx_workshop_type ON public.workshop USING btree (workshop_type);
 
 
 --
--- TOC entry 4123 (class 1259 OID 46514)
+-- TOC entry 4182 (class 1259 OID 46514)
 -- Name: idx_workshop_video_filename; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4018,7 +5146,7 @@ CREATE INDEX idx_workshop_video_filename ON public.workshop USING btree (video_f
 
 
 --
--- TOC entry 4022 (class 1259 OID 46413)
+-- TOC entry 4082 (class 1259 OID 46413)
 -- Name: lesson_plan_context; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4026,7 +5154,7 @@ CREATE INDEX lesson_plan_context ON public.lesson_plan USING btree (context);
 
 
 --
--- TOC entry 4023 (class 1259 OID 46414)
+-- TOC entry 4083 (class 1259 OID 46414)
 -- Name: lesson_plan_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4034,15 +5162,31 @@ CREATE INDEX lesson_plan_is_active ON public.lesson_plan USING btree (is_active)
 
 
 --
--- TOC entry 4061 (class 1259 OID 46415)
--- Name: settings_available_dashboard_widgets_index; Type: INDEX; Schema: public; Owner: -
+-- TOC entry 4286 (class 1259 OID 47172)
+-- Name: settings_available_dashboard_widgets_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX settings_available_dashboard_widgets_index ON public.settings USING gin (available_dashboard_widgets);
+CREATE INDEX settings_available_dashboard_widgets_idx ON public.old_settings USING gin (available_dashboard_widgets);
 
 
 --
--- TOC entry 4064 (class 1259 OID 46416)
+-- TOC entry 4287 (class 1259 OID 47173)
+-- Name: settings_has_logo_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX settings_has_logo_idx ON public.old_settings USING btree (has_logo);
+
+
+--
+-- TOC entry 4288 (class 1259 OID 47174)
+-- Name: settings_logo_filename_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX settings_logo_filename_idx ON public.old_settings USING btree (logo_filename);
+
+
+--
+-- TOC entry 4120 (class 1259 OID 46416)
 -- Name: studentinvitation_classroom_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4050,7 +5194,7 @@ CREATE INDEX studentinvitation_classroom_id ON public.studentinvitation USING bt
 
 
 --
--- TOC entry 4067 (class 1259 OID 46417)
+-- TOC entry 4123 (class 1259 OID 46417)
 -- Name: studentinvitation_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4058,7 +5202,7 @@ CREATE INDEX studentinvitation_status ON public.studentinvitation USING btree (s
 
 
 --
--- TOC entry 4068 (class 1259 OID 46418)
+-- TOC entry 4124 (class 1259 OID 46418)
 -- Name: studentinvitation_student_email; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4066,7 +5210,7 @@ CREATE INDEX studentinvitation_student_email ON public.studentinvitation USING b
 
 
 --
--- TOC entry 4069 (class 1259 OID 46419)
+-- TOC entry 4125 (class 1259 OID 46419)
 -- Name: studentinvitation_teacher_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4074,7 +5218,7 @@ CREATE INDEX studentinvitation_teacher_id ON public.studentinvitation USING btre
 
 
 --
--- TOC entry 4090 (class 1259 OID 46420)
+-- TOC entry 4146 (class 1259 OID 46420)
 -- Name: tool_category_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4082,7 +5226,7 @@ CREATE INDEX tool_category_idx ON public.tool USING btree (category);
 
 
 --
--- TOC entry 4095 (class 1259 OID 46421)
+-- TOC entry 4151 (class 1259 OID 46421)
 -- Name: tool_tool_key_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4090,7 +5234,15 @@ CREATE UNIQUE INDEX tool_tool_key_unique ON public.tool USING btree (tool_key);
 
 
 --
--- TOC entry 4105 (class 1259 OID 46422)
+-- TOC entry 4214 (class 1259 OID 46770)
+-- Name: unique_default_per_type_format; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_default_per_type_format ON public.system_templates USING btree (template_type, target_format, is_default) WHERE (is_default = true);
+
+
+--
+-- TOC entry 4162 (class 1259 OID 46422)
 -- Name: user_birth_date_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4098,7 +5250,7 @@ CREATE INDEX user_birth_date_idx ON public."user" USING btree (birth_date);
 
 
 --
--- TOC entry 4106 (class 1259 OID 46423)
+-- TOC entry 4163 (class 1259 OID 46423)
 -- Name: user_dashboard_settings_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4106,7 +5258,7 @@ CREATE INDEX user_dashboard_settings_index ON public."user" USING gin (dashboard
 
 
 --
--- TOC entry 4107 (class 1259 OID 46424)
+-- TOC entry 4166 (class 1259 OID 46424)
 -- Name: user_onboarding_completed_index; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4114,7 +5266,7 @@ CREATE INDEX user_onboarding_completed_index ON public."user" USING btree (onboa
 
 
 --
--- TOC entry 4165 (class 2606 OID 46425)
+-- TOC entry 4298 (class 2606 OID 46425)
 -- Name: classroom classroom_school_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4123,7 +5275,7 @@ ALTER TABLE ONLY public.classroom
 
 
 --
--- TOC entry 4166 (class 2606 OID 46430)
+-- TOC entry 4299 (class 2606 OID 46430)
 -- Name: curriculum curriculum_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4132,7 +5284,7 @@ ALTER TABLE ONLY public.curriculum
 
 
 --
--- TOC entry 4169 (class 2606 OID 46435)
+-- TOC entry 4302 (class 2606 OID 46435)
 -- Name: curriculum_item curriculum_item_curriculum_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4141,7 +5293,7 @@ ALTER TABLE ONLY public.curriculum_item
 
 
 --
--- TOC entry 4167 (class 2606 OID 46440)
+-- TOC entry 4300 (class 2606 OID 46440)
 -- Name: curriculum curriculum_original_curriculum_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4150,7 +5302,7 @@ ALTER TABLE ONLY public.curriculum
 
 
 --
--- TOC entry 4170 (class 2606 OID 46445)
+-- TOC entry 4303 (class 2606 OID 46445)
 -- Name: curriculum_product curriculum_product_curriculum_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4159,7 +5311,7 @@ ALTER TABLE ONLY public.curriculum_product
 
 
 --
--- TOC entry 4171 (class 2606 OID 46450)
+-- TOC entry 4304 (class 2606 OID 46450)
 -- Name: curriculum_product curriculum_product_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4168,7 +5320,7 @@ ALTER TABLE ONLY public.curriculum_product
 
 
 --
--- TOC entry 4168 (class 2606 OID 46455)
+-- TOC entry 4301 (class 2606 OID 46455)
 -- Name: curriculum curriculum_teacher_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4177,7 +5329,16 @@ ALTER TABLE ONLY public.curriculum
 
 
 --
--- TOC entry 4184 (class 2606 OID 46686)
+-- TOC entry 4316 (class 2606 OID 46874)
+-- Name: edu_content_use edu_content_use_game_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.edu_content_use
+    ADD CONSTRAINT edu_content_use_game_id_fkey FOREIGN KEY (game_id) REFERENCES public.game(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4314 (class 2606 OID 46686)
 -- Name: emaillog fk_emaillog_purchase; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4186,7 +5347,7 @@ ALTER TABLE ONLY public.emaillog
 
 
 --
--- TOC entry 4185 (class 2606 OID 46681)
+-- TOC entry 4315 (class 2606 OID 46681)
 -- Name: emaillog fk_emaillog_template; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4195,43 +5356,70 @@ ALTER TABLE ONLY public.emaillog
 
 
 --
--- TOC entry 4183 (class 2606 OID 46623)
--- Name: game_content_link game_content_link_game_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- TOC entry 4317 (class 2606 OID 46904)
+-- Name: gamelobby gamelobby_game_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.game_content_link
-    ADD CONSTRAINT game_content_link_game_id_fkey FOREIGN KEY (game_id) REFERENCES public.game(id) ON DELETE CASCADE;
-
-
---
--- TOC entry 4181 (class 2606 OID 46600)
--- Name: game_content_relation_items game_content_relation_items_content_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.game_content_relation_items
-    ADD CONSTRAINT game_content_relation_items_content_id_fkey FOREIGN KEY (content_id) REFERENCES public.gamecontent(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.gamelobby
+    ADD CONSTRAINT gamelobby_game_id_fkey FOREIGN KEY (game_id) REFERENCES public.game(id) ON DELETE CASCADE;
 
 
 --
--- TOC entry 4182 (class 2606 OID 46595)
--- Name: game_content_relation_items game_content_relation_items_relation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- TOC entry 4318 (class 2606 OID 46914)
+-- Name: gamelobby gamelobby_host_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.game_content_relation_items
-    ADD CONSTRAINT game_content_relation_items_relation_id_fkey FOREIGN KEY (relation_id) REFERENCES public.game_content_relation(id) ON DELETE CASCADE;
-
-
---
--- TOC entry 4172 (class 2606 OID 46460)
--- Name: game game_creator_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.game
-    ADD CONSTRAINT game_creator_user_id_fkey FOREIGN KEY (creator_user_id) REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE ONLY public.gamelobby
+    ADD CONSTRAINT gamelobby_host_user_id_fkey FOREIGN KEY (host_user_id) REFERENCES public."user"(id) ON DELETE CASCADE;
 
 
 --
--- TOC entry 4173 (class 2606 OID 46465)
+-- TOC entry 4319 (class 2606 OID 46909)
+-- Name: gamelobby gamelobby_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gamelobby
+    ADD CONSTRAINT gamelobby_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public."user"(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4320 (class 2606 OID 46942)
+-- Name: gamesession gamesession_lobby_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gamesession
+    ADD CONSTRAINT gamesession_lobby_id_fkey FOREIGN KEY (lobby_id) REFERENCES public.gamelobby(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4325 (class 2606 OID 47026)
+-- Name: player player_teacher_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player
+    ADD CONSTRAINT player_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4326 (class 2606 OID 47021)
+-- Name: player player_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player
+    ADD CONSTRAINT player_user_id_fkey FOREIGN KEY (user_id) REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4305 (class 2606 OID 46823)
+-- Name: product product_content_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product
+    ADD CONSTRAINT product_content_topic_id_fkey FOREIGN KEY (content_topic_id) REFERENCES public.content_topic(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4306 (class 2606 OID 46465)
 -- Name: purchase purchase_buyer_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4240,7 +5428,16 @@ ALTER TABLE ONLY public.purchase
 
 
 --
--- TOC entry 4174 (class 2606 OID 46470)
+-- TOC entry 4321 (class 2606 OID 46976)
+-- Name: refresh_token refresh_token_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refresh_token
+    ADD CONSTRAINT refresh_token_user_id_fkey FOREIGN KEY (user_id) REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4307 (class 2606 OID 46470)
 -- Name: school school_school_headmaster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4249,7 +5446,7 @@ ALTER TABLE ONLY public.school
 
 
 --
--- TOC entry 4175 (class 2606 OID 46475)
+-- TOC entry 4308 (class 2606 OID 46475)
 -- Name: subscription subscription_subscription_plan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4258,7 +5455,7 @@ ALTER TABLE ONLY public.subscription
 
 
 --
--- TOC entry 4176 (class 2606 OID 46480)
+-- TOC entry 4309 (class 2606 OID 46480)
 -- Name: subscription subscription_transaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4267,7 +5464,7 @@ ALTER TABLE ONLY public.subscription
 
 
 --
--- TOC entry 4177 (class 2606 OID 46485)
+-- TOC entry 4310 (class 2606 OID 46485)
 -- Name: subscription subscription_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4276,7 +5473,7 @@ ALTER TABLE ONLY public.subscription
 
 
 --
--- TOC entry 4178 (class 2606 OID 46490)
+-- TOC entry 4311 (class 2606 OID 46490)
 -- Name: user user_school_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4285,7 +5482,34 @@ ALTER TABLE ONLY public."user"
 
 
 --
--- TOC entry 4179 (class 2606 OID 46495)
+-- TOC entry 4322 (class 2606 OID 47044)
+-- Name: user_session user_session_player_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_session
+    ADD CONSTRAINT user_session_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.player(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4323 (class 2606 OID 46997)
+-- Name: user_session user_session_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_session
+    ADD CONSTRAINT user_session_user_id_fkey FOREIGN KEY (user_id) REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4324 (class 2606 OID 47039)
+-- Name: user_session user_session_user_id_fkey1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_session
+    ADD CONSTRAINT user_session_user_id_fkey1 FOREIGN KEY (user_id) REFERENCES public."user"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4312 (class 2606 OID 46495)
 -- Name: webhook_log webhook_log_subscription_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4294,7 +5518,7 @@ ALTER TABLE ONLY public.webhook_log
 
 
 --
--- TOC entry 4180 (class 2606 OID 46500)
+-- TOC entry 4313 (class 2606 OID 46500)
 -- Name: webhook_log webhook_log_transaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4302,11 +5526,11 @@ ALTER TABLE ONLY public.webhook_log
     ADD CONSTRAINT webhook_log_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES public.transaction(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
--- Completed on 2025-11-07 16:16:04 +07
+-- Completed on 2025-11-24 12:46:41 +07
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict T0tb3aB8XldOiWOp8PQIRozjrRnrXGhOXFG7ZCLhhicgJXCz6qGiafhnkVBh9ZF
+\unrestrict UCQpX4K5GFk2Uz8aPXBHigptKlDs2DJLPvXihDUMQUbjUdNfk42D4HVEp7kO88d
 

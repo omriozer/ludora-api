@@ -128,9 +128,6 @@ export default (sequelize) => {
 
   // Hook to auto-set is_published=false for File products without documents
   Product.addHook('beforeSave', async (product, options) => {
-
-    });
-
     // Only check File products that are being set to published
     if (product.product_type === 'file' && product.is_published === true) {
       // Get the File entity
@@ -140,7 +137,6 @@ export default (sequelize) => {
       // If File has no file_name, force is_published to false
       if (!fileEntity || !fileEntity.file_name) {
         product.is_published = false;
-
       }
     }
   });

@@ -754,15 +754,6 @@ function sanitizeNumericFields(data, entityType) {
   const enumFieldsToSanitize = enumFields[entityType] || [];
   const allFieldsToSanitize = [...numericFieldsToSanitize, ...enumFieldsToSanitize];
 
-    entityType,
-    numericFields: numericFieldsToSanitize,
-    enumFields: enumFieldsToSanitize,
-    beforeSanitization: allFieldsToSanitize.reduce((acc, field) => {
-      acc[field] = sanitizedData[field];
-      return acc;
-    }, {})
-  });
-
   // Handle numeric fields
   numericFieldsToSanitize.forEach(field => {
     if (sanitizedData[field] === '' || sanitizedData[field] === undefined) {

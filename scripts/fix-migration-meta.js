@@ -1,22 +1,46 @@
 import { Sequelize } from 'sequelize';
 import dotenv from 'dotenv';
-dotenv.config();
 
-// Database configuration for production
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
-  dialect: 'postgres',
-  logging: console.log,
-  pool: {
-    max: 5,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
-  }
-});
+// Load development environment
+dotenv.config({ path: '.env.development' });
+
+// Database configuration for development (and fallback for production)
+let sequelize;
+if (process.env.DATABASE_URL) {
+  // Production or staging with DATABASE_URL
+  sequelize = new Sequelize(process.env.DATABASE_URL, {
+    dialect: 'postgres',
+    logging: console.log,
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    }
+  });
+} else {
+  // Development with individual settings
+  sequelize = new Sequelize({
+    database: process.env.DB_NAME || 'ludora_development',
+    username: process.env.DB_USER || 'ludora_user',
+    password: process.env.DB_PASSWORD || 'ludora_pass',
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 5432,
+    dialect: 'postgres',
+    logging: console.log,
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    }
+  });
+}
 
 async function fixMigrationMeta() {
+  const env = process.env.DATABASE_URL ? 'production/staging' : 'development';
   try {
-    console.log('🔗 Connecting to production database...');
+    console.log(`🔗 Connecting to ${env} database...`);
     await sequelize.authenticate();
     console.log('✅ Connection successful');
 

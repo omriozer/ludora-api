@@ -110,9 +110,9 @@ export function detectPortal(req) {
     host.includes('my.ludora.app'),
     origin.includes('my.ludora.app'),
     referer.includes('my.ludora.app'),
-    host.includes('localhost:5173'), // Student portal dev port (corrected from 5174)
-    origin.includes('localhost:5173'),
-    referer.includes('localhost:5173'),
+    host.includes('localhost:5174'), // Student portal dev port
+    origin.includes('localhost:5174'),
+    referer.includes('localhost:5174'),
     host.includes('my.localhost'), // Cross-subdomain student portal access
     origin.includes('my.localhost'),
     referer.includes('my.localhost')

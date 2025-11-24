@@ -568,11 +568,6 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
       const isValidPassword = verifyAdminPassword(password);
       if (!isValidPassword) {
         // Audit log failed attempts
-          ip: req.ip,
-          userAgent: req.get('User-Agent'),
-          timestamp: new Date().toISOString(),
-          portal: 'student' // Only used on student portal
-        });
 
         return res.status(401).json({
           success: false,
@@ -615,12 +610,6 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     );
 
     // Audit log successful validation
-      ip: req.ip,
-      userAgent: req.get('User-Agent'),
-      timestamp: new Date().toISOString(),
-      portal: 'student',
-      tokenExpiresAt: new Date(tokenPayload.expiresAt).toISOString()
-    });
 
     // Set token as httpOnly cookie for security (prevents XSS attacks)
     res.cookie('anonymous_admin_token', anonymousAdminToken, {
