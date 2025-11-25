@@ -93,9 +93,9 @@ class PayplusService {
         items: this.formatPurchaseItemsForPayplus(purchaseItems),
 
         // URL callbacks
-        refURL_success: callbacks.successUrl || process.env.FRONTEND_URL + '/payment/success',
-        refURL_failure: callbacks.failureUrl || process.env.FRONTEND_URL + '/payment/failure',
-        refURL_cancel: callbacks.cancelUrl || process.env.FRONTEND_URL + '/payment/cancel',
+        refURL_success: callbacks.successUrl || process.env.FRONTEND_URL + '/payment-result',
+        refURL_failure: callbacks.failureUrl || process.env.FRONTEND_URL + '/payment-result',
+        refURL_cancel: callbacks.cancelUrl || process.env.FRONTEND_URL + '/payment-result',
         refURL_callback: webhookUrl,
 
         // Additional settings based on charge method
