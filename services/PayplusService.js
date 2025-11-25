@@ -2,6 +2,7 @@ import PaymentService from './PaymentService.js';
 import { error as logger } from '../lib/errorLogger.js';
 import { calcFinalPurchasePrice } from '../utils/purchasePricing.js';
 import models from '../models/index.js';
+import { PAYPLUS_CHARGE_METHODS } from '../constants/payplus.js';
 
 /**
  * PayplusService - Handles PayPlus payment page generation and configuration
@@ -186,11 +187,11 @@ class PayplusService {
 
     if (hasSubscriptions || frontendOrigin === 'subscription') {
       // Use recurring payments for subscriptions
-      return 3; // Recurring Payments
+      return PAYPLUS_CHARGE_METHODS.RECURRING;
     }
 
     // Default to immediate charge for one-time purchases
-    return 1; // Charge (J4) - immediate payment
+    return PAYPLUS_CHARGE_METHODS.IMMEDIATE;
   }
 
   /**
@@ -233,7 +234,7 @@ class PayplusService {
     const settings = {};
 
     // For recurring payments (subscriptions)
-    if (chargeMethod === 3) {
+    if (chargeMethod === PAYPLUS_CHARGE_METHODS.RECURRING) {
       // Find subscription plan details from purchase items
       const subscriptionItem = purchaseItems.find(item => item.purchasable_type === 'subscription');
 

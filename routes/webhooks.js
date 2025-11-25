@@ -5,6 +5,12 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
 import { error as logger } from '../lib/errorLogger.js';
+import {
+  PAYPLUS_STATUS_CODES,
+  PAYMENT_STATUSES,
+  TRANSACTION_TYPES,
+  mapPayPlusStatusToPaymentStatus
+} from '../constants/payplus.js';
 
 const router = express.Router();
 
@@ -244,7 +250,9 @@ router.post('/payplus',
       await webhookLog.update({ transaction_id: transaction.id });
 
       // Detect if this is a subscription or purchase transaction
-      const isSubscriptionTransaction = !!(transaction.metadata?.subscription_id || transaction.metadata?.transaction_type === 'subscription_payment' || transaction.metadata?.transaction_type === 'subscription_retry_payment');
+      const isSubscriptionTransaction = !!(transaction.metadata?.subscription_id ||
+        transaction.metadata?.transaction_type === TRANSACTION_TYPES.SUBSCRIPTION_PAYMENT ||
+        transaction.metadata?.transaction_type === TRANSACTION_TYPES.SUBSCRIPTION_RETRY);
       const subscriptionId = transaction.metadata?.subscription_id;
 
       webhookLog.addProcessLog(`Transaction type detected: ${isSubscriptionTransaction ? 'subscription' : 'purchase'}`);
@@ -254,10 +262,10 @@ router.post('/payplus',
       }
 
       // Process based on webhook status - PayPlus sends status_code in transaction object
-      const paymentStatus = webhookData.status || (webhookData.transaction?.status_code === '000' ? 'success' : null);
+      const paymentStatus = webhookData.status || mapPayPlusStatusToPaymentStatus(webhookData.transaction?.status_code);
       webhookLog.addProcessLog(`Payment status resolved: ${paymentStatus} (original: status=${webhookData.status}, status_code=${webhookData.transaction?.status_code})`);
 
-      if (paymentStatus === 'success' || paymentStatus === 'approved') {
+      if (paymentStatus === PAYMENT_STATUSES.SUCCESS || paymentStatus === PAYMENT_STATUSES.APPROVED) {
         // Update transaction status first
         await transaction.update({
           payment_status: 'completed',
@@ -317,7 +325,7 @@ router.post('/payplus',
 
         await webhookLog.completeProcessing(startTime, 'Payment success processing completed');
 
-      } else if (paymentStatus === 'failed' || paymentStatus === 'declined' || (webhookData.transaction?.status_code && webhookData.transaction.status_code !== '000')) {
+      } else if (paymentStatus === PAYMENT_STATUSES.FAILED || paymentStatus === PAYMENT_STATUSES.DECLINED || (webhookData.transaction?.status_code && webhookData.transaction.status_code !== PAYPLUS_STATUS_CODES.SUCCESS)) {
         // Handle payment failure
         webhookLog.addProcessLog(`Processing payment failure with status: ${paymentStatus} (status_code: ${webhookData.transaction?.status_code})`);
 

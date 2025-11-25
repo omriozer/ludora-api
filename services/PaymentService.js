@@ -1,5 +1,6 @@
 import models from '../models/index.js';
 import { error as logger } from '../lib/errorLogger.js';
+import { TRANSACTION_TYPES } from '../constants/payplus.js';
 
 /**
  * PaymentService - Handles payment completion and transaction management
@@ -207,7 +208,7 @@ class PaymentService {
 
       // Determine transaction type based on purchase items
       const hasSubscriptions = purchaseItems.some(item => item.purchasable_type === 'subscription');
-      const transactionType = hasSubscriptions ? 'recurring' : 'one-time';
+      const transactionType = hasSubscriptions ? TRANSACTION_TYPES.RECURRING : TRANSACTION_TYPES.ONE_TIME;
 
       // Check for existing pending transaction of the same type for this user
       const existingTransaction = await models.Transaction.findOne({
