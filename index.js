@@ -35,6 +35,10 @@ if (missingVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
 }
 
+// Comprehensive environment validation (warns about API_URL and other important settings)
+import { validateEnvironmentOnStartup } from './utils/validateEnv.js';
+validateEnvironmentOnStartup(false); // Don't exit on error in development, just warn
+
 // Now import other modules after environment is loaded
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -243,6 +247,10 @@ app.use('/api/settings', settingsRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
+
+// COMPATIBILITY: PayPlus sends webhooks to /webhooks/payplus (without /api prefix)
+// Mount the same webhook routes without /api prefix for backward compatibility
+app.use('/webhooks', webhookRoutes);
 
 // REMOVED: Israeli market alerts webhook - middleware deleted
 

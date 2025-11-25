@@ -12,7 +12,25 @@ class PayplusService {
    * @returns {string} Full webhook URL
    */
   static getWebhookUrl() {
-    return process.env.API_URL + '/api/webhooks/payplus';
+    // Ensure API_URL is defined with proper fallback
+    const apiUrl = process.env.API_URL || '';
+
+    // If API_URL is not set, log warning and use fallback
+    if (!apiUrl) {
+      logger.payment('⚠️ WARNING: API_URL environment variable is not set! Using fallback for webhook URL.');
+      // Fallback based on environment
+      if (process.env.NODE_ENV === 'staging') {
+        return 'https://api-staging.ludora.app/api/webhooks/payplus';
+      } else if (process.env.NODE_ENV === 'production') {
+        return 'https://api.ludora.app/api/webhooks/payplus';
+      } else {
+        return 'http://localhost:3003/api/webhooks/payplus';
+      }
+    }
+
+    // Ensure API_URL doesn't have trailing slash
+    const cleanApiUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+    return cleanApiUrl + '/api/webhooks/payplus';
   }
 
   /**
