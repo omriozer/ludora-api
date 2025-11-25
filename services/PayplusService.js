@@ -12,7 +12,6 @@ class PayplusService {
    * @param {Object} options - Payment configuration options
    * @param {string} options.frontendOrigin - Origin context ('cart', 'checkout', 'subscription')
    * @param {Array} options.purchaseItems - Purchase items to process
-   * @param {string} options.environment - Environment ('production' or 'staging')
    * @param {Object} options.customer - Customer information
    * @param {Object} options.callbacks - Success/failure callback URLs
    * @returns {Promise<Object>} PayPlus payment page response with URL
@@ -21,14 +20,13 @@ class PayplusService {
     const {
       frontendOrigin = 'cart',
       purchaseItems = [],
-      environment = 'production',
       customer = {},
       callbacks = {}
     } = options;
 
     try {
-      // Get PayPlus credentials for the environment
-      const {payplusUrl, payment_page_uid, payment_api_key, payment_secret_key} = PaymentService.getPayPlusCredentials(environment);
+      // Get PayPlus credentials (environment auto-detected from NODE_ENV)
+      const {payplusUrl, payment_page_uid, payment_api_key, payment_secret_key, environment} = PaymentService.getPayPlusCredentials();
       const payplusPaymentPageUrl = `${payplusUrl}PaymentPages/generateLink`;
 
       // Determine charge method based on frontend origin and purchase items

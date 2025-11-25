@@ -13,7 +13,6 @@ class SubscriptionPaymentService {
    * @param {Object} options - Payment creation options
    * @param {string} options.userId - User ID
    * @param {string} options.subscriptionPlanId - Subscription plan ID
-   * @param {string} options.environment - PayPlus environment ('production' or 'staging')
    * @param {Object} options.metadata - Additional metadata
    * @returns {Promise<Object>} Payment creation result
    */
@@ -21,11 +20,14 @@ class SubscriptionPaymentService {
     const {
       userId,
       subscriptionPlanId,
-      environment = 'production',
       metadata = {}
     } = options;
 
     try {
+      // Auto-detect environment from NODE_ENV
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      const environment = nodeEnv === 'production' ? 'production' : 'staging';
+
       // Import services to avoid circular dependencies
       const SubscriptionService = (await import('./SubscriptionService.js')).default;
       const PaymentService = (await import('./PaymentService.js')).default;
@@ -91,15 +93,13 @@ class SubscriptionPaymentService {
         subscription,
         subscriptionPlan,
         user,
-        pricingInfo,
-        environment
+        pricingInfo
       });
 
       // Create transaction with PayPlus data and link directly to subscription
       const transaction = await PaymentService.createPayPlusTransaction({
         userId,
         amount: paymentResult.totalAmount,
-        environment,
         pageRequestUid: paymentResult.pageRequestUid,
         paymentPageLink: paymentResult.paymentPageLink,
         purchaseItems: [], // No purchase items for subscriptions
@@ -150,16 +150,19 @@ class SubscriptionPaymentService {
       subscription,
       subscriptionPlan,
       user,
-      pricingInfo,
-      environment
+      pricingInfo
     } = options;
 
     try {
+      // Auto-detect environment from NODE_ENV
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      const environment = nodeEnv === 'production' ? 'production' : 'staging';
+
       // Import PaymentService to get credentials
       const PaymentService = (await import('./PaymentService.js')).default;
 
-      // Get PayPlus credentials for the environment
-      const { payplusUrl, payment_page_uid, payment_api_key, payment_secret_key } = PaymentService.getPayPlusCredentials(environment);
+      // Get PayPlus credentials (environment auto-detected)
+      const { payplusUrl, payment_page_uid, payment_api_key, payment_secret_key } = PaymentService.getPayPlusCredentials();
       const payplusPaymentPageUrl = `${payplusUrl}PaymentPages/generateLink`;
 
       // Determine recurring settings based on billing period
@@ -402,7 +405,6 @@ class SubscriptionPaymentService {
    * @param {string} options.userId - User ID
    * @param {Object} options.pendingSubscription - Existing pending subscription
    * @param {Object} options.subscriptionPlan - Subscription plan details
-   * @param {string} options.environment - PayPlus environment
    * @param {Object} options.metadata - Additional metadata
    * @returns {Promise<Object>} Retry payment result
    */
@@ -411,11 +413,14 @@ class SubscriptionPaymentService {
       userId,
       pendingSubscription,
       subscriptionPlan,
-      environment = 'production',
       metadata = {}
     } = options;
 
     try {
+      // Auto-detect environment from NODE_ENV
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      const environment = nodeEnv === 'production' ? 'production' : 'staging';
+
       // Import services to avoid circular dependencies
       const PaymentService = (await import('./PaymentService.js')).default;
 
@@ -438,15 +443,13 @@ class SubscriptionPaymentService {
         subscription: pendingSubscription,
         subscriptionPlan,
         user,
-        pricingInfo,
-        environment
+        pricingInfo
       });
 
       // Create new transaction for retry payment
       const transaction = await PaymentService.createPayPlusTransaction({
         userId,
         amount: paymentResult.totalAmount,
-        environment,
         pageRequestUid: paymentResult.pageRequestUid,
         paymentPageLink: paymentResult.paymentPageLink,
         purchaseItems: [], // No purchase items for subscriptions

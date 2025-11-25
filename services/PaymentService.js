@@ -184,7 +184,6 @@ class PaymentService {
    * @param {Object} options - Transaction creation options
    * @param {string} options.userId - User ID
    * @param {number} options.amount - Total amount
-   * @param {string} options.environment - Environment ('production' or 'staging')
    * @param {string} options.pageRequestUid - PayPlus page request UID
    * @param {string} options.paymentPageLink - PayPlus payment page link
    * @param {Array} options.purchaseItems - Array of purchase items to analyze and link
@@ -195,7 +194,6 @@ class PaymentService {
     const {
       userId,
       amount,
-      environment = 'production',
       pageRequestUid,
       paymentPageLink,
       purchaseItems = [],
@@ -203,8 +201,9 @@ class PaymentService {
     } = options;
 
     try {
-      // Normalize environment for database storage (test -> staging)
-      const dbEnvironment = environment === 'test' ? 'staging' : environment;
+      // Auto-detect environment for database storage
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      const dbEnvironment = nodeEnv === 'production' ? 'production' : 'staging';
 
       // Determine transaction type based on purchase items
       const hasSubscriptions = purchaseItems.some(item => item.purchasable_type === 'subscription');
@@ -352,15 +351,17 @@ class PaymentService {
   }
 
   /**
-   * Get PayPlus credentials based on environment
-   * @param {string} environment - 'production' or 'staging'
+   * Get PayPlus credentials based on NODE_ENV
    * @returns {Object} PayPlus configuration object
    */
-  static getPayPlusCredentials(environment = 'production') {
+  static getPayPlusCredentials() {
     try {
-      // Normalize environment for PayPlus credentials (test -> staging)
-      const normalizedEnv = environment === 'test' ? 'staging' : environment;
-      const isProd = normalizedEnv === 'production';
+      // Auto-detect environment based on NODE_ENV
+      // Development and staging use PayPlus test environment
+      // Production uses PayPlus production environment
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      const isProd = nodeEnv === 'production';
+      const normalizedEnv = isProd ? 'production' : 'staging';
 
       const credentials = {
         payplusUrl: isProd

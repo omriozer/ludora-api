@@ -216,7 +216,7 @@ router.put('/purchases/:id', authenticateToken, async (req, res) => {
 // PayPlus Payment Page Creation
 router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => {
   try {
-    const { cartItems, environment = 'production', frontendOrigin = 'cart' } = req.body;
+    const { cartItems, frontendOrigin = 'cart' } = req.body;
     const userId = req.user.id;
 
     // Validation
@@ -242,11 +242,10 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Use PayplusService to create payment page
+    // Use PayplusService to create payment page (environment auto-detected)
     const paymentResult = await PayplusService.openPayplusPage({
       frontendOrigin,
       purchaseItems: cartItems,
-      environment,
       customer: {
         customer_name: user.displayName || user.email,
         email: user.email,
@@ -260,11 +259,10 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       }
     });
 
-    // Create transaction with PayPlus data
+    // Create transaction with PayPlus data (environment auto-detected)
     const transaction = await PaymentService.createPayPlusTransaction({
       userId,
       amount: paymentResult.totalAmount,
-      environment,
       pageRequestUid: paymentResult.pageRequestUid,
       paymentPageLink: paymentResult.paymentPageLink,
       purchaseItems: cartItems,
@@ -297,7 +295,7 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
 // Subscription Payment Creation - Using dedicated SubscriptionPaymentService
 router.post('/createSubscriptionPayment', authenticateToken, async (req, res) => {
   try {
-    const { subscriptionPlanId, environment = 'production' } = req.body;
+    const { subscriptionPlanId } = req.body;
     const userId = req.user.id;
 
     // Validation
@@ -311,7 +309,6 @@ router.post('/createSubscriptionPayment', authenticateToken, async (req, res) =>
     const result = await SubscriptionPaymentService.createSubscriptionPayment({
       userId,
       subscriptionPlanId,
-      environment,
       metadata: {
         source: 'subscription_modal',
         userAgent: req.headers['user-agent'],
