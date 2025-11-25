@@ -7,7 +7,7 @@
 
 import models from '../models/index.js';
 import FileService from './FileService.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 import { generateId } from '../models/baseModel.js';
 
 const { EduContent } = models;
@@ -84,7 +84,7 @@ class EduContentService {
       return eduContent;
 
     } catch (error) {
-      error.api('Error creating EduContent:', error);
+      logger.api('Error creating EduContent:', error);
       throw error;
     }
   }
@@ -148,7 +148,7 @@ class EduContentService {
       };
 
     } catch (error) {
-      error.api('Error finding EduContent:', error);
+      logger.api('Error finding EduContent:', error);
       throw error;
     }
   }
@@ -174,7 +174,7 @@ class EduContentService {
       return result;
 
     } catch (error) {
-      error.api(`Error finding EduContent ${contentId}:`, error);
+      logger.api(`Error finding EduContent ${contentId}:`, error);
       throw error;
     }
   }
@@ -222,7 +222,7 @@ class EduContentService {
       stream.pipe(res);
 
     } catch (error) {
-      error.api(`Error streaming file for content ${contentId}:`, error);
+      logger.api(`Error streaming file for content ${contentId}:`, error);
       throw error;
     }
   }
@@ -262,7 +262,7 @@ class EduContentService {
       await content.destroy({ transaction });
 
     } catch (error) {
-      error.api(`Error deleting EduContent ${contentId}:`, error);
+      logger.api(`Error deleting EduContent ${contentId}:`, error);
       throw error;
     }
   }
@@ -303,7 +303,7 @@ class EduContentService {
       return result;
 
     } catch (error) {
-      error.api(`Error updating EduContent ${contentId}:`, error);
+      logger.api(`Error updating EduContent ${contentId}:`, error);
       throw error;
     }
   }
@@ -318,7 +318,7 @@ class EduContentService {
       const content = await EduContent.findByPk(contentId);
       return Boolean(content?.content_metadata?.file_info?.s3_key);
     } catch (error) {
-      error.api(`Error checking file for content ${contentId}:`, error);
+      logger.api(`Error checking file for content ${contentId}:`, error);
       return false;
     }
   }
@@ -353,7 +353,7 @@ class EduContentService {
       };
 
     } catch (error) {
-      error.api(`Error getting usage for content ${contentId}:`, error);
+      logger.api(`Error getting usage for content ${contentId}:`, error);
       return { total_uses: 0, games: [] };
     }
   }

@@ -328,7 +328,6 @@ CREATE TABLE public.audiofile (
     file_size numeric,
     file_type character varying(255),
     is_default_for jsonb,
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     has_file boolean DEFAULT false NOT NULL,
@@ -372,7 +371,6 @@ CREATE TABLE public.category (
     id character varying(255) NOT NULL,
     name character varying(255),
     is_default boolean,
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
@@ -391,7 +389,6 @@ CREATE TABLE public.classroom (
     teacher_id character varying(255),
     description character varying(255),
     is_active boolean,
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     school_id character varying(255)
@@ -421,7 +418,6 @@ CREATE TABLE public.classroommembership (
     status character varying(255),
     notes character varying(255),
     student_display_name character varying(255),
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
@@ -502,7 +498,6 @@ CREATE TABLE public.coupon (
     applicable_workshops jsonb,
     workshop_types jsonb,
     is_active boolean DEFAULT true,
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     targeting_type character varying(255) DEFAULT 'general'::character varying,
@@ -1679,7 +1674,6 @@ CREATE TABLE public.old_settings (
     nav_content_creators_icon character varying(255),
     nav_content_creators_visibility character varying(255),
     nav_content_creators_enabled boolean,
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     allow_content_creator_workshops boolean DEFAULT true,
@@ -2632,7 +2626,6 @@ CREATE TABLE public.subscriptionplan (
     plan_type character varying(255),
     benefits jsonb,
     sort_order numeric,
-    is_sample boolean,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );

@@ -119,7 +119,7 @@ import PlayerService from './services/PlayerService.js';
 import SettingsService from './services/SettingsService.js';
 import { detectPortal, getPortalCookieNames } from './utils/cookieConfig.js';
 import { STUDENTS_ACCESS_MODES } from './constants/settingsKeys.js';
-import { error } from './lib/errorLogger.js';
+import { error as logger } from './lib/errorLogger.js';
 
 // Initialize services for Socket.IO authentication
 const socketAuthService = new AuthService();
@@ -523,7 +523,7 @@ async function validateStudentsAccessMode(requestedMode) {
     const currentMode = await SettingsService.getStudentsAccessMode();
     return currentMode === requestedMode;
   } catch (err) {
-    error.api('🔌 [SocketAuth] Error validating students access mode:', err);
+    logger.api('🔌 [SocketAuth] Error validating students access mode:', err);
     return false;
   }
 }
@@ -646,7 +646,7 @@ io.use(async (socket, next) => {
 
     next();
   } catch (err) {
-    error.api('🔌 [SocketAuth] Authentication middleware error:', err);
+    logger.api('🔌 [SocketAuth] Authentication middleware error:', err);
     next(new Error('Authentication failed'));
   }
 });
@@ -692,7 +692,7 @@ io.on('connection', (socket) => {
 
   // Handle connection errors
   socket.on('error', (socketError) => {
-    error.system('🔌 Socket.IO error:', socketError, {
+    logger.system('🔌 Socket.IO error:', socketError, {
       socketId: socket.id
     });
   });

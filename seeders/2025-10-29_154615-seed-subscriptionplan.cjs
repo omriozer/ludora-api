@@ -43,7 +43,6 @@ module.exports = {
             "plan_type": "free",
             "benefits": "{\"games_access\": {\"enabled\": false, \"unlimited\": false, \"monthly_limit\": 10}, \"reports_access\": false, \"classroom_management\": {\"enabled\": true, \"max_classrooms\": 3, \"max_total_students\": 100, \"unlimited_classrooms\": false, \"unlimited_total_students\": false, \"max_students_per_classroom\": 30, \"unlimited_students_per_classroom\": false}}",
             "sort_order": 0,
-            "is_sample": null,
             "created_at": "2025-10-15 18:15:00.302+07",
             "updated_at": "2025-10-19 21:02:11.359+07"
       },
@@ -62,7 +61,6 @@ module.exports = {
             "plan_type": "pro",
             "benefits": "{\"games_access\": {\"enabled\": true, \"unlimited\": false, \"monthly_limit\": 10}, \"reports_access\": false, \"classroom_management\": {\"enabled\": true, \"max_classrooms\": 3, \"max_total_students\": 100, \"unlimited_classrooms\": false, \"unlimited_total_students\": false, \"max_students_per_classroom\": 30, \"unlimited_students_per_classroom\": true}}",
             "sort_order": 0,
-            "is_sample": null,
             "created_at": "2025-10-20 16:21:17.795+07",
             "updated_at": "2025-10-20 16:21:17.795+07"
       }

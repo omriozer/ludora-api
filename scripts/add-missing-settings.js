@@ -19,7 +19,7 @@ process.chdir(join(__dirname, '..'));
 // Import models and utilities
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 // Define all expected settings with their default values and types
 // Based on frontend /src/constants/settingsKeys.js
@@ -45,7 +45,6 @@ const EXPECTED_SETTINGS = [
   { key: 'maintenance_mode', value: false, value_type: 'boolean', description: 'System maintenance mode flag' },
   { key: 'subscription_system_enabled', value: true, value_type: 'boolean', description: 'Legacy - Whether subscription system is enabled' },
   { key: 'teacher_onboarding_enabled', value: true, value_type: 'boolean', description: 'Whether teacher onboarding flow is enabled' },
-  { key: 'is_sample', value: false, value_type: 'boolean', description: 'Sample data flag for development/testing' },
 
   // NAVIGATION CONFIGURATION SETTINGS - Curriculum
   { key: 'nav_curriculum_enabled', value: true, value_type: 'boolean', description: 'Enable curriculum navigation item' },
@@ -229,7 +228,7 @@ async function addMissingSettings() {
       if (finalCount >= EXPECTED_SETTINGS.length) {
 
       } else {
-        error.api(`⚠️  Warning: Final count (${finalCount}) is less than expected (${EXPECTED_SETTINGS.length})`);
+        logger.api(`⚠️  Warning: Final count (${finalCount}) is less than expected (${EXPECTED_SETTINGS.length})`);
       }
 
     } catch (error) {
@@ -238,8 +237,8 @@ async function addMissingSettings() {
     }
 
   } catch (error) {
-    error.api('❌ Error adding missing settings:', error.message);
-    error.api(error.stack);
+    logger.api('❌ Error adding missing settings:', error.message);
+    logger.api(error.stack);
     process.exit(1);
   }
 }
@@ -273,7 +272,7 @@ async function main() {
     process.exit(0);
 
   } catch (error) {
-    error.api('❌ Script failed:', error);
+    logger.api('❌ Script failed:', error);
     process.exit(1);
   }
 }

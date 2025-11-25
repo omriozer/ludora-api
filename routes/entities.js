@@ -19,7 +19,7 @@ import { constructS3Path } from '../utils/s3PathUtils.js';
 import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
 import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCountingUtils.js';
 import { GAME_TYPES } from '../config/gameTypes.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 import { generateId } from '../models/baseModel.js';
 import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
 
@@ -43,7 +43,7 @@ const fileUpload = multer({
         file.originalname = fixedName;
       }
     } catch (error) {
-      error.api(`📤 Could not fix filename encoding: ${error.message}`);
+      logger.api(`📤 Could not fix filename encoding: ${error.message}`);
     }
 
     cb(null, true);
@@ -831,7 +831,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
 
         return res.json(enhancedSettings);
       } catch (error) {
-        error.api('Settings update error:', error);
+        logger.api('Settings update error:', error);
         return res.status(400).json({ error: error.message });
       }
     }

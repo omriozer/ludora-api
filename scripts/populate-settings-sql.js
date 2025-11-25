@@ -33,7 +33,6 @@ const CORE_SETTINGS = [
   { key: 'maintenance_mode', value: true, value_type: 'boolean', description: 'System maintenance mode flag (forced true for staging/production)' },
   { key: 'subscription_system_enabled', value: false, value_type: 'boolean', description: 'Legacy - Whether subscription system is enabled' },
   { key: 'teacher_onboarding_enabled', value: false, value_type: 'boolean', description: 'Whether teacher onboarding flow is enabled' },
-  { key: 'is_sample', value: false, value_type: 'boolean', description: 'Sample data flag for development/testing' },
 
   // NAVIGATION CONFIGURATION SETTINGS - copying from development actual values
   { key: 'nav_curriculum_enabled', value: true, value_type: 'boolean', description: 'Enable curriculum navigation item' },

@@ -844,7 +844,7 @@ class EntityService {
       }
 
       // Remove fields that are definitely Product-only and don't belong in entity tables
-      const productOnlyFields = ['product_type', 'is_sample', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'access_days'];
+      const productOnlyFields = ['product_type', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'access_days'];
       productOnlyFields.forEach(field => delete entityFields[field]);
 
       // For specific entity types, remove fields that they don't have in their schema
@@ -887,7 +887,6 @@ class EntityService {
         tags: data.tags || [],
         target_audience: data.target_audience,
         access_days: parseInt(data.access_days) ? parseInt(data.access_days) : null,
-        is_sample: data.is_sample || false,
         creator_user_id: createdBy,
         created_at: new Date(),
         updated_at: new Date()

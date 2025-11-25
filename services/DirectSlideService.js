@@ -2,7 +2,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } fro
 import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 /**
  * DirectSlideService - Handle SVG slides without Files table
@@ -393,7 +393,7 @@ class DirectSlideService {
       };
 
     } catch (error) {
-      error.api('Error reordering slides:', error);
+      logger.api('Error reordering slides:', error);
       throw error;
     }
   }

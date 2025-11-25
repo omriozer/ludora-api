@@ -4,7 +4,7 @@
 import models from '../models/index.js';
 import { nanoid } from 'nanoid';
 import { Op } from 'sequelize';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 import { generateId } from '../models/baseModel.js';
 import LobbySocketService from './LobbySocketService.js';
 
@@ -163,14 +163,14 @@ class GameLobbyService {
       try {
         LobbySocketService.broadcastLobbyCreated(enhancedLobby);
       } catch (socketError) {
-        error.lobby('❌ Failed to broadcast lobby created via Socket.IO:', socketError);
+        logger.lobby('❌ Failed to broadcast lobby created via Socket.IO:', socketError);
         // Don't fail the entire operation for broadcast errors
       }
 
       return enhancedLobby;
 
     } catch (error) {
-      error.lobby('❌ Failed to create lobby:', error);
+      logger.lobby('❌ Failed to create lobby:', error);
       throw error;
     }
   }
@@ -210,7 +210,7 @@ class GameLobbyService {
 
       // Validate that required fields exist (they should per model constraint)
       if (!ownerUserId || !hostUserId) {
-        error.lobby(`❌ Data integrity issue: lobby ${lobbyId} missing required user IDs`);
+        logger.lobby(`❌ Data integrity issue: lobby ${lobbyId} missing required user IDs`);
         throw new Error('Lobby data integrity error: missing owner or host user ID');
       }
 
@@ -232,7 +232,7 @@ class GameLobbyService {
         const configModule = await import('../config/gameTypeDefaults.js');
         ({ getGameTypeConfig, getLobbyDefaults, getSessionDefaults, calculateSessionDistribution } = configModule);
       } catch (configError) {
-        error.lobby(`❌ Failed to import game type config:`, configError);
+        logger.lobby(`❌ Failed to import game type config:`, configError);
         throw new Error(`Configuration import failed: ${configError.message}`);
       }
 
@@ -248,7 +248,7 @@ class GameLobbyService {
         lobbyDefaults = getLobbyDefaults(gameType);
         sessionDefaults = getSessionDefaults(gameType);
       } catch (gameConfigError) {
-        error.lobby(`❌ Failed to get game type config for ${gameType}:`, gameConfigError);
+        logger.lobby(`❌ Failed to get game type config for ${gameType}:`, gameConfigError);
         throw new Error(`Game configuration failed for ${gameType}: ${gameConfigError.message}`);
       }
 
@@ -288,7 +288,7 @@ class GameLobbyService {
           closed_at: null // Clear manual closure when reactivating
         }, { transaction });
       } catch (updateError) {
-        error.lobby(`❌ Failed to update lobby:`, updateError);
+        logger.lobby(`❌ Failed to update lobby:`, updateError);
         throw new Error(`Lobby update failed: ${updateError.message}`);
       }
 
@@ -307,7 +307,7 @@ class GameLobbyService {
       try {
         LobbySocketService.broadcastLobbyActivated(updatedLobby);
       } catch (socketError) {
-        error.lobby('❌ Failed to broadcast lobby activated via Socket.IO:', socketError);
+        logger.lobby('❌ Failed to broadcast lobby activated via Socket.IO:', socketError);
         // Don't fail the entire operation for broadcast errors
       }
 
@@ -323,7 +323,7 @@ class GameLobbyService {
       };
 
     } catch (error) {
-      error.lobby('❌ Failed to activate lobby:', error);
+      logger.lobby('❌ Failed to activate lobby:', error);
       throw error;
     }
   }
@@ -379,14 +379,14 @@ class GameLobbyService {
       try {
         LobbySocketService.broadcastLobbyClosed(updatedLobby);
       } catch (socketError) {
-        error.lobby('❌ Failed to broadcast lobby closed via Socket.IO:', socketError);
+        logger.lobby('❌ Failed to broadcast lobby closed via Socket.IO:', socketError);
         // Don't fail the entire operation for broadcast errors
       }
 
       return updatedLobby;
 
     } catch (error) {
-      error.lobby('❌ Failed to close lobby:', error);
+      logger.lobby('❌ Failed to close lobby:', error);
       throw error;
     }
   }
@@ -512,7 +512,7 @@ class GameLobbyService {
       return [...reusedSessions, ...createdSessions];
 
     } catch (error) {
-      error.auth('❌ Failed to create/manage sessions:', error);
+      logger.auth('❌ Failed to create/manage sessions:', error);
       throw error;
     }
   }
@@ -555,7 +555,7 @@ class GameLobbyService {
       return await this.getLobbyDetails(lobbyId, transaction);
 
     } catch (error) {
-      error.lobby('❌ Failed to set lobby expiration:', error);
+      logger.lobby('❌ Failed to set lobby expiration:', error);
       throw error;
     }
   }
@@ -654,7 +654,7 @@ class GameLobbyService {
       return formattedLobby;
 
     } catch (error) {
-      error.lobby('❌ Failed to get lobby details:', error);
+      logger.lobby('❌ Failed to get lobby details:', error);
       throw error;
     }
   }
@@ -712,7 +712,7 @@ class GameLobbyService {
       return this.enhanceLobbyWithStatus(lobby);
 
     } catch (error) {
-      error.lobby('❌ Failed to find lobby by code:', error);
+      logger.lobby('❌ Failed to find lobby by code:', error);
       throw error;
     }
   }
@@ -789,7 +789,7 @@ class GameLobbyService {
       return enhancedLobbies;
 
     } catch (error) {
-      error.lobby('❌ Failed to get lobbies:', error);
+      logger.lobby('❌ Failed to get lobbies:', error);
       throw error;
     }
   }
@@ -899,7 +899,7 @@ class GameLobbyService {
       };
 
     } catch (error) {
-      error.lobby(`❌ Failed to inspect lobby ${lobbyId}:`, error);
+      logger.lobby(`❌ Failed to inspect lobby ${lobbyId}:`, error);
       throw error;
     }
   }

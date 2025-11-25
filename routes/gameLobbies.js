@@ -23,7 +23,7 @@ import {
 } from '../middleware/gameSessionValidation.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { checkStudentsAccess, checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 const router = express.Router();
 
@@ -150,7 +150,7 @@ router.get('/games/:gameId/lobbies',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to list lobbies:', error);
+      logger.lobby('❌ Failed to list lobbies:', error);
       res.status(500).json({
         error: 'Failed to fetch lobbies',
         message: error.message
@@ -197,7 +197,7 @@ router.post('/games/:gameId/lobbies',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to create lobby:', error);
+      logger.lobby('❌ Failed to create lobby:', error);
 
       // Handle specific error cases
       if (error.message.includes('Game not found')) {
@@ -256,7 +256,7 @@ router.get('/game-lobbies/:lobbyId',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to get lobby details:', error);
+      logger.lobby('❌ Failed to get lobby details:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -319,7 +319,7 @@ router.put('/game-lobbies/:lobbyId',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to update lobby:', error);
+      logger.lobby('❌ Failed to update lobby:', error);
       res.status(500).json({
         error: 'Failed to update lobby',
         message: error.message
@@ -356,7 +356,7 @@ router.put('/game-lobbies/:lobbyId/activate',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ [ROUTE] Failed to activate lobby in route handler:', {
+      logger.lobby('❌ [ROUTE] Failed to activate lobby in route handler:', {
         lobbyId: req.validatedParams?.lobbyId,
         userId: req.user?.id,
         error: error.message,
@@ -406,7 +406,7 @@ router.put('/game-lobbies/:lobbyId/close',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to close lobby:', error);
+      logger.lobby('❌ Failed to close lobby:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -450,7 +450,7 @@ router.put('/game-lobbies/:lobbyId/expiration',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to set lobby expiration:', error);
+      logger.lobby('❌ Failed to set lobby expiration:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -495,7 +495,7 @@ router.delete('/game-lobbies/:lobbyId',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to close lobby:', error);
+      logger.lobby('❌ Failed to close lobby:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -591,7 +591,7 @@ router.post('/game-lobbies/join-by-code',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to join lobby by code:', error);
+      logger.lobby('❌ Failed to join lobby by code:', error);
 
       if (error.message.includes('not open for joining')) {
         return res.status(403).json({ error: 'Lobby is not open for joining' });
@@ -800,7 +800,7 @@ router.post('/game-lobbies/:lobbyId/join',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ Failed to join lobby:', error);
+      logger.lobby('❌ Failed to join lobby:', error);
 
       if (error.message.includes('not open for joining')) {
         return res.status(403).json({ error: 'Lobby is not open for joining' });
@@ -903,7 +903,7 @@ router.get('/game-lobbies/:lobbyId/sessions',
 
     } catch (error) {
       await transaction.rollback();
-      error.auth('❌ Failed to list sessions:', error);
+      logger.auth('❌ Failed to list sessions:', error);
       res.status(500).json({
         error: 'Failed to fetch sessions',
         message: error.message
@@ -939,7 +939,7 @@ router.post('/game-lobbies/:lobbyId/sessions',
 
     } catch (error) {
       await transaction.rollback();
-      error.auth('❌ Failed to create session:', error);
+      logger.auth('❌ Failed to create session:', error);
 
       if (error.message.includes('Lobby not found')) {
         return res.status(404).json({ error: 'Lobby not found' });
@@ -1123,7 +1123,7 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
 
     } catch (error) {
       await transaction.rollback();
-      error.auth('❌ Failed to create student session:', error);
+      logger.auth('❌ Failed to create student session:', error);
 
       res.status(500).json({
         error: 'Failed to create session',
@@ -1163,7 +1163,7 @@ router.get('/game-lobbies/:lobbyId/debug',
 
     } catch (error) {
       await transaction.rollback();
-      error.lobby('❌ [ROUTE] Failed to debug lobby:', error);
+      logger.lobby('❌ [ROUTE] Failed to debug lobby:', error);
       res.status(500).json({
         error: 'Failed to debug lobby',
         message: error.message

@@ -12,7 +12,7 @@ import rateLimit from 'express-rate-limit';
 import models from '../models/index.js';
 import { authenticateToken } from '../middleware/auth.js';
 import EduContentService from '../services/EduContentService.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 const router = express.Router();
 const { sequelize } = models;
@@ -133,7 +133,7 @@ router.get('/', validateContentSearch, async (req, res) => {
     const results = await EduContentService.findContent(req.validatedQuery);
     res.json(results);
   } catch (error) {
-    error.api('Error in GET /edu-content:', error);
+    logger.api('Error in GET /edu-content:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: error.message
@@ -158,7 +158,7 @@ router.post('/',
 
       res.status(201).json(content);
     } catch (error) {
-      error.api('Error in POST /edu-content:', error);
+      logger.api('Error in POST /edu-content:', error);
       res.status(500).json({
         error: 'Internal server error',
         message: error.message
@@ -217,7 +217,7 @@ router.post('/upload',
 
     } catch (error) {
       await transaction.rollback();
-      error.api('Error in POST /edu-content/upload:', error);
+      logger.api('Error in POST /edu-content/upload:', error);
 
       if (error.message.includes('File type') || error.message.includes('file size')) {
         return res.status(400).json({
@@ -248,7 +248,7 @@ router.get('/:id', async (req, res) => {
 
     res.json(content);
   } catch (error) {
-    error.api(`Error in GET /edu-content/${req.params.id}:`, error);
+    logger.api(`Error in GET /edu-content/${req.params.id}:`, error);
     res.status(500).json({
       error: 'Internal server error',
       message: error.message
@@ -264,7 +264,7 @@ router.get('/:id/file', async (req, res) => {
   try {
     await EduContentService.streamContentFile(req.params.id, res);
   } catch (error) {
-    error.api(`Error streaming file for content ${req.params.id}:`, error);
+    logger.api(`Error streaming file for content ${req.params.id}:`, error);
 
     if (error.message === 'Content not found') {
       return res.status(404).json({ error: 'Content not found' });
@@ -303,7 +303,7 @@ router.put('/:id',
       res.json(content);
     } catch (error) {
       await transaction.rollback();
-      error.api(`Error in PUT /edu-content/${req.params.id}:`, error);
+      logger.api(`Error in PUT /edu-content/${req.params.id}:`, error);
 
       if (error.message === 'Content not found') {
         return res.status(404).json({ error: 'Content not found' });
@@ -336,7 +336,7 @@ router.delete('/:id',
       });
     } catch (error) {
       await transaction.rollback();
-      error.api(`Error in DELETE /edu-content/${req.params.id}:`, error);
+      logger.api(`Error in DELETE /edu-content/${req.params.id}:`, error);
 
       if (error.message === 'Content not found') {
         return res.status(404).json({ error: 'Content not found' });
@@ -359,7 +359,7 @@ router.get('/:id/usage', async (req, res) => {
     const usage = await EduContentService.getContentUsage(req.params.id);
     res.json(usage);
   } catch (error) {
-    error.api(`Error getting usage for content ${req.params.id}:`, error);
+    logger.api(`Error getting usage for content ${req.params.id}:`, error);
     res.status(500).json({
       error: 'Internal server error',
       message: error.message

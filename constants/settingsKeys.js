@@ -42,7 +42,6 @@ export const SYSTEM_KEYS = {
   MAINTENANCE_MODE: 'maintenance_mode',
   SUBSCRIPTION_SYSTEM_ENABLED: 'subscription_system_enabled',  // Legacy
   TEACHER_ONBOARDING_ENABLED: 'teacher_onboarding_enabled',
-  IS_SAMPLE: 'is_sample'  // Sample data flag for development/testing
 };
 
 /**
@@ -168,7 +167,16 @@ export const ACCESS_DURATION_KEYS = {
 export const ADVANCED_FEATURES_KEYS = {
   AVAILABLE_DASHBOARD_WIDGETS: 'available_dashboard_widgets',
   AVAILABLE_SPECIALIZATIONS: 'available_specializations',
-  AVAILABLE_GRADE_LEVELS: 'available_grade_levels'
+  AVAILABLE_GRADE_LEVELS: 'available_grade_levels',
+  // Legacy keys with typos (kept for backwards compatibility)
+  AUDIANCE_TARGETS: 'audiance_targets',  // TODO: Fix typo to 'audience_targets'
+  LANGUADE_OPTIONS: 'languade_options',  // TODO: Fix typo to 'language_options'
+  // Additional legacy configuration keys
+  SCHOOL_GRADES: 'school_grades',
+  STUDY_SUBJECTS: 'study_subjects',
+  // Product type configuration
+  FILE_TYPES_CONFIG: 'file_types_config',
+  GAME_TYPES: 'game_types'
 };
 
 /**

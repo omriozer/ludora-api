@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import dotenv from 'dotenv';
 import SecretsService from '../services/SecretsService.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 try {
   // Load environment-specific .env file
@@ -23,7 +23,7 @@ try {
 
   }
 } catch (error) {
-  error.auth('❌ Firebase initialization error:', error);
+  logger.auth('❌ Firebase initialization error:', error);
   // Don't exit the process, let the server continue without Firebase
 }
 

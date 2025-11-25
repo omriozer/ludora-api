@@ -7,7 +7,7 @@
  */
 
 import models from '../models/index.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 class GameDetailsService {
   /**
@@ -41,7 +41,7 @@ class GameDetailsService {
           };
       }
     } catch (error) {
-      error.api(`Error calculating game details for ${gameType} game ${gameId}:`, error);
+      logger.api(`Error calculating game details for ${gameType} game ${gameId}:`, error);
       return null;
     }
   }
@@ -68,7 +68,7 @@ class GameDetailsService {
       };
 
     } catch (error) {
-      error.api('Error calculating memory game details:', error);
+      logger.api('Error calculating memory game details:', error);
       throw error;
     }
   }

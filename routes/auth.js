@@ -19,7 +19,7 @@ import {
 const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
 import SettingsService from '../services/SettingsService.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 const verifyAdminPassword = (inputPassword) => {
   if (!process.env.ADMIN_PASSWORD) {
@@ -482,7 +482,7 @@ router.get('/sessions/stats', authenticateToken, requireAdmin, async (_req, res)
       stats
     });
   } catch (error) {
-    error.auth('Failed to get session stats:', error);
+    logger.auth('Failed to get session stats:', error);
     res.status(500).json({ error: 'Failed to retrieve session statistics' });
   }
 });
@@ -499,7 +499,7 @@ router.get('/sessions/user/:userId', authenticateToken, requireAdmin, async (req
       count: userSessions.length
     });
   } catch (error) {
-    error.auth('Failed to get user sessions:', error);
+    logger.auth('Failed to get user sessions:', error);
     res.status(500).json({ error: 'Failed to retrieve user sessions' });
   }
 });
@@ -515,7 +515,7 @@ router.post('/sessions/invalidate/:userId', authenticateToken, requireAdmin, asy
       invalidatedCount
     });
   } catch (error) {
-    error.auth('Failed to invalidate user sessions:', error);
+    logger.auth('Failed to invalidate user sessions:', error);
     res.status(500).json({ error: 'Failed to invalidate user sessions' });
   }
 });
@@ -532,7 +532,7 @@ router.post('/sessions/cleanup', authenticateToken, requireAdmin, async (_req, r
       currentStats: stats
     });
   } catch (error) {
-    error.auth('Failed to cleanup sessions:', error);
+    logger.auth('Failed to cleanup sessions:', error);
     res.status(500).json({ error: 'Failed to cleanup sessions' });
   }
 });
@@ -575,7 +575,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
         });
       }
     } catch (verificationError) {
-      error.auth('Password verification error:', verificationError);
+      logger.auth('Password verification error:', verificationError);
       return res.status(500).json({
         success: false,
         error: 'Admin password not configured'
@@ -633,7 +633,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     });
 
   } catch (error) {
-    error.auth('Anonymous admin password validation error:', error);
+    logger.auth('Anonymous admin password validation error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error'

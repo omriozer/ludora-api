@@ -1,6 +1,6 @@
 import models from '../models/index.js';
 import { Op, col } from 'sequelize';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 /**
  * CouponValidationService - Advanced coupon validation and recommendation engine
@@ -82,7 +82,7 @@ class CouponValidationService {
         }
       };
     } catch (error) {
-      error.payment('Error finding applicable public coupons:', error);
+      logger.payment('Error finding applicable public coupons:', error);
       throw error;
     }
   }
@@ -170,7 +170,7 @@ class CouponValidationService {
         }
       };
     } catch (error) {
-      error.payment('Error validating coupon stacking:', error);
+      logger.payment('Error validating coupon stacking:', error);
       throw error;
     }
   }
@@ -205,7 +205,7 @@ class CouponValidationService {
         }
       };
     } catch (error) {
-      error.payment('Error finding best coupon:', error);
+      logger.payment('Error finding best coupon:', error);
       throw error;
     }
   }

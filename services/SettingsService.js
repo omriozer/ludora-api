@@ -10,7 +10,7 @@ import {
   ACCESS_DURATION_KEYS,
   ADVANCED_FEATURES_KEYS
 } from '../constants/settingsKeys.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 class SettingsService {
   constructor() {
@@ -112,7 +112,7 @@ class SettingsService {
 
       return this.cache.settings;
     } catch (error) {
-      error.api('Error refreshing settings cache:', error);
+      logger.api('Error refreshing settings cache:', error);
       // If cache exists, return it as fallback
       if (this.cache.settings) {
         return this.cache.settings;
@@ -159,7 +159,7 @@ class SettingsService {
       const settings = await this.getSettings();
       return settings[key] || null;
     } catch (error) {
-      error.api(`Error getting setting '${key}':`, error);
+      logger.api(`Error getting setting '${key}':`, error);
       return null;
     }
   }
@@ -175,7 +175,7 @@ class SettingsService {
         settings.getStudentsAccessMode() :
         (settings[ACCESS_CONTROL_KEYS.STUDENTS_ACCESS] || 'all');
     } catch (error) {
-      error.api('Error getting students access mode:', error);
+      logger.api('Error getting students access mode:', error);
       // Safe fallback to 'all' to maintain current functionality
       return 'all';
     }
@@ -192,7 +192,7 @@ class SettingsService {
         settings.isStudentsAccessEnabled() :
         true; // Default to enabled
     } catch (error) {
-      error.api('Error checking students access status:', error);
+      logger.api('Error checking students access status:', error);
       return true; // Safe fallback to enabled
     }
   }
@@ -218,7 +218,7 @@ class SettingsService {
         settings.isMaintenanceMode() :
         !!settings[SYSTEM_KEYS.MAINTENANCE_MODE];
     } catch (error) {
-      error.api('Error checking maintenance mode:', error);
+      logger.api('Error checking maintenance mode:', error);
       return false;
     }
   }
@@ -236,7 +236,7 @@ class SettingsService {
       }
       return !!settings[SYSTEM_KEYS.TEACHER_ONBOARDING_ENABLED];
     } catch (error) {
-      error.api('Error checking teacher onboarding status:', error);
+      logger.api('Error checking teacher onboarding status:', error);
       // Default to enabled on error to not break onboarding flow
       return true;
     }
@@ -259,14 +259,20 @@ class SettingsService {
     const transaction = await models.sequelize.transaction();
 
     try {
+      // Filter out non-setting fields that shouldn't be updated
+      const filteredUpdates = { ...updates };
+      delete filteredUpdates.id;  // Remove database ID field
+      delete filteredUpdates.created_at;  // Remove timestamp fields
+      delete filteredUpdates.updated_at;  // Remove timestamp fields
+
       // Validate all settings before processing
-      for (const [key, value] of Object.entries(updates)) {
+      for (const [key, value] of Object.entries(filteredUpdates)) {
         this.validateSetting(key, value);
       }
 
       // Convert empty strings and string "null" to actual null for string-type fields
       const processedUpdates = {};
-      for (const [key, value] of Object.entries(updates)) {
+      for (const [key, value] of Object.entries(filteredUpdates)) {
         if (typeof value === 'string' && (value === '' || value === 'null')) {
           processedUpdates[key] = null;  // Convert empty string or string "null" to null
         } else {
@@ -322,7 +328,7 @@ class SettingsService {
       return this.cache.settings;
     } catch (error) {
       await transaction.rollback();
-      error.api('Error updating settings:', error);
+      logger.api('Error updating settings:', error);
       throw error;
     }
   }

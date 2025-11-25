@@ -74,7 +74,6 @@ module.exports = {
       nav_lesson_plans_icon: 'BookOpen',
       nav_lesson_plans_visibility: 'logged_in_users',
       nav_lesson_plans_enabled: false,
-      is_sample: false,
       allow_content_creator_workshops: true,
       allow_content_creator_courses: false,
       allow_content_creator_files: true,

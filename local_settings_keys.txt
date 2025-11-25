@@ -27,7 +27,6 @@
  game_types
  has_logo
  id
- is_sample
  languade_options
  lesson_plan_lifetime_access
  logo_filename

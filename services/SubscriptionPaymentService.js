@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 import { calcSubscriptionPlanPrice } from '../utils/purchasePricing.js';
 
 /**
@@ -135,7 +135,7 @@ class SubscriptionPaymentService {
       };
 
     } catch (error) {
-      error.payment('SubscriptionPaymentService: Error creating subscription payment:', error);
+      logger.payment('SubscriptionPaymentService: Error creating subscription payment:', error);
       throw error;
     }
   }
@@ -240,7 +240,7 @@ class SubscriptionPaymentService {
       const responseText = await response.text();
 
       if (!response.ok) {
-        error.payment(`PayPlus API HTTP error ${response.status}:`, {
+        logger.payment(`PayPlus API HTTP error ${response.status}:`, {
           status: response.status,
           statusText: response.statusText,
           responseText: responseText.substring(0, 500)
@@ -253,7 +253,7 @@ class SubscriptionPaymentService {
       try {
         paymentData = JSON.parse(responseText);
       } catch (parseError) {
-        error.payment(`PayPlus API returned invalid JSON:`, {
+        logger.payment(`PayPlus API returned invalid JSON:`, {
           parseError: parseError.message,
           responseText: responseText.substring(0, 500)
         });
@@ -261,7 +261,7 @@ class SubscriptionPaymentService {
       }
 
       if (paymentData?.results?.code || paymentData?.results?.status !== 'success') {
-        error.payment(`PayPlus API error:`, paymentData?.results);
+        logger.payment(`PayPlus API error:`, paymentData?.results);
         throw new Error(errorMsg);
       }
 
@@ -270,7 +270,7 @@ class SubscriptionPaymentService {
       const paymentPageLink = paymentData?.data?.payment_page_link;
 
       if (!pageRequestUid || !paymentPageLink) {
-        error.payment('PayPlus API missing required data:', {
+        logger.payment('PayPlus API missing required data:', {
           hasPageRequestUid: !!pageRequestUid,
           hasPaymentPageLink: !!paymentPageLink,
           data: paymentData?.data
@@ -291,7 +291,7 @@ class SubscriptionPaymentService {
       };
 
     } catch (error) {
-      error.payment('SubscriptionPaymentService: Error creating PayPlus subscription payment:', error);
+      logger.payment('SubscriptionPaymentService: Error creating PayPlus subscription payment:', error);
       throw error;
     }
   }
@@ -363,7 +363,7 @@ class SubscriptionPaymentService {
       return activatedSubscription;
 
     } catch (error) {
-      error.payment('SubscriptionPaymentService: Error handling payment success:', error);
+      logger.payment('SubscriptionPaymentService: Error handling payment success:', error);
       throw error;
     }
   }
@@ -391,7 +391,7 @@ class SubscriptionPaymentService {
       return updatedSubscription;
 
     } catch (error) {
-      error.payment('SubscriptionPaymentService: Error handling payment failure:', error);
+      logger.payment('SubscriptionPaymentService: Error handling payment failure:', error);
       throw error;
     }
   }
@@ -492,7 +492,7 @@ class SubscriptionPaymentService {
       };
 
     } catch (error) {
-      error.payment('SubscriptionPaymentService: Error creating retry payment:', error);
+      logger.payment('SubscriptionPaymentService: Error creating retry payment:', error);
       throw error;
     }
   }

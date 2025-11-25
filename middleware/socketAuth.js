@@ -7,7 +7,7 @@ import {
   detectPortalFromOrigin,
   getPortalCookieNames
 } from '../utils/cookieConfig.js';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 const authService = new AuthService();
 const playerService = new PlayerService();
@@ -118,7 +118,7 @@ export function authenticateSocketUser(socket, next) {
         });
     }
   } catch (error) {
-    error.auth('❌ Socket authentication error:', error);
+    logger.auth('❌ Socket authentication error:', error);
     socket.authenticated = false;
     socket.authType = 'error';
     socket.authError = error.message;
@@ -177,13 +177,13 @@ export function authenticateSocketPlayer(socket, next) {
         next();
       })
       .catch(error => {
-        error.auth('❌ Socket player authentication error:', error);
+        logger.auth('❌ Socket player authentication error:', error);
         socket.playerAuthenticated = false;
         socket.authType = 'guest';
         next();
       });
   } catch (error) {
-    error.auth('❌ Socket player authentication error:', error);
+    logger.auth('❌ Socket player authentication error:', error);
     socket.playerAuthenticated = false;
     socket.authType = 'error';
     socket.authError = error.message;

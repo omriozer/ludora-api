@@ -11,7 +11,7 @@
 
 import models from '../models/index.js';
 import crypto from 'crypto';
-import { error } from '../lib/errorLogger.js';
+import { error as logger } from '../lib/errorLogger.js';
 
 /**
  * Generate MD5 hash for ETag
@@ -43,7 +43,7 @@ async function generateSettingsETag() {
 
     return etag;
   } catch (error) {
-    error.api('[ETag] Error generating Settings ETag:', error);
+    logger.api('[ETag] Error generating Settings ETag:', error);
     // Return a fallback ETag that changes on error
     return `"settings-error-${Date.now()}"`;
   }
@@ -73,7 +73,7 @@ async function generateUserETag(userId) {
 
     return etag;
   } catch (error) {
-    error.api('[ETag] Error generating User ETag:', error);
+    logger.api('[ETag] Error generating User ETag:', error);
     return `"user-error-${Date.now()}"`;
   }
 }
@@ -93,7 +93,7 @@ async function generateAuthMeETag(req) {
 
     return generateUserETag(req.user.id);
   } catch (error) {
-    error.api('[ETag] Error generating auth/me ETag:', error);
+    logger.api('[ETag] Error generating auth/me ETag:', error);
     return `"auth-me-error-${Date.now()}"`;
   }
 }
@@ -142,7 +142,7 @@ export function addETagSupport(recordType) {
               break;
 
             default:
-              error.api('[ETag] Unknown record type:', recordType);
+              logger.api('[ETag] Unknown record type:', recordType);
           }
 
           // Check if client sent If-None-Match header
@@ -164,7 +164,7 @@ export function addETagSupport(recordType) {
           return originalJson(data);
 
         } catch (error) {
-          error.api('[ETag] Error in response handler:', error);
+          logger.api('[ETag] Error in response handler:', error);
           // On error, just send response without ETag
           return originalJson(data);
         }
@@ -174,7 +174,7 @@ export function addETagSupport(recordType) {
       next();
 
     } catch (error) {
-      error.api('[ETag] Middleware error:', error);
+      logger.api('[ETag] Middleware error:', error);
       // On error, continue without ETag support
       next();
     }
@@ -212,10 +212,10 @@ export async function invalidateETag(recordType, recordId = null) {
         break;
 
       default:
-        error.api('[ETag] Cannot invalidate unknown type:', recordType);
+        logger.api('[ETag] Cannot invalidate unknown type:', recordType);
     }
   } catch (error) {
-    error.api('[ETag] Error invalidating ETag:', error);
+    logger.api('[ETag] Error invalidating ETag:', error);
   }
 }
 

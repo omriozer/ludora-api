@@ -32,7 +32,6 @@ module.exports = {
             "id": "1759040636246l0i2tv23z",
             "name": "כללי",
             "is_default": true,
-            "is_sample": false,
             "created_at": "2025-09-28 13:23:56.246+07",
             "updated_at": "2025-09-28 13:23:56.246+07"
       }
