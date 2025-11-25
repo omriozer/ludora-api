@@ -227,7 +227,7 @@ class PaymentService {
         transaction = await existingTransaction.update({
           amount: amount,
           environment: dbEnvironment,
-          page_request_uid: pageRequestUid,
+          payment_page_request_uid: pageRequestUid,
           payment_page_link: paymentPageLink,
           metadata: {
             transaction_type: transactionType,
@@ -251,7 +251,7 @@ class PaymentService {
           payment_method: 'payplus',
           payment_status: 'pending',
           environment: dbEnvironment,
-          page_request_uid: pageRequestUid,
+          payment_page_request_uid: pageRequestUid,
           payment_page_link: paymentPageLink,
           metadata: {
             transaction_type: transactionType,

@@ -276,6 +276,15 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       }
     });
 
+    // Ensure transaction uses PayPlus-returned page_request_uid (not our generated one)
+    const payplusReturnedUid = paymentResult.data?.data?.page_request_uid;
+    if (payplusReturnedUid && payplusReturnedUid !== paymentResult.pageRequestUid) {
+      await transaction.update({
+        payment_page_request_uid: payplusReturnedUid,
+        updated_at: new Date()
+      });
+    }
+
     res.json({
       success: true,
       message: 'PayPlus payment page created',
