@@ -446,7 +446,7 @@ export const customValidators = {
     const validEntityTypes = [
       'user', 'settings', 'configuration', 'registration', 'emailtemplate', 'category',
       'coupon', 'supportmessage', 'notification', 'product',
-      'purchase', 'workshop', 'course', 'file', 'tool', 'emaillog',
+      'purchase', 'transaction', 'workshop', 'course', 'file', 'tool', 'emaillog',
       'game', 'gamecontent', 'audiofile', 'gameaudiosettings', 'word', 'worden', 'image',
       'qa', 'grammar', 'contentlist', 'contentrelationship', 'subscriptionplan',
       'webhooklog', 'pendingsubscription', 'subscriptionhistory', 'gamesession',
