@@ -104,6 +104,8 @@ router.post('/payplus',
 
     // Capture PayPlus signature headers
     const possibleSignatureHeaders = [
+      'hash',                        // PayPlus actual signature header
+      'Hash',
       'X-PayPlus-Signature',
       'X-PayPlus-Webhook-Signature',
       'PayPlus-Signature',
@@ -221,7 +223,9 @@ router.post('/payplus',
 
       // CRITICAL SECURITY: Verify PayPlus webhook signature before processing
       // This prevents payment fraud by ensuring webhooks come from PayPlus
+      // PayPlus sends signature in 'hash' header (as seen in successful webhook logs)
       const signatureValid = validateWebhookSignature(req, [
+        'hash',
         'x-payplus-signature',
         'payplus-signature',
         'x-signature',
@@ -230,7 +234,7 @@ router.post('/payplus',
 
       if (!signatureValid) {
         // Log security failure for monitoring
-        await webhookLog.updateStatus('security_failed', 'Invalid or missing webhook signature');
+        await webhookLog.updateStatus('failed', 'Invalid or missing webhook signature');
         await webhookLog.update({
           security_check: 'failed',
           security_reason: 'Invalid webhook signature',
