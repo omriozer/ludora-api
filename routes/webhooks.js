@@ -253,8 +253,11 @@ router.post('/payplus',
         await webhookLog.update({ subscription_id: subscriptionId });
       }
 
-      // Process based on webhook status
-      if (webhookData.status === 'success' || webhookData.status === 'approved') {
+      // Process based on webhook status - PayPlus sends status_code in transaction object
+      const paymentStatus = webhookData.status || (webhookData.transaction?.status_code === '000' ? 'success' : null);
+      webhookLog.addProcessLog(`Payment status resolved: ${paymentStatus} (original: status=${webhookData.status}, status_code=${webhookData.transaction?.status_code})`);
+
+      if (paymentStatus === 'success' || paymentStatus === 'approved') {
         // Update transaction status first
         await transaction.update({
           payment_status: 'completed',
@@ -314,9 +317,11 @@ router.post('/payplus',
 
         await webhookLog.completeProcessing(startTime, 'Payment success processing completed');
 
-      } else if (webhookData.status === 'failed' || webhookData.status === 'declined') {
+      } else if (paymentStatus === 'failed' || paymentStatus === 'declined' || (webhookData.transaction?.status_code && webhookData.transaction.status_code !== '000')) {
         // Handle payment failure
-        webhookLog.addProcessLog(`Processing payment failure with status: ${webhookData.status}`);
+        webhookLog.addProcessLog(`Processing payment failure with status: ${paymentStatus} (status_code: ${webhookData.transaction?.status_code})`);
+
+        const failureReason = webhookData.reason || webhookData.transaction?.reason || `PayPlus status code: ${webhookData.transaction?.status_code}` || 'Payment declined';
 
         await transaction.update({
           payment_status: 'failed',
@@ -325,7 +330,7 @@ router.post('/payplus',
             payplusWebhookData: webhookData,
             payplus_transaction_uid: webhookData.transaction_uid,
             failedAt: new Date().toISOString(),
-            failureReason: webhookData.reason || 'Payment declined'
+            failureReason: failureReason
           }
         });
 
@@ -361,7 +366,7 @@ router.post('/payplus',
 
       } else {
         // Handle other statuses (pending, processing, etc.)
-        webhookLog.addProcessLog(`Processing webhook with status: ${webhookData.status}`);
+        webhookLog.addProcessLog(`Processing webhook with status: ${paymentStatus} (status_code: ${webhookData.transaction?.status_code})`);
 
         await transaction.update({
           metadata: {
@@ -372,7 +377,7 @@ router.post('/payplus',
           }
         });
 
-        await webhookLog.completeProcessing(startTime, `Webhook status ${webhookData.status} processed`);
+        await webhookLog.completeProcessing(startTime, `Webhook status ${paymentStatus} processed`);
       }
 
       // Prepare successful response data
@@ -381,7 +386,7 @@ router.post('/payplus',
         timestamp: new Date().toISOString(),
         webhookId: webhookLog.id,
         transactionId: transaction.id,
-        status: webhookData.status
+        status: paymentStatus
       };
 
       // Update webhook log with response data
