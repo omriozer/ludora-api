@@ -8,6 +8,14 @@ import models from '../models/index.js';
  */
 class PayplusService {
   /**
+   * Get the webhook URL from environment configuration
+   * @returns {string} Full webhook URL
+   */
+  static getWebhookUrl() {
+    return process.env.API_URL + '/api/webhooks/payplus';
+  }
+
+  /**
    * Open PayPlus payment page for transactions or subscriptions
    * @param {Object} options - Payment configuration options
    * @param {string} options.frontendOrigin - Origin context ('cart', 'checkout', 'subscription')
@@ -38,6 +46,12 @@ class PayplusService {
         throw new Error('Total amount must be greater than 0 for PayPlus payment');
       }
 
+      // Determine webhook URL
+      const webhookUrl = callbacks.callbackUrl || this.getWebhookUrl();
+
+      // Log webhook URL for debugging
+      logger.payment(`PayplusService: Using webhook URL: ${webhookUrl} for environment: ${process.env.NODE_ENV || 'development'}`);
+
       // Build PayPlus request payload
       const paymentRequest = {
         payment_page_uid,
@@ -63,7 +77,7 @@ class PayplusService {
         refURL_success: callbacks.successUrl || process.env.FRONTEND_URL + '/payment/success',
         refURL_failure: callbacks.failureUrl || process.env.FRONTEND_URL + '/payment/failure',
         refURL_cancel: callbacks.cancelUrl || process.env.FRONTEND_URL + '/payment/cancel',
-        refURL_callback: callbacks.callbackUrl || process.env.API_URL + '/webhooks/payplus',
+        refURL_callback: webhookUrl,
 
         // Additional settings based on charge method
         ...this.getAdditionalSettings(chargeMethod, frontendOrigin, purchaseItems)
