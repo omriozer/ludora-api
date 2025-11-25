@@ -102,6 +102,15 @@ class PayplusService {
         ...this.getAdditionalSettings(chargeMethod, frontendOrigin, purchaseItems)
       };
 
+      // TODO remove debug - investigate payment redirect issue
+      logger.payment(`🔍 PayPlus URLs being sent:`, {
+        refURL_success: paymentRequest.refURL_success,
+        refURL_failure: paymentRequest.refURL_failure,
+        refURL_cancel: paymentRequest.refURL_cancel,
+        refURL_callback: paymentRequest.refURL_callback,
+        FRONTEND_URL: process.env.FRONTEND_URL
+      });
+
       // Make request to PayPlus API
       const response = await fetch(payplusPaymentPageUrl, {
         method: 'POST',
