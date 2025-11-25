@@ -45,7 +45,7 @@ export default function(sequelize) {
         isIn: [['received', 'processing', 'completed', 'failed']]
       }
     },
-    page_request_uid: {
+    payment_page_request_uid: {
       type: DataTypes.STRING,
       allowNull: true,
     },
@@ -100,8 +100,8 @@ export default function(sequelize) {
         name: 'idx_webhook_log_status'
       },
       {
-        fields: ['page_request_uid'],
-        name: 'idx_webhook_log_page_request_uid'
+        fields: ['payment_page_request_uid'],
+        name: 'idx_webhook_log_payment_page_request_uid'
       },
       {
         fields: ['payplus_transaction_uid'],

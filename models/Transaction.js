@@ -37,7 +37,7 @@ export default function(sequelize) {
       type: DataTypes.ENUM('production', 'staging'),
       allowNull: true
     },
-    page_request_uid: {
+    payment_page_request_uid: {
       type: DataTypes.STRING,
       allowNull: true,
     },
@@ -76,8 +76,8 @@ export default function(sequelize) {
         name: 'idx_transaction_payment_status'
       },
       {
-        fields: ['page_request_uid'],
-        name: 'idx_transaction_page_request_uid'
+        fields: ['payment_page_request_uid'],
+        name: 'idx_transaction_payment_page_request_uid'
       },
       {
         fields: ['environment'],

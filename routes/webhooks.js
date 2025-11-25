@@ -91,6 +91,7 @@ router.post('/payplus',
     const startTime = Date.now();
     const webhookData = req.body;
 
+
     // Capture raw request body for signature verification
     const rawBody = JSON.stringify(req.body);
 
@@ -200,7 +201,7 @@ router.post('/payplus',
         event_data: webhookData,
         sender_info: senderInfo,
         status: 'received',
-        page_request_uid: webhookData.page_request_uid,
+        payment_page_request_uid: webhookData.transaction?.payment_page_request_uid,
         payplus_transaction_uid: webhookData.transaction_uid,
         created_at: new Date(),
         updated_at: new Date()
@@ -216,16 +217,16 @@ router.post('/payplus',
       const SubscriptionService = (await import('../services/SubscriptionService.js')).default;
 
       // Validate required webhook data
-      if (!webhookData.page_request_uid) {
-        throw new Error('Missing required page_request_uid in webhook data');
+      if (!webhookData.transaction?.payment_page_request_uid) {
+        throw new Error('Missing required payment_page_request_uid in webhook data');
       }
 
-      webhookLog.addProcessLog(`Processing webhook for page_request_uid: ${webhookData.page_request_uid}`);
+      webhookLog.addProcessLog(`Processing webhook for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid}`);
 
-      // Find the transaction by page_request_uid
+      // Find the transaction by payment_page_request_uid
       const transaction = await models.Transaction.findOne({
         where: {
-          page_request_uid: webhookData.page_request_uid
+          payment_page_request_uid: webhookData.transaction.payment_page_request_uid
         },
         include: [
           {
@@ -236,7 +237,7 @@ router.post('/payplus',
       });
 
       if (!transaction) {
-        throw new Error(`No transaction found for page_request_uid: ${webhookData.page_request_uid}`);
+        throw new Error(`No transaction found for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid}`);
       }
 
       webhookLog.addProcessLog(`Found transaction: ${transaction.id}`);
