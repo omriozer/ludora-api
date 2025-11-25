@@ -246,14 +246,6 @@ router.post('/payplus',
           }
         });
 
-        // TODO remove debug - webhook signature verification
-        logger.payment('PayPlus webhook signature verification FAILED', {
-          ip: senderInfo.ip,
-          userAgent: senderInfo.userAgent,
-          paymentPageRequestUid: webhookData.transaction?.payment_page_request_uid,
-          signatureHeaders: senderInfo.signatureHeaders
-        });
-
         // Return 401 to reject forged webhooks
         return res.status(401).json({
           error: 'Unauthorized',
@@ -265,9 +257,6 @@ router.post('/payplus',
       // Signature verified successfully
       await webhookLog.update({ security_check: 'passed' });
       webhookLog.addProcessLog('PayPlus webhook signature verified successfully');
-
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook signature verification SUCCESS');
 
       // Import services dynamically to avoid circular dependencies
       const PaymentService = (await import('../services/PaymentService.js')).default;

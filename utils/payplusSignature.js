@@ -18,13 +18,9 @@ import PaymentService from '../services/PaymentService.js';
  */
 function verifyPayPlusSignature(payload, signature, providedSecretKey = null) {
   try {
-    // TODO remove debug - webhook signature verification
-    logger.payment('PayPlus signature verification started');
 
     // Validate required parameters
     if (!signature) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus signature verification failed: Missing signature');
       return false;
     }
 
@@ -35,15 +31,11 @@ function verifyPayPlusSignature(payload, signature, providedSecretKey = null) {
         const credentials = PaymentService.getPayPlusCredentials();
         secretKey = credentials.payment_secret_key;
       } catch (error) {
-        // TODO remove debug - webhook signature verification
-        logger.payment('PayPlus signature verification failed: Could not get credentials', error);
         return false;
       }
     }
 
     if (!secretKey) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus signature verification failed: Missing secret key');
       return false;
     }
 
@@ -53,12 +45,6 @@ function verifyPayPlusSignature(payload, signature, providedSecretKey = null) {
       ? payload
       : JSON.stringify(payload);
 
-    // TODO remove debug - webhook signature verification
-    logger.payment('PayPlus signature verification: payload normalized', {
-      payloadType: typeof payload,
-      messageLength: message.length
-    });
-
     // Remove any prefixes from received signature (PayPlus might add 'sha256=' prefix)
     const cleanSignature = signature.replace(/^sha256=/, '');
 
@@ -67,13 +53,6 @@ function verifyPayPlusSignature(payload, signature, providedSecretKey = null) {
     const isHex = /^[a-f0-9]{64}$/i.test(cleanSignature);
 
     if (!isBase64 && !isHex) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus signature verification: FAILED - invalid signature format', {
-        received: cleanSignature.substring(0, 10) + '...',
-        length: cleanSignature.length,
-        isBase64: isBase64,
-        isHex: isHex
-      });
       return false;
     }
 
@@ -89,22 +68,9 @@ function verifyPayPlusSignature(payload, signature, providedSecretKey = null) {
       ? crypto.timingSafeEqual(Buffer.from(cleanSignature, 'base64'), Buffer.from(expectedSignature, 'base64'))
       : crypto.timingSafeEqual(Buffer.from(cleanSignature, 'hex'), Buffer.from(expectedSignature, 'hex'));
 
-    if (isValid) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus signature verification: SUCCESS');
-    } else {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus signature verification: FAILED - signature mismatch', {
-        received: cleanSignature.substring(0, 10) + '...',
-        expected: expectedSignature.substring(0, 10) + '...'
-      });
-    }
-
     return isValid;
 
   } catch (error) {
-    // TODO remove debug - webhook signature verification
-    logger.payment('PayPlus signature verification: FAILED - exception occurred', error);
     return false;
   }
 }
@@ -149,35 +115,21 @@ function generatePayPlusSignature(payload, providedSecretKey = null) {
  */
 function validateWebhookSignature(req, possibleHeaders = ['hash']) {
   try {
-    // TODO remove debug - webhook signature verification
-    logger.payment('PayPlus webhook validation started');
-
     // STEP 1: Check user-agent header (required by PayPlus)
     const userAgent = req.headers['user-agent'];
     if (userAgent !== 'PayPlus') {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook validation failed: Invalid user-agent', {
-        userAgent: userAgent,
-        expected: 'PayPlus'
-      });
       return false;
     }
 
     // STEP 2: Get the hash from headers
     const hash = req.headers['hash'];
     if (!hash) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook validation failed: No hash header found', {
-        availableHeaders: Object.keys(req.headers)
-      });
       return false;
     }
 
     // STEP 3: Get the message body as JSON string
     const message = req.body && JSON.stringify(req.body);
     if (!message) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook validation failed: No message body found');
       return false;
     }
 
@@ -187,14 +139,10 @@ function validateWebhookSignature(req, possibleHeaders = ['hash']) {
       const credentials = PaymentService.getPayPlusCredentials();
       secretKey = credentials.payment_secret_key;
     } catch (error) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook validation failed: Could not get credentials', error);
       return false;
     }
 
     if (!secretKey) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook validation failed: Missing secret key');
       return false;
     }
 
@@ -210,22 +158,9 @@ function validateWebhookSignature(req, possibleHeaders = ['hash']) {
       Buffer.from(expectedHash, 'base64')
     );
 
-    if (isValid) {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook validation: SUCCESS');
-    } else {
-      // TODO remove debug - webhook signature verification
-      logger.payment('PayPlus webhook validation: FAILED - hash mismatch', {
-        receivedHash: hash.substring(0, 10) + '...',
-        expectedHash: expectedHash.substring(0, 10) + '...'
-      });
-    }
-
     return isValid;
 
   } catch (error) {
-    // TODO remove debug - webhook signature verification
-    logger.payment('PayPlus webhook validation failed with exception:', error);
     return false;
   }
 }
