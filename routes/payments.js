@@ -251,12 +251,6 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
         email: user.email,
         phone: user.phone || ''
       },
-      callbacks: {
-        successUrl: `${process.env.FRONTEND_URL}/payment/success`,
-        failureUrl: `${process.env.FRONTEND_URL}/payment/failure`,
-        cancelUrl: `${process.env.FRONTEND_URL}/payment/cancel`,
-        callbackUrl: `${process.env.API_URL}/webhooks/payplus`
-      }
     });
 
     // Create transaction with PayPlus data (environment auto-detected)

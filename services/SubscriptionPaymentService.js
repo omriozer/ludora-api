@@ -193,11 +193,6 @@ class SubscriptionPaymentService {
           barcode: `subscription_${subscriptionPlan.id}`
         }],
 
-        // URL callbacks
-        refURL_success: process.env.FRONTEND_URL + '/payment/success',
-        refURL_failure: process.env.FRONTEND_URL + '/payment/failure',
-        refURL_cancel: process.env.FRONTEND_URL + '/payment/cancel',
-        refURL_callback: process.env.API_URL + '/webhooks/payplus',
 
         // Recurring payment settings
         recurring_settings: {

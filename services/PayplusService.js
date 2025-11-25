@@ -48,7 +48,6 @@ class PayplusService {
       frontendOrigin = 'cart',
       purchaseItems = [],
       customer = {},
-      callbacks = {}
     } = options;
 
     try {
@@ -66,7 +65,7 @@ class PayplusService {
       }
 
       // Determine webhook URL
-      const webhookUrl = callbacks.callbackUrl || this.getWebhookUrl();
+      const webhookUrl = this.getWebhookUrl();
 
       // Log webhook URL for debugging
       logger.payment(`PayplusService: Using webhook URL: ${webhookUrl} for environment: ${process.env.NODE_ENV || 'development'}`);
@@ -93,9 +92,9 @@ class PayplusService {
         items: this.formatPurchaseItemsForPayplus(purchaseItems),
 
         // URL callbacks
-        refURL_success: callbacks.successUrl || process.env.FRONTEND_URL + '/payment-result',
-        refURL_failure: callbacks.failureUrl || process.env.FRONTEND_URL + '/payment-result',
-        refURL_cancel: callbacks.cancelUrl || process.env.FRONTEND_URL + '/payment-result',
+        refURL_success: process.env.FRONTEND_URL + '/payment-result',
+        refURL_failure: process.env.FRONTEND_URL + '/payment-result',
+        refURL_cancel: process.env.FRONTEND_URL + '/payment-result',
         refURL_callback: webhookUrl,
 
         // Additional settings based on charge method
