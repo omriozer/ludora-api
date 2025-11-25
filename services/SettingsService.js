@@ -16,8 +16,7 @@ class SettingsService {
   constructor() {
     this.cache = {
       settings: null,
-      lastFetch: null,
-      cacheValidDuration: 5 * 60 * 1000 // 5 minutes in milliseconds
+      etag: null  // Store max updated_at as etag
     };
 
     // Create whitelist of allowed setting keys for security
@@ -68,29 +67,30 @@ class SettingsService {
   }
 
   /**
-   * Get current settings built from Settings records with caching
+   * Get current settings built from Settings records with data-driven caching
    * @returns {Promise<Object>} Settings object (identical to ConfigurationService)
    */
   async getSettings() {
-    const now = Date.now();
+    // Get current data version from database
+    const currentEtag = await models.Settings.max('updated_at');
 
-    // Return cached settings if still valid
-    if (this.cache.settings &&
-        this.cache.lastFetch &&
-        (now - this.cache.lastFetch) < this.cache.cacheValidDuration) {
+    // Return cached settings if data hasn't changed
+    if (this.cache.settings && this.cache.etag &&
+        String(this.cache.etag) === String(currentEtag)) {
       return this.cache.settings;
     }
 
     // Fetch fresh settings from settings records
-    await this.refreshCache();
+    await this.refreshCache(currentEtag);
     return this.cache.settings;
   }
 
   /**
    * Refresh settings cache from Settings records
+   * @param {Date|string} etag - Data version (max updated_at)
    * @returns {Promise<Object>} Fresh settings object
    */
-  async refreshCache() {
+  async refreshCache(etag = null) {
     try {
       // Fetch all settings records
       const settingsRecords = await models.Settings.findAll({
@@ -101,14 +101,15 @@ class SettingsService {
         // Create default settings if none exist
         const defaultSettings = await this.createDefaultSettings();
         this.cache.settings = defaultSettings;
+        this.cache.etag = await models.Settings.max('updated_at'); // Get current etag
       } else {
         // Build Settings-like object from Settings records
         this.cache.settings = models.Settings.buildSettingsObject(settingsRecords);
         // Add an id for compatibility
         this.cache.settings.id = 1;
+        this.cache.etag = etag || await models.Settings.max('updated_at'); // Store etag
       }
 
-      this.cache.lastFetch = Date.now();
       return this.cache.settings;
     } catch (error) {
       error.api('Error refreshing settings cache:', error);
@@ -246,7 +247,7 @@ class SettingsService {
    */
   clearCache() {
     this.cache.settings = null;
-    this.cache.lastFetch = null;
+    this.cache.etag = null;
   }
 
   /**
@@ -330,18 +331,18 @@ class SettingsService {
    * Get cache status (useful for debugging)
    * @returns {Object} Cache status information
    */
-  getCacheStatus() {
-    const now = Date.now();
+  async getCacheStatus() {
+    const currentEtag = await models.Settings.max('updated_at');
     const isValid = this.cache.settings &&
-                   this.cache.lastFetch &&
-                   (now - this.cache.lastFetch) < this.cache.cacheValidDuration;
+                   this.cache.etag &&
+                   String(this.cache.etag) === String(currentEtag);
 
     return {
       hasCache: !!this.cache.settings,
-      lastFetch: this.cache.lastFetch,
+      etag: this.cache.etag,
+      currentEtag: currentEtag,
       isValid,
-      ageMs: this.cache.lastFetch ? (now - this.cache.lastFetch) : null,
-      cacheValidDuration: this.cache.cacheValidDuration
+      cachingStrategy: 'data-driven'
     };
   }
 }
