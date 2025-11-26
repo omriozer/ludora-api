@@ -265,11 +265,15 @@ class PaymentService {
         });
       }
 
-      // Update all purchases with this transaction ID
+      // Update all purchases with this transaction ID AND set them to pending
       if (purchaseIds.length > 0) {
-        await models.Purchase.update(
+        // TODO remove debug - fix payplus pending status
+        logger.payment(`Setting ${purchaseIds.length} purchases to pending for transaction ${transaction.id}`);
+
+        const [updatedCount] = await models.Purchase.update(
           {
             transaction_id: transaction.id,
+            payment_status: 'pending', // CRITICAL: Set to pending when payment starts
             updated_at: new Date()
           },
           {
@@ -280,6 +284,9 @@ class PaymentService {
             }
           }
         );
+
+        // TODO remove debug - fix payplus pending status
+        logger.payment(`Successfully updated ${updatedCount} purchases to pending status`);
       }
 
       return transaction;

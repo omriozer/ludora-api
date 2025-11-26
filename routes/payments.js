@@ -280,6 +280,9 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       });
     }
 
+    // TODO remove debug - fix payplus pending status
+    logger.payment(`PayPlus payment page created for user ${userId}, transaction ${transaction.id}, ${cartItems.length} items now pending`);
+
     res.json({
       success: true,
       message: 'PayPlus payment page created',
