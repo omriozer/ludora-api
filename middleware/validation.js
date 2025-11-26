@@ -406,7 +406,7 @@ export const rateLimiters = {
   // General API endpoints
   general: rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.ENVIRONMENT === 'development' ? 10000 : 1000, // Stricter in production
+    max: process.env.ENVIRONMENT === 'development' ? 10000 : 5000, // Much more generous for normal usage
     message: {
       error: 'Too many requests, please try again later'
     },
@@ -441,7 +441,7 @@ export const rateLimiters = {
   // Payment status checking endpoints (CRITICAL: Prevent API overload)
   paymentStatusCheck: rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: process.env.ENVIRONMENT === 'development' ? 100 : 20, // 20 calls per 15 minutes in production
+    max: process.env.ENVIRONMENT === 'development' ? 300 : 100, // More reasonable: 100 calls per 15 minutes in production
     message: {
       error: 'Too many payment status check requests, please wait before trying again',
       details: 'This endpoint checks PayPlus payment status and has rate limiting to protect system performance',
