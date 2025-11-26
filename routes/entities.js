@@ -15,7 +15,6 @@ import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
 import { CONTENT_CREATOR_KEYS } from '../constants/settingsKeys.js';
 import fileService from '../services/FileService.js';
-import { constructS3Path } from '../utils/s3PathUtils.js';
 import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
 import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCountingUtils.js';
 import { GAME_TYPES } from '../config/gameTypes.js';
@@ -34,13 +33,32 @@ const fileUpload = multer({
   // Handle UTF-8 filenames properly
   preservePath: false,
   // Ensure proper encoding handling for Hebrew filenames
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     // Try to fix encoding if it's corrupted
     try {
-      // If filename looks corrupted (contains replacement characters), try to fix it
-      if (file.originalname.includes('�') || file.originalname.includes('×')) {
-        const fixedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-        file.originalname = fixedName;
+      // Check for mojibake patterns (UTF-8 interpreted as Latin-1 and re-encoded)
+      // Common Hebrew mojibake pattern: ×ª×©×¤×´×" (תשפ״ה)
+      if (file.originalname.includes('×') || file.originalname.includes('Ã') || file.originalname.includes('�')) {
+        // First try: Latin-1 to UTF-8 conversion (most common Hebrew encoding issue)
+        try {
+          const fixedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+          // Check if result contains proper Hebrew characters
+          if (/[\u0590-\u05FF]/.test(fixedName)) {
+            file.originalname = fixedName;
+            logger.api(`✅ Fixed Hebrew filename encoding: ${fixedName}`);
+          }
+        } catch (e1) {
+          // Try alternative: UTF-8 to Latin-1 conversion (for different corruption patterns)
+          try {
+            const fixedName = Buffer.from(file.originalname, 'utf8').toString('latin1');
+            if (/[\u0590-\u05FF]/.test(fixedName)) {
+              file.originalname = fixedName;
+              logger.api(`✅ Fixed Hebrew filename encoding (alt): ${fixedName}`);
+            }
+          } catch (e2) {
+            logger.api(`⚠️ Could not fix filename encoding: ${file.originalname}`);
+          }
+        }
       }
     } catch (error) {
       logger.api(`📤 Could not fix filename encoding: ${error.message}`);
@@ -66,8 +84,6 @@ function getFileTypeFromExtension(extension) {
 
 // Helper function to get default study topics for a subject and grade range
 function getDefaultStudyTopicsForSubject(subject, gradeFrom, gradeTo) {
-  const topics = [];
-
   // Define default topics based on subject
   const topicTemplates = {
     'hebrew_language': [
@@ -448,7 +464,7 @@ router.post('/user/:id/generate-invitation-code', authenticateToken, async (req,
 
 // GET /entities/curriculum/available-combinations - Get available subject-grade combinations that have curriculum items
 // MUST be before generic /:type route to match correctly
-router.get('/curriculum/available-combinations', optionalAuth, async (req, res) => {
+router.get('/curriculum/available-combinations', optionalAuth, async (_req, res) => {
   try {
 
     // Single optimized query to get all curricula with their items count
@@ -752,7 +768,6 @@ function sanitizeNumericFields(data, entityType) {
 
   const numericFieldsToSanitize = numericFields[entityType] || [];
   const enumFieldsToSanitize = enumFields[entityType] || [];
-  const allFieldsToSanitize = [...numericFieldsToSanitize, ...enumFieldsToSanitize];
 
   // Handle numeric fields
   numericFieldsToSanitize.forEach(field => {
@@ -938,7 +953,7 @@ router.get('/:type/count', optionalAuth, customValidators.validateEntityType, as
 });
 
 // GET /entities - List all available entity types
-router.get('/', optionalAuth, (req, res) => {
+router.get('/', optionalAuth, (_req, res) => {
   const entityTypes = EntityService.getAvailableEntityTypes();
   res.json({ entityTypes, count: entityTypes.length });
 });
@@ -1503,17 +1518,20 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
     let fileName = req.file.originalname;
 
-    // Additional filename encoding fix for database storage
+    // Additional filename encoding fix for database storage (should be already fixed by fileFilter)
+    // This is a backup check in case the fileFilter didn't catch it
     try {
       // If filename still looks corrupted, try to decode it properly
       if (fileName.includes('×') || fileName.includes('Ã')) {
-        const decodedName = decodeURIComponent(escape(fileName));
-        if (decodedName !== fileName && decodedName.length > 0) {
-          fileName = decodedName;
+        // Try to fix corrupted Hebrew encoding
+        const fixedName = Buffer.from(fileName, 'latin1').toString('utf8');
+        if (/[\u0590-\u05FF]/.test(fixedName)) {
+          fileName = fixedName;
+          logger.api(`✅ Fixed Hebrew filename in upload handler: ${fileName}`);
         }
       }
     } catch (error) {
-      // Filename decoding failed, continue with original
+      logger.api(`⚠️ Filename encoding fix failed in upload handler: ${error.message}`);
     }
 
     const fileExtension = fileName.split('.').pop().toLowerCase();
@@ -1672,16 +1690,13 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
       lessonPlan.total_slides = newTotalSlides;
     }
 
-    const updateResult = await lessonPlan.save({ transaction });
+    await lessonPlan.save({ transaction });
 
     // Force reload to check if update actually persisted
     await lessonPlan.reload({ transaction });
 
     // Commit transaction - everything succeeded
     await transaction.commit();
-
-    // Verify the update persisted after commit by checking fresh DB query
-    const verifyLessonPlan = await models.LessonPlan.findByPk(lessonPlanId);
 
     res.status(201).json({
       message: 'File uploaded successfully',
