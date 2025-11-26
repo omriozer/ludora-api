@@ -36,57 +36,54 @@ runs:
     - name: Send Telegram notification
       shell: bash
       run: |
-        # Set message based on status
-        case "${{ inputs.status }}" in
-          "started")
-            EMOJI="🚀"
-            TITLE="פריסה החלה"
-            COLOR=""
-            ;;
-          "success")
-            EMOJI="✅"
-            TITLE="פריסה הושלמה בהצלחה"
-            COLOR=""
-            ;;
-          "failed")
-            EMOJI="❌"
-            TITLE="פריסה נכשלה"
-            COLOR=""
-            ;;
-          *)
-            EMOJI="ℹ️"
-            TITLE="עדכון פריסה"
-            COLOR=""
-            ;;
-        esac
+        # Load configuration
+        CONFIG_FILE="${GITHUB_ACTION_PATH}/../../templates/config.json"
+        if [ ! -f "$CONFIG_FILE" ]; then
+          MAX_COMMIT_LENGTH=200
+        else
+          MAX_COMMIT_LENGTH=$(jq -r '.commit_message_max_length // 200' "$CONFIG_FILE")
+        fi
+
+        # Load template for current status
+        TEMPLATE_FILE="${GITHUB_ACTION_PATH}/../../templates/deployment-${{ inputs.status }}.json"
+        if [ ! -f "$TEMPLATE_FILE" ]; then
+          echo "Warning: Template for status '${{ inputs.status }}' not found, using defaults"
+          TITLE="עדכון פריסה"
+          LINK_TEXT="🔗 [View GitHub Actions]"
+        else
+          TITLE=$(jq -r '.title' "$TEMPLATE_FILE")
+          LINK_TEXT=$(jq -r '.link_text' "$TEMPLATE_FILE")
+        fi
+
+        # Determine service environment
+        SERVICE_NAME="${{ inputs.service }}"
+        if [[ "$SERVICE_NAME" == *"Staging"* ]]; then
+          ENV="STAGING"
+        else
+          ENV="PROD"
+        fi
+
+        # Determine frontend vs api
+        if [[ "$SERVICE_NAME" == *"Frontend"* || "$SERVICE_NAME" == *"Firebase"* ]]; then
+          SERVICE_TYPE="FRONTEND"
+        else
+          SERVICE_TYPE="API"
+        fi
+
+        # Get current timestamp (UTC)
+        TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S")
 
         # Truncate commit message if too long
         COMMIT_MSG="${{ inputs.commit-message }}"
-        if [ ${#COMMIT_MSG} -gt 100 ]; then
-          COMMIT_MSG="${COMMIT_MSG:0:97}..."
+        if [ ${#COMMIT_MSG} -gt $MAX_COMMIT_LENGTH ]; then
+          COMMIT_MSG="${COMMIT_MSG:0:$((MAX_COMMIT_LENGTH-3))}..."
         fi
 
-        # Build message parts
-        MESSAGE_TITLE="$EMOJI *$TITLE*"
-        MESSAGE_SERVICE="🔧 *שירות:* ${{ inputs.service }}"
-        MESSAGE_COMMIT="📝 *Commit:* ${COMMIT_MSG}"
-        MESSAGE_SHA="🔗 *SHA:* ${{ inputs.commit-sha }}"
-        MESSAGE_LINK="🔗 [צפיה ב-GitHub Actions](${{ inputs.run-url }})"
-
-        # Combine message parts
-        MESSAGE="$MESSAGE_TITLE"
-        MESSAGE="$MESSAGE"$'\n'$'\n'"$MESSAGE_SERVICE"
-        MESSAGE="$MESSAGE"$'\n'"$MESSAGE_COMMIT"
-        MESSAGE="$MESSAGE"$'\n'"$MESSAGE_SHA"
-
-        # Add details if provided
-        if [ -n "${{ inputs.details }}" ]; then
-          MESSAGE="$MESSAGE"$'\n'$'\n'"📋 *פרטים:*"
-          MESSAGE="$MESSAGE"$'\n'"${{ inputs.details }}"
-        fi
-
-        # Add action link
-        MESSAGE="$MESSAGE"$'\n'$'\n'"$MESSAGE_LINK"
+        # Build simplified message
+        MESSAGE="*${TITLE} - ${SERVICE_TYPE} ${ENV}*"
+        MESSAGE="$MESSAGE"$'\n'"$TIMESTAMP"
+        MESSAGE="$MESSAGE"$'\n'$'\n'"Commit: ${COMMIT_MSG}"
+        MESSAGE="$MESSAGE"$'\n'$'\n'"${LINK_TEXT}(${{ inputs.run-url }})"
 
         # Send to Telegram
         curl -s -X POST "https://api.telegram.org/bot${{ inputs.bot-token }}/sendMessage" \

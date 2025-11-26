@@ -1,0 +1,9 @@
+{
+  "commit_message_max_length": 200,
+  "telegram_settings": {
+    "parse_mode": "Markdown",
+    "disable_web_page_preview": true
+  },
+  "message_format": "simplified",
+  "description": "Simplified Telegram deployment notifications format"
+}
