@@ -1,5 +1,6 @@
 import AuthService from '../services/AuthService.js';
 import PlayerService from '../services/PlayerService.js';
+import models from '../models/index.js';
 import {
   logCookieConfig,
   detectPortal,
@@ -52,6 +53,19 @@ export async function authenticateToken(req, res, next) {
       const accessConfig = createPortalAccessTokenConfig(portal);
       logCookieConfig(`Auth Middleware ${portal} - Refresh`, accessConfig);
       res.cookie(cookieNames.accessToken, refreshResult.accessToken, accessConfig);
+
+      // ✅ FIX: Extend UserSession after successful token refresh
+      try {
+        const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(refreshResult.user.id, portal);
+        if (activeSessions.length > 0) {
+          // Extend the most recently accessed session
+          await activeSessions[0].updateLastAccessed();
+        }
+      } catch (sessionError) {
+        // TODO remove debug - fix auth frequent logout issue
+        console.error('[Auth Middleware] Failed to extend session after token refresh:', sessionError.message);
+        // Continue anyway - token refresh succeeded, session extension is non-critical
+      }
 
       // Verify the new token and continue
       const newTokenData = await authService.verifyToken(refreshResult.accessToken);
@@ -274,6 +288,19 @@ export async function authenticateUserOrPlayer(req, res, next) {
         const accessConfig = createPortalAccessTokenConfig(portal);
         res.cookie(cookieNames.accessToken, refreshResult.accessToken, accessConfig);
 
+        // ✅ FIX: Extend UserSession after successful token refresh
+        try {
+          const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(refreshResult.user.id, portal);
+          if (activeSessions.length > 0) {
+            // Extend the most recently accessed session
+            await activeSessions[0].updateLastAccessed();
+          }
+        } catch (sessionError) {
+          // TODO remove debug - fix auth frequent logout issue
+          console.error('[UserOrPlayer Middleware] Failed to extend session after token refresh:', sessionError.message);
+          // Continue anyway - token refresh succeeded, session extension is non-critical
+        }
+
         const newTokenData = await authService.verifyToken(refreshResult.accessToken);
         req.user = newTokenData;
         req.entity = newTokenData;
@@ -334,6 +361,19 @@ export async function authenticateUserOrPlayer(req, res, next) {
 
             const playerAccessConfig = createAccessTokenConfig();
             res.cookie('student_access_token', newAccessToken, playerAccessConfig);
+
+            // ✅ FIX: Extend PlayerSession after successful token refresh
+            try {
+              const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
+              if (activeSessions.length > 0) {
+                // Extend the most recently accessed session
+                await activeSessions[0].updateLastAccessed();
+              }
+            } catch (sessionError) {
+              // TODO remove debug - fix auth frequent logout issue
+              console.error('[UserOrPlayer Player Middleware] Failed to extend player session after token refresh:', sessionError.message);
+              // Continue anyway - token refresh succeeded, session extension is non-critical
+            }
 
             req.player = {
               id: player.id,
@@ -487,6 +527,19 @@ export async function authenticatePlayer(req, res, next) {
       const playerAccessConfig = createAccessTokenConfig();
       logCookieConfig('Player Auth Middleware - Refresh', playerAccessConfig);
       res.cookie('student_access_token', newAccessToken, playerAccessConfig);
+
+      // ✅ FIX: Extend PlayerSession after successful token refresh
+      try {
+        const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
+        if (activeSessions.length > 0) {
+          // Extend the most recently accessed session
+          await activeSessions[0].updateLastAccessed();
+        }
+      } catch (sessionError) {
+        // TODO remove debug - fix auth frequent logout issue
+        console.error('[Player Auth Middleware] Failed to extend player session after token refresh:', sessionError.message);
+        // Continue anyway - token refresh succeeded, session extension is non-critical
+      }
 
       // Set player data on request object
       req.player = {

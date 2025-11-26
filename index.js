@@ -711,6 +711,51 @@ io.on('connection', (socket) => {
 // Export io instance for use in other services
 global.io = io;
 
+// ✅ DEPLOYMENT SESSION PROTECTION: Robust session extension with retry mechanism
+async function extendActiveSessionsWithRetry(maxAttempts = 3, baseDelayMs = 1000) {
+  let attempt = 1;
+
+  while (attempt <= maxAttempts) {
+    try {
+      console.log(`[Deployment Protection] Attempt ${attempt}/${maxAttempts} - Extending active sessions to prevent logout...`);
+
+      const models = await import('./models/index.js');
+      const extendedCount = await models.default.UserSession.extendRecentlyActiveSessions();
+
+      if (extendedCount > 0) {
+        console.log(`✅ [Deployment Protection] Successfully extended ${extendedCount} active sessions`);
+      } else {
+        console.log(`[Deployment Protection] No active sessions found requiring extension`);
+      }
+
+      return extendedCount; // Success - exit retry loop
+
+    } catch (sessionError) {
+      console.error(`❌ [Deployment Protection] Attempt ${attempt}/${maxAttempts} failed:`, sessionError.message);
+
+      if (attempt === maxAttempts) {
+        // Final attempt failed - log warning but don't fail server startup
+        console.warn(`⚠️ [Deployment Protection] All ${maxAttempts} attempts failed. Active users may experience logout during deployment.`);
+        console.warn(`⚠️ [Deployment Protection] Error details:`, {
+          error: sessionError.message,
+          stack: sessionError.stack?.substring(0, 500) // Truncate stack trace
+        });
+        return 0; // Return 0 sessions extended, but don't throw
+      }
+
+      // Calculate exponential backoff delay
+      const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+      console.log(`[Deployment Protection] Retrying in ${delayMs}ms...`);
+
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      attempt++;
+    }
+  }
+
+  return 0; // Should never reach here due to while loop logic, but defensive programming
+}
+
 // Initialize database before starting server
 async function startServer() {
   try {
@@ -718,14 +763,8 @@ async function startServer() {
     const DatabaseInitService = await import('./services/DatabaseInitService.js');
     await DatabaseInitService.default.initialize();
 
-    // Extend recently active sessions to prevent logout during deploy
-    try {
-      const models = await import('./models/index.js');
-      await models.default.UserSession.extendRecentlyActiveSessions();
-    } catch (sessionError) {
-      console.warn('⚠️ Failed to extend active sessions during startup:', sessionError.message);
-      // Don't fail server startup if session extension fails
-    }
+    // ✅ FIX: Enhanced deployment session protection with retry mechanism
+    await extendActiveSessionsWithRetry();
 
     const server = httpServer.listen(PORT, () => {
       console.log(`Ludora API Server with Socket.IO running on port ${PORT} (${env})`);

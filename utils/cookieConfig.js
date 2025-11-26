@@ -27,31 +27,78 @@ export function getCookieDomain() {
 }
 
 /**
- * Get the appropriate sameSite setting based on environment
+ * Get the appropriate sameSite setting based on environment and secure setting
+ * ✅ FIX: Coordinate sameSite policy with secure setting to prevent cookie rejection
  * @returns {string} sameSite setting
  */
 export function getSameSitePolicy() {
   const environment = process.env.ENVIRONMENT || 'development';
+  const isSecure = getSecureSetting();
 
-  switch (environment) {
-    case 'production':
-    case 'staging':
-      // 'none' required for cross-subdomain authentication (ludora.app -> api.ludora.app)
-      // This allows cookies to be sent in cross-subdomain requests while maintaining security with domain restriction
-      return 'none';
-    case 'development':
-    default:
-      // 'lax' for development to allow subdomain testing
-      return 'lax';
+  // Development: always 'lax' (HTTP, localhost)
+  if (environment === 'development') {
+    return 'lax';
   }
+
+  // Production: use 'none' for cross-subdomain (requires HTTPS)
+  if (environment === 'production') {
+    return 'none'; // Safe because production always has HTTPS
+  }
+
+  // Staging: coordinate with secure setting
+  if (environment === 'staging') {
+    if (isSecure) {
+      // HTTPS available - can use 'none' for cross-subdomain
+      return 'none';
+    } else {
+      // No HTTPS - must use 'lax' (sameSite=none requires secure=true)
+      console.warn('⚠️ [Cookie Config] Using sameSite=lax in staging due to HTTPS unavailability. Cross-subdomain auth may be limited.');
+      return 'lax';
+    }
+  }
+
+  // Default: safe fallback
+  return 'lax';
 }
 
 /**
- * Get secure cookie setting based on environment
+ * Get secure cookie setting based on environment and HTTPS availability
+ * ✅ FIX: Intelligent secure cookie detection to prevent cookie rejection
  * @returns {boolean} Whether to use secure cookies
  */
 export function getSecureSetting() {
-  return process.env.ENVIRONMENT !== 'development';
+  const environment = process.env.ENVIRONMENT || 'development';
+
+  // Development: always false (HTTP)
+  if (environment === 'development') {
+    return false;
+  }
+
+  // Production: always true (should have HTTPS)
+  if (environment === 'production') {
+    return true;
+  }
+
+  // Staging: Check if HTTPS is actually available via environment hints
+  if (environment === 'staging') {
+    // If API_URL explicitly uses https, we can use secure cookies
+    if (process.env.API_URL && process.env.API_URL.startsWith('https://')) {
+      return true;
+    }
+
+    // If Heroku environment (has HTTPS), use secure cookies
+    if (process.env.HEROKU_APP_NAME || process.env.DYNO) {
+      return true;
+    }
+
+    // If PORT is set but no explicit HTTPS indicator, default to false for staging
+    // This prevents cookie rejection on staging environments without proper HTTPS
+    console.warn('⚠️ [Cookie Config] Staging environment detected without HTTPS indicators. Using secure=false to prevent cookie rejection.');
+    return false;
+  }
+
+  // Default: false for safety (prevents cookie rejection)
+  return false;
 }
 
 /**
