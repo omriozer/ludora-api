@@ -128,8 +128,9 @@ class PayPlusPageStatusService {
    * @returns {Object} Analyzed page status
    */
   static analyzePageStatusResponse(statusData, pageRequestUid) {
-    // Check if PayPlus returned successful API response
-    if (statusData?.results?.status !== 'success') {
+    // FIXED BUG: Check if PayPlus API call failed completely (not about payment status)
+    // Only treat as abandoned if there's an actual API error, not a payment status
+    if (!statusData || statusData?.results?.status === 'error' || statusData?.results?.status === 'failure') {
       // PayPlus API returned error - might mean page was never used
       console.log(`⚠️ PayPlus API returned error for ${pageRequestUid}: ${statusData?.results?.message}`);
 
@@ -141,6 +142,16 @@ class PayPlusPageStatusService {
         payplus_response: statusData
       };
     }
+
+    // TODO remove debug - fix payplus payment completion
+    console.log(`📊 [DEBUG] PayPlus API response analysis for ${pageRequestUid}:`, {
+      resultsStatus: statusData?.results?.status,
+      hasResults: !!statusData?.results,
+      hasData: !!statusData?.data,
+      hasTransaction: !!statusData?.data?.transaction,
+      transactionStatus: statusData?.data?.transaction?.status_code,
+      fullResponse: JSON.stringify(statusData).substring(0, 500)
+    });
 
     // Check if transaction data exists
     const transactionData = statusData?.data?.transaction;
