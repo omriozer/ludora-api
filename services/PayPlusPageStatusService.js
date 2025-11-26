@@ -22,11 +22,25 @@ class PayPlusPageStatusService {
    */
   static async checkPaymentPageStatus(pageRequestUid) {
     try {
-      console.log(`🔍 Checking PayPlus page status for: ${pageRequestUid}`);
+      console.log(`🔍 [DEBUG] Checking PayPlus page status for UID: ${pageRequestUid}`);
 
-      // Get PayPlus credentials and call the API
-      const { payplusUrl, payment_api_key, payment_secret_key } = PaymentService.getPayPlusCredentials();
+      // Get PayPlus credentials and call the API with enhanced debug logging
+      console.log(`🔑 [DEBUG] Getting PayPlus credentials...`);
+      const credentials = PaymentService.getPayPlusCredentials();
+      console.log(`✅ [DEBUG] PayPlus credentials retrieved:`, {
+        payplusUrl: credentials.payplusUrl,
+        environment: credentials.environment,
+        hasApiKey: !!credentials.payment_api_key,
+        hasSecretKey: !!credentials.payment_secret_key,
+        apiKeyLength: credentials.payment_api_key?.length,
+        secretKeyLength: credentials.payment_secret_key?.length
+      });
+
+      const { payplusUrl, payment_api_key, payment_secret_key } = credentials;
       const statusUrl = `${payplusUrl}Transactions/PaymentData`;
+
+      console.log(`🌐 [DEBUG] Making PayPlus API call to: ${statusUrl}`);
+      console.log(`📋 [DEBUG] API request body:`, { page_request_uid: pageRequestUid });
 
       const statusResponse = await fetch(statusUrl, {
         method: 'POST',
@@ -42,17 +56,30 @@ class PayPlusPageStatusService {
 
       const responseText = await statusResponse.text();
 
+      console.log(`📡 [DEBUG] PayPlus API response:`, {
+        status: statusResponse.status,
+        statusText: statusResponse.statusText,
+        ok: statusResponse.ok,
+        responseLength: responseText.length,
+        responsePreview: responseText.substring(0, 200) + (responseText.length > 200 ? '...' : '')
+      });
+
       if (!statusResponse.ok) {
-        console.log(`❌ PayPlus page status HTTP error ${statusResponse.status}:`, {
+        console.log(`❌ [DEBUG] PayPlus API HTTP error ${statusResponse.status}:`, {
           status: statusResponse.status,
+          statusText: statusResponse.statusText,
           response: responseText.substring(0, 500)
         });
 
         return {
           success: false,
           pageStatus: 'unknown',
-          error: `PayPlus API error: ${statusResponse.status}`,
-          shouldRevertToCart: false // Don't revert on API errors
+          error: `PayPlus API HTTP ${statusResponse.status}: ${statusResponse.statusText}`,
+          shouldRevertToCart: false, // Don't revert on API errors
+          debug_info: {
+            http_status: statusResponse.status,
+            response_preview: responseText.substring(0, 200)
+          }
         };
       }
 
@@ -203,26 +230,46 @@ class PayPlusPageStatusService {
    */
   static async checkAndHandlePaymentPageStatus(transactionId) {
     try {
+      // ENHANCED DEBUG: Add detailed logging for diagnosis
+      console.log(`🔍 [DEBUG] Starting payment page status check for transaction: ${transactionId}`);
+
       // Find transaction to get page_request_uid
       const transaction = await models.Transaction.findByPk(transactionId);
       if (!transaction) {
-        throw new Error(`Transaction ${transactionId} not found`);
+        const error = `Transaction ${transactionId} not found in database`;
+        console.log(`❌ [DEBUG] ${error}`);
+        throw new Error(error);
       }
+
+      console.log(`✅ [DEBUG] Transaction found: ${transaction.id}, UID: ${transaction.payment_page_request_uid || 'MISSING'}`);
 
       if (!transaction.payment_page_request_uid) {
-        throw new Error(`No PayPlus page request UID found for transaction ${transactionId}`);
+        const error = `No PayPlus page request UID found for transaction ${transactionId}`;
+        console.log(`❌ [DEBUG] ${error}`);
+        throw new Error(error);
       }
 
-      // Check payment page status
+      // Check payment page status with enhanced error details
+      console.log(`🔍 [DEBUG] Calling PayPlus API for UID: ${transaction.payment_page_request_uid}`);
       const pageStatusResult = await this.checkPaymentPageStatus(transaction.payment_page_request_uid);
 
+      console.log(`📊 [DEBUG] PayPlus API result:`, {
+        success: pageStatusResult.success,
+        pageStatus: pageStatusResult.pageStatus,
+        error: pageStatusResult.error || 'none',
+        shouldRevertToCart: pageStatusResult.shouldRevertToCart,
+        shouldPollTransaction: pageStatusResult.shouldPollTransaction
+      });
+
       if (!pageStatusResult.success) {
+        console.log(`❌ [DEBUG] PayPlus API check failed: ${pageStatusResult.error}`);
         return pageStatusResult;
       }
 
       // Handle based on page status
       if (pageStatusResult.shouldRevertToCart) {
         // Page was abandoned - revert purchases to cart
+        console.log(`🔄 [DEBUG] Page abandoned - reverting to cart for transaction: ${transactionId}`);
         const revertResult = await this.handleAbandonedPaymentPage(transactionId);
 
         return {
@@ -232,6 +279,7 @@ class PayPlusPageStatusService {
         };
       } else if (pageStatusResult.shouldPollTransaction) {
         // Payment was attempted - should continue with transaction polling
+        console.log(`💳 [DEBUG] Payment attempted - should continue polling for transaction: ${transactionId}`);
         return {
           ...pageStatusResult,
           action_taken: 'continue_transaction_polling',
@@ -239,6 +287,7 @@ class PayPlusPageStatusService {
         };
       } else {
         // Other status - no action needed
+        console.log(`ℹ️ [DEBUG] No action needed for transaction: ${transactionId}, status: ${pageStatusResult.pageStatus}`);
         return {
           ...pageStatusResult,
           action_taken: 'none',
@@ -247,11 +296,24 @@ class PayPlusPageStatusService {
       }
 
     } catch (error) {
+      // Enhanced error logging for debugging
+      console.log(`💥 [DEBUG] Exception in checkAndHandlePaymentPageStatus:`, {
+        transactionId,
+        errorMessage: error.message,
+        errorStack: error.stack?.substring(0, 500),
+        errorName: error.name
+      });
+
       logger.payment('❌ Error checking and handling payment page status:', error);
       return {
         success: false,
         error: error.message,
-        action_taken: 'error'
+        action_taken: 'error',
+        debug_info: {
+          transaction_id: transactionId,
+          error_type: error.name,
+          timestamp: new Date().toISOString()
+        }
       };
     }
   }
