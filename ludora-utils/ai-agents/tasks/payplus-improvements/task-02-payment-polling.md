@@ -7,7 +7,25 @@
 **Priority Level:** HIGH (Reliability Enhancement)
 **Estimated Time:** 4-5 hours AI work time
 **Dependencies:** None (can run parallel with Task 01)
-**Status:** Not Started
+**Status:** In Progress (~75% Complete)
+
+## 🎯 Quick Progress Summary
+
+### ✅ Completed (5 of 7 steps):
+1. **Frontend PaymentModal** - Updated with documented PayPlus events
+2. **Frontend PaymentStatusService** - Created new service for status management
+3. **Backend Polling Endpoints** - Added 4 new API endpoints for polling
+4. **PaymentPollingService** (Backend) - Created main polling service with PayPlus API integration
+5. **Database Migration** - Added polling fields to Purchase model and database
+
+### 🚧 Next Steps:
+6. **Frontend UI Updates** - Show pending status, prevent deletion of pending items
+7. **Integration & Testing** - PayPlus API research, test cycles, abandonment flow
+
+### ⏱️ Time Estimate:
+- **Completed:** ~2.5-3 hours
+- **Remaining:** ~1.5-2 hours
+- **Total:** 4-5 hours as originally estimated
 
 ## Context Section
 
@@ -51,6 +69,78 @@ Currently no polling mechanism exists. PayPlus provides status endpoint but requ
 - [ ] Pending purchases show "ממתין לאישור תשלום" in UI
 - [ ] Pending purchases are non-deletable in cart
 - [ ] Clear logging of resolution method
+
+## Implementation Progress
+
+### Completed Steps ✅
+
+#### ✅ Step 1: Updated PaymentModal with PayPlus Events (COMPLETED)
+**File:** `/ludora-front/src/components/PaymentModal.jsx`
+**Status:** IMPLEMENTED
+- Replaced custom 'payplus_payment_complete' event with documented PayPlus events
+- Implemented pp_submitProcess, pp_responseFromServer, pp_paymentPageKilled, pp_pageExpired
+- Added status transition from 'cart' to 'pending' on payment submission detection
+- Event handlers properly differentiate between payment states
+
+#### ✅ Step 2: Created Frontend Payment Status Service (COMPLETED)
+**File:** `/ludora-front/src/services/PaymentStatusService.js`
+**Status:** IMPLEMENTED
+- Created new dedicated service for payment status management
+- Implemented methods:
+  - `updateTransactionStatus` - Update transaction from cart to pending
+  - `pollTransactionStatus` - Check single transaction status
+  - `checkPendingPayments` - Check all pending payments for user
+  - `getTransactionDetails` - Get detailed transaction information
+- Uses existing apiRequest infrastructure with proper auth headers
+
+#### ✅ Step 3: Added Backend Polling Endpoints (COMPLETED)
+**File:** `/ludora-api/routes/payments.js`
+**Status:** IMPLEMENTED
+- Added 4 new endpoints for polling functionality:
+  - `POST /api/payments/update-status` - Update status from iframe events
+  - `GET /api/payments/transaction-status/:id` - Poll single transaction
+  - `POST /api/payments/check-pending-payments` - Check all pending for user
+  - `GET /api/payments/transaction-details/:id` - Get detailed transaction info
+- All endpoints have authentication middleware
+- Basic validation in place
+
+#### ✅ Step 4: Created PaymentPollingService (COMPLETED)
+**File:** `/ludora-api/services/PaymentPollingService.js`
+**Status:** IMPLEMENTED
+- Created comprehensive polling service with PayPlus API integration
+- Implemented actual PayPlus status polling using PaymentService.getPayPlusCredentials()
+- Added abandonment workflow after 10 failed polling attempts
+- Integrated with EmailService for support notifications when payments are abandoned
+- Features:
+  - `pollTransactionStatus()` - Poll single transaction with PayPlus API
+  - `checkUserPendingPayments()` - Check all pending payments for a user
+  - `handleSuccessfulPayment()` - Complete successful payments via polling
+  - `handleFailedPayment()` - Handle failed payments via polling
+  - `handleAbandonedPayment()` - Mark as abandoned and email support
+  - `sendAbandonmentSupportEmail()` - Hebrew support email with transaction details
+- Updated polling endpoints to use the new service:
+  - `GET /api/payments/transaction-status/:id` - Now calls PaymentPollingService
+  - `POST /api/payments/check-pending-payments` - Now calls PaymentPollingService
+
+#### ✅ Step 5: Database Migration for Polling Fields (COMPLETED)
+**Files:**
+- `/ludora-api/migrations/20251126120000-add-payment-polling-fields.cjs`
+- `/ludora-api/models/Purchase.js`
+
+**Status:** IMPLEMENTED
+- Created and executed database migration successfully
+- Added 3 new fields to Purchase table:
+  - `polling_attempts` (INTEGER, NOT NULL, DEFAULT 0) - Tracks polling attempts per transaction
+  - `last_polled_at` (TIMESTAMP) - Records last polling attempt time
+  - `resolution_method` (VARCHAR(50)) - Tracks how payment was resolved (webhook/polling/manual/abandoned_after_polling)
+- Updated payment_status validation to include 'abandoned' status
+- Created database indexes for efficient querying:
+  - `idx_purchase_polling_status` - For finding pending payments to poll
+  - `idx_purchase_resolution_method` - For reporting on resolution methods
+- Updated Purchase model with new field definitions and validation
+- Migration includes safety checks to handle existing columns gracefully
+
+### Remaining Steps 🚧
 
 ## Implementation Details
 
@@ -829,9 +919,9 @@ describe('Payment Polling Service', () => {
 ## Completion Checklist
 
 ### Implementation
-- [ ] Replace custom PayPlus events with documented ones
-- [ ] Create PaymentPollingService with abandonment handling
-- [ ] Add status update endpoint
+- [x] Replace custom PayPlus events with documented ones ✅
+- [ ] Create PaymentPollingService with abandonment handling 🚧
+- [x] Add status update endpoint ✅
 - [ ] Implement abandonment email system
 - [ ] Add database migration for new fields
 - [ ] Update frontend to show pending status

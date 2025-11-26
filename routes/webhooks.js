@@ -95,6 +95,16 @@ router.post('/paypal',
 // PayPlus webhooks
 router.post('/payplus',
   asyncHandler(async (req, res) => {
+    // TEMPORARY: Disable webhook processing for staging testing of polling system
+    // TODO: Remove this feature flag after polling system testing is complete
+    if (process.env.DISABLE_PAYPLUS_WEBHOOKS === 'true') {
+      return res.status(200).json({
+        message: 'PayPlus webhook temporarily disabled for polling testing',
+        timestamp: new Date().toISOString(),
+        webhook_disabled: true
+      });
+    }
+
     const startTime = Date.now();
     const webhookData = req.body;
 
@@ -261,6 +271,7 @@ router.post('/payplus',
       // Import services dynamically to avoid circular dependencies
       const PaymentService = (await import('../services/PaymentService.js')).default;
       const SubscriptionService = (await import('../services/SubscriptionService.js')).default;
+      const PaymentTokenService = (await import('../services/PaymentTokenService.js')).default;
 
       // Validate required webhook data
       if (!webhookData.transaction?.payment_page_request_uid) {
@@ -318,6 +329,52 @@ router.post('/payplus',
         });
 
         webhookLog.addProcessLog('Transaction updated to completed status');
+
+        // AUTOMATIC TOKEN CAPTURE: Extract and save payment token WITHOUT user permission
+        // This enables one-click purchasing for future transactions
+        let capturedPaymentMethod = null;
+        try {
+          // Get the user ID from the transaction
+          const buyerUserId = transaction.user_id;
+
+          if (buyerUserId) {
+            webhookLog.addProcessLog('🔍 Attempting to extract payment token from webhook...');
+
+            // Automatically extract and save token (NO user permission required)
+            capturedPaymentMethod = await PaymentTokenService.extractAndSaveToken(
+              webhookData,
+              buyerUserId,
+              null // No database transaction needed here as this is additive
+            );
+
+            if (capturedPaymentMethod) {
+              webhookLog.addProcessLog(`💳 Payment method saved automatically: ${capturedPaymentMethod.getDisplayName()} (${capturedPaymentMethod.getMaskedToken()})`);
+
+              // Link this transaction to the payment method for tracking
+              await transaction.update({
+                payment_method_id: capturedPaymentMethod.id,
+                metadata: {
+                  ...transaction.metadata,
+                  payment_method_saved: true,
+                  payment_method_id: capturedPaymentMethod.id,
+                  token_capture_source: 'webhook'
+                }
+              });
+
+              // TODO: implement notifying user about new payment method
+              // This should send an email/notification that a payment method was saved
+              // for their convenience on future purchases
+
+            } else {
+              webhookLog.addProcessLog('ℹ️ No payment token found in webhook data');
+            }
+          } else {
+            webhookLog.addProcessLog('⚠️ No user ID found for token capture');
+          }
+        } catch (tokenError) {
+          webhookLog.addProcessLog(`❌ Token capture failed: ${tokenError.message}`);
+          // Don't fail the webhook processing if token capture fails
+        }
 
         if (isSubscriptionTransaction) {
           // Handle subscription payment success

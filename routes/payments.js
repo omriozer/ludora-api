@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import PaymentService from '../services/PaymentService.js';
 import PayplusService from '../services/PayplusService.js';
+import PaymentPollingService from '../services/PaymentPollingService.js';
 import models from '../models/index.js';
 import { error as logger } from '../lib/errorLogger.js';
 
@@ -330,6 +331,166 @@ router.post('/createSubscriptionPayment', authenticateToken, async (req, res) =>
       return res.status(409).json({ error: error.message });
     }
 
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Payment Status Polling Routes
+
+// Update transaction status (called from PayPlus iframe events)
+router.post('/update-status', authenticateToken, async (req, res) => {
+  try {
+    const { transaction_id, status } = req.body;
+    const userId = req.user.id;
+
+    // Validation
+    if (!transaction_id || !status) {
+      return res.status(400).json({ error: 'transaction_id and status are required' });
+    }
+
+    // TODO remove debug - payment status polling
+    logger.payment(`Updating transaction status: ${transaction_id} to ${status}`);
+
+    // Find the purchase by ID and user ownership
+    const purchase = await models.Purchase.findOne({
+      where: {
+        id: transaction_id,
+        buyer_user_id: userId
+      }
+    });
+
+    if (!purchase) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    // Only allow specific status transitions from frontend
+    if (purchase.payment_status === 'cart' && status === 'pending') {
+      await purchase.update({
+        payment_status: 'pending',
+        metadata: {
+          ...purchase.metadata,
+          pending_started_at: new Date().toISOString(),
+          pending_source: 'pp_submitProcess_event'
+        },
+        updated_at: new Date()
+      });
+
+      // TODO remove debug - payment status polling
+      logger.payment(`Transaction ${transaction_id} moved to pending via iframe event`);
+    }
+
+    res.json({
+      success: true,
+      status: purchase.payment_status,
+      transaction_id: transaction_id
+    });
+
+  } catch (error) {
+    logger.payment('Error updating transaction status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Poll transaction status (triggers PayPlus API check)
+router.get('/transaction-status/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // TODO remove debug - payment status polling
+    logger.payment(`Polling transaction status for: ${id}`);
+
+    // Verify ownership before polling
+    const purchase = await models.Purchase.findOne({
+      where: {
+        id,
+        buyer_user_id: userId
+      }
+    });
+
+    if (!purchase) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    // Use PaymentPollingService to poll PayPlus API
+    const pollResult = await PaymentPollingService.pollTransactionStatus(id);
+
+    res.json({
+      transaction_id: id,
+      poll_result: pollResult,
+      polling_attempts: (purchase.polling_attempts || 0) + (pollResult.success ? 0 : 1),
+      last_polled_at: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.payment('Error polling transaction status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Check all pending payments for current user (triggers polling)
+router.post('/check-pending-payments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // TODO remove debug - payment status polling
+    logger.payment(`Checking pending payments for user: ${userId}`);
+
+    // Use PaymentPollingService to check all pending payments and poll them
+    const pollResults = await PaymentPollingService.checkUserPendingPayments(userId);
+
+    res.json({
+      success: true,
+      message: 'Pending payments checked and polled',
+      data: pollResults
+    });
+
+  } catch (error) {
+    logger.payment('Error checking pending payments:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get detailed transaction information
+router.get('/transaction-details/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Find the purchase with full details
+    const purchase = await models.Purchase.findOne({
+      where: {
+        id,
+        buyer_user_id: userId
+      },
+      include: [
+        {
+          model: models.Transaction,
+          as: 'transaction',
+          required: false
+        }
+      ]
+    });
+
+    if (!purchase) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    res.json({
+      transaction_id: id,
+      payment_status: purchase.payment_status,
+      payment_amount: purchase.payment_amount,
+      created_at: purchase.created_at,
+      updated_at: purchase.updated_at,
+      polling_attempts: purchase.polling_attempts || 0,
+      last_polled_at: purchase.last_polled_at,
+      resolution_method: purchase.resolution_method,
+      metadata: purchase.metadata,
+      transaction: purchase.transaction
+    });
+
+  } catch (error) {
+    logger.payment('Error getting transaction details:', error);
     res.status(500).json({ error: error.message });
   }
 });

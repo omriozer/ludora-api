@@ -1,6 +1,10 @@
 export default {
   // Test environment
   testEnvironment: 'node',
+
+  // Enable ES modules support
+  preset: null,
+  transform: {},
   
   // Module name mapping for path aliases
   moduleNameMapper: {

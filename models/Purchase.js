@@ -57,7 +57,27 @@ export default function(sequelize) {
       allowNull: false,
       defaultValue: 'cart',
       validate: {
-        isIn: [['cart', 'pending', 'completed', 'failed', 'refunded']]
+        isIn: [['cart', 'pending', 'completed', 'failed', 'refunded', 'abandoned']]
+      }
+    },
+    // Payment polling fields (added for Task 02: Payment Status Polling)
+    polling_attempts: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      comment: 'Number of polling attempts made for this payment'
+    },
+    last_polled_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'Timestamp of the last polling attempt'
+    },
+    resolution_method: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      comment: 'Method used to resolve the payment status',
+      validate: {
+        isIn: [['webhook', 'polling', 'manual', 'abandoned_after_polling']]
       }
     },
     // Access control (simplified)

@@ -93,6 +93,7 @@ import { rateLimiters } from './middleware/validation.js';
 import entityRoutes from './routes/entities.js';
 import functionRoutes from './routes/functions.js';
 import paymentsRoutes from './routes/payments.js';
+import paymentMethodsRoutes from './routes/payment-methods.js';
 import integrationRoutes from './routes/integrations.js';
 import authRoutes from './routes/auth.js';
 import videoRoutes from './routes/videos.js';
@@ -225,6 +226,7 @@ app.use('/api/entities', entityRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/functions', functionRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api', paymentMethodsRoutes); // Payment methods endpoints
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/assets', assetsRoutes);
