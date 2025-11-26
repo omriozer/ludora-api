@@ -18,9 +18,9 @@ import fileService from '../services/FileService.js';
 import { getLessonPlanPresentationFiles, checkLessonPlanAccess, getOrderedPresentationUrls } from '../utils/lessonPlanPresentationHelper.js';
 import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCountingUtils.js';
 import { GAME_TYPES } from '../config/gameTypes.js';
-import { error as logger } from '../lib/errorLogger.js';
 import { generateId } from '../models/baseModel.js';
 import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
+import { luderror } from '../lib/ludlog.js';
 
 const router = express.Router();
 
@@ -45,7 +45,7 @@ const fileUpload = multer({
           // Check if result contains proper Hebrew characters
           if (/[\u0590-\u05FF]/.test(fixedName)) {
             file.originalname = fixedName;
-            logger.api(`✅ Fixed Hebrew filename encoding: ${fixedName}`);
+            luderror.api(`✅ Fixed Hebrew filename encoding: ${fixedName}`);
           }
         } catch (e1) {
           // Try alternative: UTF-8 to Latin-1 conversion (for different corruption patterns)
@@ -53,15 +53,15 @@ const fileUpload = multer({
             const fixedName = Buffer.from(file.originalname, 'utf8').toString('latin1');
             if (/[\u0590-\u05FF]/.test(fixedName)) {
               file.originalname = fixedName;
-              logger.api(`✅ Fixed Hebrew filename encoding (alt): ${fixedName}`);
+              luderror.api(`✅ Fixed Hebrew filename encoding (alt): ${fixedName}`);
             }
           } catch (e2) {
-            logger.api(`⚠️ Could not fix filename encoding: ${file.originalname}`);
+            luderror.api(`⚠️ Could not fix filename encoding: ${file.originalname}`);
           }
         }
       }
     } catch (error) {
-      logger.api(`📤 Could not fix filename encoding: ${error.message}`);
+      luderror.api(`📤 Could not fix filename encoding: ${error.message}`);
     }
 
     cb(null, true);
@@ -846,7 +846,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
 
         return res.json(enhancedSettings);
       } catch (error) {
-        logger.api('Settings update error:', error);
+        luderror.api('Settings update error:', error);
         return res.status(400).json({ error: error.message });
       }
     }
@@ -1527,11 +1527,11 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
         const fixedName = Buffer.from(fileName, 'latin1').toString('utf8');
         if (/[\u0590-\u05FF]/.test(fixedName)) {
           fileName = fixedName;
-          logger.api(`✅ Fixed Hebrew filename in upload handler: ${fileName}`);
+          luderror.api(`✅ Fixed Hebrew filename in upload handler: ${fileName}`);
         }
       }
     } catch (error) {
-      logger.api(`⚠️ Filename encoding fix failed in upload handler: ${error.message}`);
+      luderror.api(`⚠️ Filename encoding fix failed in upload handler: ${error.message}`);
     }
 
     const fileExtension = fileName.split('.').pop().toLowerCase();

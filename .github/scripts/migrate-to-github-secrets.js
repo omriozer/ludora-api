@@ -167,8 +167,6 @@ function generateGitHubSecretCommands(envVars, environment, suffix) {
   const commands = [];
   const secretsList = [];
 
-  console.log(`\n📊 Analyzing ${environment} API environment variables...`);
-
   for (const [key, value] of Object.entries(envVars)) {
     if (shouldBeSecret(key, value)) {
       const secretName = generateSecretName(key, suffix);
@@ -179,10 +177,6 @@ function generateGitHubSecretCommands(envVars, environment, suffix) {
       commands.push(`gh secret set ${secretName} --body "${escapedValue}"`);
     }
   }
-
-  console.log(`   • Total variables: ${Object.keys(envVars).length}`);
-  console.log(`   • Will become secrets: ${secretsList.length}`);
-  console.log(`   • Will remain public: ${Object.keys(envVars).length - secretsList.length}`);
 
   return { commands, secretsList };
 }

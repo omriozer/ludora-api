@@ -6,6 +6,7 @@
  */
 
 import { TEMPLATE_CONFIG } from '../config/templateConfig.js';
+import { ludlog } from '../lib/ludlog.js';
 
 /**
  * Font Selector class for handling template font selection
@@ -36,14 +37,6 @@ export class FontSelector {
     const hasHebrew = this.containsHebrew(content);
     const isMixedContent = hasHebrew && this.containsLatin(content);
 
-    // Log font selection decision
-    console.log('🔤 Font selection for content:', {
-      contentPreview: content.substring(0, 50),
-      hasHebrew,
-      isMixedContent,
-      requestedStyle: { bold, italic }
-    });
-
     if (hasHebrew) {
       return this._selectHebrewFont(bold, italic, isMixedContent);
     } else {
@@ -68,12 +61,6 @@ export class FontSelector {
         ? this.customFonts.hebrew.bold
         : this.customFonts.hebrew.regular;
 
-      if (italic) {
-        console.log('🔤 Hebrew italic requested but disabled - Hebrew fonts do not support italic styling');
-      }
-
-      console.log('🔤 Using Hebrew font for Hebrew text (italic disabled for font compatibility)');
-
       return {
         font: selectedFont,
         fontFamily: 'NotoSansHebrew',
@@ -86,7 +73,8 @@ export class FontSelector {
 
     // Hebrew fonts unavailable - fall back to standard fonts
     // This will likely fail for Hebrew characters, but try anyway
-    console.log('⚠️ Warning: Using Helvetica for Hebrew text - may fail to render Hebrew characters');
+    // TODO .prod
+    ludlog.file('⚠️ Warning: Using Helvetica for Hebrew text - may fail to render Hebrew characters');
 
     return this._selectStandardFont(bold, italic, 'hebrew-fallback');
   }
@@ -169,8 +157,6 @@ export class FontSelector {
     } else {
       selectedFont = this.standardFonts.regular;
     }
-
-    console.log(`🔤 Using standard Helvetica font (reason: ${reason})`);
 
     return {
       font: selectedFont,

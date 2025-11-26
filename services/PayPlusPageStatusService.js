@@ -1,6 +1,6 @@
 import models from '../models/index.js';
 import PaymentService from './PaymentService.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * PayPlusPageStatusService - Handles PayPlus payment page status checking
@@ -70,7 +70,7 @@ class PayPlusPageStatusService {
       return this.analyzeTransactionsHistoryResponse(statusData, pageRequestUid);
 
     } catch (error) {
-      logger.payment('❌ PayPlusPageStatusService: Error checking page status:', error);
+      luderror.payment('❌ PayPlusPageStatusService: Error checking page status:', error);
 
       return {
         success: false,
@@ -217,7 +217,7 @@ class PayPlusPageStatusService {
       };
 
     } catch (error) {
-      logger.payment('❌ Error handling completed payment:', error);
+      luderror.payment('❌ Error handling completed payment:', error);
       throw error;
     }
   }
@@ -263,7 +263,7 @@ class PayPlusPageStatusService {
       };
 
     } catch (error) {
-      logger.payment('❌ Error handling abandoned payment page:', error);
+      luderror.payment('❌ Error handling abandoned payment page:', error);
       throw error;
     }
   }
@@ -328,7 +328,7 @@ class PayPlusPageStatusService {
       }
 
     } catch (error) {
-      logger.payment('❌ Error checking and handling payment page status:', error);
+      luderror.payment('❌ Error checking and handling payment page status:', error);
       return {
         success: false,
         error: error.message,

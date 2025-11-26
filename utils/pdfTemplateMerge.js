@@ -21,6 +21,7 @@ import { loadFonts, loadLogo } from './AssetManager.js';
 import { createConverter } from './CoordinateConverter.js';
 import { createFontSelector } from './FontSelector.js';
 import { getDefaultContent, getUrlConfig } from '../config/templateConfig.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Apply template to PDF - UNIFIED for both branding and watermark templates
@@ -1167,7 +1168,7 @@ function detectDocumentFormat(templateSettings, originalPdf, variables) {
     }
 
   } catch (error) {
-    console.log('⚠️ Format detection failed, defaulting to portrait-a4:', error.message);
+    luderror.file('⚠️ Format detection failed, defaulting to portrait-a4:', error.message);
     return 'portrait-a4'; // Safe fallback
   }
 }

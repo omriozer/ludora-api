@@ -532,7 +532,7 @@ npm run lint:fix    # Auto-fix where possible
 - **`ludora/no-time-based-caching`** (Error) - BLOCKS PR APPROVAL
 - **`ludora/require-data-driven-cache`** (Warning) - Suggests proper patterns
 - **`ludora/no-unused-cache-keys`** (Warning) - Detects orphaned cache operations
-- **`ludora/no-console-log`** (Error) - Enforces clog/cerror usage
+- **`ludora/no-console-log`** (Error) - Enforces ludlog/luderror usage
 
 **See `/ludora-utils/eslint-plugin-ludora/README.md` for full documentation.**
 

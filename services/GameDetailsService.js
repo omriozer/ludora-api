@@ -7,7 +7,7 @@
  */
 
 import models from '../models/index.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 class GameDetailsService {
   /**
@@ -41,7 +41,7 @@ class GameDetailsService {
           };
       }
     } catch (error) {
-      logger.api(`Error calculating game details for ${gameType} game ${gameId}:`, error);
+      luderror.api(`Error calculating game details for ${gameType} game ${gameId}:`, error);
       return null;
     }
   }
@@ -68,7 +68,7 @@ class GameDetailsService {
       };
 
     } catch (error) {
-      logger.api('Error calculating memory game details:', error);
+      luderror.api('Error calculating memory game details:', error);
       throw error;
     }
   }

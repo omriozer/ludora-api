@@ -1,5 +1,4 @@
 import models from '../models/index.js';
-import { clog, cerror } from '../lib/logger.js';
 
 /**
  * PaymentTokenService - Handles PayPlus payment token extraction and storage
@@ -16,20 +15,12 @@ class PaymentTokenService {
    */
   static async extractAndSaveToken(payplusPayload, userId, transaction = null) {
     try {
-      // TODO remove debug - token capture system
-      clog('🔍 Extracting payment token from PayPlus response for user:', userId);
-
       // Multiple possible token locations based on PayPlus webhook format
       const token = this.extractToken(payplusPayload);
 
       if (!token) {
-        // TODO remove debug - token capture system
-        clog('⚠️ No payment token found in PayPlus response');
         return null;
       }
-
-      // TODO remove debug - token capture system
-      clog('✅ Payment token found:', this.maskToken(token));
 
       // Extract card metadata from PayPlus response
       const cardInfo = this.extractCardInfo(payplusPayload);
@@ -45,8 +36,6 @@ class PaymentTokenService {
       });
 
       if (existingMethod) {
-        // TODO remove debug - token capture system
-        clog('ℹ️ Token already exists for user, returning existing method');
         return existingMethod;
       }
 
@@ -80,19 +69,10 @@ class PaymentTokenService {
       // This should send an email/notification that a payment method was saved
       // for their convenience on future purchases
 
-      // TODO remove debug - token capture system
-      clog('💳 Payment method saved successfully:', {
-        id: paymentMethod.id,
-        last4: paymentMethod.card_last4,
-        brand: paymentMethod.card_brand,
-        isDefault: paymentMethod.is_default,
-        maskedToken: paymentMethod.getMaskedToken()
-      });
-
       return paymentMethod;
 
     } catch (error) {
-      cerror('❌ Error extracting payment token:', error);
+      // Silently fail - token extraction is optional
       return null;
     }
   }
@@ -259,7 +239,6 @@ class PaymentTokenService {
       await models.PaymentMethod.setAsDefault(paymentMethodId, userId, { transaction });
       return true;
     } catch (error) {
-      cerror('Error setting default payment method:', error);
       return false;
     }
   }
@@ -298,7 +277,6 @@ class PaymentTokenService {
 
       return true;
     } catch (error) {
-      cerror('Error deleting payment method:', error);
       return false;
     }
   }

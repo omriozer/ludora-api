@@ -1,7 +1,7 @@
 import models from '../models/index.js';
-import { error as logger } from '../lib/errorLogger.js';
 import { getWebhookConfig, getSecurityRules } from '../config/payplus.js';
 import { Op } from 'sequelize';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Webhook Security Monitor
@@ -36,7 +36,7 @@ class WebhookSecurityMonitor {
         }
       });
 
-      logger.payment('Webhook security monitoring check', {
+      luderror.payment('Webhook security monitoring check', {
         timeWindowMinutes: this.config.monitoring.alertThresholds.timeWindowMinutes,
         securityFailures,
         threshold: this.config.monitoring.alertThresholds.failures
@@ -61,7 +61,7 @@ class WebhookSecurityMonitor {
       };
 
     } catch (error) {
-      logger.payment('Webhook security monitoring failed:', error);
+      luderror.payment('Webhook security monitoring failed:', error);
       throw error;
     }
   }
@@ -147,7 +147,7 @@ class WebhookSecurityMonitor {
       };
 
     } catch (error) {
-      logger.payment('Failed to get webhook security metrics:', error);
+      luderror.payment('Failed to get webhook security metrics:', error);
       throw error;
     }
   }
@@ -209,14 +209,14 @@ class WebhookSecurityMonitor {
 
       // Prevent duplicate alerts within 5 minutes
       if (this.alertCache.has(alertKey)) {
-        logger.payment('Security alert deduplicated', { alertKey, type: alertData.type });
+        luderror.payment('Security alert deduplicated', { alertKey, type: alertData.type });
         return;
       }
 
       this.alertCache.set(alertKey, true);
 
       // Log the security alert
-      logger.payment('SECURITY ALERT: PayPlus webhook signature failures detected', {
+      luderror.payment('SECURITY ALERT: PayPlus webhook signature failures detected', {
         type: alertData.type,
         count: alertData.count,
         timeWindow: `${alertData.timeWindowMinutes} minutes`,
@@ -242,7 +242,7 @@ class WebhookSecurityMonitor {
         resolved_at: null
       }).catch(() => {
         // SecurityAlert model might not exist, ignore gracefully
-        logger.payment('SecurityAlert model not found, alert logged only');
+        luderror.payment('SecurityAlert model not found, alert logged only');
       });
 
       // Clean up old alert cache entries
@@ -251,7 +251,7 @@ class WebhookSecurityMonitor {
       }, 5 * 60 * 1000);
 
     } catch (error) {
-      logger.payment('Failed to send security alert:', error);
+      luderror.payment('Failed to send security alert:', error);
     }
   }
 
@@ -289,7 +289,7 @@ class WebhookSecurityMonitor {
       };
 
     } catch (error) {
-      logger.payment('Failed to get dashboard metrics:', error);
+      luderror.payment('Failed to get dashboard metrics:', error);
       throw error;
     }
   }

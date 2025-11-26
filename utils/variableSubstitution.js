@@ -8,7 +8,7 @@
  * - Consistent default variables across all services
  */
 
-import { error } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Substitute variables in content with proper Hebrew/RTL support

@@ -1,6 +1,6 @@
 import { Sequelize } from 'sequelize';
 import databaseConfig from '../config/database.js';
-import { error } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 const env = process.env.ENVIRONMENT || 'development';
 const config = databaseConfig[env];
@@ -106,7 +106,7 @@ const testDBConnection = async () => {
   try {
     await sequelize.authenticate();
   } catch (err) {
-    error.system('❌ Unable to connect to the database:', err);
+    luderror.system('❌ Unable to connect to the database:', err);
   }
 };
 

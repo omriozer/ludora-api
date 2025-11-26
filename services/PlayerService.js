@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { error } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 class PlayerService {
   constructor() {

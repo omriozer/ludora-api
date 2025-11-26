@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import { TRANSACTION_TYPES } from '../constants/payplus.js';
 
 /**
@@ -70,7 +70,7 @@ class PaymentService {
       return updatedPurchase;
 
     } catch (error) {
-      logger.payment('PaymentService: Error completing purchase:', error);
+      luderror.payment('PaymentService: Error completing purchase:', error);
       throw error;
     }
   }
@@ -120,7 +120,7 @@ class PaymentService {
       return price === 0;
 
     } catch (error) {
-      logger.payment('PaymentService: Error checking if product is free:', error);
+      luderror.payment('PaymentService: Error checking if product is free:', error);
       throw error;
     }
   }
@@ -175,7 +175,7 @@ class PaymentService {
       return { valid: true };
 
     } catch (error) {
-      logger.payment('PaymentService: Error validating purchase creation:', error);
+      luderror.payment('PaymentService: Error validating purchase creation:', error);
       throw error;
     }
   }
@@ -268,7 +268,7 @@ class PaymentService {
       // Update all purchases with this transaction ID AND set them to pending
       if (purchaseIds.length > 0) {
         // TODO remove debug - fix payplus pending status
-        logger.payment(`Setting ${purchaseIds.length} purchases to pending for transaction ${transaction.id}`);
+        luderror.payment(`Setting ${purchaseIds.length} purchases to pending for transaction ${transaction.id}`);
 
         const [updatedCount] = await models.Purchase.update(
           {
@@ -286,13 +286,13 @@ class PaymentService {
         );
 
         // TODO remove debug - fix payplus pending status
-        logger.payment(`Successfully updated ${updatedCount} purchases to pending status`);
+        luderror.payment(`Successfully updated ${updatedCount} purchases to pending status`);
       }
 
       return transaction;
 
     } catch (error) {
-      logger.payment('PaymentService: Error creating/updating PayPlus transaction:', error);
+      luderror.payment('PaymentService: Error creating/updating PayPlus transaction:', error);
       throw error;
     }
   }
@@ -349,7 +349,7 @@ class PaymentService {
         }
 
       } catch (error) {
-        logger.payment(`PaymentService: Error fetching product for purchase ${purchase.id}:`, error);
+        luderror.payment(`PaymentService: Error fetching product for purchase ${purchase.id}:`, error);
         // Add purchase without product data as fallback
         populatedPurchases.push(purchase.toJSON ? purchase.toJSON() : purchase);
       }
@@ -401,7 +401,7 @@ class PaymentService {
       return credentials;
 
     } catch (error) {
-      logger.auth('PaymentService: Error getting PayPlus credentials:', error);
+      luderror.auth('PaymentService: Error getting PayPlus credentials:', error);
       throw error;
     }
   }

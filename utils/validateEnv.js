@@ -3,7 +3,7 @@
  * Validates critical environment variables are set correctly
  */
 
-import { log, error } from '../lib/logger.js';
+import { ludlog, luderror } from '../lib/ludlog.js';
 
 /**
  * Validate required environment variables
@@ -94,17 +94,17 @@ export function validateEnvironmentVariables() {
  */
 export function logEnvironmentValidation(results) {
   if (results.errors.length > 0) {
-    error.validation('❌ Environment Variable Errors:');
-    results.errors.forEach(err => error.validation(`  - ${err}`));
+    luderror.system('❌ Environment Variable Errors:');
+    results.errors.forEach(err => luderror.system(`  - ${err}`));
   }
 
   if (results.warnings.length > 0) {
-    log.general('⚠️  Environment Variable Warnings:');
-    results.warnings.forEach(warning => log.general(`  - ${warning}`));
+    ludlog.general('⚠️  Environment Variable Warnings:');
+    results.warnings.forEach(warning => ludlog.general(`  - ${warning}`));
   }
 
   if (results.isValid && results.errors.length === 0 && results.warnings.length === 0) {
-    log.general('✅ All environment variables validated successfully');
+    ludlog.general('✅ All environment variables validated successfully');
   }
 
   return results.isValid;
@@ -120,8 +120,8 @@ export function validateEnvironmentOnStartup(exitOnError = true) {
   const isValid = logEnvironmentValidation(results);
 
   if (!isValid && exitOnError && process.env.NODE_ENV !== 'development') {
-    error.validation('🛑 Critical environment variables missing. Server startup aborted.');
-    error.validation('Please set the required environment variables and restart the server.');
+    luderror.system('🛑 Critical environment variables missing. Server startup aborted.');
+    luderror.system('Please set the required environment variables and restart the server.');
     process.exit(1);
   }
 

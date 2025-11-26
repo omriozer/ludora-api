@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { admin } from '../config/firebase.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 class AuthService {
   constructor() {

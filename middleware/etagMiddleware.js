@@ -11,7 +11,7 @@
 
 import models from '../models/index.js';
 import crypto from 'crypto';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Generate MD5 hash for ETag
@@ -43,7 +43,7 @@ async function generateSettingsETag() {
 
     return etag;
   } catch (error) {
-    logger.api('[ETag] Error generating Settings ETag:', error);
+    luderror.api('[ETag] Error generating Settings ETag:', error);
     // Return a fallback ETag that changes on error
     return `"settings-error-${Date.now()}"`;
   }
@@ -73,7 +73,7 @@ async function generateUserETag(userId) {
 
     return etag;
   } catch (error) {
-    logger.api('[ETag] Error generating User ETag:', error);
+    luderror.api('[ETag] Error generating User ETag:', error);
     return `"user-error-${Date.now()}"`;
   }
 }
@@ -93,7 +93,7 @@ async function generateAuthMeETag(req) {
 
     return generateUserETag(req.user.id);
   } catch (error) {
-    logger.api('[ETag] Error generating auth/me ETag:', error);
+    luderror.api('[ETag] Error generating auth/me ETag:', error);
     return `"auth-me-error-${Date.now()}"`;
   }
 }
@@ -142,7 +142,7 @@ export function addETagSupport(recordType) {
               break;
 
             default:
-              logger.api('[ETag] Unknown record type:', recordType);
+              luderror.api('[ETag] Unknown record type:', recordType);
           }
 
           // Check if client sent If-None-Match header
@@ -164,7 +164,7 @@ export function addETagSupport(recordType) {
           return originalJson(data);
 
         } catch (error) {
-          logger.api('[ETag] Error in response handler:', error);
+          luderror.api('[ETag] Error in response handler:', error);
           // On error, just send response without ETag
           return originalJson(data);
         }
@@ -174,7 +174,7 @@ export function addETagSupport(recordType) {
       next();
 
     } catch (error) {
-      logger.api('[ETag] Middleware error:', error);
+      luderror.api('[ETag] Middleware error:', error);
       // On error, continue without ETag support
       next();
     }
@@ -212,10 +212,10 @@ export async function invalidateETag(recordType, recordId = null) {
         break;
 
       default:
-        logger.api('[ETag] Cannot invalidate unknown type:', recordType);
+        luderror.api('[ETag] Cannot invalidate unknown type:', recordType);
     }
   } catch (error) {
-    logger.api('[ETag] Error invalidating ETag:', error);
+    luderror.api('[ETag] Error invalidating ETag:', error);
   }
 }
 

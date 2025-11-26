@@ -15,12 +15,12 @@ import { substituteVariables } from '../utils/variableSubstitution.js';
 import { mergeSvgTemplate } from '../utils/svgTemplateMerge.js';
 import AccessControlService from '../services/AccessControlService.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
-import { generateIsraeliCacheHeaders, applyIsraeliCaching } from '../middleware/israeliCaching.js';
+import { generateIsraeliCacheHeaders } from '../middleware/israeliCaching.js';
 import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.js';
 import { createFileLogger, createErrorResponse, createSuccessResponse } from '../utils/fileOperationLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import { createFileVerifier } from '../utils/fileOperationVerifier.js';
 import { createPreUploadValidator } from '../utils/preUploadValidator.js';
-import { error } from '../lib/errorLogger.js';
 // Import pptx2html library - try using dynamic import to handle the UMD build correctly
 let renderPptx;
 
@@ -710,8 +710,8 @@ router.post('/upload', authenticateToken, assetUpload.single('file'), async (req
     );
 
     // If we have a logger, use it; otherwise fall back to console
-    if (logger) {
-      logger.error(error, { stage: 'request_processing' });
+    if (luderror) {
+      luderror.api(error, { stage: 'request_processing' });
     }
 
     res.status(500).json(errorResponse);
@@ -2150,7 +2150,7 @@ router.delete('/:entityType/:entityId', authenticateToken, async (req, res) => {
       logger.requestId
     );
 
-    logger.error(error, { stage: 'request_processing' });
+    luderror.api(error, { stage: 'request_processing' });
     res.status(500).json(errorResponse);
   }
 });

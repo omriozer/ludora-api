@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { TEMPLATE_CONFIG, getLogoConfig, getFontConfig, getUrlConfig } from '../config/templateConfig.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Asset Manager class for handling template assets
@@ -58,7 +59,7 @@ export class AssetManager {
 
       return logoResult;
     } catch (error) {
-      console.log('⚠️ Logo loading failed:', error.message);
+      luderror.file('⚠️ Logo loading failed:', error.message);
       return this._getLogoFallback(config);
     }
   }
@@ -176,7 +177,7 @@ export class AssetManager {
       try {
         fonts[language] = await this._loadLanguageFonts(pdfDoc, language);
       } catch (error) {
-        console.log(`⚠️ Failed to load ${language} fonts:`, error.message);
+        luderror.file(`⚠️ Failed to load ${language} fonts:`, error.message);
         fonts[language] = {};
       }
     }
@@ -200,12 +201,11 @@ export class AssetManager {
         if (fs.existsSync(fontPath)) {
           const fontBytes = fs.readFileSync(fontPath);
           fonts[variant] = await pdfDoc.embedFont(fontBytes);
-          console.log(`✅ Loaded ${language} ${variant} font`);
         } else {
-          console.log(`⚠️ Font file not found: ${fontPath}`);
+          luderror.file(`⚠️ Font file not found: ${fontPath}`);
         }
       } catch (embedError) {
-        console.log(`⚠️ Failed to embed ${language} ${variant} font:`, embedError.message);
+        luderror.file(`⚠️ Failed to embed ${language} ${variant} font:`, embedError.message);
       }
     }
 

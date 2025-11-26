@@ -1,6 +1,6 @@
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 class LogService {
 
@@ -26,7 +26,7 @@ class LogService {
 
       return logEntry;
     } catch (error) {
-      logger.api('Error creating log entry:', error);
+      luderror.api('Error creating log entry:', error);
       throw new Error('Failed to create log entry');
     }
   }
@@ -81,7 +81,7 @@ class LogService {
 
       return logs;
     } catch (error) {
-      logger.api('Error fetching logs:', error);
+      luderror.api('Error fetching logs:', error);
       throw new Error('Failed to fetch logs');
     }
   }
@@ -120,7 +120,7 @@ class LogService {
       const count = await models.Logs.count({ where });
       return count;
     } catch (error) {
-      logger.api('Error counting logs:', error);
+      luderror.api('Error counting logs:', error);
       throw new Error('Failed to count logs');
     }
   }
@@ -143,7 +143,7 @@ class LogService {
 
       return deletedCount;
     } catch (error) {
-      logger.api('Error deleting old logs:', error);
+      luderror.api('Error deleting old logs:', error);
       throw new Error('Failed to delete old logs');
     }
   }

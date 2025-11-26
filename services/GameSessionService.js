@@ -3,7 +3,7 @@
 
 import models from '../models/index.js';
 import { Op } from 'sequelize';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import LobbySocketService from './LobbySocketService.js';
 
 /**
@@ -69,7 +69,7 @@ class GameSessionService {
       return sessionWithDetails;
 
     } catch (error) {
-      logger.auth('❌ Failed to create session:', error);
+      luderror.auth('❌ Failed to create session:', error);
       throw error;
     }
   }
@@ -170,7 +170,7 @@ class GameSessionService {
       return updatedSession;
 
     } catch (error) {
-      logger.auth('❌ Failed to add participant:', error);
+      luderror.auth('❌ Failed to add participant:', error);
       throw error;
     }
   }
@@ -232,7 +232,7 @@ class GameSessionService {
       return updatedSession;
 
     } catch (error) {
-      logger.auth('❌ Failed to remove participant:', error);
+      luderror.auth('❌ Failed to remove participant:', error);
       throw error;
     }
   }
@@ -305,7 +305,7 @@ class GameSessionService {
       return updatedSession;
 
     } catch (error) {
-      logger.auth('❌ Failed to update game state:', error);
+      luderror.auth('❌ Failed to update game state:', error);
       throw error;
     }
   }
@@ -364,7 +364,7 @@ class GameSessionService {
       return finishedSession;
 
     } catch (error) {
-      logger.auth('❌ Failed to finish session:', error);
+      luderror.auth('❌ Failed to finish session:', error);
       throw error;
     }
   }
@@ -431,7 +431,7 @@ class GameSessionService {
       return formattedSession;
 
     } catch (error) {
-      logger.auth('❌ Failed to get session details:', error);
+      luderror.auth('❌ Failed to get session details:', error);
       throw error;
     }
   }
@@ -467,7 +467,7 @@ class GameSessionService {
       }));
 
     } catch (error) {
-      logger.auth('❌ Failed to get sessions by lobby:', error);
+      luderror.auth('❌ Failed to get sessions by lobby:', error);
       throw error;
     }
   }
@@ -488,7 +488,7 @@ class GameSessionService {
       return (result || 0) + 1;
 
     } catch (error) {
-      logger.auth('❌ Failed to get next session number:', error);
+      luderror.auth('❌ Failed to get next session number:', error);
       return 1;
     }
   }
@@ -589,7 +589,7 @@ class GameSessionService {
       return startedSession;
 
     } catch (error) {
-      logger.auth('❌ Failed to start session:', error);
+      luderror.auth('❌ Failed to start session:', error);
       throw error;
     }
   }

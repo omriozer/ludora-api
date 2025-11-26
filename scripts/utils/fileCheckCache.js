@@ -122,7 +122,6 @@ class FileCheckCache {
     }
 
     if (removedCount > 0) {
-      console.log(`🧹 Cleaned ${removedCount} expired cache entries`);
       cache.lastCleanup = new Date().toISOString();
     }
   }
@@ -300,7 +299,6 @@ class FileCheckCache {
     }
 
     if (removedCount > 0) {
-      console.log(`🧹 Cleared ${removedCount} cache entries for environment: ${environment}`);
       this.dirty = true;
     }
   }
@@ -309,12 +307,9 @@ class FileCheckCache {
    * Clear all cache
    */
   clearAllCache() {
-    const entryCount = Object.keys(this.cache.files).length;
     this.cache.files = {};
     this.cache.lastCleanup = new Date().toISOString();
     this.dirty = true;
-
-    console.log(`🧹 Cleared all ${entryCount} cache entries`);
   }
 
   /**

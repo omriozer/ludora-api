@@ -37,7 +37,7 @@ runs:
       shell: bash
       run: |
         # Load configuration
-        CONFIG_FILE="${GITHUB_ACTION_PATH}/../../templates/config.json"
+        CONFIG_FILE="${GITHUB_WORKSPACE}/.github/templates/config.json"
         if [ ! -f "$CONFIG_FILE" ]; then
           MAX_COMMIT_LENGTH=200
         else
@@ -45,7 +45,7 @@ runs:
         fi
 
         # Load template for current status
-        TEMPLATE_FILE="${GITHUB_ACTION_PATH}/../../templates/deployment-${{ inputs.status }}.json"
+        TEMPLATE_FILE="${GITHUB_WORKSPACE}/.github/templates/deployment-${{ inputs.status }}.json"
         if [ ! -f "$TEMPLATE_FILE" ]; then
           echo "Warning: Template for status '${{ inputs.status }}' not found, using defaults"
           TITLE="עדכון פריסה"

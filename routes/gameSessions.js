@@ -16,7 +16,7 @@ import {
 } from '../middleware/gameSessionValidation.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 const router = express.Router();
 
@@ -113,7 +113,7 @@ router.get('/game-sessions/:sessionId',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to get session details:', error);
+      luderror.auth('❌ Failed to get session details:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -187,7 +187,7 @@ router.put('/game-sessions/:sessionId',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to update session:', error);
+      luderror.auth('❌ Failed to update session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -231,7 +231,7 @@ router.delete('/game-sessions/:sessionId',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to close session:', error);
+      luderror.auth('❌ Failed to close session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -290,7 +290,7 @@ router.get('/game-sessions/:sessionId/participants',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to get participants:', error);
+      luderror.auth('❌ Failed to get participants:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -350,7 +350,7 @@ router.post('/game-sessions/:sessionId/participants',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to add participant:', error);
+      luderror.auth('❌ Failed to add participant:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -399,7 +399,7 @@ router.delete('/game-sessions/:sessionId/participants/:participantId',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to remove participant:', error);
+      luderror.auth('❌ Failed to remove participant:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -470,7 +470,7 @@ router.post('/game-sessions/:sessionId/participants/teacher-add',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to add participant (teacher):', error);
+      luderror.auth('❌ Failed to add participant (teacher):', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -543,7 +543,7 @@ router.delete('/game-sessions/:sessionId/participants/:participantId/teacher-rem
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to remove participant (teacher):', error);
+      luderror.auth('❌ Failed to remove participant (teacher):', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -606,7 +606,7 @@ router.get('/game-sessions/:sessionId/state',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to get game state:', error);
+      luderror.auth('❌ Failed to get game state:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -655,7 +655,7 @@ router.put('/game-sessions/:sessionId/state',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to update game state:', error);
+      luderror.auth('❌ Failed to update game state:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -711,7 +711,7 @@ router.put('/game-sessions/:sessionId/finish',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to finish session:', error);
+      luderror.auth('❌ Failed to finish session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -757,7 +757,7 @@ router.put('/game-sessions/:sessionId/start',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to start session:', error);
+      luderror.auth('❌ Failed to start session:', error);
 
       if (error.message.includes('Session not found')) {
         return res.status(404).json({ error: 'Session not found' });
@@ -839,7 +839,7 @@ router.get('/game-sessions/my-active',
 
     } catch (error) {
       await transaction.rollback();
-      logger.auth('❌ Failed to get user active sessions:', error);
+      luderror.auth('❌ Failed to get user active sessions:', error);
       res.status(500).json({
         error: 'Failed to fetch active sessions',
         message: error.message

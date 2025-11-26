@@ -28,15 +28,6 @@ router.get('/', optionalAuth, addETagSupport('settings'), async (req, res) => {
     const missingKeys = ALL_SETTINGS_KEYS_ARRAY.filter(requiredKey => !existingKeys.includes(requiredKey));
 
     if (missingKeys.length > 0) {
-      // Log missing keys for system tracking (not displayed to user)
-      console.error('[SETTINGS_VALIDATION] Missing settings keys detected:', {
-        missing: missingKeys,
-        timestamp: new Date().toISOString(),
-        endpoint: '/api/settings',
-        totalExpected: ALL_SETTINGS_KEYS_ARRAY.length,
-        totalFound: existingKeys.length
-      });
-
       // Add system validation header for debugging (not visible to frontend)
       res.set('X-Settings-Validation-Warning', `${missingKeys.length} missing keys`);
     }

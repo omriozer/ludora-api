@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import PaymentService from '../services/PaymentService.js';
 
 /**
@@ -102,7 +102,7 @@ function generatePayPlusSignature(payload, providedSecretKey = null) {
       .digest('hex');
 
   } catch (error) {
-    logger.payment('PayPlus signature generation failed:', error);
+    luderror.payment('PayPlus signature generation failed:', error);
     throw error;
   }
 }

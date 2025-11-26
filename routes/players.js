@@ -11,7 +11,7 @@ import {
   createClearCookieConfig,
   logCookieConfig
 } from '../utils/cookieConfig.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 const authService = new AuthService();
 const playerService = new PlayerService();
@@ -139,7 +139,7 @@ router.post('/login', studentsAccessMiddleware, rateLimiters.auth, validateBody(
     });
 
   } catch (error) {
-    logger.auth('Player login error:', error);
+    luderror.auth('Player login error:', error);
     res.status(401).json({ error: error.message || 'Authentication failed' });
   }
 });
@@ -201,7 +201,7 @@ router.post('/refresh', studentsAccessMiddleware, async (req, res) => {
     });
 
   } catch (error) {
-    logger.auth('Player token refresh error:', error);
+    luderror.auth('Player token refresh error:', error);
     res.status(401).json({ error: error.message || 'Token refresh failed' });
   }
 });
@@ -238,7 +238,7 @@ router.post('/logout', studentsAccessMiddleware, authenticateUserOrPlayer, async
 
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
-    logger.auth('Player logout error:', error);
+    luderror.auth('Player logout error:', error);
     res.status(500).json({ error: 'Logout failed' });
   }
 });
@@ -278,7 +278,7 @@ router.get('/me', studentsAccessMiddleware, authenticateUserOrPlayer, async (req
       throw new Error('No valid authentication found');
     }
   } catch (error) {
-    logger.api('Get player/user info error:', error);
+    luderror.api('Get player/user info error:', error);
     res.status(500).json({ error: 'Failed to fetch authentication information' });
   }
 });
@@ -318,7 +318,7 @@ router.post('/create-anonymous', studentsAccessMiddleware, rateLimiters.auth, va
     });
 
   } catch (error) {
-    logger.api('Create anonymous player error:', error);
+    luderror.api('Create anonymous player error:', error);
     res.status(400).json({ error: error.message || 'Failed to create anonymous player' });
   }
 });
@@ -346,7 +346,7 @@ router.put('/update-profile', studentsAccessMiddleware, authenticateUserOrPlayer
     });
 
   } catch (error) {
-    logger.api('Player profile update error:', error);
+    luderror.api('Player profile update error:', error);
     res.status(500).json({ error: error.message || 'Failed to update player profile' });
   }
 });
@@ -371,7 +371,7 @@ router.post('/assign-teacher', studentsAccessMiddleware, authenticateUserOrPlaye
     });
 
   } catch (error) {
-    logger.api('Assign teacher error:', error);
+    luderror.api('Assign teacher error:', error);
     res.status(400).json({ error: error.message || 'Failed to assign teacher' });
   }
 });
@@ -410,7 +410,7 @@ router.post('/create', authenticateToken, requireTeacher, validateBody(schemas.c
     });
 
   } catch (error) {
-    logger.api('Create player error:', error);
+    luderror.api('Create player error:', error);
     res.status(400).json({ error: error.message || 'Failed to create player' });
   }
 });
@@ -437,7 +437,7 @@ router.get('/', authenticateToken, requireTeacher, async (req, res) => {
       teacher_id: teacherId
     });
   } catch (error) {
-    logger.api('Get teacher players error:', error);
+    luderror.api('Get teacher players error:', error);
     res.status(500).json({ error: 'Failed to retrieve players' });
   }
 });
@@ -474,7 +474,7 @@ router.get('/:playerId', authenticateToken, requireTeacher, async (req, res) => 
       updated_at: player.updated_at
     });
   } catch (error) {
-    logger.api('Get player error:', error);
+    luderror.api('Get player error:', error);
     res.status(500).json({ error: 'Failed to retrieve player' });
   }
 });
@@ -501,7 +501,7 @@ router.put('/:playerId', authenticateToken, requireTeacher, validateBody(schemas
     });
 
   } catch (error) {
-    logger.api('Update player error:', error);
+    luderror.api('Update player error:', error);
     res.status(400).json({ error: error.message || 'Failed to update player' });
   }
 });
@@ -521,7 +521,7 @@ router.post('/:playerId/regenerate-code', authenticateToken, requireTeacher, asy
     });
 
   } catch (error) {
-    logger.api('Regenerate privacy code error:', error);
+    luderror.api('Regenerate privacy code error:', error);
     res.status(400).json({ error: error.message || 'Failed to regenerate privacy code' });
   }
 });
@@ -537,7 +537,7 @@ router.delete('/:playerId', authenticateToken, requireTeacher, async (req, res) 
     res.json(result);
 
   } catch (error) {
-    logger.api('Deactivate player error:', error);
+    luderror.api('Deactivate player error:', error);
     res.status(400).json({ error: error.message || 'Failed to deactivate player' });
   }
 });
@@ -556,7 +556,7 @@ router.get('/online/list', authenticateToken, requireTeacher, async (req, res) =
       timestamp: new Date()
     });
   } catch (error) {
-    logger.api('Get online players error:', error);
+    luderror.api('Get online players error:', error);
     res.status(500).json({ error: 'Failed to retrieve online players' });
   }
 });
@@ -574,7 +574,7 @@ router.get('/stats/overview', authenticateToken, requireTeacher, async (req, res
       stats
     });
   } catch (error) {
-    logger.api('Get player stats error:', error);
+    luderror.api('Get player stats error:', error);
     res.status(500).json({ error: 'Failed to retrieve player statistics' });
   }
 });
@@ -604,7 +604,7 @@ router.get('/:playerId/sessions', authenticateToken, requireTeacher, async (req,
       count: sessions.length
     });
   } catch (error) {
-    logger.auth('Get player sessions error:', error);
+    luderror.auth('Get player sessions error:', error);
     res.status(500).json({ error: 'Failed to retrieve player sessions' });
   }
 });
@@ -630,7 +630,7 @@ router.post('/:playerId/logout', authenticateToken, requireTeacher, async (req, 
     });
 
   } catch (error) {
-    logger.auth('Logout player error:', error);
+    luderror.auth('Logout player error:', error);
     res.status(500).json({ error: 'Failed to logout player' });
   }
 });

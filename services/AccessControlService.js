@@ -1,7 +1,7 @@
 import models from '../models/index.js';
 import { Op } from 'sequelize';
 import { NotFoundError, ForbiddenError } from '../middleware/errorHandler.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import { nowInIsrael, createExpirationDate, isExpired } from '../utils/dateUtils.js';
 
 class AccessControlService {
@@ -40,7 +40,7 @@ class AccessControlService {
         expiresAt: purchase ? purchase.access_expires_at : null
       };
     } catch (error) {
-      logger.api('Error checking access:', error);
+      luderror.api('Error checking access:', error);
       throw new Error(`Failed to check access: ${error.message}`);
     }
   }
@@ -75,7 +75,7 @@ class AccessControlService {
 
       return purchases.map(purchase => this.formatPurchaseWithEntity(purchase));
     } catch (error) {
-      logger.payment('Error getting user purchases:', error);
+      luderror.payment('Error getting user purchases:', error);
       throw new Error(`Failed to get user purchases: ${error.message}`);
     }
   }
@@ -113,7 +113,7 @@ class AccessControlService {
         expiresAt: purchase.access_expires_at
       }));
     } catch (error) {
-      logger.api('Error getting entity users:', error);
+      luderror.api('Error getting entity users:', error);
       throw new Error(`Failed to get entity users: ${error.message}`);
     }
   }
@@ -149,7 +149,7 @@ class AccessControlService {
       const purchase = await this.models.Purchase.create(purchaseData);
       return purchase;
     } catch (error) {
-      logger.api('Error granting access:', error);
+      luderror.api('Error granting access:', error);
       throw new Error(`Failed to grant access: ${error.message}`);
     }
   }
@@ -167,7 +167,7 @@ class AccessControlService {
 
       return { revoked: deletedCount > 0, deletedCount };
     } catch (error) {
-      logger.api('Error revoking access:', error);
+      luderror.api('Error revoking access:', error);
       throw new Error(`Failed to revoke access: ${error.message}`);
     }
   }
@@ -197,7 +197,7 @@ class AccessControlService {
         totalRevenue: 0
       };
     } catch (error) {
-      logger.api('Error getting entity access stats:', error);
+      luderror.api('Error getting entity access stats:', error);
       throw new Error(`Failed to get entity access stats: ${error.message}`);
     }
   }

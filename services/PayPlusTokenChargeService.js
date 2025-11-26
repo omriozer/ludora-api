@@ -1,5 +1,4 @@
 import PaymentService from './PaymentService.js';
-import { clog, cerror } from '../lib/logger.js';
 
 /**
  * PayPlusTokenChargeService - Handles direct PayPlus token charging
@@ -21,7 +20,6 @@ class PayPlusTokenChargeService {
         environment: config.environment
       };
     } catch (error) {
-      cerror('Failed to get PayPlus configuration:', error);
       throw error;
     }
   }
@@ -56,15 +54,6 @@ class PayPlusTokenChargeService {
 
       const config = this.getPayPlusConfig();
 
-      // TODO remove debug - token capture system
-      clog('🔄 Charging saved payment token:', {
-        amount: amount / 100, // Show in ILS
-        currency,
-        customerEmail,
-        tokenMasked: this.maskToken(token),
-        environment: config.environment
-      });
-
       // Build PayPlus token charge request
       // Note: This is based on expected PayPlus API structure
       // May need adjustment based on actual PayPlus documentation
@@ -86,9 +75,6 @@ class PayPlusTokenChargeService {
         }
       };
 
-      // TODO remove debug - token capture system
-      clog('📤 Sending token charge request to PayPlus API');
-
       // Make request to PayPlus token charging endpoint
       // Note: Endpoint URL may need verification against PayPlus documentation
       const chargeEndpoint = `${config.baseURL}Charges/ChargeWithToken`;
@@ -109,13 +95,6 @@ class PayPlusTokenChargeService {
       }
 
       const responseData = await response.json();
-
-      // TODO remove debug - token capture system
-      clog('📥 PayPlus token charge response:', {
-        success: responseData.success,
-        status: responseData.status,
-        transactionId: responseData.transaction_uid || responseData.uid
-      });
 
       // Parse PayPlus response
       if (responseData.success !== false && (responseData.status === 'approved' || responseData.status === 'success')) {
@@ -154,7 +133,6 @@ class PayPlusTokenChargeService {
       };
 
     } catch (error) {
-      cerror('❌ Token charge failed:', error);
       return {
         success: false,
         error: error.message,
@@ -176,9 +154,6 @@ class PayPlusTokenChargeService {
   static async validateToken(token, customerEmail) {
     try {
       const config = this.getPayPlusConfig();
-
-      // TODO remove debug - token capture system
-      clog('🔍 Validating payment token:', this.maskToken(token));
 
       // Use small amount (1 cent) for validation
       const validationRequest = {
@@ -224,7 +199,6 @@ class PayPlusTokenChargeService {
       };
 
     } catch (error) {
-      cerror('Token validation error:', error);
       return {
         valid: false,
         error: error.message

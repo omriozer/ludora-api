@@ -6,7 +6,7 @@
  */
 
 import models from '../models/index.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import { generateId } from '../models/baseModel.js';
 
 const { Game, EduContent, EduContentUse } = models;
@@ -88,7 +88,7 @@ class GameContentService {
       return populatedUses;
 
     } catch (error) {
-      logger.api(`Error getting game contents for ${gameId}:`, error);
+      luderror.api(`Error getting game contents for ${gameId}:`, error);
       throw error;
     }
   }
@@ -199,7 +199,7 @@ class GameContentService {
       return result;
 
     } catch (error) {
-      logger.api(`Error creating content use for game ${gameId}:`, error);
+      luderror.api(`Error creating content use for game ${gameId}:`, error);
       throw error;
     }
   }
@@ -291,7 +291,7 @@ class GameContentService {
       return result;
 
     } catch (error) {
-      logger.api(`Error updating content use ${useId}:`, error);
+      luderror.api(`Error updating content use ${useId}:`, error);
       throw error;
     }
   }
@@ -321,7 +321,7 @@ class GameContentService {
       await contentUse.destroy({ transaction });
 
     } catch (error) {
-      logger.api(`Error deleting content use ${useId}:`, error);
+      luderror.api(`Error deleting content use ${useId}:`, error);
       throw error;
     }
   }
@@ -374,7 +374,7 @@ class GameContentService {
       return stats;
 
     } catch (error) {
-      logger.api(`Error getting stats for game ${gameId}:`, error);
+      luderror.api(`Error getting stats for game ${gameId}:`, error);
       throw error;
     }
   }
@@ -601,7 +601,7 @@ class GameContentService {
     const requestUserId = String(userId);
 
     if (productCreatorId !== requestUserId) {
-      logger.api(`Access denied: User ${requestUserId} does not own game ${gameId} (owned by ${productCreatorId} via product ${product.id})`);
+      luderror.api(`Access denied: User ${requestUserId} does not own game ${gameId} (owned by ${productCreatorId} via product ${product.id})`);
       throw new Error(`Access denied: You do not own this game`);
     }
 

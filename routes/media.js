@@ -505,15 +505,6 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
     const hasAccess = await checkVideoAccess(user, entityType, entityId);
 
     if (!hasAccess) {
-      console.warn(`🚨 Unauthorized video access attempt: ${user.email} -> ${entityType}/${entityId}`, {
-        userEmail: user.email,
-        entityType,
-        entityId,
-        timestamp: new Date().toISOString(),
-        userAgent: req.headers['user-agent'],
-        ip: req.ip
-      });
-
       return res.status(403).json({
         error: 'Access denied',
         message: 'You do not have permission to access this video',

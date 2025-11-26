@@ -60,7 +60,6 @@ class FileOperationLogger {
       timestamp: new Date().toISOString()
     };
 
-    console.log(`🚀 ${this.operation} started:`, logData);
     this.addEvent('operation_started', details);
   }
 
@@ -79,7 +78,6 @@ class FileOperationLogger {
       timestamp: new Date().toISOString()
     };
 
-    console.log(`✅ ${this.operation} completed successfully:`, logData);
     this.addEvent('operation_completed', { result, elapsed });
   }
 
@@ -112,7 +110,6 @@ class FileOperationLogger {
       timestamp: new Date().toISOString()
     };
 
-    console.error(`❌ ${this.operation} failed:`, logData);
     this.addEvent('operation_failed', { error: error.message, context, elapsed });
   }
 
@@ -130,7 +127,6 @@ class FileOperationLogger {
       timestamp: new Date().toISOString()
     };
 
-    console.warn(`⚠️ ${this.operation} warning: ${message}`, logData);
     this.addEvent('warning', { message, data });
   }
 
@@ -148,7 +144,6 @@ class FileOperationLogger {
       timestamp: new Date().toISOString()
     };
 
-    console.log(`ℹ️ ${this.operation}: ${message}`, logData);
     this.addEvent('info', { message, data });
   }
 
@@ -167,7 +162,6 @@ class FileOperationLogger {
     };
 
     const emoji = action === 'commit' ? '✅' : action === 'rollback' ? '🔄' : '🏁';
-    console.log(`${emoji} ${this.operation} transaction ${action}:`, logData);
     this.addEvent(`transaction_${action}`, data);
   }
 
@@ -188,7 +182,6 @@ class FileOperationLogger {
     };
 
     const emoji = result.success ? '✅' : '❌';
-    console.log(`${emoji} ${this.operation} S3 ${action}:`, logData);
     this.addEvent(`s3_${action}`, { s3Key, result });
   }
 
@@ -210,7 +203,6 @@ class FileOperationLogger {
       timestamp: new Date().toISOString()
     };
 
-    console.log(`🗄️ ${this.operation} DB ${action} ${model}:`, logData);
     this.addEvent(`db_${action}`, { model, recordId: id, data });
   }
 

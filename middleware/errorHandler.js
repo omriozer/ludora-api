@@ -1,4 +1,5 @@
 import { ValidationError, DatabaseError, ForeignKeyConstraintError, UniqueConstraintError } from 'sequelize';
+import { ludlog, luderror } from '../lib/ludlog.js';
 
 // Custom error classes
 export class APIError extends Error {
@@ -85,19 +86,9 @@ export class ErrorLogger {
       };
     }
 
-    // Log based on level
-    switch (level) {
-      case 'error':
-        console.error('🔴 Error:', JSON.stringify(errorInfo, null, 2));
-        break;
-      case 'warn':
-        console.warn('🟡 Warning:', JSON.stringify(errorInfo, null, 2));
-        break;
-      case 'info':
-        console.info('🔵 Info:', JSON.stringify(errorInfo, null, 2));
-        break;
-      default:
-        console.log('⚫ Log:', JSON.stringify(errorInfo, null, 2));
+    // Log only critical errors to production
+    if (level === 'error' && errorInfo.statusCode >= 500) {
+      luderror.api.prod('Server error occurred', new Error(errorInfo.message), errorInfo);
     }
 
     // In production, you might want to send to external logging service

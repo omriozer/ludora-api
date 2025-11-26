@@ -19,7 +19,7 @@ process.chdir(join(__dirname, '..'));
 // Import models and utilities
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 // Define all expected settings with their default values and types
 // Based on frontend /src/constants/settingsKeys.js
@@ -228,7 +228,7 @@ async function addMissingSettings() {
       if (finalCount >= EXPECTED_SETTINGS.length) {
 
       } else {
-        logger.api(`⚠️  Warning: Final count (${finalCount}) is less than expected (${EXPECTED_SETTINGS.length})`);
+        luderror.api(`⚠️  Warning: Final count (${finalCount}) is less than expected (${EXPECTED_SETTINGS.length})`);
       }
 
     } catch (error) {
@@ -237,8 +237,8 @@ async function addMissingSettings() {
     }
 
   } catch (error) {
-    logger.api('❌ Error adding missing settings:', error.message);
-    logger.api(error.stack);
+    luderror.api('❌ Error adding missing settings:', error.message);
+    luderror.api(error.stack);
     process.exit(1);
   }
 }
@@ -272,7 +272,7 @@ async function main() {
     process.exit(0);
 
   } catch (error) {
-    logger.api('❌ Script failed:', error);
+    luderror.api('❌ Script failed:', error);
     process.exit(1);
   }
 }

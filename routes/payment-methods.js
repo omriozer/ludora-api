@@ -5,7 +5,6 @@ import models from '../models/index.js';
 import PaymentTokenService from '../services/PaymentTokenService.js';
 import PayPlusTokenChargeService from '../services/PayPlusTokenChargeService.js';
 import PaymentService from '../services/PaymentService.js';
-import { clog, cerror } from '../lib/logger.js';
 
 const router = express.Router();
 
@@ -14,13 +13,9 @@ router.get('/payment-methods',
   authenticateToken,
   asyncHandler(async (req, res) => {
     try {
-      // TODO remove debug - payment method management API
-      clog('📋 Fetching payment methods for user:', req.user.id);
 
       const methods = await PaymentTokenService.getUserPaymentMethods(req.user.id);
 
-      // TODO remove debug - payment method management API
-      clog(`✅ Found ${methods.length} payment methods for user ${req.user.id}`);
 
       res.json({
         success: true,
@@ -29,7 +24,6 @@ router.get('/payment-methods',
       });
 
     } catch (error) {
-      cerror('❌ Error fetching payment methods:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to fetch payment methods',
@@ -46,8 +40,6 @@ router.put('/payment-methods/:id/set-default',
     try {
       const { id: paymentMethodId } = req.params;
 
-      // TODO remove debug - payment method management API
-      clog('🎯 Setting default payment method:', { paymentMethodId, userId: req.user.id });
 
       // Validate that payment method exists and belongs to user
       const paymentMethod = await PaymentTokenService.validateUserOwnership(
@@ -75,8 +67,6 @@ router.put('/payment-methods/:id/set-default',
         if (success) {
           await dbTransaction.commit();
 
-          // TODO remove debug - payment method management API
-          clog('✅ Default payment method updated successfully');
 
           res.json({
             success: true,
@@ -100,7 +90,6 @@ router.put('/payment-methods/:id/set-default',
       }
 
     } catch (error) {
-      cerror('❌ Error setting default payment method:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to set default payment method',
@@ -124,13 +113,6 @@ router.post('/payments/charge-token',
         });
       }
 
-      // TODO remove debug - payment method management API
-      clog('💳 Processing token charge:', {
-        paymentMethodId: payment_method_id,
-        userId: req.user.id,
-        itemCount: cart_items.length
-      });
-
       // Start database transaction for atomicity
       const dbTransaction = await models.sequelize.transaction();
 
@@ -150,8 +132,6 @@ router.post('/payments/charge-token',
           });
         }
 
-        // TODO remove debug - payment method management API
-        clog('✅ Payment method validated:', paymentMethod.getDisplayName());
 
         // Calculate total amount from cart items
         const total = cart_items.reduce((sum, item) => {
@@ -166,8 +146,6 @@ router.post('/payments/charge-token',
           });
         }
 
-        // TODO remove debug - payment method management API
-        clog('💰 Calculated total:', { total, currency: 'ILS' });
 
         // Charge the saved token directly (no payment page)
         const chargeResult = await PayPlusTokenChargeService.chargeToken({
@@ -235,13 +213,6 @@ router.post('/payments/charge-token',
 
           await dbTransaction.commit();
 
-          // TODO remove debug - payment method management API
-          clog('🎉 Token charge completed successfully:', {
-            transactionId: chargeResult.transactionId,
-            amount: total,
-            purchaseCount: purchases.length
-          });
-
           res.json({
             success: true,
             transaction_id: chargeResult.transactionId,
@@ -261,8 +232,6 @@ router.post('/payments/charge-token',
           // Payment failed
           await dbTransaction.rollback();
 
-          // TODO remove debug - payment method management API
-          clog('❌ Token charge failed:', chargeResult.error);
 
           res.status(400).json({
             success: false,
@@ -278,7 +247,6 @@ router.post('/payments/charge-token',
       }
 
     } catch (error) {
-      cerror('❌ Token charge error:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to process payment',
@@ -295,8 +263,6 @@ router.delete('/payment-methods/:id',
     try {
       const { id: paymentMethodId } = req.params;
 
-      // TODO remove debug - payment method management API
-      clog('🗑️ Soft deleting payment method:', { paymentMethodId, userId: req.user.id });
 
       const success = await PaymentTokenService.deletePaymentMethod(
         paymentMethodId,
@@ -304,8 +270,6 @@ router.delete('/payment-methods/:id',
       );
 
       if (success) {
-        // TODO remove debug - payment method management API
-        clog('✅ Payment method deleted successfully');
 
         res.json({
           success: true,
@@ -319,7 +283,6 @@ router.delete('/payment-methods/:id',
       }
 
     } catch (error) {
-      cerror('❌ Error deleting payment method:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to delete payment method',
@@ -334,8 +297,6 @@ router.get('/payment-methods/default',
   authenticateToken,
   asyncHandler(async (req, res) => {
     try {
-      // TODO remove debug - payment method management API
-      clog('🎯 Fetching default payment method for user:', req.user.id);
 
       const defaultMethod = await PaymentTokenService.getUserDefaultPaymentMethod(req.user.id);
 
@@ -361,7 +322,6 @@ router.get('/payment-methods/default',
       }
 
     } catch (error) {
-      cerror('❌ Error fetching default payment method:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to fetch default payment method',
@@ -391,8 +351,6 @@ router.post('/payment-methods/:id/validate',
         });
       }
 
-      // TODO remove debug - payment method management API
-      clog('🔍 Validating payment method token:', paymentMethod.getMaskedToken());
 
       // Validate token with PayPlus
       const validationResult = await PayPlusTokenChargeService.validateToken(
@@ -413,7 +371,6 @@ router.post('/payment-methods/:id/validate',
       });
 
     } catch (error) {
-      cerror('❌ Error validating payment method:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to validate payment method',

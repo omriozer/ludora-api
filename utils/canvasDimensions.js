@@ -3,7 +3,7 @@
  * Centralizes all canvas size definitions to avoid hardcoded values
  */
 
-import { error } from '../lib/errorLogger.js';;
+import { luderror } from '../lib/ludlog.js';
 
 const CANVAS_DIMENSIONS = {
   // PDF formats - traditional 4:3 aspect ratio

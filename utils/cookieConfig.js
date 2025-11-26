@@ -131,15 +131,7 @@ export function createAuthCookieConfig(options = {}) {
  * @param {Object} config - Cookie configuration being used
  */
 export function logCookieConfig(action, config) {
-  if (process.env.ENVIRONMENT === 'development') {
-    console.log(`🍪 Cookie Config [${action}]:`, {
-      domain: config.domain || 'not set (localhost)',
-      sameSite: config.sameSite,
-      secure: config.secure,
-      httpOnly: config.httpOnly,
-      maxAge: config.maxAge ? `${config.maxAge / 1000}s` : 'not set'
-    });
-  }
+  // Cookie config logging removed - use browser dev tools to inspect cookies
 }
 
 /**

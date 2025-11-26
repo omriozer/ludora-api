@@ -1,7 +1,7 @@
 import models from '../models/index.js';
 import PaymentService from './PaymentService.js';
 import EmailService from './EmailService.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import { PAYMENT_STATUSES, mapPayPlusStatusToPaymentStatus } from '../constants/payplus.js';
 
 /**
@@ -24,7 +24,7 @@ class PaymentPollingService {
   static async pollTransactionStatus(transactionId) {
     try {
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`🔍 Polling PayPlus status for transaction: ${transactionId}`);
+      luderror.payment(`🔍 Polling PayPlus status for transaction: ${transactionId}`);
 
       // Find the purchase to get PayPlus data
       const purchase = await models.Purchase.findByPk(transactionId, {
@@ -51,7 +51,7 @@ class PaymentPollingService {
       // Check if we've exceeded maximum polling attempts
       if (currentAttempts >= 10) {
         // TODO remove debug - implement payment status polling as webhook fallback
-        logger.payment(`⚠️ Transaction ${transactionId} exceeded max polling attempts (${currentAttempts})`);
+        luderror.payment(`⚠️ Transaction ${transactionId} exceeded max polling attempts (${currentAttempts})`);
 
         await this.handleAbandonedPayment(purchase, transactionId);
 
@@ -72,7 +72,7 @@ class PaymentPollingService {
       });
 
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`🔍 Polling attempt ${newAttempts}/10 for PageRequestUID: ${pageRequestUid}`);
+      luderror.payment(`🔍 Polling attempt ${newAttempts}/10 for PageRequestUID: ${pageRequestUid}`);
 
       // Get PayPlus credentials and poll the API
       const { payplusUrl, payment_api_key, payment_secret_key } = PaymentService.getPayPlusCredentials();
@@ -94,7 +94,7 @@ class PaymentPollingService {
 
       if (!pollResponse.ok) {
         // TODO remove debug - implement payment status polling as webhook fallback
-        logger.payment(`❌ PayPlus polling HTTP error ${pollResponse.status}:`, {
+        luderror.payment(`❌ PayPlus polling HTTP error ${pollResponse.status}:`, {
           status: pollResponse.status,
           response: responseText.substring(0, 500)
         });
@@ -113,7 +113,7 @@ class PaymentPollingService {
         pollData = JSON.parse(responseText);
       } catch (parseError) {
         // TODO remove debug - implement payment status polling as webhook fallback
-        logger.payment(`❌ PayPlus polling invalid JSON response:`, {
+        luderror.payment(`❌ PayPlus polling invalid JSON response:`, {
           parseError: parseError.message,
           response: responseText.substring(0, 500)
         });
@@ -128,7 +128,7 @@ class PaymentPollingService {
       }
 
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`📊 PayPlus polling response for ${pageRequestUid}:`, {
+      luderror.payment(`📊 PayPlus polling response for ${pageRequestUid}:`, {
         success: !!pollData?.results?.status,
         status: pollData?.results?.status,
         transaction: pollData?.data?.transaction?.status_description,
@@ -162,7 +162,7 @@ class PaymentPollingService {
       const paymentStatus = mapPayPlusStatusToPaymentStatus(transactionData.status_code);
 
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`🔄 Status mapping: PayPlus code ${transactionData.status_code} -> ${paymentStatus}`);
+      luderror.payment(`🔄 Status mapping: PayPlus code ${transactionData.status_code} -> ${paymentStatus}`);
 
       // Update purchase based on payment status
       if (paymentStatus === PAYMENT_STATUSES.SUCCESS || paymentStatus === PAYMENT_STATUSES.APPROVED) {
@@ -194,7 +194,7 @@ class PaymentPollingService {
       } else {
         // Payment still pending or in other intermediate status
         // TODO remove debug - implement payment status polling as webhook fallback
-        logger.payment(`⏳ Transaction ${transactionId} still pending with status: ${paymentStatus}`);
+        luderror.payment(`⏳ Transaction ${transactionId} still pending with status: ${paymentStatus}`);
 
         return {
           success: false,
@@ -208,7 +208,7 @@ class PaymentPollingService {
       }
 
     } catch (error) {
-      logger.payment('❌ PaymentPollingService: Error polling transaction status:', error);
+      luderror.payment('❌ PaymentPollingService: Error polling transaction status:', error);
 
       // On error, still increment attempt count but allow retry
       try {
@@ -221,7 +221,7 @@ class PaymentPollingService {
           });
         }
       } catch (updateError) {
-        logger.payment('❌ Failed to update polling attempts after error:', updateError);
+        luderror.payment('❌ Failed to update polling attempts after error:', updateError);
       }
 
       return {
@@ -242,7 +242,7 @@ class PaymentPollingService {
   static async handleSuccessfulPayment(purchase, transactionData, transactionId) {
     try {
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`✅ Handling successful payment for transaction: ${transactionId}`);
+      luderror.payment(`✅ Handling successful payment for transaction: ${transactionId}`);
 
       // Update the purchase to completed
       await purchase.update({
@@ -274,10 +274,10 @@ class PaymentPollingService {
       }
 
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`✅ Payment completion handled successfully for transaction: ${transactionId}`);
+      luderror.payment(`✅ Payment completion handled successfully for transaction: ${transactionId}`);
 
     } catch (error) {
-      logger.payment('❌ Error handling successful payment:', error);
+      luderror.payment('❌ Error handling successful payment:', error);
       throw error;
     }
   }
@@ -291,7 +291,7 @@ class PaymentPollingService {
   static async handleFailedPayment(purchase, transactionData, transactionId) {
     try {
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`❌ Handling failed payment for transaction: ${transactionId}`);
+      luderror.payment(`❌ Handling failed payment for transaction: ${transactionId}`);
 
       const failureReason = transactionData.status_description || transactionData.reason || `PayPlus status code: ${transactionData.status_code}`;
 
@@ -324,10 +324,10 @@ class PaymentPollingService {
       }
 
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`❌ Payment failure handled for transaction: ${transactionId}, reason: ${failureReason}`);
+      luderror.payment(`❌ Payment failure handled for transaction: ${transactionId}, reason: ${failureReason}`);
 
     } catch (error) {
-      logger.payment('❌ Error handling failed payment:', error);
+      luderror.payment('❌ Error handling failed payment:', error);
       throw error;
     }
   }
@@ -340,7 +340,7 @@ class PaymentPollingService {
   static async handleAbandonedPayment(purchase, transactionId) {
     try {
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`🚨 Handling abandoned payment for transaction: ${transactionId}`);
+      luderror.payment(`🚨 Handling abandoned payment for transaction: ${transactionId}`);
 
       // Update purchase to abandoned status
       await purchase.update({
@@ -372,10 +372,10 @@ class PaymentPollingService {
       await this.sendAbandonmentSupportEmail(purchase, transactionId);
 
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`🚨 Payment abandonment handled for transaction: ${transactionId}`);
+      luderror.payment(`🚨 Payment abandonment handled for transaction: ${transactionId}`);
 
     } catch (error) {
-      logger.payment('❌ Error handling abandoned payment:', error);
+      luderror.payment('❌ Error handling abandoned payment:', error);
       throw error;
     }
   }
@@ -434,10 +434,10 @@ class PaymentPollingService {
       });
 
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`📧 Abandonment support email sent for transaction: ${transactionId} to ${supportEmail}`);
+      luderror.payment(`📧 Abandonment support email sent for transaction: ${transactionId} to ${supportEmail}`);
 
     } catch (error) {
-      logger.payment('❌ Error sending abandonment support email:', error);
+      luderror.payment('❌ Error sending abandonment support email:', error);
       // Don't throw - email failure shouldn't break the abandonment process
     }
   }
@@ -450,7 +450,7 @@ class PaymentPollingService {
   static async checkUserPendingPayments(userId) {
     try {
       // TODO remove debug - implement payment status polling as webhook fallback
-      logger.payment(`🔍 Checking pending payments for user: ${userId}`);
+      luderror.payment(`🔍 Checking pending payments for user: ${userId}`);
 
       // Find all pending purchases for this user
       const pendingPurchases = await models.Purchase.findAll({
@@ -496,7 +496,7 @@ class PaymentPollingService {
       };
 
     } catch (error) {
-      logger.payment('❌ Error checking user pending payments:', error);
+      luderror.payment('❌ Error checking user pending payments:', error);
       throw error;
     }
   }

@@ -388,8 +388,6 @@ async function compareEnvironments(environment) {
 function displayResults(result) {
   const { environment, missing, extra, mismatched, synced, skipped, requiredMissing } = result;
 
-  console.log('');
-
   // Synced variables (brief)
   if (synced.length > 0) {
     log.success(`${synced.length} variables are properly synced`);

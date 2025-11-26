@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import models from '../models/index.js';
-import { error } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 const router = express.Router();
 

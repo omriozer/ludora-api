@@ -1,6 +1,5 @@
 import express from 'express';
 import crypto from 'crypto';
-import bcrypt from 'bcrypt';
 import { admin } from '../config/firebase.js';
 import { authenticateToken, authenticateUserOrPlayer, requireAdmin } from '../middleware/auth.js';
 import { addETagSupport } from '../middleware/etagMiddleware.js';
@@ -19,7 +18,7 @@ import {
 const authService = new AuthService();
 import EmailService from '../services/EmailService.js';
 import SettingsService from '../services/SettingsService.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 const verifyAdminPassword = (inputPassword) => {
   if (!process.env.ADMIN_PASSWORD) {
@@ -482,7 +481,7 @@ router.get('/sessions/stats', authenticateToken, requireAdmin, async (_req, res)
       stats
     });
   } catch (error) {
-    logger.auth('Failed to get session stats:', error);
+    luderror.auth('Failed to get session stats:', error);
     res.status(500).json({ error: 'Failed to retrieve session statistics' });
   }
 });
@@ -499,7 +498,7 @@ router.get('/sessions/user/:userId', authenticateToken, requireAdmin, async (req
       count: userSessions.length
     });
   } catch (error) {
-    logger.auth('Failed to get user sessions:', error);
+    luderror.auth('Failed to get user sessions:', error);
     res.status(500).json({ error: 'Failed to retrieve user sessions' });
   }
 });
@@ -515,7 +514,7 @@ router.post('/sessions/invalidate/:userId', authenticateToken, requireAdmin, asy
       invalidatedCount
     });
   } catch (error) {
-    logger.auth('Failed to invalidate user sessions:', error);
+    luderror.auth('Failed to invalidate user sessions:', error);
     res.status(500).json({ error: 'Failed to invalidate user sessions' });
   }
 });
@@ -532,7 +531,7 @@ router.post('/sessions/cleanup', authenticateToken, requireAdmin, async (_req, r
       currentStats: stats
     });
   } catch (error) {
-    logger.auth('Failed to cleanup sessions:', error);
+    luderror.auth('Failed to cleanup sessions:', error);
     res.status(500).json({ error: 'Failed to cleanup sessions' });
   }
 });
@@ -575,7 +574,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
         });
       }
     } catch (verificationError) {
-      logger.auth('Password verification error:', verificationError);
+      luderror.auth('Password verification error:', verificationError);
       return res.status(500).json({
         success: false,
         error: 'Admin password not configured'
@@ -633,7 +632,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     });
 
   } catch (error) {
-    logger.auth('Anonymous admin password validation error:', error);
+    luderror.auth('Anonymous admin password validation error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error'

@@ -19,7 +19,6 @@ export function enforceHTTPS(req, res, next) {
 
   if (!isHTTPS) {
     const httpsUrl = `https://${req.headers.host}${req.url}`;
-    console.log(`🔒 Redirecting HTTP to HTTPS: ${httpsUrl}`);
     return res.redirect(301, httpsUrl);
   }
 

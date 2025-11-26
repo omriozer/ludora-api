@@ -4,7 +4,6 @@ import { webhookCors } from '../middleware/cors.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { error as logger } from '../lib/errorLogger.js';
 import {
   PAYPLUS_STATUS_CODES,
   PAYMENT_STATUSES,
@@ -12,6 +11,7 @@ import {
   mapPayPlusStatusToPaymentStatus
 } from '../constants/payplus.js';
 import { validateWebhookSignature } from '../utils/payplusSignature.js';
+import { luderror } from '../lib/ludlog.js';
 
 const router = express.Router();
 
@@ -493,7 +493,7 @@ router.post('/payplus',
       res.status(200).json(responseData);
 
     } catch (error) {
-      logger.payment('PayPlus webhook processing failed:', error.message);
+      luderror.payment('PayPlus webhook processing failed:', error.message);
 
       const errorResponse = {
         message: 'PayPlus webhook received but processing failed',
@@ -509,7 +509,7 @@ router.post('/payplus',
           await webhookLog.update({ response_data: errorResponse });
         }
       } catch (logError) {
-        logger.api('Failed to log webhook error:', logError.message);
+        luderror.api('Failed to log webhook error:', logError.message);
       }
 
       // Still respond with success to prevent PayPlus retries

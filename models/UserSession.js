@@ -177,7 +177,6 @@ export default function(sequelize) {
     const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000);
     if (this.expires_at < twoHoursFromNow) {
       this.expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      console.log(`[UserSession] Auto-extended session ${this.id} for ${this.getSessionType()} ${this.getEntityId()}`);
     }
 
     return await this.save();
@@ -258,8 +257,9 @@ export default function(sequelize) {
   // Cleanup expired sessions with grace period for recently accessed sessions
   UserSession.cleanupExpired = async function() {
     const now = new Date();
-    // ✅ FIXED: Add 2-hour grace period - only delete sessions inactive for 2+ hours
-    const gracePeriodAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    // ✅ FIX: Extended grace period to 7 days to match JWT refresh token lifetime
+    // This prevents aggressive cleanup of sessions that might still have valid JWT tokens
+    const gracePeriodAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days
 
     const deletedCount = await this.destroy({
       where: {
@@ -270,7 +270,6 @@ export default function(sequelize) {
       }
     });
 
-    console.log(`[UserSession] Cleanup: Deleted ${deletedCount} expired sessions (with 2-hour grace period)`);
     return deletedCount;
   };
 
@@ -369,26 +368,22 @@ export default function(sequelize) {
   };
 
   // Deployment-safe session extension - called during server startup
+  // ✅ FIX: Extended ALL active sessions to prevent deployment logouts
   UserSession.extendRecentlyActiveSessions = async function() {
     const now = new Date();
-    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
-    // Find sessions that:
-    // 1. Are currently active
-    // 2. Were accessed within the last 4 hours
-    // 3. Would expire soon (within 6 hours to catch edge cases)
-    const sixHoursFromNow = new Date(now.getTime() + 6 * 60 * 60 * 1000);
-
+    // ✅ MUCH MORE INCLUSIVE: Find ALL active sessions, regardless of last_accessed_at
+    // The goal is to prevent deployment-induced logouts, so we should be generous
     const sessionsToExtend = await this.findAll({
       where: {
         is_active: true,
         invalidated_at: null,
-        last_accessed_at: { [sequelize.Sequelize.Op.gt]: fourHoursAgo },
-        expires_at: { [sequelize.Sequelize.Op.lt]: sixHoursFromNow }
+        // Remove time restrictions - extend ALL active sessions
+        // If a session is active and not manually invalidated, keep it alive
       }
     });
 
-    const extendedCount = await this.update(
+    const [extendedCount] = await this.update(
       {
         expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000), // Extend to 24 hours from now
         last_accessed_at: now, // Mark as recently accessed to prevent cleanup
@@ -401,8 +396,7 @@ export default function(sequelize) {
       }
     );
 
-    console.log(`[UserSession] Startup: Extended ${extendedCount} recently active sessions to prevent logout during deploy`);
-    return extendedCount;
+    return extendedCount[0];
   };
 
   // Portal-aware session management methods

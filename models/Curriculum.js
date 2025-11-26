@@ -1,6 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
-import { error } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 export default function(sequelize) {
   const Curriculum = sequelize.define('Curriculum', {

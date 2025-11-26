@@ -10,7 +10,7 @@ import {
   ACCESS_DURATION_KEYS,
   ADVANCED_FEATURES_KEYS
 } from '../constants/settingsKeys.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 class SettingsService {
   constructor() {
@@ -112,7 +112,7 @@ class SettingsService {
 
       return this.cache.settings;
     } catch (error) {
-      logger.api('Error refreshing settings cache:', error);
+      luderror.api('Error refreshing settings cache:', error);
       // If cache exists, return it as fallback
       if (this.cache.settings) {
         return this.cache.settings;
@@ -159,7 +159,7 @@ class SettingsService {
       const settings = await this.getSettings();
       return settings[key] || null;
     } catch (error) {
-      logger.api(`Error getting setting '${key}':`, error);
+      luderror.api(`Error getting setting '${key}':`, error);
       return null;
     }
   }
@@ -175,7 +175,7 @@ class SettingsService {
         settings.getStudentsAccessMode() :
         (settings[ACCESS_CONTROL_KEYS.STUDENTS_ACCESS] || 'all');
     } catch (error) {
-      logger.api('Error getting students access mode:', error);
+      luderror.api('Error getting students access mode:', error);
       // Safe fallback to 'all' to maintain current functionality
       return 'all';
     }
@@ -192,7 +192,7 @@ class SettingsService {
         settings.isStudentsAccessEnabled() :
         true; // Default to enabled
     } catch (error) {
-      logger.api('Error checking students access status:', error);
+      luderror.api('Error checking students access status:', error);
       return true; // Safe fallback to enabled
     }
   }
@@ -218,7 +218,7 @@ class SettingsService {
         settings.isMaintenanceMode() :
         !!settings[SYSTEM_KEYS.MAINTENANCE_MODE];
     } catch (error) {
-      logger.api('Error checking maintenance mode:', error);
+      luderror.api('Error checking maintenance mode:', error);
       return false;
     }
   }
@@ -236,7 +236,7 @@ class SettingsService {
       }
       return !!settings[SYSTEM_KEYS.TEACHER_ONBOARDING_ENABLED];
     } catch (error) {
-      logger.api('Error checking teacher onboarding status:', error);
+      luderror.api('Error checking teacher onboarding status:', error);
       // Default to enabled on error to not break onboarding flow
       return true;
     }
@@ -328,7 +328,7 @@ class SettingsService {
       return this.cache.settings;
     } catch (error) {
       await transaction.rollback();
-      logger.api('Error updating settings:', error);
+      luderror.api('Error updating settings:', error);
       throw error;
     }
   }

@@ -1,5 +1,5 @@
 import models from '../models/index.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Helper functions for lesson plan presentation handling
@@ -71,7 +71,7 @@ export async function getLessonPlanPresentationFiles(lessonPlanId) {
     };
 
   } catch (error) {
-    logger.api('Error getting lesson plan presentation files:', error);
+    luderror.api('Error getting lesson plan presentation files:', error);
     throw error;
   }
 }
@@ -103,7 +103,7 @@ export async function checkLessonPlanAccess(userId, lessonPlanId) {
     return !!purchase;
 
   } catch (error) {
-    logger.api('Error checking lesson plan access:', error);
+    luderror.api('Error checking lesson plan access:', error);
     return false;
   }
 }

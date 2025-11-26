@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
 import { generateId } from './baseModel.js';
 import DeprecationWarnings from '../utils/deprecationWarnings.js';
-import { error } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 export default (sequelize) => {
   const Product = sequelize.define('Product', {

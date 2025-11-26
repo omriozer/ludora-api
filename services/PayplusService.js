@@ -1,5 +1,5 @@
 import PaymentService from './PaymentService.js';
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 import { calcFinalPurchasePrice } from '../utils/purchasePricing.js';
 import models from '../models/index.js';
 import { PAYPLUS_CHARGE_METHODS } from '../constants/payplus.js';
@@ -18,7 +18,7 @@ class PayplusService {
 
     // If API_URL is not set, log warning and use fallback
     if (!apiUrl) {
-      logger.payment('⚠️ WARNING: API_URL environment variable is not set! Using fallback for webhook URL.');
+      luderror.payment('⚠️ WARNING: API_URL environment variable is not set! Using fallback for webhook URL.');
       // Fallback based on environment
       if (process.env.NODE_ENV === 'staging') {
         return 'https://api-staging.ludora.app/api/webhooks/payplus';
@@ -68,7 +68,7 @@ class PayplusService {
       const webhookUrl = this.getWebhookUrl();
 
       // Log webhook URL for debugging
-      logger.payment(`PayplusService: Using webhook URL: ${webhookUrl} for environment: ${process.env.NODE_ENV || 'development'}`);
+      luderror.payment(`PayplusService: Using webhook URL: ${webhookUrl} for environment: ${process.env.NODE_ENV || 'development'}`);
 
       // Build PayPlus request payload
       const paymentRequest = {
@@ -102,7 +102,7 @@ class PayplusService {
       };
 
       // TODO remove debug - investigate payment redirect issue
-      logger.payment(`🔍 PayPlus URLs being sent:`, {
+      luderror.payment(`🔍 PayPlus URLs being sent:`, {
         refURL_success: paymentRequest.refURL_success,
         refURL_failure: paymentRequest.refURL_failure,
         refURL_cancel: paymentRequest.refURL_cancel,
@@ -127,7 +127,7 @@ class PayplusService {
       const responseText = await response.text();
 
       if (!response.ok) {
-        logger.payment(`!!!! PayPlus API HTTP error ${response.status}:`, {
+        luderror.payment(`!!!! PayPlus API HTTP error ${response.status}:`, {
           status: response.status,
           statusText: response.statusText,
           responseText: responseText.substring(0, 500) // First 500 chars to avoid huge logs
@@ -140,7 +140,7 @@ class PayplusService {
       try {
         paymentData = JSON.parse(responseText);
       } catch (parseError) {
-        logger.payment(`!!!! PayPlus API returned invalid JSON:`, {
+        luderror.payment(`!!!! PayPlus API returned invalid JSON:`, {
           parseError: parseError.message,
           responseText: responseText.substring(0, 500) // First 500 chars
         });
@@ -148,7 +148,7 @@ class PayplusService {
       }
 
       if (paymentData?.results?.code || paymentData?.results?.status !== 'success') {
-        logger.payment(`!!!! PayPlus API error:`, paymentData?.results);
+        luderror.payment(`!!!! PayPlus API error:`, paymentData?.results);
         throw new Error(errorMsg);
       }
 
@@ -157,7 +157,7 @@ class PayplusService {
       const paymentPageLink = paymentData?.data?.payment_page_link;
 
       if (!pageRequestUid || !paymentPageLink) {
-        logger.payment('!!!! PayPlus API missing required data:', {
+        luderror.payment('!!!! PayPlus API missing required data:', {
           hasPageRequestUid: !!pageRequestUid,
           hasPaymentPageLink: !!paymentPageLink,
           data: paymentData?.data
@@ -178,7 +178,7 @@ class PayplusService {
       };
 
     } catch (error) {
-      logger.payment('❌ PayplusService: Error opening PayPlus payment page:', error);
+      luderror.payment('❌ PayplusService: Error opening PayPlus payment page:', error);
       throw error;
     }
   }

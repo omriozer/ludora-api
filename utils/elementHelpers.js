@@ -4,7 +4,7 @@
  * Eliminates duplication and inconsistencies in rotation/styling logic
  */
 
-import { error } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Check if an element type is a builtin element

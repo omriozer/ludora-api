@@ -2,7 +2,7 @@
 // Socket.IO service for broadcasting lobby updates in real-time
 // Replaces the removed SSE system for lobby visibility updates
 
-import { error as logger } from '../lib/errorLogger.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * LobbySocketService - Manages real-time lobby updates via Socket.IO
@@ -16,7 +16,7 @@ class LobbySocketService {
    */
   static getSocketIO() {
     if (!global.io) {
-      logger.lobby('❌ Socket.IO instance not available');
+      luderror.api('❌ Socket.IO instance not available');
       throw new Error('Socket.IO server not initialized');
     }
     return global.io;
@@ -39,7 +39,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.lobby('❌ Failed to broadcast lobby created:', error);
+      luderror.api('❌ Failed to broadcast lobby created:', error);
     }
   }
 
@@ -60,7 +60,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.lobby('❌ Failed to broadcast lobby activated:', error);
+      luderror.api('❌ Failed to broadcast lobby activated:', error);
     }
   }
 
@@ -81,7 +81,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.lobby('❌ Failed to broadcast lobby closed:', error);
+      luderror.api('❌ Failed to broadcast lobby closed:', error);
     }
   }
 
@@ -102,7 +102,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.auth('❌ Failed to broadcast session created:', error);
+      luderror.auth('❌ Failed to broadcast session created:', error);
     }
   }
 
@@ -123,7 +123,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.lobby('❌ Failed to broadcast participant joined:', error);
+      luderror.api('❌ Failed to broadcast participant joined:', error);
     }
   }
 
@@ -144,7 +144,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.lobby('❌ Failed to broadcast participant left:', error);
+      luderror.api('❌ Failed to broadcast participant left:', error);
     }
   }
 
@@ -165,7 +165,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.lobby('❌ Failed to broadcast game state updated:', error);
+      luderror.api('❌ Failed to broadcast game state updated:', error);
     }
   }
 
@@ -186,7 +186,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.auth('❌ Failed to broadcast session started:', error);
+      luderror.auth('❌ Failed to broadcast session started:', error);
     }
   }
 
@@ -207,7 +207,7 @@ class LobbySocketService {
       io.to('lobby-updates').emit('lobby:update', eventData);
 
     } catch (error) {
-      logger.auth('❌ Failed to broadcast session finished:', error);
+      luderror.auth('❌ Failed to broadcast session finished:', error);
     }
   }
 
@@ -227,7 +227,7 @@ class LobbySocketService {
         timestamp: new Date().toISOString()
       };
     } catch (error) {
-      logger.lobby('❌ Failed to get lobby updates stats:', error);
+      luderror.api('❌ Failed to get lobby updates stats:', error);
       return {
         connected_clients: 0,
         room_exists: false,
@@ -258,7 +258,7 @@ class LobbySocketService {
 
       return { success: true, stats };
     } catch (error) {
-      logger.lobby('❌ Failed to send test broadcast:', error);
+      luderror.api('❌ Failed to send test broadcast:', error);
       return { success: false, error: error.message };
     }
   }

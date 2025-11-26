@@ -88,6 +88,7 @@ import {
   healthCheckErrorHandler
 } from './middleware/errorHandler.js';
 import { rateLimiters } from './middleware/validation.js';
+import { ludlog, luderror } from './lib/ludlog.js';
 
 // Import route modules
 import entityRoutes from './routes/entities.js';
@@ -122,9 +123,7 @@ import playersRoutes from './routes/players.js';
 import AuthService from './services/AuthService.js';
 import PlayerService from './services/PlayerService.js';
 import SettingsService from './services/SettingsService.js';
-import { detectPortal, getPortalCookieNames } from './utils/cookieConfig.js';
-import { STUDENTS_ACCESS_MODES } from './constants/settingsKeys.js';
-import { error as logger } from './lib/errorLogger.js';
+import { getPortalCookieNames } from './utils/cookieConfig.js';
 
 // Initialize services for Socket.IO authentication
 const socketAuthService = new AuthService();
@@ -533,7 +532,7 @@ async function validateStudentsAccessMode(requestedMode) {
     const currentMode = await SettingsService.getStudentsAccessMode();
     return currentMode === requestedMode;
   } catch (err) {
-    logger.api('🔌 [SocketAuth] Error validating students access mode:', err);
+    luderror.api('🔌 [SocketAuth] Error validating students access mode:', err);
     return false;
   }
 }
@@ -656,7 +655,7 @@ io.use(async (socket, next) => {
 
     next();
   } catch (err) {
-    logger.api('🔌 [SocketAuth] Authentication middleware error:', err);
+    luderror.api('🔌 [SocketAuth] Authentication middleware error:', err);
     next(new Error('Authentication failed'));
   }
 });
@@ -702,7 +701,7 @@ io.on('connection', (socket) => {
 
   // Handle connection errors
   socket.on('error', (socketError) => {
-    logger.system('🔌 Socket.IO error:', socketError, {
+    luderror.system('🔌 Socket.IO error:', socketError, {
       socketId: socket.id
     });
   });
@@ -717,35 +716,21 @@ async function extendActiveSessionsWithRetry(maxAttempts = 3, baseDelayMs = 1000
 
   while (attempt <= maxAttempts) {
     try {
-      console.log(`[Deployment Protection] Attempt ${attempt}/${maxAttempts} - Extending active sessions to prevent logout...`);
-
       const models = await import('./models/index.js');
       const extendedCount = await models.default.UserSession.extendRecentlyActiveSessions();
-
-      if (extendedCount > 0) {
-        console.log(`✅ [Deployment Protection] Successfully extended ${extendedCount} active sessions`);
-      } else {
-        console.log(`[Deployment Protection] No active sessions found requiring extension`);
-      }
 
       return extendedCount; // Success - exit retry loop
 
     } catch (sessionError) {
-      console.error(`❌ [Deployment Protection] Attempt ${attempt}/${maxAttempts} failed:`, sessionError.message);
+      luderror.api(`❌ [Deployment Protection] Attempt ${attempt}/${maxAttempts} failed:`, sessionError.message);
 
       if (attempt === maxAttempts) {
         // Final attempt failed - log warning but don't fail server startup
-        console.warn(`⚠️ [Deployment Protection] All ${maxAttempts} attempts failed. Active users may experience logout during deployment.`);
-        console.warn(`⚠️ [Deployment Protection] Error details:`, {
-          error: sessionError.message,
-          stack: sessionError.stack?.substring(0, 500) // Truncate stack trace
-        });
         return 0; // Return 0 sessions extended, but don't throw
       }
 
       // Calculate exponential backoff delay
       const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
-      console.log(`[Deployment Protection] Retrying in ${delayMs}ms...`);
 
       // Wait before retry
       await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -767,7 +752,7 @@ async function startServer() {
     await extendActiveSessionsWithRetry();
 
     const server = httpServer.listen(PORT, () => {
-      console.log(`Ludora API Server with Socket.IO running on port ${PORT} (${env})`);
+      ludlog.api(`Ludora API Server with Socket.IO running on port ${PORT} (${env})`);
     });
 
     // Start background services
@@ -780,6 +765,7 @@ async function startServer() {
     return server;
   } catch (error) {
     console.error('❌ Failed to start server:', error);
+    luderror.system.prod('Server startup failed', error);
     process.exit(1);
   }
 }
@@ -792,7 +778,7 @@ server.on('error', (err) => {
 });
 
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully');
+  luderror.api('SIGTERM received, shutting down gracefully');
 
   // Stop background services
   try {
@@ -807,7 +793,7 @@ process.on('SIGTERM', async () => {
 });
 
 process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully');
+  luderror.api('SIGINT received, shutting down gracefully');
 
   // Stop background services
   try {

@@ -34,6 +34,20 @@ export async function authenticateToken(req, res, next) {
       try {
         const tokenData = await authService.verifyToken(token);
         req.user = tokenData;
+
+        // ✅ FIX: Extend UserSession on every successful authentication, not just token refresh
+        try {
+          if (tokenData.id) {
+            const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(tokenData.id, portal);
+            if (activeSessions.length > 0) {
+              // Extend the most recently accessed session
+              await activeSessions[0].updateLastAccessed();
+            }
+          }
+        } catch (sessionError) {
+          // Continue anyway - token validation succeeded, session extension is non-critical
+        }
+
         return next();
       } catch (tokenError) {
         // Access token is invalid/expired, fall through to refresh token logic below
@@ -62,8 +76,6 @@ export async function authenticateToken(req, res, next) {
           await activeSessions[0].updateLastAccessed();
         }
       } catch (sessionError) {
-        // TODO remove debug - fix auth frequent logout issue
-        console.error('[Auth Middleware] Failed to extend session after token refresh:', sessionError.message);
         // Continue anyway - token refresh succeeded, session extension is non-critical
       }
 
@@ -93,6 +105,18 @@ export async function optionalAuth(req, res, next) {
       try {
         const tokenData = await authService.verifyToken(token);
         req.user = tokenData;
+
+        // ✅ FIX: Extend UserSession on successful optional authentication
+        try {
+          if (tokenData.id) {
+            const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(tokenData.id, portal);
+            if (activeSessions.length > 0) {
+              await activeSessions[0].updateLastAccessed();
+            }
+          }
+        } catch (sessionError) {
+          // Continue anyway - this is optional auth
+        }
       } catch (error) {
         // Continue without authentication if token is invalid
       }
@@ -274,6 +298,19 @@ export async function authenticateUserOrPlayer(req, res, next) {
           req.user = tokenData;
           req.entity = tokenData;
           req.entityType = 'user';
+
+          // ✅ FIX: Extend UserSession on successful unified authentication
+          try {
+            if (tokenData.id) {
+              const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(tokenData.id, portal);
+              if (activeSessions.length > 0) {
+                await activeSessions[0].updateLastAccessed();
+              }
+            }
+          } catch (sessionError) {
+            // Continue anyway - token validation succeeded
+          }
+
           return next();
         }
       } catch (tokenError) {
@@ -296,8 +333,6 @@ export async function authenticateUserOrPlayer(req, res, next) {
             await activeSessions[0].updateLastAccessed();
           }
         } catch (sessionError) {
-          // TODO remove debug - fix auth frequent logout issue
-          console.error('[UserOrPlayer Middleware] Failed to extend session after token refresh:', sessionError.message);
           // Continue anyway - token refresh succeeded, session extension is non-critical
         }
 
@@ -334,6 +369,17 @@ export async function authenticateUserOrPlayer(req, res, next) {
             };
             req.entity = req.player;
             req.entityType = 'player';
+
+            // ✅ FIX: Extend PlayerSession on successful unified player authentication
+            try {
+              const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
+              if (activeSessions.length > 0) {
+                await activeSessions[0].updateLastAccessed();
+              }
+            } catch (sessionError) {
+              // Continue anyway - token validation succeeded
+            }
+
             return next();
           }
         }
@@ -370,8 +416,6 @@ export async function authenticateUserOrPlayer(req, res, next) {
                 await activeSessions[0].updateLastAccessed();
               }
             } catch (sessionError) {
-              // TODO remove debug - fix auth frequent logout issue
-              console.error('[UserOrPlayer Player Middleware] Failed to extend player session after token refresh:', sessionError.message);
               // Continue anyway - token refresh succeeded, session extension is non-critical
             }
 
@@ -468,6 +512,16 @@ export async function authenticatePlayer(req, res, next) {
         req.entity = req.player;
         req.entityType = 'player';
 
+        // ✅ FIX: Extend PlayerSession on successful token validation
+        try {
+          const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
+          if (activeSessions.length > 0) {
+            await activeSessions[0].updateLastAccessed();
+          }
+        } catch (sessionError) {
+          // Continue anyway - token validation succeeded
+        }
+
         return next();
       } catch (tokenError) {
         // Access token is invalid/expired, fall through to refresh token logic below
@@ -536,8 +590,6 @@ export async function authenticatePlayer(req, res, next) {
           await activeSessions[0].updateLastAccessed();
         }
       } catch (sessionError) {
-        // TODO remove debug - fix auth frequent logout issue
-        console.error('[Player Auth Middleware] Failed to extend player session after token refresh:', sessionError.message);
         // Continue anyway - token refresh succeeded, session extension is non-critical
       }
 
