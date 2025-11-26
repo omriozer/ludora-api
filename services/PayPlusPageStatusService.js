@@ -207,6 +207,89 @@ class PayPlusPageStatusService {
   }
 
   /**
+   * Handle completed payment by updating purchases and transaction to completed status
+   * @param {string} transactionId - Transaction ID
+   * @param {Object} transactionData - PayPlus transaction data
+   * @returns {Promise<Object>} Completion result
+   */
+  static async handleCompletedPayment(transactionId, transactionData) {
+    try {
+      console.log(`✅ Handling completed payment for transaction: ${transactionId}`);
+
+      // Find all related pending purchases
+      const relatedPurchases = await models.Purchase.findAll({
+        where: {
+          transaction_id: transactionId,
+          payment_status: 'pending'
+        }
+      });
+
+      console.log(`📝 Found ${relatedPurchases.length} pending purchases to complete`);
+
+      const completedPurchases = [];
+      for (const purchase of relatedPurchases) {
+        // Use PaymentService to complete each purchase
+        const completedPurchase = await PaymentService.completePurchase(purchase.id, {
+          paymentMethod: 'payplus',
+          transactionData: {
+            payplus_transaction_uuid: transactionData.uuid,
+            payplus_status_code: transactionData.information?.status_code,
+            payplus_approval_number: transactionData.information?.approval_number,
+            amount_paid: transactionData.information?.amount_by_currency,
+            transaction_at: transactionData.information?.transaction_at,
+            card_last_four: transactionData.information?.card_num,
+            completed_at: new Date().toISOString(),
+            completion_source: 'payplus_page_status_check'
+          }
+        });
+
+        completedPurchases.push({
+          purchase_id: completedPurchase.id,
+          completed_at: new Date().toISOString(),
+          amount: transactionData.information?.amount_by_currency
+        });
+
+        console.log(`✅ Purchase ${purchase.id} completed successfully`);
+      }
+
+      // Get the current transaction to preserve existing metadata
+      const currentTransaction = await models.Transaction.findByPk(transactionId);
+
+      // Update transaction status to completed
+      await models.Transaction.update(
+        {
+          payment_status: 'completed',
+          metadata: {
+            ...(currentTransaction?.metadata || {}),
+            payplus_transaction_uuid: transactionData.uuid,
+            payplus_approval_number: transactionData.information?.approval_number,
+            completed_at: new Date().toISOString(),
+            completion_source: 'payplus_page_status_check'
+          },
+          updated_at: new Date()
+        },
+        {
+          where: { id: transactionId }
+        }
+      );
+
+      console.log(`✅ Transaction ${transactionId} marked as completed`);
+
+      return {
+        success: true,
+        completed_count: completedPurchases.length,
+        completed_purchases: completedPurchases,
+        transaction_completed: true,
+        message: `Successfully completed ${completedPurchases.length} purchases and updated transaction status`
+      };
+
+    } catch (error) {
+      logger.payment('❌ Error handling completed payment:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Handle abandoned payment page by reverting purchases to cart status
    * @param {string} transactionId - Transaction ID
    * @returns {Promise<Object>} Revert result
@@ -313,12 +396,14 @@ class PayPlusPageStatusService {
           revert_result: revertResult
         };
       } else if (pageStatusResult.shouldCompleteTransaction) {
-        // Payment was completed successfully - mark transaction as completed
-        console.log(`✅ [DEBUG] Payment completed - marking transaction as completed: ${transactionId}`);
+        // Payment was completed successfully - complete purchases and transaction
+        console.log(`✅ [DEBUG] Payment completed - completing purchases for transaction: ${transactionId}`);
+        const completionResult = await this.handleCompletedPayment(transactionId, pageStatusResult.transactionData);
+
         return {
           ...pageStatusResult,
           action_taken: 'transaction_completed',
-          message: 'Payment completed successfully, transaction marked as completed'
+          completion_result: completionResult
         };
       } else if (pageStatusResult.shouldPollTransaction) {
         // Payment was attempted - should continue with transaction polling
