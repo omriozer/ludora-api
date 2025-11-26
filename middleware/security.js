@@ -29,14 +29,16 @@ export function enforceHTTPS(req, res, next) {
 // Comprehensive security headers configuration
 export function securityHeaders() {
   return helmet({
-    // Content Security Policy
+    // Content Security Policy - Allow Firebase authentication
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https:", "blob:"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "https://www.gstatic.com", "https://apis.google.com"],
+        connectSrc: ["'self'", "https://*.googleapis.com", "https://*.firebaseapp.com", "https://accounts.google.com"],
+        frameSrc: ["'self'", "https://accounts.google.com", "https://*.firebaseapp.com"],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: process.env.ENVIRONMENT !== 'development' ? [] : null,
         blockAllMixedContent: process.env.ENVIRONMENT !== 'development' ? [] : null,
@@ -83,9 +85,9 @@ export function securityHeaders() {
     // Cross-Origin Embedder Policy
     crossOriginEmbedderPolicy: false, // Allow embedding for development
 
-    // Cross-Origin Opener Policy
+    // Cross-Origin Opener Policy - Allow popups for Firebase authentication
     crossOriginOpenerPolicy: {
-      policy: "same-origin"
+      policy: "same-origin-allow-popups"
     },
 
     // Cross-Origin Resource Policy

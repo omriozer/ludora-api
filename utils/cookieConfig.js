@@ -36,8 +36,9 @@ export function getSameSitePolicy() {
   switch (environment) {
     case 'production':
     case 'staging':
-      // 'lax' allows same-site subdomain access while maintaining CSRF protection
-      return 'lax';
+      // 'none' required for cross-subdomain authentication (ludora.app -> api.ludora.app)
+      // This allows cookies to be sent in cross-subdomain requests while maintaining security with domain restriction
+      return 'none';
     case 'development':
     default:
       // 'lax' for development to allow subdomain testing
