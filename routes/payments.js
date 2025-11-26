@@ -488,6 +488,97 @@ router.post('/check-pending-payments', authenticateToken, async (req, res) => {
   }
 });
 
+// Check PayPlus payment page status for pending payments (smart polling trigger)
+router.post('/check-payment-page-status', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    console.log(`🔍 Checking PayPlus page status for user pending payments: ${userId}`);
+
+    // Import PayPlusPageStatusService
+    const PayPlusPageStatusService = (await import('../services/PayPlusPageStatusService.js')).default;
+
+    // Find all pending purchases for this user
+    const pendingPurchases = await models.Purchase.findAll({
+      where: {
+        buyer_user_id: userId,
+        payment_status: 'pending'
+      },
+      include: [
+        {
+          model: models.Transaction,
+          as: 'transaction',
+          required: false
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
+
+    console.log(`📝 Found ${pendingPurchases.length} pending purchases to check`);
+
+    const results = [];
+
+    for (const purchase of pendingPurchases) {
+      try {
+        if (!purchase.transaction?.payment_page_request_uid) {
+          // No PayPlus page UID - skip this purchase
+          results.push({
+            purchase_id: purchase.id,
+            transaction_id: purchase.transaction_id,
+            status: 'skipped',
+            reason: 'No PayPlus page request UID found'
+          });
+          continue;
+        }
+
+        // Check PayPlus page status and handle accordingly
+        const pageStatusResult = await PayPlusPageStatusService.checkAndHandlePaymentPageStatus(purchase.transaction_id);
+
+        results.push({
+          purchase_id: purchase.id,
+          transaction_id: purchase.transaction_id,
+          page_request_uid: purchase.transaction.payment_page_request_uid,
+          page_status_result: pageStatusResult
+        });
+
+        console.log(`✅ Page status checked for purchase ${purchase.id}: ${pageStatusResult.pageStatus}`);
+
+      } catch (error) {
+        results.push({
+          purchase_id: purchase.id,
+          transaction_id: purchase.transaction_id,
+          status: 'error',
+          error: error.message
+        });
+
+        console.error(`❌ Error checking page status for purchase ${purchase.id}:`, error);
+      }
+    }
+
+    // Count actions taken
+    const summary = {
+      total_pending: pendingPurchases.length,
+      reverted_to_cart: results.filter(r => r.page_status_result?.action_taken === 'reverted_to_cart').length,
+      continue_polling: results.filter(r => r.page_status_result?.action_taken === 'continue_transaction_polling').length,
+      errors: results.filter(r => r.status === 'error' || r.page_status_result?.success === false).length,
+      skipped: results.filter(r => r.status === 'skipped').length
+    };
+
+    console.log(`📊 Payment page status check summary:`, summary);
+
+    res.json({
+      success: true,
+      message: 'PayPlus payment page status checked for pending payments',
+      summary,
+      results
+    });
+
+  } catch (error) {
+    logger.payment('Error checking payment page status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get detailed transaction information
 router.get('/transaction-details/:id', authenticateToken, async (req, res) => {
   try {

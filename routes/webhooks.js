@@ -324,7 +324,9 @@ router.post('/payplus',
             ...transaction.metadata,
             payplusWebhookData: webhookData,
             payplus_transaction_uid: webhookData.transaction_uid,
-            completedAt: new Date().toISOString()
+            completedAt: new Date().toISOString(),
+            resolvedBy: 'webhook', // Track that this payment was resolved by webhook
+            resolvedAt: new Date().toISOString()
           }
         });
 

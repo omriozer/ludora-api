@@ -265,7 +265,9 @@ class PaymentPollingService {
           metadata: {
             ...purchase.transaction.metadata,
             payplus_polling_data: transactionData,
-            completed_via_polling_at: new Date().toISOString()
+            completed_via_polling_at: new Date().toISOString(),
+            resolvedBy: 'polling', // Track that this payment was resolved by polling
+            resolvedAt: new Date().toISOString()
           },
           updated_at: new Date()
         });
