@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
+import { rateLimiters } from '../middleware/validation.js';
 import PaymentService from '../services/PaymentService.js';
 import PayplusService from '../services/PayplusService.js';
 import PaymentPollingService from '../services/PaymentPollingService.js';
@@ -491,10 +492,30 @@ router.post('/check-pending-payments', authenticateToken, async (req, res) => {
   }
 });
 
+// In-memory request tracking to prevent duplicate concurrent requests
+const activeRequests = new Map();
+
 // Check PayPlus payment page status for pending payments (smart polling trigger)
-router.post('/check-payment-page-status', authenticateToken, async (req, res) => {
+router.post('/check-payment-page-status', rateLimiters.paymentStatusCheck, authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
   try {
-    const userId = req.user.id;
+    // PROTECTION 1: Prevent concurrent requests from same user
+    if (activeRequests.has(userId)) {
+      return res.status(429).json({
+        error: 'Payment status check already in progress',
+        message: 'Please wait for the current check to complete',
+        retryAfter: 5
+      });
+    }
+
+    // Mark request as active
+    activeRequests.set(userId, Date.now());
+
+    // PROTECTION 2: Set a maximum timeout to prevent hanging
+    const requestTimeout = setTimeout(() => {
+      activeRequests.delete(userId);
+    }, 30000); // 30 second timeout
 
     console.log(`🔍 Checking PayPlus page status for user pending payments: ${userId}`);
 
@@ -519,9 +540,17 @@ router.post('/check-payment-page-status', authenticateToken, async (req, res) =>
 
     console.log(`📝 Found ${pendingPurchases.length} pending purchases to check`);
 
+    // PROTECTION 3: Limit the number of purchases to process (prevent overload)
+    const maxPurchasesToProcess = 10;
+    const purchasesToProcess = pendingPurchases.slice(0, maxPurchasesToProcess);
+
+    if (pendingPurchases.length > maxPurchasesToProcess) {
+      console.log(`⚠️ Limiting processing to ${maxPurchasesToProcess} purchases out of ${pendingPurchases.length} for user ${userId}`);
+    }
+
     const results = [];
 
-    for (const purchase of pendingPurchases) {
+    for (const purchase of purchasesToProcess) {
       try {
         if (!purchase.transaction?.payment_page_request_uid) {
           // No PayPlus page UID - skip this purchase
@@ -569,6 +598,10 @@ router.post('/check-payment-page-status', authenticateToken, async (req, res) =>
 
     console.log(`📊 Payment page status check summary:`, summary);
 
+    // CLEANUP: Clear request tracking and timeout on success
+    clearTimeout(requestTimeout);
+    activeRequests.delete(userId);
+
     res.json({
       success: true,
       message: 'PayPlus payment page status checked for pending payments',
@@ -577,8 +610,18 @@ router.post('/check-payment-page-status', authenticateToken, async (req, res) =>
     });
 
   } catch (error) {
+    // CLEANUP: Clear request tracking and timeout on error
+    clearTimeout(requestTimeout);
+    activeRequests.delete(userId);
+
     logger.payment('Error checking payment page status:', error);
-    res.status(500).json({ error: error.message });
+
+    // Return safe error message (don't expose internal details)
+    res.status(500).json({
+      error: 'Payment status check temporarily unavailable',
+      message: 'Please try again in a few moments',
+      retryAfter: 60
+    });
   }
 });
 

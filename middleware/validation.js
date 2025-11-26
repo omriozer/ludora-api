@@ -436,6 +436,23 @@ export const rateLimiters = {
     },
     standardHeaders: true,
     legacyHeaders: false
+  }),
+
+  // Payment status checking endpoints (CRITICAL: Prevent API overload)
+  paymentStatusCheck: rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: process.env.ENVIRONMENT === 'development' ? 100 : 20, // 20 calls per 15 minutes in production
+    message: {
+      error: 'Too many payment status check requests, please wait before trying again',
+      details: 'This endpoint checks PayPlus payment status and has rate limiting to protect system performance',
+      retryAfter: '15 minutes'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    // Add custom key generator to limit per user
+    keyGenerator: (req) => {
+      return req.user?.id || req.ip; // Rate limit per authenticated user, fallback to IP
+    }
   })
 };
 
