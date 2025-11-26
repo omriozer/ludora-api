@@ -95,16 +95,6 @@ router.post('/paypal',
 // PayPlus webhooks
 router.post('/payplus',
   asyncHandler(async (req, res) => {
-    // TEMPORARY: Disable webhook processing for staging testing of polling system
-    // TODO: Remove this feature flag after polling system testing is complete
-    if (process.env.DISABLE_PAYPLUS_WEBHOOKS === 'true') {
-      return res.status(200).json({
-        message: 'PayPlus webhook temporarily disabled for polling testing',
-        timestamp: new Date().toISOString(),
-        webhook_disabled: true
-      });
-    }
-
     const startTime = Date.now();
     const webhookData = req.body;
 
