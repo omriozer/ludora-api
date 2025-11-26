@@ -377,6 +377,43 @@ router.post('/update-status', authenticateToken, async (req, res) => {
 
       // TODO remove debug - payment status polling
       logger.payment(`Transaction ${transaction_id} moved to pending via iframe event`);
+
+      // CRITICAL: Start automatic polling when payment becomes pending
+      // This ensures polling works even with webhooks disabled
+      const startContinuousPolling = async (transactionId) => {
+        try {
+          // TODO remove debug - payment status polling
+          logger.payment(`🚀 Starting automatic polling for transaction: ${transactionId}`);
+
+          const pollResult = await PaymentPollingService.pollTransactionStatus(transactionId);
+
+          // TODO remove debug - payment status polling
+          logger.payment(`✅ Automatic polling result for ${transactionId}:`, {
+            success: pollResult.success,
+            status: pollResult.status,
+            attempts: pollResult.attempts,
+            should_retry: pollResult.should_retry
+          });
+
+          // If polling should continue, schedule next poll in 20 seconds
+          if (pollResult.should_retry && !pollResult.success && pollResult.status !== 'abandoned') {
+            // TODO remove debug - payment status polling
+            logger.payment(`⏰ Scheduling next poll in 20 seconds for transaction: ${transactionId}`);
+
+            setTimeout(() => startContinuousPolling(transactionId), 20000); // 20 second intervals
+          } else {
+            // Polling complete - payment succeeded, failed, or abandoned
+            // TODO remove debug - payment status polling
+            logger.payment(`🏁 Polling complete for transaction ${transactionId}: ${pollResult.status}`);
+          }
+        } catch (error) {
+          logger.payment(`❌ Automatic polling failed for ${transactionId}:`, error);
+          // Don't retry on error to prevent infinite loops
+        }
+      };
+
+      // Start first poll after 2 seconds
+      setTimeout(() => startContinuousPolling(transaction_id), 2000);
     }
 
     res.json({
