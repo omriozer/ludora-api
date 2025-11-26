@@ -359,14 +359,12 @@ class PaymentService {
   }
 
   /**
-   * Get PayPlus credentials based on NODE_ENV
+   * Get PayPlus credentials from environment variables
    * @returns {Object} PayPlus configuration object
    */
   static getPayPlusCredentials() {
     try {
-      // Auto-detect environment based on NODE_ENV
-      // Development and staging use PayPlus test environment
-      // Production uses PayPlus production environment
+      // Determine environment and API URL based on NODE_ENV
       const nodeEnv = process.env.NODE_ENV || 'development';
       const isProd = nodeEnv === 'production';
       const normalizedEnv = isProd ? 'production' : 'staging';
@@ -375,29 +373,24 @@ class PaymentService {
         payplusUrl: isProd
           ? 'https://restapi.payplus.co.il/api/v1.0/'
           : 'https://restapidev.payplus.co.il/api/v1.0/',
-        payment_page_uid: isProd
-          ? process.env.PAYPLUS_PAYMENT_PAGE_UID
-          : process.env.PAYPLUS_STAGING_PAYMENT_PAGE_UID,
-        payment_api_key: isProd
-          ? process.env.PAYPLUS_API_KEY
-          : process.env.PAYPLUS_STAGING_API_KEY,
-        payment_secret_key: isProd
-          ? process.env.PAYPLUS_SECRET_KEY
-          : process.env.PAYPLUS_STAGING_SECRET_KEY,
+        payment_page_uid: process.env.PAYPLUS_PAYMENT_PAGE_UID,
+        payment_api_key: process.env.PAYPLUS_API_KEY,
+        payment_secret_key: process.env.PAYPLUS_SECRET_KEY,
+        terminal_uid: process.env.PAYPLUS_TERMINAL_UID,
         environment: normalizedEnv
       };
 
       // Validate required credentials
-      const requiredFields = ['payment_page_uid', 'payment_api_key', 'payment_secret_key'];
+      const requiredFields = ['payment_page_uid', 'payment_api_key', 'payment_secret_key', 'terminal_uid'];
       const missingFields = requiredFields.filter(field => !credentials[field]);
 
       if (missingFields.length > 0) {
-        const envPrefix = isProd ? 'PAYPLUS_PRODUCTION' : 'PAYPLUS_STAGING';
         const missingEnvVars = missingFields.map(field => {
           switch(field) {
-            case 'payment_page_uid': return `${envPrefix}_PAYMENT_PAGE_UID`;
-            case 'payment_api_key': return `${envPrefix}_API_KEY`;
-            case 'payment_secret_key': return `${envPrefix}_SECRET_KEY`;
+            case 'payment_page_uid': return 'PAYPLUS_PAYMENT_PAGE_UID';
+            case 'payment_api_key': return 'PAYPLUS_API_KEY';
+            case 'payment_secret_key': return 'PAYPLUS_SECRET_KEY';
+            case 'terminal_uid': return 'PAYPLUS_TERMINAL_UID';
             default: return field;
           }
         });

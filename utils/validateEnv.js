@@ -24,6 +24,7 @@ export function validateEnvironmentVariables() {
       'JWT_SECRET',
       'PAYPLUS_API_KEY',
       'PAYPLUS_SECRET_KEY',
+      'PAYPLUS_TERMINAL_UID',
       'AWS_ACCESS_KEY_ID',
       'AWS_SECRET_ACCESS_KEY'
     ],
@@ -31,8 +32,9 @@ export function validateEnvironmentVariables() {
       'API_URL',
       'DATABASE_URL',
       'JWT_SECRET',
-      'PAYPLUS_STAGING_API_KEY',
-      'PAYPLUS_STAGING_SECRET_KEY',
+      'PAYPLUS_API_KEY',
+      'PAYPLUS_SECRET_KEY',
+      'PAYPLUS_TERMINAL_UID',
       'AWS_ACCESS_KEY_ID',
       'AWS_SECRET_ACCESS_KEY'
     ],

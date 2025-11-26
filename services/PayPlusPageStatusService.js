@@ -32,15 +32,16 @@ class PayPlusPageStatusService {
         environment: credentials.environment,
         hasApiKey: !!credentials.payment_api_key,
         hasSecretKey: !!credentials.payment_secret_key,
+        hasTerminalUid: !!credentials.terminal_uid,
         apiKeyLength: credentials.payment_api_key?.length,
         secretKeyLength: credentials.payment_secret_key?.length
       });
 
-      const { payplusUrl, payment_api_key, payment_secret_key } = credentials;
-      const statusUrl = `${payplusUrl}Transactions/PaymentData`;
+      const { payplusUrl, payment_api_key, payment_secret_key, terminal_uid } = credentials;
+      const statusUrl = `${payplusUrl}TransactionReports/TransactionsHistory`;
 
       console.log(`🌐 [DEBUG] Making PayPlus API call to: ${statusUrl}`);
-      console.log(`📋 [DEBUG] API request body:`, { page_request_uid: pageRequestUid });
+      console.log(`📋 [DEBUG] API request body:`, { terminal_uid, page_request_uid: pageRequestUid });
 
       const statusResponse = await fetch(statusUrl, {
         method: 'POST',
@@ -50,6 +51,7 @@ class PayPlusPageStatusService {
           'secret-key': payment_secret_key
         },
         body: JSON.stringify({
+          terminal_uid: terminal_uid,
           page_request_uid: pageRequestUid
         })
       });
@@ -100,14 +102,14 @@ class PayPlusPageStatusService {
         };
       }
 
-      console.log(`📊 PayPlus page status response for ${pageRequestUid}:`, {
-        resultsStatus: statusData?.results?.status,
-        hasTransactionData: !!statusData?.data?.transaction,
-        transactionStatus: statusData?.data?.transaction?.status_code
+      console.log(`📊 PayPlus transactions history response for ${pageRequestUid}:`, {
+        transactionCount: statusData?.transactions?.length || 0,
+        hasTransactions: !!statusData?.transactions,
+        totalCount: statusData?.count
       });
 
       // Analyze response to determine page status
-      return this.analyzePageStatusResponse(statusData, pageRequestUid);
+      return this.analyzeTransactionsHistoryResponse(statusData, pageRequestUid);
 
     } catch (error) {
       logger.payment('❌ PayPlusPageStatusService: Error checking page status:', error);
@@ -122,64 +124,86 @@ class PayPlusPageStatusService {
   }
 
   /**
-   * Analyze PayPlus API response to determine payment page status
-   * @param {Object} statusData - PayPlus API response
+   * Analyze PayPlus transactions history response to determine payment page status
+   * @param {Object} statusData - PayPlus TransactionsHistory API response
    * @param {string} pageRequestUid - Page request UID
    * @returns {Object} Analyzed page status
    */
-  static analyzePageStatusResponse(statusData, pageRequestUid) {
-    // FIXED BUG: Check if PayPlus API call failed completely (not about payment status)
-    // Only treat as abandoned if there's an actual API error, not a payment status
-    if (!statusData || statusData?.results?.status === 'error' || statusData?.results?.status === 'failure') {
-      // PayPlus API returned error - might mean page was never used
-      console.log(`⚠️ PayPlus API returned error for ${pageRequestUid}: ${statusData?.results?.message}`);
+  static analyzeTransactionsHistoryResponse(statusData, pageRequestUid) {
+    // Check if we have a valid response with transactions array
+    if (!statusData || !Array.isArray(statusData.transactions)) {
+      console.log(`⚠️ Invalid PayPlus transactions history response for ${pageRequestUid}`);
+
+      return {
+        success: false,
+        pageStatus: 'error',
+        error: 'Invalid transactions history response from PayPlus',
+        shouldRevertToCart: false, // Don't revert on API errors
+        payplus_response: statusData
+      };
+    }
+
+    console.log(`📊 [DEBUG] Searching through ${statusData.transactions.length} transactions for page_request_uid: ${pageRequestUid}`);
+
+    // Search for transaction with matching page_request_uid
+    const matchingTransaction = statusData.transactions.find(transaction =>
+      transaction.payment_page_payment_request?.uuid === pageRequestUid
+    );
+
+    if (!matchingTransaction) {
+      // No transaction found = page was created but no payment attempted
+      console.log(`📭 No transaction found for page_request_uid ${pageRequestUid} - page abandoned`);
 
       return {
         success: true,
         pageStatus: 'abandoned',
-        reason: 'PayPlus API returned error - likely page never accessed or abandoned',
+        reason: 'No transaction found for page request - payment page was not used',
         shouldRevertToCart: true,
         payplus_response: statusData
       };
     }
 
-    // TODO remove debug - fix payplus payment completion
-    console.log(`📊 [DEBUG] PayPlus API response analysis for ${pageRequestUid}:`, {
-      resultsStatus: statusData?.results?.status,
-      hasResults: !!statusData?.results,
-      hasData: !!statusData?.data,
-      hasTransaction: !!statusData?.data?.transaction,
-      transactionStatus: statusData?.data?.transaction?.status_code,
-      fullResponse: JSON.stringify(statusData).substring(0, 500)
+    // Transaction found - check payment status
+    const statusCode = matchingTransaction.information?.status_code;
+    const transactionUuid = matchingTransaction.uuid;
+
+    console.log(`💳 [DEBUG] Transaction found for ${pageRequestUid}:`, {
+      transactionUuid,
+      statusCode,
+      amount: matchingTransaction.information?.amount_by_currency,
+      transactionAt: matchingTransaction.information?.transaction_at
     });
 
-    // Check if transaction data exists
-    const transactionData = statusData?.data?.transaction;
-    if (!transactionData) {
-      // No transaction data = page was created but no payment attempted
-      console.log(`📭 No transaction data for ${pageRequestUid} - page abandoned`);
+    // Check if payment was successful (status_code '000' = success)
+    if (statusCode === '000') {
+      console.log(`✅ Payment completed successfully for ${pageRequestUid} (transaction: ${transactionUuid})`);
 
       return {
         success: true,
-        pageStatus: 'abandoned',
-        reason: 'No transaction data found - payment page was not used',
+        pageStatus: 'payment_completed',
+        reason: 'Payment completed successfully',
+        shouldRevertToCart: false,
+        shouldCompleteTransaction: true,
+        transactionData: matchingTransaction,
+        transactionUuid: transactionUuid,
+        statusCode: statusCode,
+        payplus_response: statusData
+      };
+    } else {
+      // Payment was attempted but not successful
+      console.log(`❌ Payment failed for ${pageRequestUid} (transaction: ${transactionUuid}, status: ${statusCode})`);
+
+      return {
+        success: true,
+        pageStatus: 'payment_failed',
+        reason: `Payment failed with status code: ${statusCode}`,
         shouldRevertToCart: true,
+        transactionData: matchingTransaction,
+        transactionUuid: transactionUuid,
+        statusCode: statusCode,
         payplus_response: statusData
       };
     }
-
-    // Transaction data exists = payment was attempted
-    console.log(`💳 Transaction data found for ${pageRequestUid} - payment was attempted`);
-
-    return {
-      success: true,
-      pageStatus: 'payment_attempted',
-      reason: 'Transaction data found - payment was attempted',
-      shouldRevertToCart: false,
-      shouldPollTransaction: true, // Should continue with transaction status polling
-      transactionData: transactionData,
-      payplus_response: statusData
-    };
   }
 
   /**
@@ -279,14 +303,22 @@ class PayPlusPageStatusService {
 
       // Handle based on page status
       if (pageStatusResult.shouldRevertToCart) {
-        // Page was abandoned - revert purchases to cart
-        console.log(`🔄 [DEBUG] Page abandoned - reverting to cart for transaction: ${transactionId}`);
+        // Page was abandoned or payment failed - revert purchases to cart
+        console.log(`🔄 [DEBUG] Page abandoned/failed - reverting to cart for transaction: ${transactionId}`);
         const revertResult = await this.handleAbandonedPaymentPage(transactionId);
 
         return {
           ...pageStatusResult,
           action_taken: 'reverted_to_cart',
           revert_result: revertResult
+        };
+      } else if (pageStatusResult.shouldCompleteTransaction) {
+        // Payment was completed successfully - mark transaction as completed
+        console.log(`✅ [DEBUG] Payment completed - marking transaction as completed: ${transactionId}`);
+        return {
+          ...pageStatusResult,
+          action_taken: 'transaction_completed',
+          message: 'Payment completed successfully, transaction marked as completed'
         };
       } else if (pageStatusResult.shouldPollTransaction) {
         // Payment was attempted - should continue with transaction polling
