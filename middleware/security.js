@@ -85,10 +85,9 @@ export function securityHeaders() {
     // Cross-Origin Embedder Policy
     crossOriginEmbedderPolicy: false, // Allow embedding for development
 
-    // Cross-Origin Opener Policy - Allow popups for Firebase authentication
-    crossOriginOpenerPolicy: {
-      policy: "same-origin-allow-popups"
-    },
+    // Cross-Origin Opener Policy - Disable for Firebase OAuth authentication
+    // Firebase authentication requires cross-origin popup communication with OAuth providers
+    crossOriginOpenerPolicy: false,
 
     // Cross-Origin Resource Policy
     crossOriginResourcePolicy: {
