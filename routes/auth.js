@@ -397,7 +397,7 @@ router.post('/verify', async (req, res) => {
       loginMethod: 'firebase_google'
     };
 
-    authService.createSession(user.id, sessionMetadata, portal);
+    await authService.createSession(user.id, sessionMetadata, portal);
 
     // Generate proper access and refresh tokens using AuthService
     const result = await authService.generateTokenPair(user, sessionMetadata);
