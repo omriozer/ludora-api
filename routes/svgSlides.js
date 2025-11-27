@@ -102,17 +102,6 @@ const upload = multer({
  */
 router.post(
   '/:lessonPlanId/upload',
-  // Add specific CORS headers for file uploads
-  (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    if (req.method === 'OPTIONS') {
-      return res.status(200).end();
-    }
-    next();
-  },
   authenticateToken,
   requireRole(['admin', 'teacher']),
   upload.array('slides', 50), // Allow up to 50 slides for chunked uploads
