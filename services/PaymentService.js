@@ -105,9 +105,6 @@ class PaymentService {
         case 'game':
           item = await models.Game.findByPk(purchasableId);
           break;
-        case 'subscription':
-          item = await models.SubscriptionPlan.findByPk(purchasableId);
-          break;
         default:
           throw new Error(`Unknown purchasable type: ${purchasableType}`);
       }
@@ -152,25 +149,6 @@ class PaymentService {
         };
       }
 
-      // For subscriptions, check if there's already a subscription in cart
-      if (purchasableType === 'subscription') {
-        const existingSubscriptionInCart = await models.Purchase.findOne({
-          where: {
-            buyer_user_id: userId,
-            purchasable_type: 'subscription',
-            payment_status: 'cart'
-          }
-        });
-
-        if (existingSubscriptionInCart) {
-          return {
-            valid: false,
-            error: 'Subscription already in cart',
-            existingPurchase: existingSubscriptionInCart,
-            canUpdate: true // Special flag for subscription updates
-          };
-        }
-      }
 
       return { valid: true };
 
@@ -206,9 +184,8 @@ class PaymentService {
       const nodeEnv = process.env.NODE_ENV || 'development';
       const dbEnvironment = nodeEnv === 'production' ? 'production' : 'staging';
 
-      // Determine transaction type based on purchase items
-      const hasSubscriptions = purchaseItems.some(item => item.purchasable_type === 'subscription');
-      const transactionType = hasSubscriptions ? TRANSACTION_TYPES.RECURRING : TRANSACTION_TYPES.ONE_TIME;
+      // All purchase transactions are one-time
+      const transactionType = TRANSACTION_TYPES.ONE_TIME;
 
       // Check for existing pending transaction of the same type for this user
       const existingTransaction = await models.Transaction.findOne({
@@ -328,9 +305,6 @@ class PaymentService {
             break;
           case 'game':
             product = await models.Game.findByPk(purchase.purchasable_id);
-            break;
-          case 'subscription':
-            product = await models.SubscriptionPlan.findByPk(purchase.purchasable_id);
             break;
           default:
 

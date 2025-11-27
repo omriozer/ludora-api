@@ -190,15 +190,7 @@ class PayplusService {
    * @returns {number} PayPlus charge method
    */
   static determineChargeMethod(frontendOrigin, purchaseItems) {
-    // Check if any purchase items are subscriptions
-    const hasSubscriptions = purchaseItems.some(item => item.purchasable_type === 'subscription');
-
-    if (hasSubscriptions || frontendOrigin === 'subscription') {
-      // Use recurring payments for subscriptions
-      return PAYPLUS_CHARGE_METHODS.RECURRING;
-    }
-
-    // Default to immediate charge for one-time purchases
+    // All purchase transactions use immediate charge
     return PAYPLUS_CHARGE_METHODS.IMMEDIATE;
   }
 
@@ -241,57 +233,6 @@ class PayplusService {
   static getAdditionalSettings(chargeMethod, frontendOrigin, purchaseItems = []) {
     const settings = {};
 
-    // For recurring payments (subscriptions)
-    if (chargeMethod === PAYPLUS_CHARGE_METHODS.RECURRING) {
-      // Find subscription plan details from purchase items
-      const subscriptionItem = purchaseItems.find(item => item.purchasable_type === 'subscription');
-
-      // Determine recurring type based on billing period
-      let recurringType = 2; // Default to monthly
-      let recurringRange = 1; // Default to every period
-
-      if (subscriptionItem?.billing_period) {
-        switch (subscriptionItem.billing_period) {
-          case 'weekly':
-            recurringType = 1; // Weekly
-            recurringRange = 1;
-            break;
-          case 'monthly':
-            recurringType = 2; // Monthly
-            recurringRange = 1;
-            break;
-          case 'quarterly':
-            recurringType = 2; // Monthly
-            recurringRange = 3; // Every 3 months
-            break;
-          case 'yearly':
-            recurringType = 3; // Yearly
-            recurringRange = 1;
-            break;
-          default:
-            recurringType = 2; // Default to monthly
-            recurringRange = 1;
-        }
-      }
-
-      settings.recurring_settings = {
-        instant_first_payment: true,
-        recurring_type: recurringType,
-        recurring_range: recurringRange,
-        number_of_charges: 0, // Unlimited
-        start_date_on_payment_date: true,
-        start_date: 1,
-        jump_payments: 0, // No free trial by default
-        successful_invoice: true,
-        customer_failure_email: true,
-        send_customer_success_email: true,
-        // Add subscription metadata for webhook processing
-        custom_fields: {
-          subscription_plan_id: subscriptionItem?.purchasable_id,
-          billing_period: subscriptionItem?.billing_period || 'monthly'
-        }
-      };
-    }
 
     // Common settings for all payment types
     settings.payments = 1; // Single payment by default
