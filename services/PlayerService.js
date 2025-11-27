@@ -111,7 +111,7 @@ class PlayerService {
           {
             model: models.User,
             as: 'teacher',
-            attributes: ['id', 'full_name', 'email', 'role', 'is_active']
+            attributes: ['id', 'full_name', 'email', 'role', 'is_active', 'invitation_code']
           }
         ]
       });
@@ -144,7 +144,8 @@ class PlayerService {
           teacher_id: player.teacher_id,
           teacher: player.teacher ? {
             id: player.teacher.id,
-            full_name: player.teacher.full_name
+            full_name: player.teacher.full_name,
+            invitation_code: player.teacher.invitation_code
           } : null,
           achievements: player.achievements,
           preferences: player.preferences,
@@ -166,7 +167,7 @@ class PlayerService {
         includeOptions.push({
           model: models.User,
           as: 'teacher',
-          attributes: ['id', 'full_name', 'email', 'role']
+          attributes: ['id', 'full_name', 'email', 'role', 'invitation_code']
         });
       }
 
@@ -629,7 +630,7 @@ class PlayerService {
           {
             model: models.User,
             as: 'teacher',
-            attributes: ['id', 'full_name', 'email', 'role']
+            attributes: ['id', 'full_name', 'email', 'role', 'invitation_code']
           }
         ]
       });
