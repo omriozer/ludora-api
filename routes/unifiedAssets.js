@@ -388,15 +388,229 @@ router.delete('/:entityType/:entityId', authenticateToken, async (req, res) => {
  * - Videos: Stream with range support and access control
  */
 router.get('/:entityType/:entityId/:assetType', optionalAuth, async (req, res) => {
-  // Implementation will be similar to existing download/serve endpoints
-  // but unified under single pattern with content negotiation
-
-  // TODO: Implement unified asset serving
-  res.status(501).json({
-    error: 'Not implemented',
-    message: 'Unified asset serving endpoint coming soon',
-    useInstead: 'Current endpoints: /download, /image, /media/stream'
+  const logger = createFileLogger('Unified Asset Serving', req.user, {
+    entityType: req.params.entityType,
+    entityId: req.params.entityId,
+    assetType: req.params.assetType,
+    userAgent: req.headers['user-agent'],
+    ip: req.ip,
+    range: req.headers.range
   });
+
+  try {
+    const { entityType, entityId, assetType } = req.params;
+
+    logger.start({
+      entityType,
+      entityId,
+      assetType,
+      method: 'GET',
+      url: req.originalUrl,
+      operation: 'serve_asset',
+      hasRange: !!req.headers.range
+    });
+
+    // Validate entity type and existence
+    const validator = createPreUploadValidator(logger);
+    const entityValidation = await validator.validateEntityExists(entityType, entityId);
+
+    if (!entityValidation.valid) {
+      logger.error(new Error('Entity validation failed'), entityValidation.error);
+      return res.status(404).json(entityValidation.error);
+    }
+
+    // Validate asset type for entity type
+    const validAssetTypes = {
+      workshop: ['marketing-video', 'content-video', 'image'],
+      course: ['marketing-video', 'content-video', 'image'],
+      file: ['document', 'marketing-video', 'image'],
+      tool: ['marketing-video', 'content-video', 'image']
+    };
+
+    if (!validAssetTypes[entityType]?.includes(assetType)) {
+      const errorResponse = createErrorResponse(
+        'Invalid asset type',
+        `Asset type '${assetType}' is not supported for entity type '${entityType}'`,
+        {
+          validAssetTypes: validAssetTypes[entityType] || [],
+          providedAssetType: assetType,
+          entityType
+        },
+        logger.requestId
+      );
+      logger.error(new Error('Invalid asset type'), { assetType, entityType, validTypes: validAssetTypes[entityType] });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Determine filename based on asset type
+    let filename;
+    if (assetType === 'marketing-video' || assetType === 'content-video') {
+      filename = 'video.mp4';
+    } else if (assetType === 'image') {
+      filename = 'image.jpg';
+    } else if (assetType === 'document' && entityType === 'file') {
+      // For documents, get filename from database
+      const entity = entityValidation.entity;
+      if (!entity.file_name) {
+        const errorResponse = createErrorResponse(
+          'Document not found',
+          'Document file has not been uploaded',
+          {
+            entityType,
+            entityId,
+            assetType
+          },
+          logger.requestId
+        );
+        logger.error(new Error('Document not uploaded'), { stage: 'filename_check' });
+        return res.status(404).json(errorResponse);
+      }
+      filename = entity.file_name;
+    } else {
+      const errorResponse = createErrorResponse(
+        'Unsupported combination',
+        `Asset type '${assetType}' is not supported for entity type '${entityType}'`,
+        { entityType, assetType },
+        logger.requestId
+      );
+      logger.error(new Error('Unsupported asset combination'), { assetType, entityType });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Construct S3 path
+    const s3Key = constructS3Path(entityType, entityId, assetType, filename);
+    logger.info('S3 key constructed for serving', { s3Key, filename });
+
+    // Check if file exists and get metadata
+    const metadataResult = await fileService.getS3ObjectMetadata(s3Key);
+
+    if (!metadataResult.success) {
+      const errorResponse = createErrorResponse(
+        'Asset not found',
+        'The requested asset was not found in storage',
+        {
+          entityType,
+          entityId,
+          assetType,
+          filename,
+          s3Key
+        },
+        logger.requestId
+      );
+      logger.error(new Error('Asset not found in S3'), { stage: 's3_metadata_check', s3Key });
+      return res.status(404).json(errorResponse);
+    }
+
+    const metadata = metadataResult.data;
+
+    // Handle different asset types with appropriate content negotiation
+    if (assetType === 'marketing-video' || assetType === 'content-video') {
+      // Stream video with range support
+      const range = req.headers.range;
+
+      if (range) {
+        // Parse range header
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : metadata.size - 1;
+        const chunkSize = (end - start) + 1;
+
+        // Create S3 stream with range
+        const stream = await fileService.createS3Stream(s3Key, { start, end });
+
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${metadata.size}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': metadata.contentType || 'video/mp4',
+          'Cache-Control': 'public, max-age=3600',
+          'ETag': metadata.etag
+        });
+
+        stream.pipe(res);
+      } else {
+        // Full video stream
+        const stream = await fileService.createS3Stream(s3Key);
+
+        res.writeHead(200, {
+          'Content-Length': metadata.size,
+          'Content-Type': metadata.contentType || 'video/mp4',
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=3600',
+          'ETag': metadata.etag
+        });
+
+        stream.pipe(res);
+      }
+
+    } else if (assetType === 'image') {
+      // Serve image inline with caching
+      const stream = await fileService.createS3Stream(s3Key);
+
+      res.writeHead(200, {
+        'Content-Type': metadata.contentType || 'image/jpeg',
+        'Content-Length': metadata.size,
+        'Cache-Control': 'public, max-age=86400', // 24 hours
+        'ETag': metadata.etag,
+        'Last-Modified': metadata.lastModified.toUTCString()
+      });
+
+      stream.pipe(res);
+
+    } else if (assetType === 'document') {
+      // Download document with appropriate headers
+      const stream = await fileService.createS3Stream(s3Key);
+
+      // Use original filename for download
+      const downloadFilename = filename;
+
+      res.writeHead(200, {
+        'Content-Type': metadata.contentType || 'application/octet-stream',
+        'Content-Length': metadata.size,
+        'Content-Disposition': `attachment; filename="${downloadFilename}"`,
+        'Cache-Control': 'private, no-cache',
+        'ETag': metadata.etag
+      });
+
+      stream.pipe(res);
+    }
+
+    logger.success({
+      entityType,
+      entityId,
+      assetType,
+      filename,
+      s3Key,
+      size: metadata.size,
+      contentType: metadata.contentType,
+      served: true,
+      hasRange: !!req.headers.range
+    });
+
+  } catch (error) {
+    // Handle streaming errors gracefully
+    if (!res.headersSent) {
+      const errorResponse = createErrorResponse(
+        'Asset serving failed',
+        'Failed to serve the requested asset',
+        {
+          details: error.message,
+          entityType: req.params.entityType,
+          entityId: req.params.entityId,
+          assetType: req.params.assetType
+        },
+        logger.requestId
+      );
+
+      logger.error(error, { stage: 'asset_serving' });
+      res.status(500).json(errorResponse);
+    } else {
+      // If headers already sent, we're in the middle of streaming
+      // Just log the error and end the response
+      logger.error(error, { stage: 'streaming_error', note: 'Headers already sent' });
+      res.end();
+    }
+  }
 });
 
 /**
@@ -409,15 +623,192 @@ router.get('/:entityType/:entityId/:assetType', optionalAuth, async (req, res) =
  * Handles all asset types with appropriate validation and processing.
  */
 router.post('/:entityType/:entityId/:assetType', authenticateToken, upload.single('file'), async (req, res) => {
-  // Implementation will consolidate existing upload endpoints
-  // with unified validation and processing
-
-  // TODO: Implement unified upload endpoint
-  res.status(501).json({
-    error: 'Not implemented',
-    message: 'Unified upload endpoint coming soon',
-    useInstead: 'Current endpoints: /upload, /upload/video/public, /upload/video/private'
+  const logger = createFileLogger('Unified Asset Upload', req.user, {
+    entityType: req.params.entityType,
+    entityId: req.params.entityId,
+    assetType: req.params.assetType,
+    fileName: req.file?.originalname,
+    fileSize: req.file?.size,
+    userAgent: req.headers['user-agent'],
+    ip: req.ip
   });
+
+  try {
+    const { entityType, entityId, assetType } = req.params;
+    const file = req.file;
+
+    logger.start({
+      entityType,
+      entityId,
+      assetType,
+      method: 'POST',
+      url: req.originalUrl,
+      fileInfo: file ? {
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size
+      } : null
+    });
+
+    // Validate file presence
+    if (!file) {
+      const errorResponse = createErrorResponse(
+        'No file provided',
+        'File upload requires a file to be attached',
+        {
+          field: 'file',
+          entityType,
+          entityId,
+          assetType
+        },
+        logger.requestId
+      );
+      logger.error(new Error('No file provided'), { stage: 'file_validation' });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Validate entity type and existence
+    const validator = createPreUploadValidator(logger);
+    const entityValidation = await validator.validateEntityExists(entityType, entityId);
+
+    if (!entityValidation.valid) {
+      logger.error(new Error('Entity validation failed'), entityValidation.error);
+      return res.status(404).json(entityValidation.error);
+    }
+
+    // Validate asset type for entity type
+    const validAssetTypes = {
+      workshop: ['marketing-video', 'content-video', 'image'],
+      course: ['marketing-video', 'content-video', 'image'],
+      file: ['document', 'marketing-video', 'image'],
+      tool: ['marketing-video', 'content-video', 'image']
+    };
+
+    if (!validAssetTypes[entityType]?.includes(assetType)) {
+      const errorResponse = createErrorResponse(
+        'Invalid asset type',
+        `Asset type '${assetType}' is not supported for entity type '${entityType}'`,
+        {
+          validAssetTypes: validAssetTypes[entityType] || [],
+          providedAssetType: assetType,
+          entityType
+        },
+        logger.requestId
+      );
+      logger.error(new Error('Invalid asset type'), { assetType, entityType, validTypes: validAssetTypes[entityType] });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Check upload permissions
+    const permissionValidation = await validator.validateUploadPermission(
+      req.user, entityType, entityId, entityValidation.entity
+    );
+
+    if (!permissionValidation.valid) {
+      logger.error(new Error('Permission validation failed'), permissionValidation.error);
+      return res.status(403).json(permissionValidation.error);
+    }
+
+    // Validate file type and content
+    const fileValidation = await validator.validateFileUpload(file, assetType);
+
+    if (!fileValidation.valid) {
+      logger.error(new Error('File validation failed'), fileValidation.error);
+      return res.status(400).json(fileValidation.error);
+    }
+
+    // Use transaction for atomic upload operation
+    const transaction = await sequelize.transaction();
+    logger.transaction('start', { operation: 'upload_asset' });
+
+    try {
+      // Upload using FileService
+      const uploadResult = await fileService.uploadAsset({
+        file,
+        entityType,
+        entityId,
+        assetType,
+        userId: req.user.id,
+        transaction,
+        preserveOriginalName: req.body.preserveOriginalName === 'true',
+        logger
+      });
+
+      // Commit transaction
+      await transaction.commit();
+      logger.transaction('commit', { s3Key: uploadResult.s3Key, size: uploadResult.size });
+
+      const responseData = createSuccessResponse({
+        message: 'Asset uploaded successfully',
+        asset: {
+          entityType,
+          entityId,
+          assetType,
+          filename: uploadResult.filename,
+          originalName: uploadResult.originalName,
+          s3Key: uploadResult.s3Key,
+          size: uploadResult.size,
+          sizeFormatted: `${Math.round(uploadResult.size / 1024 / 1024 * 10) / 10}MB`,
+          mimeType: uploadResult.mimeType,
+          accessLevel: uploadResult.accessLevel,
+          uploadedBy: uploadResult.uploadedBy,
+          uploadedAt: uploadResult.uploadedAt,
+          url: `/api/assets/${entityType}/${entityId}/${assetType}`,
+          downloadUrl: uploadResult.url,
+          etag: uploadResult.etag
+        },
+        integrity: uploadResult.integrity,
+        analysis: uploadResult.analysis
+      }, logger.requestId);
+
+      logger.success({
+        entityType,
+        entityId,
+        assetType,
+        filename: uploadResult.filename,
+        size: uploadResult.size,
+        s3Key: uploadResult.s3Key
+      });
+
+      res.status(201).json(responseData);
+
+    } catch (uploadError) {
+      await transaction.rollback();
+      logger.transaction('rollback', { reason: 'Upload failed', error: uploadError.message });
+
+      const errorResponse = createErrorResponse(
+        'Upload failed',
+        'Asset upload failed during processing',
+        {
+          details: uploadError.message,
+          entityType,
+          entityId,
+          assetType,
+          fileName: file.originalname
+        },
+        logger.requestId
+      );
+
+      logger.error(uploadError, { stage: 'upload_transaction' });
+      return res.status(500).json(errorResponse);
+    }
+
+  } catch (error) {
+    const errorResponse = createErrorResponse(
+      'Upload failed',
+      'Failed to process upload request',
+      {
+        details: error.message,
+        entityType: req.params.entityType,
+        entityId: req.params.entityId,
+        assetType: req.params.assetType
+      },
+      logger.requestId
+    );
+
+    logger.error(error, { stage: 'request_processing' });
+    res.status(500).json(errorResponse);
+  }
 });
 
 // PUT method for semantic clarity (replace vs create)
@@ -435,15 +826,197 @@ router.put('/:entityType/:entityId/:assetType', authenticateToken, upload.single
  * Deletes a specific asset type while keeping other assets.
  */
 router.delete('/:entityType/:entityId/:assetType', authenticateToken, async (req, res) => {
-  // Implementation will be similar to existing delete endpoint
-  // but scoped to specific asset type
-
-  // TODO: Implement unified asset deletion
-  res.status(501).json({
-    error: 'Not implemented',
-    message: 'Unified asset deletion endpoint coming soon',
-    useInstead: 'Current endpoint: DELETE /:entityType/:entityId'
+  const logger = createFileLogger('Unified Asset Deletion', req.user, {
+    entityType: req.params.entityType,
+    entityId: req.params.entityId,
+    assetType: req.params.assetType,
+    userAgent: req.headers['user-agent'],
+    ip: req.ip
   });
+
+  try {
+    const { entityType, entityId, assetType } = req.params;
+
+    logger.start({
+      entityType,
+      entityId,
+      assetType,
+      method: 'DELETE',
+      url: req.originalUrl,
+      operation: 'delete_asset'
+    });
+
+    // Validate entity type and existence
+    const validator = createPreUploadValidator(logger);
+    const entityValidation = await validator.validateEntityExists(entityType, entityId);
+
+    if (!entityValidation.valid) {
+      logger.error(new Error('Entity validation failed'), entityValidation.error);
+      return res.status(404).json(entityValidation.error);
+    }
+
+    // Validate asset type for entity type
+    const validAssetTypes = {
+      workshop: ['marketing-video', 'content-video', 'image'],
+      course: ['marketing-video', 'content-video', 'image'],
+      file: ['document', 'marketing-video', 'image'],
+      tool: ['marketing-video', 'content-video', 'image']
+    };
+
+    if (!validAssetTypes[entityType]?.includes(assetType)) {
+      const errorResponse = createErrorResponse(
+        'Invalid asset type',
+        `Asset type '${assetType}' is not supported for entity type '${entityType}'`,
+        {
+          validAssetTypes: validAssetTypes[entityType] || [],
+          providedAssetType: assetType,
+          entityType
+        },
+        logger.requestId
+      );
+      logger.error(new Error('Invalid asset type'), { assetType, entityType, validTypes: validAssetTypes[entityType] });
+      return res.status(400).json(errorResponse);
+    }
+
+    // Check deletion permissions (same as upload permissions)
+    const permissionValidation = await validator.validateUploadPermission(
+      req.user, entityType, entityId, entityValidation.entity
+    );
+
+    if (!permissionValidation.valid) {
+      logger.error(new Error('Permission validation failed'), permissionValidation.error);
+      return res.status(403).json(permissionValidation.error);
+    }
+
+    // Use transaction for atomic deletion operation
+    const transaction = await sequelize.transaction();
+    logger.transaction('start', { operation: 'delete_asset' });
+
+    try {
+      // Delete using FileService
+      const deleteResult = await fileService.deleteAsset({
+        entityType,
+        entityId,
+        assetType,
+        userId: req.user.id,
+        transaction,
+        logger
+      });
+
+      if (!deleteResult.success) {
+        // If deletion failed (e.g., file not found), still commit transaction
+        // This is not necessarily an error condition
+        await transaction.commit();
+        logger.transaction('commit', { reason: 'Asset not found - no deletion needed' });
+
+        if (deleteResult.reason === 'Document not found or file_name is NULL') {
+          const responseData = createSuccessResponse({
+            message: 'Asset was not found (already deleted or never uploaded)',
+            asset: {
+              entityType,
+              entityId,
+              assetType,
+              deleted: false,
+              reason: deleteResult.reason
+            },
+            alreadyDeleted: true
+          }, logger.requestId);
+
+          logger.success({
+            entityType,
+            entityId,
+            assetType,
+            alreadyDeleted: true,
+            reason: deleteResult.reason
+          });
+
+          return res.status(200).json(responseData);
+        } else {
+          await transaction.rollback();
+          logger.transaction('rollback', { reason: 'Deletion failed', error: deleteResult.error });
+
+          const errorResponse = createErrorResponse(
+            'Deletion failed',
+            'Asset deletion failed during processing',
+            {
+              details: deleteResult.error || deleteResult.reason,
+              entityType,
+              entityId,
+              assetType
+            },
+            logger.requestId
+          );
+
+          logger.error(new Error('Asset deletion failed'), { stage: 'deletion_failed', details: deleteResult });
+          return res.status(500).json(errorResponse);
+        }
+      }
+
+      // Commit transaction on successful deletion
+      await transaction.commit();
+      logger.transaction('commit', { s3Key: deleteResult.s3Key, filename: deleteResult.filename });
+
+      const responseData = createSuccessResponse({
+        message: 'Asset deleted successfully',
+        asset: {
+          entityType,
+          entityId,
+          assetType,
+          filename: deleteResult.filename,
+          s3Key: deleteResult.s3Key,
+          deletedBy: deleteResult.deletedBy,
+          deletedAt: deleteResult.deletedAt,
+          databaseUpdated: deleteResult.databaseUpdated
+        }
+      }, logger.requestId);
+
+      logger.success({
+        entityType,
+        entityId,
+        assetType,
+        filename: deleteResult.filename,
+        s3Key: deleteResult.s3Key,
+        databaseUpdated: deleteResult.databaseUpdated
+      });
+
+      res.status(200).json(responseData);
+
+    } catch (deleteError) {
+      await transaction.rollback();
+      logger.transaction('rollback', { reason: 'Deletion failed', error: deleteError.message });
+
+      const errorResponse = createErrorResponse(
+        'Deletion failed',
+        'Asset deletion failed during processing',
+        {
+          details: deleteError.message,
+          entityType,
+          entityId,
+          assetType
+        },
+        logger.requestId
+      );
+
+      logger.error(deleteError, { stage: 'deletion_transaction' });
+      return res.status(500).json(errorResponse);
+    }
+
+  } catch (error) {
+    const errorResponse = createErrorResponse(
+      'Deletion failed',
+      'Failed to process deletion request',
+      {
+        details: error.message,
+        entityType: req.params.entityType,
+        entityId: req.params.entityId,
+        assetType: req.params.assetType
+      },
+      logger.requestId
+    );
+
+    logger.error(error, { stage: 'request_processing' });
+    res.status(500).json(errorResponse);
+  }
 });
 
 /**
