@@ -49,6 +49,7 @@ import GameSession from './GameSession.js';
 import RefreshToken from './RefreshToken.js';
 import UserSession from './UserSession.js';
 import Player from './Player.js';
+import SubscriptionPurchase from './SubscriptionPurchase.js';
 
 // Initialize models
 const models = {
@@ -92,6 +93,7 @@ const models = {
   RefreshToken: RefreshToken(sequelize),
   UserSession: UserSession(sequelize),
   Player: Player(sequelize),
+  SubscriptionPurchase: SubscriptionPurchase(sequelize),
 };
 
 // Define associations
