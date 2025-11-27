@@ -45,6 +45,7 @@ const EXPECTED_SETTINGS = [
   { key: 'maintenance_mode', value: false, value_type: 'boolean', description: 'System maintenance mode flag' },
   { key: 'subscription_system_enabled', value: true, value_type: 'boolean', description: 'Legacy - Whether subscription system is enabled' },
   { key: 'teacher_onboarding_enabled', value: true, value_type: 'boolean', description: 'Whether teacher onboarding flow is enabled' },
+  { key: 'student_onboarding_enabled', value: false, value_type: 'boolean', description: 'Whether student onboarding flow is enabled (does nothing for now)' },
 
   // NAVIGATION CONFIGURATION SETTINGS - Curriculum
   { key: 'nav_curriculum_enabled', value: true, value_type: 'boolean', description: 'Enable curriculum navigation item' },
