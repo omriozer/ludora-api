@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { body, param, validationResult } from 'express-validator';
-import { authenticateToken, requireRole, optionalAuth } from '../middleware/auth.js';
+import { authenticateToken, requireRole, requireTeacher, requireAdmin, optionalAuth } from '../middleware/auth.js';
 import models from '../models/index.js';
 import DirectSlideService from '../services/DirectSlideService.js';
 import { checkLessonPlanAccess } from '../utils/lessonPlanPresentationHelper.js';
@@ -10,6 +10,17 @@ import fs from 'fs';
 import path from 'path';
 
 const router = express.Router();
+
+// Custom middleware to allow both admin role and teacher user_type
+function requireAdminOrTeacher(req, res, next) {
+  // Check if user is admin (by role)
+  if (req.user && req.user.role === 'admin') {
+    return next();
+  }
+
+  // Check if user is teacher (by user_type) - delegate to requireTeacher middleware
+  requireTeacher(req, res, next);
+}
 
 /**
  * Generate placeholder SVG content for restricted slides
@@ -103,7 +114,7 @@ const upload = multer({
 router.post(
   '/:lessonPlanId/upload',
   authenticateToken,
-  requireRole(['admin', 'teacher']),
+  requireAdminOrTeacher,
   upload.array('slides', 50), // Allow up to 50 slides for chunked uploads
   [
     param('lessonPlanId').isString().notEmpty().withMessage('Lesson plan ID is required'),
@@ -446,7 +457,7 @@ router.get(
 router.get(
   '/:lessonPlanId',
   authenticateToken,
-  requireRole(['admin', 'teacher']),
+  requireAdminOrTeacher,
   [
     param('lessonPlanId').isString().notEmpty().withMessage('Lesson plan ID is required'),
   ],
@@ -500,7 +511,7 @@ router.get(
 router.put(
   '/:lessonPlanId/reorder',
   authenticateToken,
-  requireRole(['admin', 'teacher']),
+  requireAdminOrTeacher,
   [
     param('lessonPlanId').isString().notEmpty().withMessage('Lesson plan ID is required'),
     body('slideOrder').isArray().withMessage('slideOrder must be an array of slide IDs'),
@@ -572,7 +583,7 @@ router.put(
 router.delete(
   '/:lessonPlanId/:slideId',
   authenticateToken,
-  requireRole(['admin', 'teacher']),
+  requireAdminOrTeacher,
   [
     param('lessonPlanId').isString().notEmpty().withMessage('Lesson plan ID is required'),
     param('slideId').isString().notEmpty().withMessage('Slide ID is required'),
@@ -652,7 +663,7 @@ router.delete(
 router.get(
   '/:lessonPlanId/validate',
   authenticateToken,
-  requireRole(['admin', 'teacher']),
+  requireAdminOrTeacher,
   [
     param('lessonPlanId').isString().notEmpty().withMessage('Lesson plan ID is required'),
   ],
