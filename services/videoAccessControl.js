@@ -34,11 +34,6 @@ export async function checkVideoAccess(userId, videoId) {
       return purchaseAccess;
     }
 
-    // Check if user has subscription access to this video type
-    const subscriptionAccess = await checkSubscriptionAccess(userId, product);
-    if (subscriptionAccess.hasAccess) {
-      return subscriptionAccess;
-    }
 
     // Check if user is the creator of the content
     const creatorAccess = await checkCreatorAccess(userId, product.id);
@@ -200,94 +195,7 @@ async function checkPurchaseAccess(userId, productId) {
   };
 }
 
-/**
- * Check if user has subscription access to the video
- * @param {string} userId - User ID
- * @param {Object} product - Product object
- * @returns {Promise<Object>} Access result
- */
-async function checkSubscriptionAccess(userId, product) {
-  // Get user's current active subscription
-  const currentSubscription = await db.SubscriptionHistory.findOne({
-    where: {
-      user_id: userId,
-      status: 'active',
-      start_date: { [Op.lte]: new Date() },
-      [Op.or]: [
-        { end_date: { [Op.gte]: new Date() } },
-        { end_date: null } // No end date means ongoing
-      ]
-    },
-    include: [{
-      model: db.SubscriptionPlan,
-      as: 'SubscriptionPlan',
-      required: true
-    }],
-    order: [['start_date', 'DESC']]
-  });
 
-  if (!currentSubscription) {
-    return { hasAccess: false, reason: 'no_active_subscription' };
-  }
-
-  const plan = currentSubscription.SubscriptionPlan;
-  const benefits = plan.benefits || {};
-
-  // Check if the subscription plan includes video access for this product type
-  const hasVideoAccess = checkSubscriptionVideoAccess(benefits, product.product_type);
-
-  if (hasVideoAccess) {
-    return {
-      hasAccess: true,
-      reason: 'subscription_access',
-      message: 'User has video access via subscription',
-      subscriptionPlanId: plan.id,
-      planName: plan.name,
-      accessType: 'subscription',
-      validUntil: currentSubscription.end_date
-    };
-  }
-
-  return {
-    hasAccess: false,
-    reason: 'subscription_no_video_access',
-    message: 'Current subscription does not include video access for this content type'
-  };
-}
-
-/**
- * Check if subscription benefits include video access for the product type
- * @param {Object} benefits - Subscription plan benefits
- * @param {string} productType - Product type (workshop, course, file)
- * @returns {boolean} Whether subscription includes video access
- */
-function checkSubscriptionVideoAccess(benefits, productType) {
-  // Check for general video access
-  if (benefits.video_access === true) {
-    return true;
-  }
-
-  // Check for product-type specific access
-  switch (productType) {
-    case 'workshop':
-      return benefits.workshop_videos === true || 
-             benefits.workshop_access === true ||
-             benefits.all_content === true;
-    
-    case 'course':
-      return benefits.course_videos === true || 
-             benefits.course_access === true ||
-             benefits.all_content === true;
-    
-    case 'file':
-      return benefits.file_videos === true || 
-             benefits.tool_access === true ||
-             benefits.all_content === true;
-    
-    default:
-      return false;
-  }
-}
 
 /**
  * Check if user is the creator of the content
