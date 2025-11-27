@@ -27,8 +27,8 @@ jest.unstable_mockModule('../../../services/PaymentService.js', () => ({
   default: mockPaymentService
 }));
 
-jest.unstable_mockModule('../../../lib/errorLogger.js', () => ({
-  error: mockLogger
+jest.unstable_mockModule('../../../lib/ludlog.js', () => ({
+  luderror: mockLogger
 }));
 
 describe('PayPlus Signature Verification', () => {
