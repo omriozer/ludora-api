@@ -199,6 +199,140 @@ class FileService {
     return path.extname(filename).toLowerCase().substring(1);
   }
 
+  // Smart analysis decision engine for performance optimization
+  _shouldSkipHeavyAnalysis(file, assetType, fileSizeMB, logger) {
+    // Skip heavy analysis for large files (>100MB)
+    if (fileSizeMB > 100) {
+      logger?.info('Skipping analysis: File too large', { sizeMB: fileSizeMB });
+      return true;
+    }
+
+    // Skip for very large videos (>50MB) as they're primarily for streaming
+    if ((assetType === 'marketing-video' || assetType === 'content-video') && fileSizeMB > 50) {
+      logger?.info('Skipping analysis: Large video file', { sizeMB: fileSizeMB, assetType });
+      return true;
+    }
+
+    // For documents, only analyze smaller files (<10MB) to avoid timeouts
+    if (assetType === 'document' && fileSizeMB > 10) {
+      logger?.info('Skipping analysis: Large document', { sizeMB: fileSizeMB });
+      return true;
+    }
+
+    // Always analyze images as they're typically smaller and analysis is fast
+    if (assetType === 'image' && fileSizeMB < 20) {
+      return false;
+    }
+
+    // Skip analysis for images larger than 20MB
+    if (assetType === 'image' && fileSizeMB >= 20) {
+      logger?.info('Skipping analysis: Large image file', { sizeMB: fileSizeMB });
+      return true;
+    }
+
+    // Default: analyze files under reasonable thresholds
+    return fileSizeMB > 25; // Skip if file is larger than 25MB
+  }
+
+  // Future-ready background analysis scheduler
+  _scheduleBackgroundAnalysis({ s3Key, entityType, entityId, assetType, userId, filename, logger }) {
+    // TODO: When background job system is implemented, replace this with actual job queueing
+    // For now, just log the intent for future implementation
+
+    logger?.info('Background analysis scheduled (placeholder)', {
+      s3Key,
+      entityType,
+      entityId,
+      assetType,
+      filename,
+      userId,
+      note: 'Will be processed when background job system is available'
+    });
+
+    // Future implementation could look like:
+    // await backgroundJobQueue.add('analyze-file', {
+    //   s3Key,
+    //   entityType,
+    //   entityId,
+    //   assetType,
+    //   filename,
+    //   userId,
+    //   priority: this._getAnalysisPriority(assetType),
+    //   delay: 0 // Process immediately in background
+    // });
+
+    // For development: could optionally trigger immediate analysis in non-blocking way
+    if (process.env.NODE_ENV === 'development') {
+      // Non-blocking analysis trigger for development (optional)
+      setImmediate(() => {
+        this._performDeferredAnalysis({ s3Key, entityType, entityId, assetType, filename, logger })
+          .catch(error => {
+            logger?.warn('Development-mode background analysis failed', {
+              s3Key,
+              error: error.message
+            });
+          });
+      });
+    }
+  }
+
+  // Future-ready deferred analysis method
+  async _performDeferredAnalysis({ s3Key, entityType, entityId, assetType, filename, logger }) {
+    // TODO: This would be called by background workers when job system is implemented
+
+    try {
+      logger?.info('Starting deferred file analysis', { s3Key, assetType });
+
+      // Download file for analysis
+      const buffer = await this.downloadToBuffer(s3Key);
+
+      if (!buffer) {
+        throw new Error('Failed to download file for deferred analysis');
+      }
+
+      // Create mock file object for analysis
+      const mockFile = {
+        buffer,
+        originalname: filename,
+        mimetype: 'application/octet-stream', // Will be detected during analysis
+        size: buffer.length
+      };
+
+      // Perform the heavy analysis that was skipped during upload
+      const metadataEnhancer = createFileMetadataEnhancer(logger);
+      const fileAnalysis = await metadataEnhancer.analyzeFile(mockFile, assetType);
+
+      if (fileAnalysis.success) {
+        // Update S3 metadata with analysis results
+        // TODO: Implement metadata update when background system is ready
+        logger?.info('Deferred analysis completed successfully', {
+          s3Key,
+          sha256: fileAnalysis.metadata?.integrity?.sha256?.substring(0, 16) + '...',
+          contentType: fileAnalysis.metadata?.content?.type
+        });
+
+        return {
+          success: true,
+          analysis: fileAnalysis.metadata,
+          s3Key
+        };
+      } else {
+        logger?.warn('Deferred analysis failed', {
+          s3Key,
+          error: fileAnalysis.error?.message
+        });
+        return { success: false, error: fileAnalysis.error };
+      }
+
+    } catch (error) {
+      logger?.error('Deferred analysis error', {
+        s3Key,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
   // Delete file
   async deleteFile({ fileId, filePath }) {
     try {
@@ -366,14 +500,29 @@ class FileService {
       const s3Key = constructS3Path(entityType, entityId, assetType, filename);
       logger?.info('S3 path constructed', { s3Key, filename, assetType });
 
-      // Analyze file for enhanced metadata and checksums
-      const metadataEnhancer = createFileMetadataEnhancer(logger);
-      const fileAnalysis = await metadataEnhancer.analyzeFile(file, assetType);
+      // Smart analysis thresholds for performance optimization
+      const fileSizeMB = file.size / (1024 * 1024);
+      const shouldSkipHeavyAnalysis = this._shouldSkipHeavyAnalysis(file, assetType, fileSizeMB, logger);
 
-      if (!fileAnalysis.success) {
-        logger?.warn('File analysis failed, proceeding with basic metadata', {
-          error: fileAnalysis.error?.message,
-          fileName: file.originalname
+      // Analyze file for enhanced metadata and checksums (with smart thresholds)
+      let fileAnalysis = { success: false, metadata: null };
+
+      if (!shouldSkipHeavyAnalysis) {
+        const metadataEnhancer = createFileMetadataEnhancer(logger);
+        fileAnalysis = await metadataEnhancer.analyzeFile(file, assetType);
+
+        if (!fileAnalysis.success) {
+          logger?.warn('File analysis failed, proceeding with basic metadata', {
+            error: fileAnalysis.error?.message,
+            fileName: file.originalname
+          });
+        }
+      } else {
+        logger?.info('Skipping heavy analysis for performance', {
+          fileName: file.originalname,
+          sizeMB: Math.round(fileSizeMB * 100) / 100,
+          assetType,
+          reason: 'File size or type optimization'
         });
       }
 
@@ -389,11 +538,12 @@ class FileService {
         originalName: encodedOriginalName, // Base64 encoded to handle Hebrew characters
         originalNameEncoding: 'base64', // Indicate that the name is encoded
         uploadedAt: new Date().toISOString(),
-        // Enhanced metadata fields
-        sha256: fileAnalysis.metadata?.integrity?.sha256 || 'calculation_failed',
-        md5: fileAnalysis.metadata?.integrity?.md5 || 'calculation_failed',
+        // Enhanced metadata fields (may be populated later via background processing)
+        sha256: fileAnalysis.metadata?.integrity?.sha256 || (shouldSkipHeavyAnalysis ? 'pending_analysis' : 'calculation_failed'),
+        md5: fileAnalysis.metadata?.integrity?.md5 || (shouldSkipHeavyAnalysis ? 'pending_analysis' : 'calculation_failed'),
         contentType: fileAnalysis.metadata?.content?.type || 'unknown',
-        analyzed: fileAnalysis.success ? 'true' : 'false'
+        analyzed: fileAnalysis.success ? 'true' : (shouldSkipHeavyAnalysis ? 'deferred' : 'false'),
+        analysisDeferred: shouldSkipHeavyAnalysis ? 'true' : 'false'
       };
 
       // Upload to S3 with transaction safety
@@ -460,11 +610,25 @@ class FileService {
         }
       };
 
+      // Queue background analysis if it was deferred (future-ready hook)
+      if (shouldSkipHeavyAnalysis) {
+        this._scheduleBackgroundAnalysis({
+          s3Key,
+          entityType,
+          entityId,
+          assetType,
+          userId,
+          filename: result.filename,
+          logger
+        });
+      }
+
       logger?.info('Asset upload completed successfully', {
         s3Key,
         assetType,
         accessLevel: result.accessLevel,
-        size: result.size
+        size: result.size,
+        analysisDeferred: shouldSkipHeavyAnalysis
       });
 
       return result;

@@ -1,4 +1,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
+import https from 'https';
 import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
@@ -24,15 +27,40 @@ class DirectSlideService {
     this.initializeS3();
   }
 
-  // Initialize AWS S3
+  // Initialize AWS S3 with optimized configuration for cross-region uploads
   initializeS3() {
     try {
+      // Create optimized HTTPS agent for better connection management
+      const httpsAgent = new https.Agent({
+        keepAlive: true,              // Reuse connections
+        keepAliveMsecs: 30000,        // 30 seconds keep-alive
+        maxSockets: 50,               // Max concurrent connections
+        maxFreeSockets: 10,           // Keep connections in pool
+        timeout: 60000,               // 60 second connection timeout
+        scheduling: 'lifo'            // Last In First Out for better reuse
+      });
+
       this.s3 = new S3Client({
         region: process.env.AWS_REGION || 'us-east-1',
         credentials: {
           accessKeyId: process.env.AWS_ACCESS_KEY_ID,
           secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-        }
+        },
+        maxAttempts: 3,               // Retry up to 3 times on failure
+        requestHandler: new NodeHttpHandler({
+          httpsAgent,
+          connectionTimeout: 10000,   // 10 seconds to establish connection
+          socketTimeout: 120000       // 2 minutes for data transfer (cross-region)
+        })
+      });
+
+      // TODO remove debug - optimize cross-region upload performance
+      console.log('S3 client initialized with cross-region optimizations', {
+        region: process.env.AWS_REGION || 'us-east-1',
+        bucket: this.bucketName,
+        maxAttempts: 3,
+        connectionTimeout: '10s',
+        socketTimeout: '120s'
       });
     } catch (error) {
       throw new Error('S3 initialization failed');
