@@ -55,13 +55,16 @@ await models.Game.findOne({ where: { id: gameId } });  // Redundant!
 
 ## 2. DATABASE PATTERNS
 
-### Model Definitions (42 total models)
+### Model Definitions (43 total models)
 
 **Product Entities (use with EntityService):**
 - File, Game, Workshop, Course, Tool, LessonPlan
 
 **Business Models (direct access):**
 - User, Purchase, Subscription, Classroom, Curriculum
+
+**NEW: Subscription System Models (Nov 2025):**
+- SubscriptionPurchase - Allowance tracking with JSONB usage_tracking
 
 **Content Models:**
 - EduContent, EduContentUse, GameSession, GameLobby
@@ -591,7 +594,97 @@ class CachedService {
 
 ---
 
-## 8. COMMON BACKEND ANTI-PATTERNS
+## 8. SUBSCRIPTION SYSTEM PATTERNS (Nov 2025)
+
+### SubscriptionPurchase Model Usage
+
+**NEW: Dedicated subscription allowance tracking with flexible JSONB usage_tracking:**
+```javascript
+// ✅ CORRECT: Creating subscription purchases
+const subscriptionPurchase = await models.SubscriptionPurchase.create({
+  subscription_history_id: activeSubscription.id,
+  purchasable_type: 'workshop',
+  purchasable_id: workshopId,
+  usage_tracking: {
+    monthly_claims: 1,
+    total_usage: 5,
+    last_accessed: new Date().toISOString(),
+    custom_metadata: { source: 'subscription_claim' }
+  }
+});
+
+// ✅ CORRECT: Updating usage tracking
+await models.SubscriptionPurchase.update({
+  usage_tracking: models.sequelize.literal(`
+    jsonb_set(
+      usage_tracking,
+      '{total_usage}',
+      to_jsonb((usage_tracking->>'total_usage')::int + 1)
+    )
+  `)
+}, {
+  where: { id: subscriptionPurchaseId }
+});
+
+// ✅ CORRECT: Querying with JSONB operations
+const subscriptionPurchases = await models.SubscriptionPurchase.findAll({
+  where: {
+    subscription_history_id: subscriptionId,
+    [models.sequelize.Op.and]: [
+      models.sequelize.literal(`usage_tracking->>'monthly_claims' < '5'`)
+    ]
+  }
+});
+```
+
+### Subscription Service Patterns
+
+```javascript
+// ✅ CORRECT: Service-layer subscription operations
+class SubscriptionService {
+  async claimProduct(userId, productType, productId) {
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Check active subscription
+      const activeSubscription = await models.SubscriptionHistory.findOne({
+        where: { user_id: userId, status: 'active' }
+      });
+
+      if (!activeSubscription) {
+        throw new Error('No active subscription found');
+      }
+
+      // Create subscription purchase claim
+      const claim = await models.SubscriptionPurchase.create({
+        subscription_history_id: activeSubscription.id,
+        purchasable_type: productType,
+        purchasable_id: productId,
+        usage_tracking: {
+          monthly_claims: 1,
+          claimed_at: new Date().toISOString()
+        }
+      }, { transaction });
+
+      await transaction.commit();
+      return claim;
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  }
+}
+```
+
+**CRITICAL: Legacy Purchase-based subscription logic removed (Nov 2025):**
+- ❌ **REMOVED**: Purchase-based subscription logic from `PaymentService`
+- ❌ **REMOVED**: Subscription access from `videoAccessControl.js`
+- ✅ **Current**: Clean separation between purchases and subscriptions
+- ✅ **Future**: SubscriptionPurchase model for allowance tracking
+
+---
+
+## 9. COMMON BACKEND ANTI-PATTERNS
 
 ### ❌ Direct Model Access for Products
 ```javascript
