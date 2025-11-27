@@ -99,12 +99,12 @@ export function logEnvironmentValidation(results) {
   }
 
   if (results.warnings.length > 0) {
-    ludlog.general('⚠️  Environment Variable Warnings:');
-    results.warnings.forEach(warning => ludlog.general(`  - ${warning}`));
+    ludlog.system('⚠️  Environment Variable Warnings:');
+    results.warnings.forEach(warning => ludlog.system(`  - ${warning}`));
   }
 
   if (results.isValid && results.errors.length === 0 && results.warnings.length === 0) {
-    ludlog.general('✅ All environment variables validated successfully');
+    ludlog.system('✅ All environment variables validated successfully');
   }
 
   return results.isValid;
