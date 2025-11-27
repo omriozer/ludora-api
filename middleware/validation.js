@@ -448,11 +448,9 @@ export const rateLimiters = {
       retryAfter: '15 minutes'
     },
     standardHeaders: true,
-    legacyHeaders: false,
-    // Add custom key generator to limit per user
-    keyGenerator: (req) => {
-      return req.user?.id || req.ip; // Rate limit per authenticated user, fallback to IP
-    }
+    legacyHeaders: false
+    // Remove custom keyGenerator to fix IPv6 compatibility issue
+    // Default express-rate-limit key generation handles IPv6 correctly
   })
 };
 
