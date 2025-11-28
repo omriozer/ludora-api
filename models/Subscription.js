@@ -94,7 +94,10 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        isIn: [['monthly', 'yearly']]
+        // Allow 'daily' in staging/development for testing, only monthly/yearly in production
+        isIn: process.env.NODE_ENV === 'production'
+          ? [['monthly', 'yearly']]
+          : [['monthly', 'yearly', 'daily']]
       }
     },
 
@@ -201,6 +204,9 @@ export default function(sequelize) {
     const nextBilling = new Date(baseDate);
 
     switch (this.billing_period) {
+      case 'daily':
+        nextBilling.setDate(nextBilling.getDate() + 1);
+        break;
       case 'monthly':
         nextBilling.setMonth(nextBilling.getMonth() + 1);
         break;
