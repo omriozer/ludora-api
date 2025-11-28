@@ -40,7 +40,7 @@ export const BRANDING_KEYS = {
  */
 export const SYSTEM_KEYS = {
   MAINTENANCE_MODE: 'maintenance_mode',
-  SUBSCRIPTION_SYSTEM_ENABLED: 'subscription_system_enabled',  // Legacy
+  SUBSCRIPTION_SYSTEM_ENABLED: 'subscription_system_enabled',
   TEACHER_ONBOARDING_ENABLED: 'teacher_onboarding_enabled',
   STUDENT_ONBOARDING_ENABLED: 'student_onboarding_enabled',
 };

@@ -821,8 +821,8 @@ class EntityService {
     const transaction = await this.models.sequelize.transaction();
 
     try {
-      // BUNDLE VALIDATION: If type_attributes.is_bundle is true, validate bundle composition
-      if (data.type_attributes?.is_bundle) {
+      // BUNDLE VALIDATION: Only validate when publishing bundle (is_published: true)
+      if (data.type_attributes?.is_bundle && data.is_published === true) {
         const BundleValidationService = (await import('./BundleValidationService.js')).default;
 
         // Get user role for ownership validation
@@ -968,8 +968,8 @@ class EntityService {
         throw new Error(`Product not found for ${entityType} ${entityId}`);
       }
 
-      // BUNDLE VALIDATION: If updating bundle type_attributes, validate
-      if (data.type_attributes?.is_bundle) {
+      // BUNDLE VALIDATION: Only validate when publishing bundle (is_published: true)
+      if (data.type_attributes?.is_bundle && data.is_published === true) {
         const BundleValidationService = (await import('./BundleValidationService.js')).default;
 
         // Get user role for ownership validation (use product's creator)

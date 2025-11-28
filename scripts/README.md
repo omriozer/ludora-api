@@ -41,7 +41,9 @@ The database scripts now use the actual schema from your Base44 export (`databas
 
 ## Scripts Overview
 
-### `setup-db.sh`
+### Database Setup Scripts
+
+#### `setup-db.sh`
 Main shell script that handles database creation and setup.
 
 **Usage:**
@@ -68,13 +70,118 @@ Main shell script that handles database creation and setup.
 ./setup-db.sh development drop     # Drop development database
 ```
 
-### `setup-db.js`
+#### `setup-db.js`
 Node.js script that creates all database tables and indexes.
 
 **Usage:**
 ```bash
 node setup-db.js [environment]
 ```
+
+---
+
+### Subscription Testing Scripts
+
+#### `testDailySubscription.js`
+**NEW:** Creates test subscriptions with daily billing cycles for rapid PayPlus webhook testing.
+
+**Purpose:**
+Instead of waiting 30 days between recurring subscription charges, this script enables daily billing so you can test the full subscription lifecycle in 2-3 days. This is critical for testing and debugging recurring payment webhook handlers.
+
+**Usage:**
+```bash
+# Preview subscription without creating (dry run)
+ENABLE_DAILY_SUBSCRIPTION_TESTING=true node scripts/testDailySubscription.js \
+  --userId=user_abc123 \
+  --planId=plan_monthly_basic \
+  --dryRun
+
+# Create actual test subscription with daily billing
+ENABLE_DAILY_SUBSCRIPTION_TESTING=true node scripts/testDailySubscription.js \
+  --userId=user_abc123 \
+  --planId=plan_monthly_basic
+```
+
+**Options:**
+- `--userId=<ID>` - User ID to create subscription for (required)
+- `--planId=<ID>` - Subscription plan ID (required)
+- `--dryRun` - Preview without creating subscription
+- `--help` - Show detailed help message
+
+**Environment Requirements:**
+- `ENABLE_DAILY_SUBSCRIPTION_TESTING=true` - Must be set to enable daily billing
+- `NODE_ENV` - Must NOT be 'production' (staging/development only)
+- PayPlus staging credentials configured
+
+**Safety Features:**
+- ✅ Blocks execution in production environment
+- ✅ Requires explicit environment variable flag
+- ✅ Validates user and plan exist before creation
+- ✅ Shows dry-run preview before creating subscriptions
+- ✅ Logs all test subscriptions with `test_mode` metadata
+
+**Testing Timeline:**
+- **Day 1 (Today):** First payment processed immediately
+- **Day 2 (Tomorrow):** First recurring charge webhook received (24 hours later)
+- **Day 3+:** Daily recurring charges continue until cancelled
+
+**What It Tests:**
+1. First payment webhook processing (already working)
+2. Recurring payment webhook processing (currently being fixed)
+3. Subscription activation and status updates
+4. PayPlus subscription UID tracking
+5. Transaction creation for recurring charges
+
+**Documentation:**
+- Quick Start: `/docs/DAILY_SUBSCRIPTION_QUICK_START.md`
+- Full Testing Plan: `/docs/SUBSCRIPTION_WEBHOOK_TESTING_PLAN.md`
+- Webhook Analysis: `/docs/WEBHOOK_HANDLER_ANALYSIS.md`
+
+**Example Output:**
+```
+✅ Subscription payment created successfully!
+
+📋 Payment Details:
+   Subscription ID: sub_abc123
+   Transaction ID: txn_xyz789
+   Environment: staging
+
+🔗 Payment URL:
+   https://restapi.payplus.co.il/...
+
+📅 Testing Timeline:
+   ⏰ Today: Complete payment using the URL above
+   ⏰ Tomorrow (24h): First recurring charge webhook will be sent
+   ⏰ Day 3+: Daily recurring charges continue
+```
+
+**Monitoring Commands:**
+```sql
+-- Check webhook logs for your subscription
+SELECT * FROM webhooklog
+WHERE subscription_id = 'YOUR_SUBSCRIPTION_ID'
+ORDER BY created_at DESC;
+
+-- Verify subscription status
+SELECT id, status, payplus_subscription_uid, created_at
+FROM subscription
+WHERE id = 'YOUR_SUBSCRIPTION_ID';
+```
+
+**Cleanup:**
+```bash
+# Disable daily testing mode
+export ENABLE_DAILY_SUBSCRIPTION_TESTING=false
+
+# Cancel test subscriptions
+UPDATE subscription
+SET status = 'cancelled'
+WHERE metadata->>'test_mode' = 'daily_subscription_testing';
+```
+
+---
+
+### Other Utility Scripts
 
 ## Database Schema (Based on Base44 Export)
 
