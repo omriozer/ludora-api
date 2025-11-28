@@ -177,7 +177,9 @@ export const ADVANCED_FEATURES_KEYS = {
   STUDY_SUBJECTS: 'study_subjects',
   // Product type configuration
   FILE_TYPES_CONFIG: 'file_types_config',
-  GAME_TYPES: 'game_types'
+  GAME_TYPES: 'game_types',
+  // Student Portal Navigation Features (Nov 2025)
+  SP_FEATURES: 'sp_features'
 };
 
 /**
@@ -197,7 +199,9 @@ export const STUDENTS_ACCESS_MODES = {
 export const NAV_VISIBILITY_OPTIONS = {
   PUBLIC: 'public',
   LOGGED_IN_USERS: 'logged_in_users',
-  ADMINS_AND_CREATORS: 'admins_and_creators',
+  ADMINS_AND_CREATORS: 'admins_and_creators',      // For teacher portal (legacy)
+  ADMINS_AND_TEACHERS: 'admins_and_teachers',       // For student portal
+  ADMINS_AND_STUDENTS: 'admins_and_students',       // For student portal
   ADMIN_ONLY: 'admin_only',
   HIDDEN: 'hidden'  // Completely hidden from all users
 };

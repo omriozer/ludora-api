@@ -2,8 +2,9 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import SubscriptionService from '../services/SubscriptionService.js';
 import SubscriptionPaymentService from '../services/SubscriptionPaymentService.js';
+import SubscriptionAllowanceService from '../services/SubscriptionAllowanceService.js';
 import models from '../models/index.js';
-import { luderror } from '../lib/ludlog.js';
+import { luderror, ludlog } from '../lib/ludlog.js';
 
 const router = express.Router();
 
@@ -430,6 +431,290 @@ router.post('/cancel-pending/:id', authenticateToken, async (req, res) => {
 
   } catch (error) {
     luderror.payment('Subscriptions: Error cancelling pending subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== SUBSCRIPTION BENEFITS ENDPOINTS =====
+
+/**
+ * Claim a product using subscription allowance (Teachers only)
+ * POST /api/subscriptions/benefits/claim
+ */
+router.post('/benefits/claim', authenticateToken, async (req, res) => {
+  try {
+    const { productType, productId, skipConfirmation = false } = req.body;
+    const userId = req.user.id;
+
+    // Validation
+    if (!productType) {
+      return res.status(400).json({ error: 'productType is required' });
+    }
+
+    if (!productId) {
+      return res.status(400).json({ error: 'productId is required' });
+    }
+
+    // Only teachers can claim products with subscriptions
+    if (req.user.user_type !== 'teacher') {
+      return res.status(403).json({ error: 'Only teachers can claim products with subscription benefits' });
+    }
+
+    // Attempt to claim the product
+    const claimResult = await SubscriptionAllowanceService.claimProduct(
+      userId,
+      productType,
+      productId,
+      {
+        skipConfirmation,
+        metadata: {
+          source: 'subscription_benefits_api',
+          userAgent: req.headers['user-agent'],
+          ip: req.ip
+        }
+      }
+    );
+
+    if (!claimResult.success) {
+      // Handle different error scenarios
+      if (claimResult.needsConfirmation) {
+        return res.status(200).json({
+          success: false,
+          needsConfirmation: true,
+          remainingClaims: claimResult.remainingClaims,
+          message: claimResult.message,
+          productType,
+          productId
+        });
+      }
+
+      // Other failures
+      const statusCode = claimResult.step === 'allowance_check' ? 403 :
+                        claimResult.step === 'product_validation' ? 404 : 400;
+
+      return res.status(statusCode).json({
+        error: claimResult.reason,
+        step: claimResult.step,
+        details: {
+          used: claimResult.used,
+          allowed: claimResult.allowed
+        }
+      });
+    }
+
+    // Success response
+    res.json({
+      success: true,
+      message: claimResult.message,
+      data: {
+        claim: claimResult.claim,
+        alreadyClaimed: claimResult.alreadyClaimed || false,
+        remainingClaims: claimResult.remainingClaims
+      }
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions Benefits: Error claiming product:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get user's monthly subscription allowances (Teachers only)
+ * GET /api/subscriptions/benefits/my-allowances
+ */
+router.get('/benefits/my-allowances', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { monthYear } = req.query;
+
+    // Only teachers can view subscription allowances
+    if (req.user.user_type !== 'teacher') {
+      return res.status(403).json({ error: 'Only teachers can view subscription allowances' });
+    }
+
+    const allowances = await SubscriptionAllowanceService.getMonthlyAllowances(userId, monthYear);
+
+    if (!allowances) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No active subscription found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: allowances
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions Benefits: Error getting allowances:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Record product usage (Teachers and Students)
+ * POST /api/subscriptions/benefits/record-usage
+ */
+router.post('/benefits/record-usage', authenticateToken, async (req, res) => {
+  try {
+    const {
+      productType,
+      productId,
+      duration_minutes = 0,
+      activity_type = 'view',
+      completion_percent = 0,
+      feature_action = null,
+      teacherId = null // For students: ID of teacher whose claimed product they're using
+    } = req.body;
+    const userId = req.user.id;
+
+    // Validation
+    if (!productType) {
+      return res.status(400).json({ error: 'productType is required' });
+    }
+
+    if (!productId) {
+      return res.status(400).json({ error: 'productId is required' });
+    }
+
+    // Determine the owner of the claimed product
+    let claimOwnerId = userId;
+
+    if (req.user.user_type === 'student') {
+      // Students must specify which teacher's claimed product they're using
+      if (!teacherId) {
+        return res.status(400).json({
+          error: 'Students must specify teacherId when recording usage of teacher\'s claimed products'
+        });
+      }
+
+      // Validate the teacher exists and student has access
+      const teacher = await models.User.findOne({
+        where: { id: teacherId, user_type: 'teacher' }
+      });
+
+      if (!teacher) {
+        return res.status(404).json({ error: 'Teacher not found' });
+      }
+
+      // TODO: Add classroom-based validation to ensure student belongs to this teacher
+      // For now, we'll allow any student to record usage of any teacher's claimed products
+
+      claimOwnerId = teacherId;
+    }
+
+    // Record the usage
+    const usageData = {
+      duration_minutes: Math.max(0, duration_minutes),
+      activity_type,
+      completion_percent: Math.min(100, Math.max(0, completion_percent)),
+      feature_action,
+      device_info: req.headers['user-agent'] ? 'web' : 'unknown',
+      ip_address: req.ip,
+      started_at: new Date().toISOString(),
+      ended_at: new Date(Date.now() + (duration_minutes * 60 * 1000)).toISOString()
+    };
+
+    const updatedUsage = await SubscriptionAllowanceService.recordUsage(
+      claimOwnerId,
+      productType,
+      productId,
+      usageData
+    );
+
+    res.json({
+      success: true,
+      message: 'Usage recorded successfully',
+      data: {
+        totalSessions: updatedUsage.total_sessions,
+        totalMinutes: updatedUsage.total_usage_minutes,
+        engagementPattern: updatedUsage.engagement_metrics?.usage_pattern,
+        completionStatus: updatedUsage.completion_status
+      }
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions Benefits: Error recording usage:', error);
+
+    if (error.message.includes('No active subscription claim found')) {
+      return res.status(404).json({ error: 'No subscription claim found for this product' });
+    }
+
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get user's subscription usage summary (Teachers only)
+ * GET /api/subscriptions/benefits/my-summary
+ */
+router.get('/benefits/my-summary', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { monthYear } = req.query;
+
+    // Only teachers can view their subscription usage summary
+    if (req.user.user_type !== 'teacher') {
+      return res.status(403).json({ error: 'Only teachers can view subscription usage summary' });
+    }
+
+    const summary = await SubscriptionAllowanceService.getUserUsageSummary(userId, monthYear);
+
+    res.json({
+      success: true,
+      data: summary
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions Benefits: Error getting usage summary:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get subscription benefits analytics (Admin only)
+ * GET /api/subscriptions/benefits/analytics
+ */
+router.get('/benefits/analytics', authenticateToken, async (req, res) => {
+  try {
+    const { startDate, endDate, productType, userId } = req.query;
+
+    // Only admins can view analytics
+    if (req.user.role !== 'admin' && req.user.role !== 'sysadmin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const options = {};
+
+    // Parse query parameters
+    if (startDate) {
+      options.startDate = new Date(startDate);
+    }
+
+    if (endDate) {
+      options.endDate = new Date(endDate);
+    }
+
+    if (productType) {
+      options.productType = productType;
+    }
+
+    if (userId) {
+      options.userId = userId;
+    }
+
+    const analytics = await SubscriptionAllowanceService.getUsageAnalytics(options);
+
+    res.json({
+      success: true,
+      data: analytics
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions Benefits: Error getting analytics:', error);
     res.status(500).json({ error: error.message });
   }
 });
