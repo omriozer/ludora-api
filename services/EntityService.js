@@ -5,6 +5,7 @@ import { PRODUCT_TYPES_WITH_CREATORS, NORMALIZED_PRODUCT_TYPES } from '../consta
 import { NotFoundError, BadRequestError, ConflictError } from '../middleware/errorHandler.js';
 import { constructS3Path } from '../utils/s3PathUtils.js';
 import fileService from './FileService.js';
+import { ludlog } from '../lib/ludlog.js';
 
 class EntityService {
   constructor() {
@@ -386,6 +387,60 @@ class EntityService {
         const product = await Model.findByPk(id);
         if (!product) {
           throw new Error('Product not found');
+        }
+
+        // Bundle products have no entity table (entity_id is null), handle separately
+        if (product.product_type === 'bundle') {
+
+          // BUNDLE VALIDATION: Only validate when publishing bundle (is_published: true)
+          if (data.type_attributes?.is_bundle && data.is_published === true) {
+            const BundleValidationService = (await import('./BundleValidationService.js')).default;
+
+            // Get user role for ownership validation (use product's creator)
+            const creator = product.creator_user_id ? await this.models.User.findByPk(product.creator_user_id) : null;
+            const userRole = creator?.role || null;
+
+            // Validate bundle composition and pricing
+            const validationResult = await BundleValidationService.validateBundle(
+              data.type_attributes.bundle_items || product.type_attributes.bundle_items || [],
+              data.price !== undefined ? data.price : product.price,
+              product.creator_user_id,
+              userRole
+            );
+
+            if (!validationResult.valid) {
+              throw new BadRequestError(
+                `Bundle validation failed: ${validationResult.errors.join(', ')}`,
+                { errors: validationResult.errors }
+              );
+            }
+
+
+            // Enrich type_attributes with validated pricing info
+            data.type_attributes = {
+              ...data.type_attributes,
+              original_total_price: validationResult.pricingInfo.originalTotal,
+              bundle_price: validationResult.pricingInfo.bundlePrice,
+              savings: validationResult.pricingInfo.savings,
+              savings_percentage: validationResult.pricingInfo.savingsPercentage
+            };
+          }
+
+          // Bundle products only update the Product record (no entity to update)
+          const updateData = {
+            ...data,
+            updated_at: new Date(),
+            ...(updatedBy && { updated_by: updatedBy })
+          };
+
+          // Remove fields that shouldn't be updated
+          delete updateData.id;
+          delete updateData.created_at;
+          delete updateData.product_type;
+          delete updateData.entity_id;
+
+          await product.update(updateData);
+          return product;
         }
 
         // If this product references a normalized entity type, route to updateProductTypeEntity
@@ -877,7 +932,7 @@ class EntityService {
       }
 
       // Remove fields that are definitely Product-only and don't belong in entity tables
-      const productOnlyFields = ['product_type', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'access_days'];
+      const productOnlyFields = ['product_type', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'type_attributes', 'access_days'];
       productOnlyFields.forEach(field => delete entityFields[field]);
 
       // For specific entity types, remove fields that they don't have in their schema
@@ -919,6 +974,7 @@ class EntityService {
         youtube_video_title: data.youtube_video_title,
         tags: data.tags || [],
         target_audience: data.target_audience,
+        type_attributes: data.type_attributes || {}, // Bundle flag and other type-specific attributes
         access_days: parseInt(data.access_days) ? parseInt(data.access_days) : null,
         creator_user_id: createdBy,
         created_at: new Date(),

@@ -130,7 +130,19 @@ export default (sequelize) => {
   Product.addHook('beforeSave', async (product, options) => {
     // Only check File products that are being set to published
     if (product.product_type === 'file' && product.is_published === true) {
-      // Get the File entity
+      // Check if this is a bundle product first
+      if (product.type_attributes && product.type_attributes.is_bundle === true) {
+        // For bundle products, check if they have linked products instead of uploaded files
+        const bundleItems = product.type_attributes.bundle_items || [];
+        if (bundleItems.length < 2) {
+          // Bundle needs at least 2 linked products to be published
+          product.is_published = false;
+        }
+        // Skip file validation for bundles
+        return;
+      }
+
+      // For regular file products, check for uploaded file
       const models = sequelize.models;
       const fileEntity = await models.File.findByPk(product.entity_id);
 
