@@ -1,7 +1,9 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
+import { rateLimiters } from '../middleware/validation.js';
 import SubscriptionService from '../services/SubscriptionService.js';
 import SubscriptionPaymentService from '../services/SubscriptionPaymentService.js';
+import SubscriptionPaymentStatusService from '../services/SubscriptionPaymentStatusService.js';
 import SubscriptionAllowanceService from '../services/SubscriptionAllowanceService.js';
 import models from '../models/index.js';
 import { luderror, ludlog } from '../lib/ludlog.js';
@@ -432,6 +434,77 @@ router.post('/cancel-pending/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     luderror.payment('Subscriptions: Error cancelling pending subscription:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Check subscription payment page status for pending subscriptions (equivalent to purchase system)
+ * POST /api/subscriptions/check-payment-status
+ */
+router.post('/check-payment-status', rateLimiters.paymentStatusCheck, authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  // In-memory request tracking to prevent duplicate concurrent requests
+  const activeSubscriptionRequests = new Map();
+
+  try {
+    // PROTECTION 1: Prevent concurrent requests from same user
+    if (activeSubscriptionRequests.has(userId)) {
+      return res.status(429).json({
+        error: 'Subscription payment status check already in progress',
+        message: 'Please wait for the current check to complete',
+        retryAfter: 5
+      });
+    }
+
+    // Mark request as active
+    activeSubscriptionRequests.set(userId, Date.now());
+
+    // PROTECTION 2: Set a maximum timeout to prevent hanging
+    const requestTimeout = setTimeout(() => {
+      activeSubscriptionRequests.delete(userId);
+    }, 30000); // 30 second timeout
+
+    ludlog.payment('🔍 Checking subscription payment page status for user', { userId });
+
+    // Use SubscriptionPaymentStatusService to check all pending subscriptions
+    const checkResult = await SubscriptionPaymentStatusService.checkUserPendingSubscriptions(userId);
+
+    // Count actions taken for summary
+    const summary = {
+      total_pending: checkResult.summary.total_pending,
+      activated: checkResult.summary.activated,
+      cancelled: checkResult.summary.cancelled,
+      errors: checkResult.summary.errors,
+      skipped: checkResult.summary.skipped
+    };
+
+    ludlog.payment('📊 Subscription payment status check complete', summary);
+
+    // CLEANUP: Clear request tracking and timeout on success
+    clearTimeout(requestTimeout);
+    activeSubscriptionRequests.delete(userId);
+
+    res.json({
+      success: true,
+      message: 'Subscription payment page status checked for pending subscriptions',
+      summary,
+      results: checkResult.results
+    });
+
+  } catch (error) {
+    // CLEANUP: Clear request tracking and timeout on error
+    clearTimeout(requestTimeout);
+    activeSubscriptionRequests.delete(userId);
+
+    luderror.payment('Error checking subscription payment page status:', error);
+
+    // Return safe error message (don't expose internal details)
+    res.status(500).json({
+      error: 'Subscription status check temporarily unavailable',
+      message: 'Please try again in a few moments',
+      retryAfter: 60
+    });
   }
 });
 
