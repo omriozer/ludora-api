@@ -302,6 +302,33 @@ router.post('/payplus',
         await webhookLog.update({ subscription_id: subscriptionId });
       }
 
+      // ENHANCED LOGGING: Capture PayPlus subscription webhook structure for analysis
+      // This helps us understand recurring payment webhook payloads vs first payment
+      if (isSubscriptionTransaction) {
+        const ludlog = (await import('../lib/ludlog.js')).ludlog;
+        ludlog.payments.prod('📊 SUBSCRIPTION WEBHOOK PAYLOAD ANALYSIS:', {
+          webhookId: webhookLog.id,
+          subscriptionId,
+          analysis: {
+            hasSubscriptionUid: !!webhookData.subscription_uid,
+            subscriptionUid: webhookData.subscription_uid,
+            hasCustomFields: !!webhookData.custom_fields,
+            customFields: webhookData.custom_fields,
+            hasTransactionUid: !!webhookData.transaction_uid,
+            transactionUid: webhookData.transaction_uid,
+            hasPaymentPageRequestUid: !!webhookData.transaction?.payment_page_request_uid,
+            paymentPageRequestUid: webhookData.transaction?.payment_page_request_uid,
+            statusCode: webhookData.transaction?.status_code,
+            status: webhookData.status,
+            webhookType: webhookData.type || 'unknown',
+            recurringInfo: webhookData.recurring_info || null,
+            chargeNumber: webhookData.charge_number || null
+          },
+          fullWebhookData: webhookData,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       // Process based on webhook status - PayPlus sends status_code in transaction object
       const paymentStatus = webhookData.status || mapPayPlusStatusToPaymentStatus(webhookData.transaction?.status_code);
       webhookLog.addProcessLog(`Payment status resolved: ${paymentStatus} (original: status=${webhookData.status}, status_code=${webhookData.transaction?.status_code})`);

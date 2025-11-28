@@ -168,6 +168,18 @@ class SubscriptionPaymentService {
       // Determine recurring settings based on billing period
       const recurringSettings = this.getRecurringSettings(subscriptionPlan);
 
+      // Log if in test mode for visibility
+      if (recurringSettings.testMode) {
+        const ludlog = (await import('../lib/ludlog.js')).ludlog;
+        ludlog.payments.prod('🧪 DAILY SUBSCRIPTION TEST MODE ACTIVE:', {
+          subscriptionId: subscription.id,
+          subscriptionPlanId: subscriptionPlan.id,
+          recurringType: recurringSettings.recurringType,
+          message: 'First recurring charge will occur tomorrow (24 hours from now)',
+          environment
+        });
+      }
+
       // Build PayPlus request payload specifically for subscriptions
       const paymentRequest = {
         payment_page_uid,
@@ -215,12 +227,11 @@ class SubscriptionPaymentService {
         },
 
         // Common settings
-        payments: 1,
         hide_other_charge_methods: false,
         send_failure_callback: true,
         create_token: true,
         hide_payments_field: true,
-        payments: 1,
+        payments: 1
       };
 
       // Make request to PayPlus API
@@ -303,6 +314,21 @@ class SubscriptionPaymentService {
     let recurringType = 2; // Default to monthly
     let recurringRange = 1; // Default to every period
 
+    // TESTING MODE: Use daily billing in staging for rapid subscription testing
+    // This allows testing the full subscription lifecycle in 2-3 days instead of waiting a month
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    const isStaging = nodeEnv !== 'production';
+    const enableDailyTesting = process.env.ENABLE_DAILY_SUBSCRIPTION_TESTING === 'true';
+
+    if (isStaging && enableDailyTesting) {
+      // Override to daily billing for testing recurring webhooks
+      return {
+        recurringType: 0, // Daily
+        recurringRange: 1,
+        testMode: true
+      };
+    }
+
     switch (subscriptionPlan.billing_period) {
       case 'weekly':
         recurringType = 1; // Weekly
@@ -327,7 +353,8 @@ class SubscriptionPaymentService {
 
     return {
       recurringType,
-      recurringRange
+      recurringRange,
+      testMode: false
     };
   }
 
