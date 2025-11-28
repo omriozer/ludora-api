@@ -205,6 +205,10 @@ class SubscriptionPaymentService {
           barcode: `subscription_${subscriptionPlan.id}`
         }],
 
+        // Redirect URLs for consistent UX with one-time purchases
+        refURL_success: process.env.FRONTEND_URL + '/payment-result',
+        refURL_failure: process.env.FRONTEND_URL + '/payment-result',
+        refURL_cancel: process.env.FRONTEND_URL + '/payment-result',
 
         // Recurring payment settings
         recurring_settings: {
