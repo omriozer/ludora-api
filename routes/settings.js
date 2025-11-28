@@ -14,17 +14,11 @@ const router = express.Router();
 // GET /settings - Get system settings (forwards to entities/settings with enhancements)
 router.get('/', optionalAuth, addETagSupport('settings'), async (req, res) => {
   try {
-    const { limit, offset, ...query } = req.query;
-    const options = {};
-
-    if (limit) options.limit = parseInt(limit);
-    if (offset) options.offset = parseInt(offset);
-
-    // Get settings from EntityService
-    const results = await EntityService.find('settings', query, options);
+    // Get settings from SettingsService (returns built settings object with all keys)
+    const settingsObject = await SettingsService.getSettings();
 
     // Validate that all required settings keys exist (system integrity check)
-    const existingKeys = results.map(setting => setting.key || setting.get?.('key')).filter(Boolean);
+    const existingKeys = Object.keys(settingsObject);
     const missingKeys = ALL_SETTINGS_KEYS_ARRAY.filter(requiredKey => !existingKeys.includes(requiredKey));
 
     if (missingKeys.length > 0) {
@@ -32,22 +26,18 @@ router.get('/', optionalAuth, addETagSupport('settings'), async (req, res) => {
       res.set('X-Settings-Validation-Warning', `${missingKeys.length} missing keys`);
     }
 
-    // Add enhanced configuration like the entities route does
-    const enhancedResults = results.map(setting => {
-      const settingData = setting.toJSON ? setting.toJSON() : setting;
+    // Add enhanced configuration - merge into single settings object
+    const enhancedSettings = {
+      ...settingsObject,
+      file_types_config: getFileTypesForFrontend(),
+      study_subjects: STUDY_SUBJECTS,
+      audiance_targets: AUDIANCE_TARGETS,
+      school_grades: SCHOOL_GRADES,
+      game_types: GAME_TYPES,
+      languade_options: LANGUAGES_OPTIONS
+    };
 
-      return {
-        ...settingData,
-        file_types_config: getFileTypesForFrontend(),
-        study_subjects: STUDY_SUBJECTS,
-        audiance_targets: AUDIANCE_TARGETS,
-        school_grades: SCHOOL_GRADES,
-        game_types: GAME_TYPES,
-        languade_options: LANGUAGES_OPTIONS
-      };
-    });
-
-    res.json(enhancedResults);
+    res.json(enhancedSettings);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
