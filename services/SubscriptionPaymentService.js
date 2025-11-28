@@ -123,6 +123,27 @@ class SubscriptionPaymentService {
         updated_at: new Date()
       });
 
+      // CRITICAL: Start automatic polling for subscription payment status
+      // This ensures polling works even with webhooks disabled
+      const startContinuousSubscriptionPolling = async (subscriptionId) => {
+        try {
+          const SubscriptionPaymentStatusService = (await import('./SubscriptionPaymentStatusService.js')).default;
+          const pollResult = await SubscriptionPaymentStatusService.checkAndHandleSubscriptionPaymentPageStatus(subscriptionId);
+
+          // If polling should continue, schedule next poll in 20 seconds
+          if (pollResult.success && pollResult.action_taken === 'none' && pollResult.pageStatus === 'unknown') {
+            setTimeout(() => startContinuousSubscriptionPolling(subscriptionId), 20000); // 20 second intervals
+          }
+        } catch (error) {
+          const { luderror } = await import('../lib/ludlog.js');
+          luderror.payment(`❌ Automatic subscription polling failed for ${subscriptionId}:`, error);
+          // Don't retry on error to prevent infinite loops
+        }
+      };
+
+      // Start first poll after 2 seconds
+      setTimeout(() => startContinuousSubscriptionPolling(subscription.id), 2000);
+
       return {
         success: true,
         message: 'Subscription payment page created',
@@ -507,6 +528,27 @@ class SubscriptionPaymentService {
         },
         updated_at: new Date()
       });
+
+      // CRITICAL: Start automatic polling for subscription retry payment status
+      // This ensures polling works even with webhooks disabled
+      const startContinuousSubscriptionPolling = async (subscriptionId) => {
+        try {
+          const SubscriptionPaymentStatusService = (await import('./SubscriptionPaymentStatusService.js')).default;
+          const pollResult = await SubscriptionPaymentStatusService.checkAndHandleSubscriptionPaymentPageStatus(subscriptionId);
+
+          // If polling should continue, schedule next poll in 20 seconds
+          if (pollResult.success && pollResult.action_taken === 'none' && pollResult.pageStatus === 'unknown') {
+            setTimeout(() => startContinuousSubscriptionPolling(subscriptionId), 20000); // 20 second intervals
+          }
+        } catch (error) {
+          const { luderror } = await import('../lib/ludlog.js');
+          luderror.payment(`❌ Automatic subscription retry polling failed for ${subscriptionId}:`, error);
+          // Don't retry on error to prevent infinite loops
+        }
+      };
+
+      // Start first poll after 2 seconds
+      setTimeout(() => startContinuousSubscriptionPolling(pendingSubscription.id), 2000);
 
       return {
         success: true,
