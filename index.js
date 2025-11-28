@@ -118,6 +118,7 @@ import systemTemplatesRoutes from './routes/system-templates.js';
 import eduContentRoutes from './routes/eduContent.js';
 import settingsRoutes from './routes/settings.js';
 import playersRoutes from './routes/players.js';
+import bundlesRoutes from './routes/bundles.js';
 
 // Import services and utilities for Socket.IO authentication
 import AuthService from './services/AuthService.js';
@@ -245,6 +246,7 @@ app.use('/api/edu-content', eduContentRoutes);
 app.use('/api/svg-slides', svgSlidesRoutes);
 app.use('/api/system-templates', systemTemplatesRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/bundles', bundlesRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);

@@ -31,6 +31,50 @@ router.post('/games', async (req, res) => {
 });
 ```
 
+### Bundle Services (NEW: Nov 2025)
+
+**Bundle products use specialized services with auto-purchase pattern:**
+
+```javascript
+// ✅ CORRECT: Bundle purchase with auto-creation of individual purchases
+import BundlePurchaseService from '../services/BundlePurchaseService.js';
+
+// When processing bundle purchase (e.g., in PayPlus webhook)
+if (product.type_attributes?.is_bundle) {
+  const { bundlePurchase, individualPurchases } = await BundlePurchaseService.createBundlePurchase(
+    product,           // Bundle Product record
+    buyerId,          // User purchasing the bundle
+    paymentData,      // Payment transaction details
+    transaction       // Optional Sequelize transaction
+  );
+  // Returns main bundle purchase + array of auto-created individual purchases
+}
+
+// ✅ CORRECT: Bundle validation before creation
+import BundleValidationService from '../services/BundleValidationService.js';
+
+const validationResult = await BundleValidationService.validateBundle(
+  bundleItems,      // Array of { product_type, product_id }
+  bundlePrice,      // Proposed bundle price
+  creatorId,        // User creating the bundle
+  userRole          // User role for ownership checks
+);
+
+if (!validationResult.valid) {
+  throw new BadRequestError(validationResult.errors.join(', '));
+}
+
+// ✅ CORRECT: Bundle refund cascades to individual purchases
+await BundlePurchaseService.refundBundlePurchase(bundlePurchaseId);
+// Automatically refunds all individual purchases created from this bundle
+```
+
+**Bundle Architecture Principles:**
+- **No AccessControlService changes**: Individual purchases grant access automatically
+- **Transaction safety**: All bundle operations use database transactions
+- **Validation at EntityService level**: Bundle rules enforced during CRUD operations
+- **No entity table**: Bundles exist only in Product table with type_attributes
+
 ### Model Access Patterns
 ```javascript
 // Import models correctly
@@ -59,9 +103,11 @@ await models.Game.findOne({ where: { id: gameId } });  // Redundant!
 
 **Product Entities (use with EntityService):**
 - File, Game, Workshop, Course, Tool, LessonPlan
+- **Bundle** (special: no entity table, uses Product.type_attributes only)
 
 **Business Models (direct access):**
 - User, Purchase, Subscription, Classroom, Curriculum
+- **Purchase** (enhanced with bundle_purchase_id for auto-created bundle items)
 
 **NEW: Subscription System Models (Nov 2025):**
 - SubscriptionPurchase - Allowance tracking with JSONB usage_tracking

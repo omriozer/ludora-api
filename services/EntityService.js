@@ -821,6 +821,39 @@ class EntityService {
     const transaction = await this.models.sequelize.transaction();
 
     try {
+      // BUNDLE VALIDATION: If type_attributes.is_bundle is true, validate bundle composition
+      if (data.type_attributes?.is_bundle) {
+        const BundleValidationService = (await import('./BundleValidationService.js')).default;
+
+        // Get user role for ownership validation
+        const user = createdBy ? await this.models.User.findByPk(createdBy) : null;
+        const userRole = user?.role || null;
+
+        // Validate bundle composition and pricing
+        const validationResult = await BundleValidationService.validateBundle(
+          data.type_attributes.bundle_items || [],
+          data.price,
+          createdBy,
+          userRole
+        );
+
+        if (!validationResult.valid) {
+          throw new BadRequestError(
+            `Bundle validation failed: ${validationResult.errors.join(', ')}`,
+            { errors: validationResult.errors }
+          );
+        }
+
+        // Enrich type_attributes with validated pricing info
+        data.type_attributes = {
+          ...data.type_attributes,
+          original_total_price: validationResult.pricingInfo.originalTotal,
+          bundle_price: validationResult.pricingInfo.bundlePrice,
+          savings: validationResult.pricingInfo.savings,
+          savings_percentage: validationResult.pricingInfo.savingsPercentage
+        };
+      }
+
       const EntityModel = this.getModel(entityType);
 
       // Prepare the type-specific data (entity record)
@@ -933,6 +966,39 @@ class EntityService {
 
       if (!product) {
         throw new Error(`Product not found for ${entityType} ${entityId}`);
+      }
+
+      // BUNDLE VALIDATION: If updating bundle type_attributes, validate
+      if (data.type_attributes?.is_bundle) {
+        const BundleValidationService = (await import('./BundleValidationService.js')).default;
+
+        // Get user role for ownership validation (use product's creator)
+        const creator = await this.models.User.findByPk(product.creator_user_id);
+        const userRole = creator?.role || null;
+
+        // Validate bundle composition and pricing
+        const validationResult = await BundleValidationService.validateBundle(
+          data.type_attributes.bundle_items || [],
+          data.price || product.price,
+          product.creator_user_id,
+          userRole
+        );
+
+        if (!validationResult.valid) {
+          throw new BadRequestError(
+            `Bundle validation failed: ${validationResult.errors.join(', ')}`,
+            { errors: validationResult.errors }
+          );
+        }
+
+        // Enrich type_attributes with validated pricing info
+        data.type_attributes = {
+          ...data.type_attributes,
+          original_total_price: validationResult.pricingInfo.originalTotal,
+          bundle_price: validationResult.pricingInfo.bundlePrice,
+          savings: validationResult.pricingInfo.savings,
+          savings_percentage: validationResult.pricingInfo.savingsPercentage
+        };
       }
 
       // Separate fields that belong to Product vs Entity
@@ -1070,6 +1136,32 @@ class EntityService {
       }
 
       const { product_type, entity_id } = product;
+
+      // BUNDLE CASCADE DELETE: If this is a bundle, cascade delete individual purchases
+      if (product.type_attributes?.is_bundle) {
+        // Find all individual purchases created from this bundle
+        const bundlePurchases = await this.models.Purchase.findAll({
+          where: {
+            purchasable_type: product_type,
+            purchasable_id: productId,
+            'metadata.is_bundle_purchase': true
+          },
+          transaction
+        });
+
+        for (const bundlePurchase of bundlePurchases) {
+          // Find and delete all individual purchases linked to this bundle purchase
+          await this.models.Purchase.destroy({
+            where: {
+              bundle_purchase_id: bundlePurchase.id
+            },
+            transaction
+          });
+
+          // Delete the main bundle purchase
+          await bundlePurchase.destroy({ transaction });
+        }
+      }
 
       // Delete the entity first
       const EntityModel = this.getModel(product_type);

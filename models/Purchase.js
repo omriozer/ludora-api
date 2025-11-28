@@ -116,6 +116,12 @@ export default function(sequelize) {
         onUpdate: 'CASCADE'
       }
     },
+    // Bundle purchase reference for auto-created individual purchases
+    bundle_purchase_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'References the main bundle purchase ID when this purchase was auto-created from a bundle'
+    },
     // Standard timestamps
     created_at: {
       type: DataTypes.DATE,
