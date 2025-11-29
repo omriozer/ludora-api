@@ -31,7 +31,7 @@ router.post('/games', async (req, res) => {
 });
 ```
 
-### Bundle Services (NEW: Nov 2025)
+### Bundle Services (NEW: Nov 2025, Publishing Fix: Nov 29)
 
 **Bundle products use specialized services with auto-purchase pattern:**
 
@@ -69,11 +69,66 @@ await BundlePurchaseService.refundBundlePurchase(bundlePurchaseId);
 // Automatically refunds all individual purchases created from this bundle
 ```
 
+**Bundle Publishing Validation (CRITICAL FIX - Nov 29, 2025):**
+
+```javascript
+// EntityService.js - Proper bundle validation at service layer
+async create(productType, data, creatorId, options = {}) {
+  // Bundle-specific validation path
+  if (productType === 'bundle' && data.type_attributes?.is_bundle) {
+    // Skip file validation for bundles - they don't have uploaded files
+    // Validate bundle composition instead
+    const validationResult = await BundleValidationService.validateBundle(
+      data.type_attributes.bundle_items,
+      data.price,
+      creatorId,
+      userRole
+    );
+
+    if (!validationResult.valid) {
+      throw new BadRequestError(validationResult.errors.join(', '));
+    }
+
+    // Create bundle product without entity table record
+    const product = await models.Product.create({
+      product_type: 'bundle',
+      entity_id: null,  // Bundles have no entity table
+      creator_user_id: creatorId,
+      type_attributes: data.type_attributes,
+      // ... other fields
+    });
+
+    return product;
+  }
+
+  // Regular entity creation for non-bundles...
+}
+
+// Product model beforeSave hook - Proper type-specific validation
+beforeSave: async (product) => {
+  // Bundle validation - check linked products
+  if (product.product_type === 'bundle' && product.type_attributes?.is_bundle) {
+    if (!product.type_attributes.bundle_items?.length) {
+      throw new Error('Bundle products must contain items');
+    }
+    // Validate bundle_items structure, pricing, etc.
+  }
+  // File validation - check uploaded files
+  else if (product.product_type === 'file') {
+    if (!product.type_attributes?.file_s3_keys?.length) {
+      throw new Error('File products require uploaded files');
+    }
+  }
+  // Other product type validations...
+}
+```
+
 **Bundle Architecture Principles:**
 - **No AccessControlService changes**: Individual purchases grant access automatically
 - **Transaction safety**: All bundle operations use database transactions
-- **Validation at EntityService level**: Bundle rules enforced during CRUD operations
+- **Validation at EntityService level**: Bundle rules enforced during CRUD operations with proper type checking
 - **No entity table**: Bundles exist only in Product table with type_attributes
+- **Type-specific validation**: Bundles validate linked products, not uploaded files
 
 ### Model Access Patterns
 ```javascript
