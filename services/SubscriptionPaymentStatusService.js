@@ -173,7 +173,7 @@ class SubscriptionPaymentStatusService {
       });
 
       // Find the subscription
-      const subscription = await models.SubscriptionHistory.findOne({
+      const subscription = await models.Subscription.findOne({
         where: {
           id: subscriptionId,
           status: 'pending'
@@ -283,7 +283,7 @@ class SubscriptionPaymentStatusService {
   static async checkAndHandleSubscriptionPaymentPageStatus(subscriptionId) {
     try {
       // Find subscription and its transaction to get page_request_uid
-      const subscription = await models.SubscriptionHistory.findOne({
+      const subscription = await models.Subscription.findOne({
         where: { id: subscriptionId },
         include: [
           {
@@ -368,7 +368,7 @@ class SubscriptionPaymentStatusService {
       ludlog.payment('🔍 Checking all pending subscriptions for user', { userId });
 
       // Find all pending subscriptions for this user
-      const pendingSubscriptions = await models.SubscriptionHistory.findAll({
+      const pendingSubscriptions = await models.Subscription.findAll({
         where: {
           user_id: userId,
           status: 'pending'
