@@ -17,7 +17,7 @@ module.exports = {
       await queryInterface.bulkInsert('settings', [{
         id: settingId,
         key: 'student_onboarding_enabled',
-        value: false,
+        value: JSON.stringify(false), // JSONB field requires JSON string
         value_type: 'boolean',
         description: 'Whether student onboarding flow is enabled (does nothing for now)',
         created_at: new Date(),

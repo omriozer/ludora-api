@@ -17,7 +17,7 @@ module.exports = {
       await queryInterface.bulkInsert('settings', [{
         id: settingId,
         key: 'subscription_system_enabled',
-        value: true,
+        value: JSON.stringify(true), // JSONB field requires JSON string
         value_type: 'boolean',
         description: 'Whether the subscription system is enabled for creating and managing subscription plans',
         created_at: new Date(),
@@ -28,7 +28,7 @@ module.exports = {
     } else {
       // Update existing setting to ensure it's set to true
       await queryInterface.bulkUpdate('settings', {
-        value: true,
+        value: JSON.stringify(true), // JSONB field requires JSON string
         updated_at: new Date()
       }, {
         key: 'subscription_system_enabled'
