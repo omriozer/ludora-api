@@ -221,9 +221,19 @@ class SubscriptionPaymentService {
       // Determine recurring settings based on billing period
       const recurringSettings = this.getRecurringSettings(subscriptionPlan);
 
+      // CRITICAL: Get webhook URL for PayPlus callback
+      const webhookUrl = this.getWebhookUrl();
+
+      // Log webhook URL for debugging
+      const ludlog = (await import('../lib/ludlog.js')).ludlog;
+      ludlog.payment('🔗 SubscriptionPaymentService: Using webhook URL:', {
+        webhookUrl,
+        environment,
+        subscriptionId: subscription.id
+      });
+
       // Log if in test mode for visibility
       if (recurringSettings.testMode) {
-        const ludlog = (await import('../lib/ludlog.js')).ludlog;
         ludlog.payments.prod('🧪 DAILY SUBSCRIPTION TEST MODE ACTIVE:', {
           subscriptionId: subscription.id,
           subscriptionPlanId: subscriptionPlan.id,
@@ -258,10 +268,11 @@ class SubscriptionPaymentService {
           barcode: `subscription_${subscriptionPlan.id}`
         }],
 
-        // Redirect URLs for consistent UX with one-time purchases
+        // Redirect URLs AND webhook callback for consistent UX with one-time purchases
         refURL_success: process.env.FRONTEND_URL + '/payment-result',
         refURL_failure: process.env.FRONTEND_URL + '/payment-result',
         refURL_cancel: process.env.FRONTEND_URL + '/payment-result',
+        refURL_callback: webhookUrl, // CRITICAL FIX: Add webhook URL
 
         // Recurring payment settings
         recurring_settings: {
@@ -413,6 +424,32 @@ class SubscriptionPaymentService {
       recurringRange,
       testMode: false
     };
+  }
+
+  /**
+   * Get the webhook URL from environment configuration
+   * @returns {string} Full webhook URL
+   */
+  static getWebhookUrl() {
+    // Ensure API_URL is defined with proper fallback
+    const apiUrl = process.env.API_URL || '';
+
+    // If API_URL is not set, log warning and use fallback
+    if (!apiUrl) {
+      luderror.payment('⚠️ WARNING: API_URL environment variable is not set! Using fallback for webhook URL.');
+      // Fallback based on environment
+      if (process.env.NODE_ENV === 'staging') {
+        return 'https://api-staging.ludora.app/api/webhooks/payplus';
+      } else if (process.env.NODE_ENV === 'production') {
+        return 'https://api.ludora.app/api/webhooks/payplus';
+      } else {
+        return 'http://localhost:3003/api/webhooks/payplus';
+      }
+    }
+
+    // Ensure API_URL doesn't have trailing slash
+    const cleanApiUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+    return cleanApiUrl + '/api/webhooks/payplus';
   }
 
   /**
