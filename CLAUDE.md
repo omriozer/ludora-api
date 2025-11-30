@@ -31,7 +31,7 @@ router.post('/games', async (req, res) => {
 });
 ```
 
-### Bundle Services (NEW: Nov 2025, Publishing Fix: Nov 29)
+### Bundle Services (NEW: Nov 2025, Enhanced: Nov 29-30)
 
 **Bundle products use specialized services with auto-purchase pattern:**
 
@@ -129,6 +129,7 @@ beforeSave: async (product) => {
 - **Validation at EntityService level**: Bundle rules enforced during CRUD operations with proper type checking
 - **No entity table**: Bundles exist only in Product table with type_attributes
 - **Type-specific validation**: Bundles validate linked products, not uploaded files
+- **Mixed product types**: Bundles can contain file + game + workshop together (max 50 items)
 
 ### Model Access Patterns
 ```javascript
@@ -695,7 +696,7 @@ class CachedService {
 
 ---
 
-## 8. SUBSCRIPTION SYSTEM PATTERNS (Nov 2025)
+## 8. SUBSCRIPTION SYSTEM PATTERNS (Nov 2025, Enhanced: Nov 29-30)
 
 ### SubscriptionPurchase Model Usage
 
@@ -782,6 +783,52 @@ class SubscriptionService {
 - ❌ **REMOVED**: Subscription access from `videoAccessControl.js`
 - ✅ **Current**: Clean separation between purchases and subscriptions
 - ✅ **Future**: SubscriptionPurchase model for allowance tracking
+
+### Subscription Payment Status Service (NEW: Nov 29-30, 2025)
+
+**Automatic detection and handling of abandoned subscription payment pages:**
+
+```javascript
+import SubscriptionPaymentStatusService from '../services/SubscriptionPaymentStatusService.js';
+
+// Check and handle subscription payment page status
+const result = await SubscriptionPaymentStatusService.checkAndHandleSubscriptionPaymentPageStatus(
+  subscriptionId,
+  {
+    attemptNumber: 1,
+    maxAttempts: 6  // Grace period for PayPlus processing delays
+  }
+);
+
+// Service features:
+// - Detects abandoned payment pages → cancels subscription
+// - Detects completed payments → activates subscription
+// - Detects failed payments → cancels subscription
+// - Handles PayPlus processing delays with retry logic
+// - Supports renewal detection via subscription UID fallback
+
+// Bulk check for user's pending subscriptions
+const userResult = await SubscriptionPaymentStatusService.checkUserPendingSubscriptions(userId);
+// Returns: { activated: 2, cancelled: 1, errors: 0, skipped: 0 }
+
+// Critical fix for renewals via polling (fallback strategy)
+// If primary page lookup fails, tries subscription UID renewal detection
+// Creates Transaction records for detected renewals
+```
+
+### Subscription Activation with Webhook URL Fix
+
+**CRITICAL FIX (Nov 30, 2025): Added missing webhook URL to subscription payments:**
+
+```javascript
+// PaymentService.js - Fixed subscription payment page creation
+const pageData = {
+  // ... other fields
+  payment_page_webhook: PAYPLUS_WEBHOOK_URL,  // ✅ CRITICAL: Was missing for subscriptions
+  // This ensures PayPlus sends webhooks for subscription payments
+  // Without this, only polling would detect subscription payments
+};
+```
 
 ---
 

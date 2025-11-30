@@ -68,30 +68,49 @@ router.post('/purchases', authenticateToken, async (req, res) => {
       return res.status(409).json({ error: validation.error });
     }
 
+
+    // For bundles, we need to fetch the Product record, not the entity
+    // Check if this might be a bundle by trying to find it as a Product first
+    let isBundle = false;
+    let bundleProduct = null;
+
+    // Try to find as Product first (could be a bundle)
+    const productRecord = await models.Product.findByPk(purchasableId);
+    if (productRecord && productRecord.type_attributes?.is_bundle) {
+      isBundle = true;
+      bundleProduct = productRecord;
+    }
+
     // Get product/subscription details to determine price
     let item = null;
-    switch (purchasableType) {
-      case 'workshop':
-        item = await models.Workshop.findByPk(purchasableId);
-        break;
-      case 'course':
-        item = await models.Course.findByPk(purchasableId);
-        break;
-      case 'file':
-        item = await models.File.findByPk(purchasableId);
-        break;
-      case 'lesson_plan':
-        item = await models.LessonPlan.findByPk(purchasableId);
-        break;
-      case 'tool':
-        item = await models.Tool.findByPk(purchasableId);
-        break;
-      case 'game':
-        item = await models.Game.findByPk(purchasableId);
-        break;
-      // NOTE: 'subscription' case removed - use dedicated /api/subscriptions endpoints
-      default:
-        return res.status(400).json({ error: `Unknown purchasable type: ${purchasableType}` });
+    if (isBundle) {
+      // For bundles, use the Product record as the item
+      item = bundleProduct;
+    } else {
+      // For regular entities, find the entity record
+      switch (purchasableType) {
+        case 'workshop':
+          item = await models.Workshop.findByPk(purchasableId);
+          break;
+        case 'course':
+          item = await models.Course.findByPk(purchasableId);
+          break;
+        case 'file':
+          item = await models.File.findByPk(purchasableId);
+          break;
+        case 'lesson_plan':
+          item = await models.LessonPlan.findByPk(purchasableId);
+          break;
+        case 'tool':
+          item = await models.Tool.findByPk(purchasableId);
+          break;
+        case 'game':
+          item = await models.Game.findByPk(purchasableId);
+          break;
+        // NOTE: 'subscription' case removed - use dedicated /api/subscriptions endpoints
+        default:
+          return res.status(400).json({ error: `Unknown purchasable type: ${purchasableType}` });
+      }
     }
 
     if (!item) {
