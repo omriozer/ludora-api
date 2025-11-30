@@ -271,7 +271,7 @@ router.post('/payplus',
       webhookLog.addProcessLog(`Processing webhook for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid}`);
 
       // Find the transaction by payment_page_request_uid
-      const transaction = await models.Transaction.findOne({
+      let transaction = await models.Transaction.findOne({
         where: {
           payment_page_request_uid: webhookData.transaction.payment_page_request_uid
         },
@@ -283,8 +283,78 @@ router.post('/payplus',
         ]
       });
 
+      // CRITICAL FIX FOR SUBSCRIPTION RENEWALS: Fallback lookup by subscription_uid
+      // PayPlus sends different payment_page_request_uid for renewals but keeps same subscription_uid
+      if (!transaction && webhookData.subscription_uid) {
+        webhookLog.addProcessLog(`Primary lookup failed. Attempting subscription renewal fallback for subscription_uid: ${webhookData.subscription_uid}`);
+
+        // Look for subscription with matching subscription_uid
+        const subscription = await models.Subscription.findOne({
+          where: {
+            payplus_subscription_uid: webhookData.subscription_uid
+          }
+        });
+
+        if (subscription) {
+          webhookLog.addProcessLog(`Found subscription: ${subscription.id} with subscription_uid: ${webhookData.subscription_uid}`);
+
+          // Find the most recent transaction for this subscription
+          transaction = await models.Transaction.findOne({
+            where: {
+              'metadata.subscription_id': subscription.id
+            },
+            order: [['created_at', 'DESC']],
+            include: [
+              {
+                model: models.Purchase,
+                as: 'purchases'
+              }
+            ]
+          });
+
+          if (transaction) {
+            webhookLog.addProcessLog(`Found renewal transaction: ${transaction.id} for subscription: ${subscription.id}`);
+
+            // Create a new transaction for this renewal if this is a different charge
+            if (transaction.payplus_transaction_uid !== webhookData.transaction_uid) {
+              webhookLog.addProcessLog(`Creating new renewal transaction for transaction_uid: ${webhookData.transaction_uid}`);
+
+              const newTransaction = await models.Transaction.create({
+                id: generateId(),
+                user_id: subscription.user_id,
+                payment_method: 'payplus',
+                amount: webhookData.transaction.amount || transaction.amount,
+                currency: webhookData.transaction.currency || transaction.currency || 'ILS',
+                payment_status: 'pending',
+                transaction_type: 'subscription_renewal',
+                payplus_transaction_uid: webhookData.transaction_uid,
+                payment_page_request_uid: webhookData.transaction.payment_page_request_uid,
+                metadata: {
+                  subscription_id: subscription.id,
+                  transaction_type: 'SUBSCRIPTION_RENEWAL',
+                  renewal_for_subscription: subscription.id,
+                  original_transaction_id: transaction.id,
+                  payplus_subscription_uid: webhookData.subscription_uid,
+                  charge_number: webhookData.charge_number,
+                  renewal_webhook_data: webhookData
+                }
+              });
+
+              // Update webhook log with new transaction
+              await webhookLog.update({ transaction_id: newTransaction.id });
+              transaction = newTransaction;
+
+              webhookLog.addProcessLog(`Created renewal transaction: ${newTransaction.id}`);
+            }
+          }
+        }
+      }
+
       if (!transaction) {
-        throw new Error(`No transaction found for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid}`);
+        const errorMessage = webhookData.subscription_uid
+          ? `No transaction or subscription found for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid} or subscription_uid: ${webhookData.subscription_uid}`
+          : `No transaction found for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid}`;
+        throw new Error(errorMessage);
       }
 
       webhookLog.addProcessLog(`Found transaction: ${transaction.id}`);
