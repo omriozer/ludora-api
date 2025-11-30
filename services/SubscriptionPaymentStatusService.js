@@ -496,7 +496,9 @@ class SubscriptionPaymentStatusService {
           charge_number: renewalTransactionData.charge_number,
           renewal_polling_data: renewalTransactionData,
           created_via: 'polling_renewal_detection',
-          detected_at: new Date().toISOString()
+          detected_at: new Date().toISOString(),
+          resolvedBy: 'polling', // Track that this renewal was detected by polling
+          resolvedAt: new Date().toISOString()
         }
       });
 
@@ -544,44 +546,11 @@ class SubscriptionPaymentStatusService {
         throw new Error(`Pending subscription ${subscriptionId} not found`);
       }
 
-      // Activate the subscription using SubscriptionService
-      const activationResult = await SubscriptionService.activateSubscription(subscriptionId, {
-        paymentMethod: 'payplus',
-        transactionData: {
-          payplus_transaction_uuid: transactionData.uuid,
-          payplus_status_code: transactionData.information?.status_code,
-          payplus_approval_number: transactionData.information?.approval_number,
-          amount_paid: transactionData.information?.amount_by_currency,
-          transaction_at: transactionData.information?.transaction_at,
-          card_last_four: transactionData.information?.card_num,
-          completed_at: new Date().toISOString(),
-          completion_source: 'subscription_page_status_check'
-        }
+      // Use SubscriptionPaymentService for consistent resolution source tracking
+      const SubscriptionPaymentService = (await import('./SubscriptionPaymentService.js')).default;
+      const activationResult = await SubscriptionPaymentService.handlePaymentSuccess(subscription, transactionData, {
+        resolvedBy: 'polling'
       });
-
-      // Update the associated transaction if it exists
-      const transaction = await models.Transaction.findOne({
-        where: {
-          [models.Sequelize.Op.or]: [
-            models.sequelize.literal(`metadata->>'subscription_id' = '${subscriptionId}'`),
-            { payment_page_request_uid: transactionData.payment_page_payment_request?.uuid }
-          ]
-        }
-      });
-
-      if (transaction) {
-        await transaction.update({
-          payment_status: 'completed',
-          metadata: {
-            ...transaction.metadata,
-            payplus_transaction_uuid: transactionData.uuid,
-            payplus_approval_number: transactionData.information?.approval_number,
-            completed_at: new Date().toISOString(),
-            completion_source: 'subscription_page_status_check'
-          },
-          updated_at: new Date()
-        });
-      }
 
       return {
         success: true,

@@ -456,23 +456,60 @@ class SubscriptionPaymentService {
    * Handle subscription payment completion from webhook
    * @param {Object} subscription - Subscription object
    * @param {Object} webhookData - PayPlus webhook data
+   * @param {Object} options - Additional options
+   * @param {string} options.resolvedBy - Source of resolution ('webhook' or 'polling')
    * @returns {Promise<Object>} Updated subscription
    */
-  static async handlePaymentSuccess(subscription, webhookData) {
+  static async handlePaymentSuccess(subscription, webhookData, options = {}) {
     try {
+      const { resolvedBy = 'webhook' } = options;
+
       // Import SubscriptionService
       const SubscriptionService = (await import('./SubscriptionService.js')).default;
 
-      // Activate subscription
+      // Activate subscription with resolution source tracking
       const activatedSubscription = await SubscriptionService.activateSubscription(subscription.id, {
         payplusSubscriptionUid: webhookData.subscription_uid,
         activationDate: new Date(),
         payplusWebhookData: webhookData,
         metadata: {
           paymentCompletedAt: new Date().toISOString(),
-          payplusData: webhookData
+          payplusData: webhookData,
+          resolvedBy: resolvedBy, // Track resolution source
+          resolvedAt: new Date().toISOString()
         }
       });
+
+      // Update the associated transaction with resolution source if it exists
+      try {
+        const transaction = await models.Transaction.findOne({
+          where: {
+            [models.Sequelize.Op.or]: [
+              models.sequelize.literal(`metadata->>'subscription_id' = '${subscription.id}'`),
+              { payment_page_request_uid: webhookData.transaction?.payment_page_request_uid }
+            ]
+          }
+        });
+
+        if (transaction) {
+          await transaction.update({
+            payment_status: 'completed',
+            metadata: {
+              ...transaction.metadata,
+              payplus_transaction_uuid: webhookData.transaction_uid,
+              payplus_approval_number: webhookData.information?.approval_number || webhookData.transaction?.approval_number,
+              completed_at: new Date().toISOString(),
+              completion_source: `subscription_${resolvedBy}`,
+              resolvedBy: resolvedBy, // Track resolution source (webhook/polling)
+              resolvedAt: new Date().toISOString()
+            },
+            updated_at: new Date()
+          });
+        }
+      } catch (error) {
+        // Don't fail activation if transaction update fails, just log it
+        luderror.payment('Failed to update transaction with resolution source:', error);
+      }
 
       // Update subscription with PayPlus UID if provided
       if (webhookData.subscription_uid) {

@@ -336,7 +336,11 @@ router.post('/payplus',
                   original_transaction_id: transaction.id,
                   payplus_subscription_uid: webhookData.subscription_uid,
                   charge_number: webhookData.charge_number,
-                  renewal_webhook_data: webhookData
+                  renewal_webhook_data: webhookData,
+                  created_via: 'webhook_renewal_detection',
+                  detected_at: new Date().toISOString(),
+                  resolvedBy: 'webhook', // Track that this renewal was detected by webhook
+                  resolvedAt: new Date().toISOString()
                 }
               });
 
@@ -480,7 +484,7 @@ router.post('/payplus',
 
             // Use dedicated SubscriptionPaymentService for handling payment success
             const SubscriptionPaymentService = (await import('../services/SubscriptionPaymentService.js')).default;
-            await SubscriptionPaymentService.handlePaymentSuccess(subscription, webhookData);
+            await SubscriptionPaymentService.handlePaymentSuccess(subscription, webhookData, { resolvedBy: 'webhook' });
 
             webhookLog.addProcessLog(`Subscription ${subscriptionId} activated successfully`);
 
