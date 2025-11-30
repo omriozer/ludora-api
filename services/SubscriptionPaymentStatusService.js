@@ -561,7 +561,12 @@ class SubscriptionPaymentStatusService {
 
       // Update the associated transaction if it exists
       const transaction = await models.Transaction.findOne({
-        where: { subscription_id: subscriptionId }
+        where: {
+          [models.Sequelize.Op.or]: [
+            models.sequelize.literal(`metadata->>'subscription_id' = '${subscriptionId}'`),
+            { payment_page_request_uid: transactionData.payment_page_payment_request?.uuid }
+          ]
+        }
       });
 
       if (transaction) {
