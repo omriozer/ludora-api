@@ -21,9 +21,13 @@ class SubscriptionPaymentStatusService {
   /**
    * Check PayPlus payment page status for subscription payment
    * @param {string} pageRequestUid - PayPlus page request UID
+   * @param {Object} options - Check options
+   * @param {number} options.attemptNumber - Current polling attempt number
+   * @param {number} options.maxAttempts - Maximum attempts before considering abandoned
    * @returns {Promise<Object>} Page status result
    */
-  static async checkSubscriptionPaymentPageStatus(pageRequestUid) {
+  static async checkSubscriptionPaymentPageStatus(pageRequestUid, options = {}) {
+    const { attemptNumber = 1, maxAttempts = 6 } = options;
     try {
       const credentials = PaymentService.getPayPlusCredentials();
       const { payplusUrl, payment_api_key, payment_secret_key, terminal_uid } = credentials;
@@ -74,7 +78,10 @@ class SubscriptionPaymentStatusService {
       }
 
       // Analyze response to determine subscription page status
-      return this.analyzeSubscriptionTransactionsResponse(statusData, pageRequestUid);
+      return this.analyzeSubscriptionTransactionsResponse(statusData, pageRequestUid, {
+        attemptNumber,
+        maxAttempts
+      });
 
     } catch (error) {
       luderror.payment('❌ SubscriptionPaymentStatusService: Error checking page status:', error);
@@ -92,9 +99,14 @@ class SubscriptionPaymentStatusService {
    * Analyze PayPlus transactions history response for subscription payment
    * @param {Object} statusData - PayPlus TransactionsHistory API response
    * @param {string} pageRequestUid - Page request UID
+   * @param {Object} options - Analysis options
+   * @param {number} options.attemptNumber - Current polling attempt number (for grace period)
+   * @param {number} options.maxAttempts - Maximum attempts before considering abandoned
    * @returns {Object} Analyzed page status
    */
-  static analyzeSubscriptionTransactionsResponse(statusData, pageRequestUid) {
+  static analyzeSubscriptionTransactionsResponse(statusData, pageRequestUid, options = {}) {
+    const { attemptNumber = 1, maxAttempts = 6 } = options;
+
     // Check if we have a valid response with transactions array
     if (!statusData || !Array.isArray(statusData.transactions)) {
       return {
@@ -106,18 +118,40 @@ class SubscriptionPaymentStatusService {
       };
     }
 
+    ludlog.payment('🔍 Analyzing PayPlus transactions response', {
+      totalTransactions: statusData.transactions.length,
+      attemptNumber,
+      maxAttempts,
+      pageRequestUid: pageRequestUid.substring(0, 8) + '...'
+    });
+
     // Search for transaction with matching page_request_uid
     const matchingTransaction = statusData.transactions.find(transaction =>
       transaction.payment_page_payment_request?.uuid === pageRequestUid
     );
 
     if (!matchingTransaction) {
-      // No transaction found = page was created but no payment attempted
+      // CRITICAL FIX: Don't immediately cancel - PayPlus has processing delays
+      // Only cancel if we've tried multiple times and given sufficient grace period
+      const shouldCancel = attemptNumber >= maxAttempts;
+
+      ludlog.payment(shouldCancel ? '⚠️ No transaction found after max attempts' : '⏳ No transaction found yet, will retry', {
+        attemptNumber,
+        maxAttempts,
+        willCancel: shouldCancel,
+        pageRequestUid: pageRequestUid.substring(0, 8) + '...'
+      });
+
       return {
         success: true,
-        pageStatus: 'abandoned',
-        reason: 'No transaction found for page request - subscription payment page was not used',
-        shouldCancelSubscription: true,
+        pageStatus: shouldCancel ? 'abandoned' : 'pending_processing',
+        reason: shouldCancel
+          ? `No transaction found after ${maxAttempts} attempts - payment page appears abandoned`
+          : `No transaction found yet (attempt ${attemptNumber}/${maxAttempts}) - PayPlus may still be processing`,
+        shouldCancelSubscription: shouldCancel,
+        shouldRetryLater: !shouldCancel,
+        attemptNumber,
+        maxAttempts,
         payplus_response: statusData
       };
     }
@@ -278,9 +312,13 @@ class SubscriptionPaymentStatusService {
   /**
    * Check subscription payment page status and handle accordingly
    * @param {string} subscriptionId - Subscription ID
+   * @param {Object} options - Check options
+   * @param {number} options.attemptNumber - Current polling attempt number
+   * @param {number} options.maxAttempts - Maximum attempts before considering abandoned
    * @returns {Promise<Object>} Combined page status and action result
    */
-  static async checkAndHandleSubscriptionPaymentPageStatus(subscriptionId) {
+  static async checkAndHandleSubscriptionPaymentPageStatus(subscriptionId, options = {}) {
+    const { attemptNumber = 1, maxAttempts = 6 } = options;
     try {
       // Find subscription and its transaction to get page_request_uid
       const subscription = await models.Subscription.findOne({
@@ -305,14 +343,29 @@ class SubscriptionPaymentStatusService {
 
       ludlog.payment('🔍 Checking subscription payment page status', {
         subscriptionId,
-        pageRequestUid: transaction.payment_page_request_uid.substring(0, 8) + '...'
+        pageRequestUid: transaction.payment_page_request_uid.substring(0, 8) + '...',
+        attemptNumber,
+        maxAttempts
       });
 
       // Check payment page status
-      const pageStatusResult = await this.checkSubscriptionPaymentPageStatus(transaction.payment_page_request_uid);
+      const pageStatusResult = await this.checkSubscriptionPaymentPageStatus(
+        transaction.payment_page_request_uid,
+        { attemptNumber, maxAttempts }
+      );
 
       if (!pageStatusResult.success) {
         return pageStatusResult;
+      }
+
+      // Handle retry scenario - don't cancel yet, just wait
+      if (pageStatusResult.shouldRetryLater) {
+        return {
+          ...pageStatusResult,
+          action_taken: 'none',
+          message: 'Payment still processing - will retry later',
+          subscriptionId
+        };
       }
 
       // Handle based on page status
