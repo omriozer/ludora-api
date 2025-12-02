@@ -393,24 +393,33 @@ router.post('/update-status', authenticateToken, async (req, res) => {
       });
 
       // CRITICAL: Start automatic polling when payment becomes pending
-      // This ensures polling works even with webhooks disabled
-      const startContinuousPolling = async (transactionId) => {
-        try {
-          const pollResult = await PaymentPollingService.pollTransactionStatus(transactionId);
+      // This replaces setTimeout-based polling with Redis-backed job scheduling
+      // Jobs survive server restarts and provide better monitoring
+      try {
+        const jobScheduler = (await import('../services/JobScheduler.js')).default;
 
-          // If polling should continue, schedule next poll in 20 seconds
-          if (pollResult.should_retry && !pollResult.success && pollResult.status !== 'abandoned') {
+        if (jobScheduler.isInitialized) {
+          // Schedule payment status polling with job scheduler (starts after 2 seconds)
+          await jobScheduler.scheduleJob('PAYMENT_STATUS_CHECK', {
+            checkType: 'single_transaction',
+            transactionId: transaction_id,
+            attemptNumber: 1,
+            maxAttempts: 10, // Allow up to 10 polling attempts
+            source: 'payment_pending'
+          }, {
+            delay: 2000, // Start after 2 seconds
+            priority: 90 // High priority for payment checks
+          });
 
-            setTimeout(() => startContinuousPolling(transactionId), 20000); // 20 second intervals
-          }
-        } catch (error) {
-          luderror.payment(`❌ Automatic polling failed for ${transactionId}:`, error);
-          // Don't retry on error to prevent infinite loops
+          ludlog.payment(`✅ Payment polling scheduled via job scheduler for ${transaction_id}`);
+        } else {
+          ludlog.payment(`⚠️ Job scheduler not initialized, payment polling not scheduled for ${transaction_id}`);
+          // Don't fail the request if job scheduler is not available
         }
-      };
-
-      // Start first poll after 2 seconds
-      setTimeout(() => startContinuousPolling(transaction_id), 2000);
+      } catch (jobError) {
+        luderror.payment(`❌ Failed to schedule payment polling job for ${transaction_id}:`, jobError);
+        // Don't fail the request if job scheduling fails
+      }
     }
 
     res.json({

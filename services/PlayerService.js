@@ -5,11 +5,45 @@ import { luderror } from '../lib/ludlog.js';
 
 class PlayerService {
   constructor() {
-    // 12-hour safety net cleanup (not frequent interval)
-    // This is only a safety net - primary cleanup happens lazily on access
-    this.safetyNetInterval = setInterval(async () => {
-      await this.safetyNetCleanup();
-    }, 12 * 60 * 60 * 1000);
+    // Initialize player cleanup jobs using job scheduler (not setInterval)
+    // Primary cleanup happens lazily on access, this is only a safety net
+    this.initializePlayerCleanupJobs();
+  }
+
+  /**
+   * Initialize player cleanup jobs using the job scheduler
+   * Replaces the old setInterval approach with persistent Redis-backed jobs
+   */
+  async initializePlayerCleanupJobs() {
+    try {
+      // Wait for job scheduler to be initialized (non-blocking)
+      setTimeout(async () => {
+        try {
+          const jobScheduler = (await import('./JobScheduler.js')).default;
+
+          if (jobScheduler.isInitialized) {
+            // Schedule player safety net cleanup every 12 hours
+            await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+              {
+                type: 'player_safety_net',
+                batchSize: 1000,
+                playerCleanup: true
+              },
+              '0 */12 * * *', // Every 12 hours
+              { priority: 50 }
+            );
+
+            console.log('PlayerService: Cleanup jobs scheduled successfully');
+          }
+        } catch (error) {
+          console.warn('PlayerService: Failed to schedule cleanup jobs:', error.message);
+          // Don't fail service startup if job scheduling fails
+        }
+      }, 15000); // Wait 15 seconds for job scheduler initialization
+    } catch (error) {
+      // Don't fail service startup if job scheduling fails
+      console.warn('PlayerService: Cleanup job initialization failed:', error.message);
+    }
   }
 
   // Player Creation and Management

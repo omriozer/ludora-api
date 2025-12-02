@@ -832,7 +832,144 @@ const pageData = {
 
 ---
 
-## 9. COMMON BACKEND ANTI-PATTERNS
+## 9. JOB SCHEDULER PATTERNS (REDIS-BACKED PERSISTENCE)
+
+### JobScheduler Service Architecture (NEW: Dec 2025)
+
+**CRITICAL: Replace ALL setTimeout/setInterval patterns with JobScheduler for production-grade reliability:**
+
+```javascript
+// ❌ WRONG: Lost on server restart
+setTimeout(() => pollPaymentStatus(id), 5000);
+setInterval(() => cleanupSessions(), 12 * 60 * 60 * 1000);
+
+// ✅ CORRECT: Persistent Redis-backed jobs
+import jobScheduler from '../services/JobScheduler.js';
+
+// Schedule one-time job with delay
+await jobScheduler.scheduleJob('SUBSCRIPTION_PAYMENT_CHECK', {
+  subscriptionId: 'sub_123',
+  attemptNumber: 1
+}, {
+  delay: 5000,
+  priority: 100
+});
+
+// Schedule recurring job with cron
+await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+  { type: 'light', batchSize: 500 },
+  '0 */2 * * *',  // Every 2 hours
+  { priority: 60 }
+);
+```
+
+### Job Type Implementation Pattern
+
+```javascript
+// In JobScheduler.js - Add new job processor
+async processCustomJob(data) {
+  const { customParam1, customParam2 } = data;
+
+  try {
+    ludlog.generic('Processing custom job', { customParam1 });
+
+    // Import services dynamically to avoid circular dependencies
+    const MyService = (await import('./MyService.js')).default;
+
+    // Perform job logic
+    const result = await MyService.doWork(customParam1, customParam2);
+
+    // Chain next job if needed
+    if (result.needsRetry) {
+      await this.scheduleJob('CUSTOM_JOB', {
+        ...data,
+        attemptNumber: (data.attemptNumber || 1) + 1
+      }, {
+        delay: 10000,
+        priority: 50
+      });
+    }
+
+    return { success: true, result };
+
+  } catch (error) {
+    luderror.generic('Custom job failed:', error);
+    throw error; // Triggers retry logic
+  }
+}
+```
+
+### Service Integration Pattern
+
+```javascript
+// ✅ CORRECT: Service using JobScheduler
+class PaymentService {
+  async initiatePaymentPolling(transactionId) {
+    // Schedule immediate check
+    await jobScheduler.scheduleJob('PAYMENT_STATUS_CHECK', {
+      checkType: 'single_transaction',
+      transactionId,
+      attemptNumber: 1,
+      maxAttempts: 10
+    }, {
+      priority: 90
+    });
+  }
+}
+
+// ✅ CORRECT: Replacing old setInterval patterns
+class AuthService {
+  async initializeSessionCleanupJobs() {
+    // Light cleanup every 2 hours
+    await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+      { type: 'light' },
+      '0 */2 * * *'
+    );
+
+    // Deep cleanup twice daily
+    await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+      { type: 'full' },
+      '0 2,14 * * *'
+    );
+  }
+}
+```
+
+### Development Mode Handling
+
+```javascript
+// JobScheduler gracefully handles Redis unavailability in development
+if (isDevelopment && !redisAvailable) {
+  // Server starts normally
+  // Jobs can be triggered manually via admin API
+  // No errors thrown
+
+  // Manual execution still works:
+  // POST /api/jobs/schedule
+  // { "type": "SESSION_CLEANUP", "data": {} }
+}
+```
+
+### Job Priority Guidelines
+
+```javascript
+// Priority ranges by business impact
+const PRIORITY_RANGES = {
+  CRITICAL: [90, 100],  // Revenue-impacting (payments, subscriptions)
+  HIGH: [60, 89],       // Security & user-facing (sessions, monitoring)
+  MEDIUM: [30, 59],     // Maintenance (cleanup, optimization)
+  LOW: [1, 29]          // Background (analytics, reporting)
+};
+
+// Set priority based on business impact
+await jobScheduler.scheduleJob('PAYMENT_CHECK', data, {
+  priority: 100  // Critical - revenue impact
+});
+```
+
+---
+
+## 10. COMMON BACKEND ANTI-PATTERNS
 
 ### ❌ Direct Model Access for Products
 ```javascript
@@ -864,6 +1001,17 @@ try {
   await transaction.rollback();
   throw error;
 }
+```
+
+### ❌ Using setTimeout/setInterval for Recurring Tasks
+```javascript
+// ❌ WRONG: In-memory timers (lost on server restart)
+setTimeout(() => pollPaymentStatus(id), 5000);
+setInterval(() => cleanupExpiredSessions(), 12 * 60 * 60 * 1000);
+
+// ✅ CORRECT: Redis-backed persistent jobs
+await jobScheduler.scheduleJob('PAYMENT_STATUS_CHECK', data, { delay: 5000 });
+await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP', data, '0 */12 * * *');
 ```
 
 ### ❌ In-Memory Session Storage

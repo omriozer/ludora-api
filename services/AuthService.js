@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { admin } from '../config/firebase.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
-import { luderror } from '../lib/ludlog.js';
+import { ludlog, luderror } from '../lib/ludlog.js';
 
 class AuthService {
   constructor() {
@@ -15,11 +15,53 @@ class AuthService {
     this.jwtSecret = process.env.JWT_SECRET;
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
 
-    // 12-hour safety net cleanup (not frequent interval)
-    // This is only a safety net - primary cleanup happens lazily on access
-    this.safetyNetInterval = setInterval(async () => {
-      await this.safetyNetCleanup();
-    }, 12 * 60 * 60 * 1000);
+    // Session cleanup now handled by persistent job scheduler
+    // This provides better reliability and survives server restarts
+    this.initializeSessionCleanupJobs();
+  }
+
+  // Initialize session cleanup jobs with job scheduler
+  async initializeSessionCleanupJobs() {
+    try {
+      // Import job scheduler dynamically to avoid circular dependencies
+      const jobScheduler = (await import('./JobScheduler.js')).default;
+
+      // Wait for job scheduler to be initialized (non-blocking)
+      setTimeout(async () => {
+        try {
+          if (jobScheduler.isInitialized) {
+            // Schedule frequent cleanup every 2 hours (lighter cleanup)
+            await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+              { type: 'light', batchSize: 500 },
+              '0 */2 * * *', // Every 2 hours
+              { priority: 60 }
+            );
+
+            // Schedule deep cleanup every 12 hours (full cleanup)
+            await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+              { type: 'full', batchSize: 1000 },
+              '0 */12 * * *', // Every 12 hours
+              { priority: 50 }
+            );
+
+            ludlog.generic('Session cleanup jobs scheduled successfully', {
+              lightCleanup: 'every 2 hours',
+              deepCleanup: 'every 12 hours',
+              source: 'AuthService'
+            });
+          } else {
+            ludlog.generic('JobScheduler not yet initialized, session cleanup will use fallback');
+          }
+        } catch (jobError) {
+          luderror.generic('Failed to initialize session cleanup jobs:', jobError);
+          // Fallback to manual cleanup if job scheduler fails
+        }
+      }, 5000); // Wait 5 seconds for job scheduler initialization
+
+    } catch (error) {
+      luderror.generic('Error setting up session cleanup jobs:', error);
+      // Silent failure - cleanup can still happen on-demand
+    }
   }
 
   // Create JWT token

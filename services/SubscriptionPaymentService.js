@@ -123,58 +123,37 @@ class SubscriptionPaymentService {
         updated_at: new Date()
       });
 
-      // CRITICAL: Start automatic polling for subscription payment status
-      // This ensures polling works even with webhooks disabled
-      // Uses progressive delays with grace period to avoid premature cancellation
-      const startContinuousSubscriptionPolling = async (subscriptionId, attemptNumber = 1, maxAttempts = 6) => {
-        try {
-          const SubscriptionPaymentStatusService = (await import('./SubscriptionPaymentStatusService.js')).default;
-          const { ludlog } = await import('../lib/ludlog.js');
+      // CRITICAL: Start automatic polling for subscription payment status using persistent jobs
+      // This replaces setTimeout-based polling with Redis-backed job scheduling
+      // Jobs survive server restarts and provide better monitoring
+      try {
+        const jobScheduler = (await import('./JobScheduler.js')).default;
 
-          ludlog.payment(`🔄 Subscription polling attempt ${attemptNumber}/${maxAttempts}`, {
-            subscriptionId: subscriptionId.substring(0, 20) + '...',
-            attemptNumber,
-            maxAttempts
+        if (jobScheduler.isInitialized) {
+          await jobScheduler.scheduleJob('SUBSCRIPTION_PAYMENT_CHECK', {
+            subscriptionId: subscription.id,
+            attemptNumber: 1,
+            maxAttempts: 6,
+            isRetryPayment: false
+          }, {
+            delay: 5000, // Start first poll after 5 seconds
+            priority: 100 // Highest priority for payment checking
           });
 
-          const pollResult = await SubscriptionPaymentStatusService.checkAndHandleSubscriptionPaymentPageStatus(
-            subscriptionId,
-            { attemptNumber, maxAttempts }
-          );
-
-          // Determine if we should continue polling
-          const shouldContinuePolling = pollResult.success &&
-            pollResult.action_taken === 'none' &&
-            (pollResult.shouldRetryLater || pollResult.pageStatus === 'unknown' || pollResult.pageStatus === 'pending_processing');
-
-          if (shouldContinuePolling && attemptNumber < maxAttempts) {
-            // Progressive delays: 5s → 10s → 15s → 20s → 30s → 60s
-            const delays = [5000, 10000, 15000, 20000, 30000, 60000];
-            const nextDelay = delays[attemptNumber - 1] || 60000; // Default to 60s for attempts beyond array
-
-            ludlog.payment(`⏳ Scheduling next poll in ${nextDelay/1000}s`, {
-              subscriptionId: subscriptionId.substring(0, 20) + '...',
-              nextAttempt: attemptNumber + 1,
-              delaySeconds: nextDelay / 1000
-            });
-
-            setTimeout(() => startContinuousSubscriptionPolling(subscriptionId, attemptNumber + 1, maxAttempts), nextDelay);
-          } else {
-            ludlog.payment('✅ Subscription polling complete', {
-              subscriptionId: subscriptionId.substring(0, 20) + '...',
-              finalStatus: pollResult.action_taken,
-              totalAttempts: attemptNumber
-            });
-          }
-        } catch (error) {
-          const { luderror } = await import('../lib/ludlog.js');
-          luderror.payment(`❌ Automatic subscription polling failed for ${subscriptionId}:`, error);
-          // Don't retry on error to prevent infinite loops
+          ludlog.payment('✅ Scheduled persistent subscription payment polling:', {
+            subscriptionId: subscription.id.substring(0, 20) + '...',
+            startDelay: '5s',
+            maxAttempts: 6,
+            source: 'job_scheduler'
+          });
+        } else {
+          luderror.payment('❌ JobScheduler not initialized, falling back to manual status checking');
+          // Could implement manual fallback here if needed
         }
-      };
-
-      // Start first poll after 5 seconds (increased from 2s to give PayPlus processing time)
-      setTimeout(() => startContinuousSubscriptionPolling(subscription.id, 1, 6), 5000);
+      } catch (jobSchedulerError) {
+        luderror.payment('❌ Failed to schedule subscription payment polling job:', jobSchedulerError);
+        // Job scheduling failed - subscription will need manual verification
+      }
 
       return {
         success: true,
@@ -727,58 +706,38 @@ class SubscriptionPaymentService {
         updated_at: new Date()
       });
 
-      // CRITICAL: Start automatic polling for subscription retry payment status
-      // This ensures polling works even with webhooks disabled
-      // Uses progressive delays with grace period to avoid premature cancellation
-      const startContinuousSubscriptionPolling = async (subscriptionId, attemptNumber = 1, maxAttempts = 6) => {
-        try {
-          const SubscriptionPaymentStatusService = (await import('./SubscriptionPaymentStatusService.js')).default;
-          const { ludlog } = await import('../lib/ludlog.js');
+      // CRITICAL: Start automatic polling for subscription retry payment status using persistent jobs
+      // This replaces setTimeout-based polling with Redis-backed job scheduling
+      // Jobs survive server restarts and provide better monitoring
+      try {
+        const jobScheduler = (await import('./JobScheduler.js')).default;
 
-          ludlog.payment(`🔄 Subscription retry polling attempt ${attemptNumber}/${maxAttempts}`, {
-            subscriptionId: subscriptionId.substring(0, 20) + '...',
-            attemptNumber,
-            maxAttempts
+        if (jobScheduler.isInitialized) {
+          await jobScheduler.scheduleJob('SUBSCRIPTION_PAYMENT_CHECK', {
+            subscriptionId: pendingSubscription.id,
+            attemptNumber: 1,
+            maxAttempts: 6,
+            isRetryPayment: true
+          }, {
+            delay: 5000, // Start first poll after 5 seconds
+            priority: 100 // Highest priority for payment checking
           });
 
-          const pollResult = await SubscriptionPaymentStatusService.checkAndHandleSubscriptionPaymentPageStatus(
-            subscriptionId,
-            { attemptNumber, maxAttempts }
-          );
-
-          // Determine if we should continue polling
-          const shouldContinuePolling = pollResult.success &&
-            pollResult.action_taken === 'none' &&
-            (pollResult.shouldRetryLater || pollResult.pageStatus === 'unknown' || pollResult.pageStatus === 'pending_processing');
-
-          if (shouldContinuePolling && attemptNumber < maxAttempts) {
-            // Progressive delays: 5s → 10s → 15s → 20s → 30s → 60s
-            const delays = [5000, 10000, 15000, 20000, 30000, 60000];
-            const nextDelay = delays[attemptNumber - 1] || 60000;
-
-            ludlog.payment(`⏳ Scheduling next retry poll in ${nextDelay/1000}s`, {
-              subscriptionId: subscriptionId.substring(0, 20) + '...',
-              nextAttempt: attemptNumber + 1,
-              delaySeconds: nextDelay / 1000
-            });
-
-            setTimeout(() => startContinuousSubscriptionPolling(subscriptionId, attemptNumber + 1, maxAttempts), nextDelay);
-          } else {
-            ludlog.payment('✅ Subscription retry polling complete', {
-              subscriptionId: subscriptionId.substring(0, 20) + '...',
-              finalStatus: pollResult.action_taken,
-              totalAttempts: attemptNumber
-            });
-          }
-        } catch (error) {
-          const { luderror } = await import('../lib/ludlog.js');
-          luderror.payment(`❌ Automatic subscription retry polling failed for ${subscriptionId}:`, error);
-          // Don't retry on error to prevent infinite loops
+          ludlog.payment('✅ Scheduled persistent subscription retry payment polling:', {
+            subscriptionId: pendingSubscription.id.substring(0, 20) + '...',
+            startDelay: '5s',
+            maxAttempts: 6,
+            retryCount,
+            source: 'job_scheduler'
+          });
+        } else {
+          luderror.payment('❌ JobScheduler not initialized, falling back to manual status checking for retry');
+          // Could implement manual fallback here if needed
         }
-      };
-
-      // Start first poll after 5 seconds (increased from 2s to give PayPlus processing time)
-      setTimeout(() => startContinuousSubscriptionPolling(pendingSubscription.id, 1, 6), 5000);
+      } catch (jobSchedulerError) {
+        luderror.payment('❌ Failed to schedule subscription retry payment polling job:', jobSchedulerError);
+        // Job scheduling failed - subscription will need manual verification
+      }
 
       return {
         success: true,

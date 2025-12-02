@@ -119,6 +119,7 @@ import eduContentRoutes from './routes/eduContent.js';
 import settingsRoutes from './routes/settings.js';
 import playersRoutes from './routes/players.js';
 import bundlesRoutes from './routes/bundles.js';
+import jobsRoutes from './routes/jobs.js';
 
 // Import services and utilities for Socket.IO authentication
 import AuthService from './services/AuthService.js';
@@ -247,6 +248,7 @@ app.use('/api/svg-slides', svgSlidesRoutes);
 app.use('/api/system-templates', systemTemplatesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/bundles', bundlesRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
@@ -299,7 +301,8 @@ app.get('/api', (req, res) => {
       'game-sessions': '/api/game-sessions',
       'edu-content': '/api/edu-content',
       'svg-slides': '/api/svg-slides',
-      'system-templates': '/api/system-templates'
+      'system-templates': '/api/system-templates',
+      jobs: '/api/jobs'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
   });
@@ -753,6 +756,82 @@ async function startServer() {
     // ✅ FIX: Enhanced deployment session protection with retry mechanism
     await extendActiveSessionsWithRetry();
 
+    // Initialize job scheduler
+    try {
+      const jobScheduler = (await import('./services/JobScheduler.js')).default;
+      await jobScheduler.initialize();
+      ludlog.api('Job scheduler initialized successfully');
+
+      // Schedule automated recurring jobs directly after initialization
+      // Bull MQ's recurring jobs are idempotent - scheduling the same cron job multiple times is safe
+      if (jobScheduler.isInitialized) {
+        try {
+          await jobScheduler.scheduleRecurringJob('PAYMENT_STATUS_CHECK',
+            {
+              checkType: 'pending_subscriptions',
+              batchSize: 50,
+              maxAge: 48 // Check subscriptions pending for max 48 hours
+            },
+            '*/30 * * * *', // Every 30 minutes
+            { priority: 80 }
+          );
+
+          ludlog.api('Automated payment status monitoring scheduled successfully');
+
+          // Schedule orphaned file cleanup (weekly on Sundays at 2 AM)
+          await jobScheduler.scheduleRecurringJob('FILE_CLEANUP_ORPHANED',
+            {
+              environment: env,
+              batchSize: 100,
+              maxFiles: 5000, // Higher limit for weekly runs
+              checkThreshold: '48h', // Skip files checked within 48 hours
+              dryRun: false
+            },
+            '0 2 * * 0', // Every Sunday at 2 AM
+            { priority: 40 }
+          );
+
+          ludlog.api('Automated file cleanup scheduled successfully');
+
+          // Schedule webhook security monitoring (daily at 3 AM)
+          await jobScheduler.scheduleRecurringJob('WEBHOOK_SECURITY_MONITOR',
+            {
+              checkMetrics: true,
+              alertingEnabled: true,
+              dashboardUpdate: false
+            },
+            '0 3 * * *', // Every day at 3 AM
+            { priority: 50 }
+          );
+
+          ludlog.api('Automated webhook security monitoring scheduled successfully');
+
+          // Schedule database maintenance (weekly on Saturdays at 4 AM)
+          await jobScheduler.scheduleRecurringJob('DATABASE_MAINTENANCE',
+            {
+              maintenanceType: 'full',
+              includeVacuum: true,
+              includeAnalyze: true,
+              includeReindex: false, // Keep false for safety
+              checkConnectionPool: true,
+              reportPerformance: true,
+              maxExecutionTime: 600000 // 10 minutes max
+            },
+            '0 4 * * 6', // Every Saturday at 4 AM
+            { priority: 30 }
+          );
+
+          ludlog.api('Automated database maintenance scheduled successfully');
+        } catch (monitoringError) {
+          luderror.api('Failed to schedule automated jobs:', monitoringError);
+        }
+      }
+
+    } catch (error) {
+      luderror.api('Failed to initialize job scheduler:', error);
+      // Don't fail server startup if job scheduler fails to initialize
+    }
+
     const server = httpServer.listen(PORT, () => {
       ludlog.api(`Ludora API Server with Socket.IO running on port ${PORT} (${env})`);
     });
@@ -784,9 +863,11 @@ process.on('SIGTERM', async () => {
 
   // Stop background services
   try {
-    // No background services to stop - Israeli middleware removed
+    // Gracefully shutdown job scheduler
+    const jobScheduler = (await import('./services/JobScheduler.js')).default;
+    await jobScheduler.shutdown(5000); // 5 second timeout
   } catch (error) {
-    // Log critical shutdown errors only
+    luderror.api('Error shutting down job scheduler:', error);
   }
 
   server.close(() => {
@@ -799,9 +880,11 @@ process.on('SIGINT', async () => {
 
   // Stop background services
   try {
-    // No background services to stop - Israeli middleware removed
+    // Gracefully shutdown job scheduler
+    const jobScheduler = (await import('./services/JobScheduler.js')).default;
+    await jobScheduler.shutdown(5000); // 5 second timeout
   } catch (error) {
-    // Log critical shutdown errors only
+    luderror.api('Error shutting down job scheduler:', error);
   }
 
   server.close(() => {
