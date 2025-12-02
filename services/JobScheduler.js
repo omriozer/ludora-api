@@ -100,26 +100,35 @@ class JobScheduler {
     try {
       // Create Redis connection
       const redisUrl = process.env.REDIS_URL || process.env.REDISTOGO_URL || 'redis://localhost:6379';
-      const isDevelopment = process.env.ENVIRONMENT === 'development' || !process.env.REDIS_URL;
+      const environment = process.env.ENVIRONMENT || 'development';
+      const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
 
-      // In development mode, do a quick Redis availability check first
-      if (isDevelopment) {
+      // Development or staging without Redis should fail gracefully
+      const shouldFailGracefully = environment === 'development' || !hasRedisUrl;
+
+      // In non-production environments without Redis, do a quick availability check first
+      if (shouldFailGracefully) {
         try {
           const testConnection = new Redis(redisUrl, {
             maxRetriesPerRequest: null,
             lazyConnect: true,
-            connectTimeout: 1000
+            connectTimeout: 2000
           });
 
           await testConnection.ping();
           await testConnection.disconnect();
           // If we get here, Redis is available
+          ludlog.generic('JobScheduler Redis available in non-production environment');
         } catch (testError) {
-          // Redis is not available in development - fail gracefully
-          ludlog.generic('JobScheduler Redis not available in development mode', {
-            message: 'Job scheduling disabled - Redis not running. Jobs will be manual-only in development.',
+          // Redis is not available - fail gracefully
+          ludlog.generic(`JobScheduler Redis not available in ${environment} environment`, {
+            message: `Job scheduling disabled - Redis not configured. Jobs will be manual-only.`,
+            environment,
             error: testError.code || 'ECONNREFUSED',
-            note: 'To enable automatic job scheduling: brew install redis && brew services start redis (macOS)'
+            hasRedisUrl,
+            note: environment === 'development'
+              ? 'To enable automatic job scheduling: brew install redis && brew services start redis (macOS)'
+              : 'Configure Redis addon to enable automatic job scheduling'
           });
 
           this.redisAvailable = false;
@@ -131,14 +140,14 @@ class JobScheduler {
       }
 
       this.redis = new Redis(redisUrl, {
-        maxRetriesPerRequest: isDevelopment ? null : 3,
-        retryDelayOnFailover: isDevelopment ? 0 : 100,
+        maxRetriesPerRequest: shouldFailGracefully ? null : 3,
+        retryDelayOnFailover: shouldFailGracefully ? 0 : 100,
         enableReadyCheck: false,
         maxLoadingTimeout: 1000,
         lazyConnect: true,
-        connectTimeout: isDevelopment ? 2000 : 10000,
-        retryDelayOnClusterDown: isDevelopment ? 0 : 100,
-        retryDelayOnClusterFailover: isDevelopment ? 0 : 100
+        connectTimeout: shouldFailGracefully ? 2000 : 10000,
+        retryDelayOnClusterDown: shouldFailGracefully ? 0 : 100,
+        retryDelayOnClusterFailover: shouldFailGracefully ? 0 : 100
       });
 
       this.redis.on('connect', () => {
@@ -146,7 +155,7 @@ class JobScheduler {
       });
 
       this.redis.on('error', (error) => {
-        if (!isDevelopment) {
+        if (!shouldFailGracefully) {
           luderror.generic('JobScheduler Redis connection error:', error);
         }
       });
@@ -196,24 +205,30 @@ class JobScheduler {
       ludlog.generic('JobScheduler initialized successfully with Redis-backed persistence');
 
     } catch (error) {
-      const isDevelopment = process.env.ENVIRONMENT === 'development' || !process.env.REDIS_URL;
+      const environment = process.env.ENVIRONMENT || 'development';
+      const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
+      const shouldFailGracefully = environment === 'development' || !hasRedisUrl;
 
-      if (isDevelopment && (error.code === 'ECONNREFUSED' || error.message.includes('Redis connection timeout'))) {
-        // Graceful failure in development mode - Redis not required for basic development
-        ludlog.generic('JobScheduler Redis not available in development mode', {
-          message: 'Job scheduling disabled - install Redis to enable scheduled jobs',
-          redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-          installInstructions: 'Run: brew install redis && brew services start redis (macOS) or install Redis for your OS'
+      if (shouldFailGracefully && (error.code === 'ECONNREFUSED' || error.message.includes('Redis connection timeout'))) {
+        // Graceful failure in non-production environments without Redis
+        ludlog.generic(`JobScheduler Redis not available in ${environment} environment`, {
+          message: 'Job scheduling disabled - Redis not configured',
+          environment,
+          redisUrl: process.env.REDIS_URL || process.env.REDISTOGO_URL || 'redis://localhost:6379',
+          hasRedisUrl,
+          installInstructions: environment === 'development'
+            ? 'Run: brew install redis && brew services start redis (macOS) or install Redis for your OS'
+            : 'Configure Redis addon in Heroku to enable job scheduling'
         });
 
-        // Mark as "initialized" but disabled to prevent retry attempts
+        // Mark as not initialized and Redis unavailable
         this.isInitialized = false; // Keep false so job scheduling is disabled
         this.redisAvailable = false;
 
         // Don't throw error - let server start without job scheduling
         return;
       } else {
-        // In production or with other errors, this is a critical failure
+        // In production with Redis or with other critical errors, this is a failure
         luderror.generic('Failed to initialize JobScheduler:', error);
         throw new Error(`JobScheduler initialization failed: ${error.message}`);
       }
@@ -321,13 +336,19 @@ class JobScheduler {
    */
   async scheduleJob(type, data, options = {}) {
     if (!this.isInitialized) {
-      const isDevelopment = process.env.ENVIRONMENT === 'development' || !process.env.REDIS_URL;
+      const environment = process.env.ENVIRONMENT || 'development';
+      const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
+      const shouldFailGracefully = environment === 'development' || !hasRedisUrl;
 
-      if (isDevelopment && this.redisAvailable === false) {
-        // Graceful failure in development - just log and return null
-        ludlog.generic(`JobScheduler: Skipping job scheduling in development (Redis not available)`, {
+      if (shouldFailGracefully && this.redisAvailable === false) {
+        // Graceful failure in non-production environments without Redis - just log and return null
+        ludlog.generic(`JobScheduler: Skipping job scheduling in ${environment} (Redis not available)`, {
           jobType: type,
-          message: 'Install Redis to enable job scheduling'
+          environment,
+          hasRedisUrl,
+          message: environment === 'development'
+            ? 'Install Redis to enable job scheduling'
+            : 'Configure Redis addon to enable job scheduling'
         });
         return null;
       }
