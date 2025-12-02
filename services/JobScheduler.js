@@ -112,7 +112,13 @@ class JobScheduler {
           const testConnection = new Redis(redisUrl, {
             maxRetriesPerRequest: null,
             lazyConnect: true,
-            connectTimeout: 2000
+            connectTimeout: 2000,
+            retryConnectOnFailure: false
+          });
+
+          // Add error handler to prevent unhandled events
+          testConnection.on('error', () => {
+            // Silently ignore connection errors during testing
           });
 
           await testConnection.ping();
@@ -147,7 +153,8 @@ class JobScheduler {
         lazyConnect: true,
         connectTimeout: shouldFailGracefully ? 2000 : 10000,
         retryDelayOnClusterDown: shouldFailGracefully ? 0 : 100,
-        retryDelayOnClusterFailover: shouldFailGracefully ? 0 : 100
+        retryDelayOnClusterFailover: shouldFailGracefully ? 0 : 100,
+        retryConnectOnFailure: !shouldFailGracefully  // Don't retry in graceful environments
       });
 
       this.redis.on('connect', () => {
@@ -155,13 +162,39 @@ class JobScheduler {
       });
 
       this.redis.on('error', (error) => {
-        if (!shouldFailGracefully) {
+        if (shouldFailGracefully) {
+          // In staging/dev without Redis, silently ignore errors to prevent crash
+          ludlog.generic(`JobScheduler Redis error (ignored in ${environment}):`, error.code || error.message);
+        } else {
           luderror.generic('JobScheduler Redis connection error:', error);
         }
       });
 
       // Test Redis connection
-      await this.redis.ping();
+      if (!shouldFailGracefully) {
+        await this.redis.ping();
+      } else {
+        // In graceful environments, try ping but handle failure gracefully
+        try {
+          await this.redis.ping();
+        } catch (pingError) {
+          // If ping fails in graceful mode, disconnect and fail gracefully
+          if (this.redis) {
+            await this.redis.disconnect();
+            this.redis = null;
+          }
+
+          ludlog.generic(`JobScheduler Redis ping failed in ${environment} environment`, {
+            message: 'Job scheduling disabled - Redis connection failed after initialization',
+            environment,
+            error: pingError.code || 'PING_FAILED'
+          });
+
+          this.redisAvailable = false;
+          this.isInitialized = false;
+          return;
+        }
+      }
 
       // Create priority-based queues
       const queueNames = ['critical', 'high', 'medium', 'low'];
