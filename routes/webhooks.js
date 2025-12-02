@@ -98,6 +98,9 @@ router.post('/payplus',
     const startTime = Date.now();
     const webhookData = req.body;
 
+    // Check if webhooks are active (always log regardless of flag)
+    const webhooksActive = process.env.PAYMENTS_WEBHOOK_ACTIVE === 'true';
+
 
     // Capture raw request body for signature verification
     const rawBody = JSON.stringify(req.body);
@@ -218,6 +221,25 @@ router.post('/payplus',
 
       webhookLog.addProcessLog('Webhook received and logged');
       webhookLog.addProcessLog(`Sender IP: ${senderInfo.ip}, User-Agent: ${senderInfo.userAgent}`);
+      webhookLog.addProcessLog(`Webhooks active: ${webhooksActive}`);
+
+      // Check if webhooks are disabled - always log but skip processing
+      if (!webhooksActive) {
+        await webhookLog.updateStatus('ignored', 'Webhook processing disabled via PAYMENTS_WEBHOOK_ACTIVE=false');
+
+        const responseData = {
+          message: 'PayPlus webhook received and logged but processing is disabled',
+          status: 'ignored',
+          reason: 'PAYMENTS_WEBHOOK_ACTIVE environment variable is set to false',
+          timestamp: new Date().toISOString(),
+          webhookId: webhookLog.id
+        };
+
+        await webhookLog.update({ response_data: responseData });
+
+        // Always respond with success to PayPlus to prevent retries
+        return res.status(200).json(responseData);
+      }
 
       await webhookLog.updateStatus('processing', 'Starting webhook processing');
 
@@ -263,30 +285,29 @@ router.post('/payplus',
       const SubscriptionService = (await import('../services/SubscriptionService.js')).default;
       const PaymentTokenService = (await import('../services/PaymentTokenService.js')).default;
 
-      // Validate required webhook data
-      if (!webhookData.transaction?.payment_page_request_uid) {
-        throw new Error('Missing required payment_page_request_uid in webhook data');
+      // Handle first payments vs recurring charges according to PayPlus specifications
+      let transaction = null;
+
+      if (webhookData.transaction?.payment_page_request_uid) {
+        // FIRST PAYMENT: Has payment_page_request_uid
+        webhookLog.addProcessLog(`Processing FIRST PAYMENT webhook for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid}`);
+
+        transaction = await models.Transaction.findOne({
+          where: {
+            payment_page_request_uid: webhookData.transaction.payment_page_request_uid
+          },
+          include: [
+            {
+              model: models.Purchase,
+              as: 'purchases'
+            }
+          ]
+        });
       }
 
-      webhookLog.addProcessLog(`Processing webhook for payment_page_request_uid: ${webhookData.transaction.payment_page_request_uid}`);
-
-      // Find the transaction by payment_page_request_uid
-      let transaction = await models.Transaction.findOne({
-        where: {
-          payment_page_request_uid: webhookData.transaction.payment_page_request_uid
-        },
-        include: [
-          {
-            model: models.Purchase,
-            as: 'purchases'
-          }
-        ]
-      });
-
-      // CRITICAL FIX FOR SUBSCRIPTION RENEWALS: Fallback lookup by subscription_uid
-      // PayPlus sends different payment_page_request_uid for renewals but keeps same subscription_uid
+      // RECURRING CHARGES: Use subscription_uid according to PayPlus specs
       if (!transaction && webhookData.subscription_uid) {
-        webhookLog.addProcessLog(`Primary lookup failed. Attempting subscription renewal fallback for subscription_uid: ${webhookData.subscription_uid}`);
+        webhookLog.addProcessLog(`Processing RECURRING CHARGE webhook for subscription_uid: ${webhookData.subscription_uid}`);
 
         // Look for subscription with matching subscription_uid
         const subscription = await models.Subscription.findOne({

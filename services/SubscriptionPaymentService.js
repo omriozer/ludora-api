@@ -398,6 +398,10 @@ class SubscriptionPaymentService {
     }
 
     switch (subscriptionPlan.billing_period) {
+      case 'daily':
+        recurringType = 0; // Daily
+        recurringRange = 1;
+        break;
       case 'weekly':
         recurringType = 1; // Weekly
         recurringRange = 1;
@@ -467,9 +471,83 @@ class SubscriptionPaymentService {
       // Import SubscriptionService
       const SubscriptionService = (await import('./SubscriptionService.js')).default;
 
-      // Activate subscription with resolution source tracking
+      // Extract PayPlus UID from webhook data before activation
+      // PayPlus might send the recurring UID in different fields depending on webhook type
+      const possibleUidFields = [
+        webhookData.subscription_uid,
+        webhookData.recurring_charge_information?.recurring_uid,
+        webhookData.recurring_uid,
+        webhookData.recurring_info?.recurring_uid,
+        webhookData.transaction?.subscription_uid,
+        webhookData.recurring_charge_information?.subscription_uid
+      ];
+
+      const subscriptionUid = possibleUidFields.find(uid => uid && uid.trim());
+
+      // CRITICAL: Detect renewal and update plan snapshot
+      // A renewal is when subscription already has active status AND a PayPlus UID
+      const isRenewal = subscription.status === 'active' && subscription.payplus_subscription_uid;
+
+      if (isRenewal) {
+        const { ludlog } = await import('../lib/ludlog.js');
+        ludlog.payment('🔄 Renewal detected - updating plan snapshot with current benefits:', {
+          subscriptionId: subscription.id.substring(0, 20) + '...',
+          currentStatus: subscription.status,
+          hasUID: !!subscription.payplus_subscription_uid
+        });
+
+        try {
+          // Get current subscription plan to update snapshot with latest benefits
+          const currentPlan = await models.SubscriptionPlan.findByPk(subscription.subscription_plan_id);
+
+          if (currentPlan) {
+            const pricingInfo = calcSubscriptionPlanPrice(currentPlan);
+
+            // Update subscription with NEW snapshot at renewal
+            await subscription.update({
+              metadata: {
+                ...subscription.metadata,
+                planSnapshot: {
+                  name: currentPlan.name,
+                  description: currentPlan.description,
+                  benefits: currentPlan.benefits, // ✅ Update with current plan benefits
+                  originalPrice: pricingInfo.originalPrice,
+                  discountInfo: pricingInfo.isDiscounted ? {
+                    type: pricingInfo.discountType,
+                    value: pricingInfo.discountValue,
+                    amount: pricingInfo.discountAmount
+                  } : null
+                },
+                lastSnapshotUpdate: new Date().toISOString(),
+                snapshotUpdateReason: 'renewal',
+                renewalAt: new Date().toISOString()
+              }
+            });
+
+            ludlog.payment('✅ Plan snapshot updated at renewal:', {
+              subscriptionId: subscription.id.substring(0, 20) + '...',
+              planId: currentPlan.id,
+              planName: currentPlan.name,
+              benefitsUpdated: !!currentPlan.benefits
+            });
+          } else {
+            luderror.payment('⚠️ Could not find subscription plan for renewal snapshot update:', {
+              subscriptionId: subscription.id,
+              subscriptionPlanId: subscription.subscription_plan_id
+            });
+          }
+        } catch (snapshotError) {
+          luderror.payment('❌ Failed to update plan snapshot at renewal:', {
+            subscriptionId: subscription.id,
+            error: snapshotError.message
+          });
+          // Don't fail the renewal if snapshot update fails - just log the error
+        }
+      }
+
+      // Activate subscription with PayPlus UID and resolution source tracking
       const activatedSubscription = await SubscriptionService.activateSubscription(subscription.id, {
-        payplusSubscriptionUid: webhookData.subscription_uid,
+        payplusSubscriptionUid: subscriptionUid, // Set UID during activation
         activationDate: new Date(),
         payplusWebhookData: webhookData,
         metadata: {
@@ -479,6 +557,25 @@ class SubscriptionPaymentService {
           resolvedAt: new Date().toISOString()
         }
       });
+
+      // Log UID capture result
+      if (subscriptionUid) {
+        const { ludlog } = await import('../lib/ludlog.js');
+        ludlog.payment('✅ Activated subscription with PayPlus UID:', {
+          subscriptionId: subscription.id.substring(0, 20) + '...',
+          subscriptionUid: subscriptionUid.substring(0, 20) + '...',
+          source: 'webhook',
+          resolvedBy
+        });
+      } else {
+        const { ludlog } = await import('../lib/ludlog.js');
+        ludlog.payment('⚠️ No subscription UID found in webhook data for subscription:', {
+          subscriptionId: subscription.id.substring(0, 20) + '...',
+          checkedFields: possibleUidFields.map(field => field ? 'found' : 'null'),
+          webhookDataKeys: Object.keys(webhookData),
+          resolvedBy
+        });
+      }
 
       // Update the associated transaction with resolution source if it exists
       try {
@@ -509,11 +606,6 @@ class SubscriptionPaymentService {
       } catch (error) {
         // Don't fail activation if transaction update fails, just log it
         luderror.payment('Failed to update transaction with resolution source:', error);
-      }
-
-      // Update subscription with PayPlus UID if provided
-      if (webhookData.subscription_uid) {
-        await SubscriptionService.updateSubscriptionPayPlusUid(subscription.id, webhookData.subscription_uid);
       }
 
       return activatedSubscription;

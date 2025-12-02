@@ -82,6 +82,7 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
     // Watermark rules: Applied ONLY in preview mode (when user doesn't own the file)
     const needsWatermarks = isPreviewMode && !skipWatermarks;
 
+
     // Check if we should use template-based watermarks (instead of legacy hardcoded ones)
     const shouldUseTemplateWatermarks = needsWatermarks && (
       fileEntity.watermark_template_id ||  // Has specific watermark template
@@ -103,6 +104,7 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
 
       // Build unified template settings combining watermarks and branding
       let unifiedTemplate = { elements: {} };
+
 
       // 1. Add watermark elements if needed
       if (needsWatermarks) {
@@ -179,11 +181,13 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
         }
       }
 
+
       // 3. Apply unified template with optional page replacement
       const options = {};
       if (needsSelectiveAccess) {
         options.accessiblePages = fileEntity.accessible_pages;
       }
+
 
       // Use unified mergePdfTemplate for all processing
       const processedBuffer = await mergePdfTemplate(pdfBuffer, unifiedTemplate, variables, options);
@@ -419,8 +423,7 @@ async function checkUserAccess(user, fileEntity) {
 
   // Use AccessControlService to check if user has purchased access
   try {
-    const accessResult = await AccessControlService.checkAccess(user.id, 'file', fileEntity.id);
-
+    const accessResult = await AccessControlService.checkAccess(user.id, 'file', product.id);
     return accessResult.hasAccess;
   } catch (error) {
     return false;
@@ -1238,7 +1241,7 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
             hasAccess = true;
           } else {
             // Use AccessControlService to check purchase access
-            const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', lessonPlanId);
+            const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', product.id);
             hasAccess = accessResult.hasAccess;
 
           }
@@ -1724,8 +1727,11 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
       if (!req.user.id && req.user.id) {
         req.user.id = req.user.id;
       }
+
+
       // Check access control for authenticated users
       hasAccess = await checkUserAccess(req.user, fileEntity);
+
     }
     const isPreviewRequest = req.query.preview === 'true';
 
@@ -1738,6 +1744,7 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
     // Determine access type for authenticated user
     let accessType = 'denied';
     let isPreviewMode = false;
+
 
     if (hasAccess) {
       // User owns the content - full access

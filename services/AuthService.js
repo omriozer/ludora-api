@@ -600,12 +600,10 @@ class AuthService {
               throw new Error('User not found or inactive');
             }
 
+            const userData = user.toJSON();
             return {
-              id: user.id,
-              email: user.email,
-              role: user.role,
-              type: 'jwt',
-              user: user.toJSON()
+              ...userData,
+              type: 'jwt'
             };
           }
         } catch (jwtError) {
@@ -633,19 +631,18 @@ class AuthService {
             });
           }
 
+          const userData = user ? user.toJSON() : {
+            id: decodedToken.uid,
+            email: decodedToken.email,
+            full_name: decodedToken.name || decodedToken.email.split('@')[0],
+            role: 'user',
+            is_verified: decodedToken.email_verified,
+            is_active: true
+          };
+
           return {
-            id: user?.id || decodedToken.uid,
-            email: user?.email || decodedToken.email,
-            role: user?.role || 'user',
-            type: 'firebase',
-            user: user ? user.toJSON() : {
-              id: decodedToken.uid,
-              email: decodedToken.email,
-              full_name: decodedToken.name || decodedToken.email.split('@')[0],
-              role: 'user',
-              is_verified: decodedToken.email_verified,
-              is_active: true
-            }
+            ...userData,
+            type: 'firebase'
           };
         } catch (firebaseError) {
           throw new Error('Invalid or expired token');

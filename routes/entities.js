@@ -7,8 +7,8 @@ import { validateBody, validateQuery, schemas, customValidators } from '../middl
 import EntityService from '../services/EntityService.js';
 import GameDetailsService from '../services/GameDetailsService.js';
 import SettingsService from '../services/SettingsService.js';
-import models from '../models/index.js';
-import { sequelize } from '../models/index.js';
+import AccessControlIntegrator from '../services/AccessControlIntegrator.js';
+import models, { sequelize } from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 // Note: No longer importing deprecated helper functions since we use SystemTemplate now
@@ -327,25 +327,117 @@ router.get('/products/list', optionalAuth, async (req, res) => {
     const sortField = validSortFields.includes(sort_by) ? sort_by : 'created_at';
     const sortDirection = sort_order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    // Get products with pagination
+    // Get user ID from auth if available
+    const userId = req.user?.uid || null;
+
+    // PERFORMANCE OPTIMIZATION: Use eager loading for creator to reduce N+1 queries
     const options = {
       where,
       order: [[sortField, sortDirection]],
       limit: limit ? parseInt(limit) : undefined,
-      offset: offset ? parseInt(offset) : undefined
+      offset: offset ? parseInt(offset) : undefined,
+      include: [
+        {
+          model: models.User,
+          as: 'creator',
+          attributes: ['id', 'full_name', 'email', 'content_creator_agreement_sign_date'],
+          required: false
+        }
+      ]
     };
 
     const products = await models.Product.findAll(options);
 
-    // Get user ID from auth if available
-    const userId = req.user?.uid || null;
+    // Optimize purchase queries by batching if user is authenticated
+    const purchasesByProduct = {};
+    if (userId && products.length > 0) {
+      const productIds = products.map(p => p.id);
+      const purchases = await models.Purchase.findAll({
+        where: {
+          buyer_user_id: userId,
+          product_id: productIds,
+          payment_status: ['completed', 'pending', 'cart']
+        },
+        attributes: ['id', 'product_id', 'payment_status', 'access_expires_at', 'created_at'],
+        order: [['created_at', 'DESC']]
+      });
 
-    // Get full details for each product
-    const fullProducts = await Promise.all(
-      products.map(product => getFullProduct(product, userId))
-    );
+      // Group purchases by product_id
+      purchases.forEach(purchase => {
+        if (!purchasesByProduct[purchase.product_id]) {
+          purchasesByProduct[purchase.product_id] = purchase;
+        }
+      });
+    }
 
-    res.json(fullProducts);
+    // Optimize entity queries by grouping by type
+    const entitiesByType = {};
+    products.forEach(product => {
+      if (product.entity_id && product.product_type) {
+        if (!entitiesByType[product.product_type]) {
+          entitiesByType[product.product_type] = [];
+        }
+        entitiesByType[product.product_type].push(product.entity_id);
+      }
+    });
+
+    // Batch load entities by type
+    const entityDataMap = {};
+    for (const [productType, entityIds] of Object.entries(entitiesByType)) {
+      try {
+        const entityModel = EntityService.getModel(productType);
+        const entities = await entityModel.findAll({
+          where: { id: entityIds }
+        });
+        entities.forEach(entity => {
+          entityDataMap[entity.id] = entity.toJSON();
+        });
+      } catch (error) {
+        // Continue without this entity type
+      }
+    }
+
+    // Process products with loaded data
+    const fullProducts = products.map(product => {
+      const productData = product.toJSON();
+
+      // Get entity data from batch loaded entities
+      let entityData = {};
+      if (product.entity_id && entityDataMap[product.entity_id]) {
+        entityData = entityDataMap[product.entity_id];
+        delete entityData.id; // Remove entity id to avoid conflict
+      }
+
+      // Use creator from eager loaded data
+      const creator = productData.creator || {
+        id: null,
+        full_name: 'Ludora',
+        email: null,
+        content_creator_agreement_sign_date: null
+      };
+
+      // Get purchase from batch loaded purchases
+      const purchase = purchasesByProduct[product.id] || null;
+
+      return {
+        ...productData,
+        ...entityData,
+        id: productData.id, // Ensure product ID is preserved
+        entity_id: product.entity_id,
+        creator: {
+          id: creator.id,
+          full_name: creator.full_name,
+          email: creator.email,
+          is_content_creator: !!creator.content_creator_agreement_sign_date
+        },
+        purchase: purchase ? purchase.toJSON() : null
+      };
+    });
+
+    // Enrich products with access control information
+    const enrichedProducts = await AccessControlIntegrator.enrichProductsWithAccess(fullProducts, userId);
+
+    res.json(enrichedProducts);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -370,7 +462,11 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
     const userId = req.user?.uid || null;
 
     const fullProduct = await getFullProduct(product, userId, includeGameDetails);
-    res.json(fullProduct);
+
+    // Enrich product with access control information
+    const enrichedProduct = await AccessControlIntegrator.enrichProductWithAccess(fullProduct, userId);
+
+    res.json(enrichedProduct);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -53,15 +53,6 @@ class DirectSlideService {
           socketTimeout: 120000       // 2 minutes for data transfer (cross-region)
         })
       });
-
-      // TODO remove debug - optimize cross-region upload performance
-      console.log('S3 client initialized with cross-region optimizations', {
-        region: process.env.AWS_REGION || 'us-east-1',
-        bucket: this.bucketName,
-        maxAttempts: 3,
-        connectionTimeout: '10s',
-        socketTimeout: '120s'
-      });
     } catch (error) {
       throw new Error('S3 initialization failed');
     }

@@ -4,6 +4,7 @@ import fileService from '../services/FileService.js';
 import db from '../models/index.js';
 import { generateIsraeliCacheHeaders, applyIsraeliCaching } from '../middleware/israeliCaching.js';
 import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.js';
+import AccessControlService from '../services/AccessControlService.js';
 
 const router = express.Router();
 const authService = new AuthService();
@@ -33,11 +34,13 @@ function encodeContentDisposition(disposition, filename) {
 /**
  * Helper: Check if user has access to private video content
  *
- * Access is granted if:
- * - User is admin
- * - User is the creator
- * - Content is free (no purchase required)
- * - User has valid purchase
+ * Uses three-layer AccessControlService for consistent access control:
+ * - Layer 1: Creator Access (user owns the content)
+ * - Layer 2: Purchase Access (user bought the content)
+ * - Layer 3: Subscription Claim Access (user claimed via subscription allowance)
+ *
+ * This ensures video access control matches file download access control,
+ * preventing the issue where subscription-claimed files show watermarked previews.
  *
  * @param {Object} user - Authenticated user object
  * @param {string} entityType - Type of entity (workshop, course, file, tool)
@@ -45,97 +48,74 @@ function encodeContentDisposition(disposition, filename) {
  * @returns {Promise<boolean>} True if user has access
  */
 async function checkVideoAccess(user, entityType, entityId) {
+  // Admin bypass
   if (user.role === 'admin' || user.role === 'sysadmin') {
     return true;
   }
-  
-  // Check if content is free by looking up the Product
-  let isFree = false;
+
+  // Look up the Product to determine access method
   try {
-    // Get the Product associated with this entity
     const product = await db.Product.findOne({
       where: {
         product_type: entityType,
         entity_id: entityId
       }
     });
-    
-    if (product.creator_user_id === user.id) {
-      return true;
-    }
-    isFree = product ? parseFloat(product.price || 0) === 0 : false;
-  } catch (error) {
-    // Default to not free if we can't determine price
-    isFree = false;
-  }
 
-  if (isFree) {
-    // Auto-create purchase record for free content with transaction safety
-    try {
-      const { sequelize } = db;
-      const transaction = await sequelize.transaction();
-
-      try {
-        const orderNumber = `FREE-AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-        // Use findOrCreate within transaction to prevent race conditions
-        const [purchase, created] = await db.Purchase.findOrCreate({
-          where: {
-            buyer_user_id: user.id,
-            purchasable_type: entityType,
-            purchasable_id: entityId
-          },
-          defaults: {
-            id: `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            order_number: orderNumber,
-            buyer_user_id: user.id,
-            purchasable_type: entityType,
-            purchasable_id: entityId,
-            payment_status: 'completed',
-            payment_amount: 0,
-            original_price: 0,
-            access_expires_at: null,
-            first_accessed_at: new Date()
-          },
-          transaction
-        });
-
-        await transaction.commit();
-
-
-      } catch (transactionError) {
-        await transaction.rollback();
-        // Still return true for free content access, even if purchase record creation failed
-      }
-    } catch (error) {
-      // Still return true for free content access
-    }
-
-    return true;
-  }
-
-  // Check if user has purchased this content
-  const purchases = await db.Purchase.findAll({
-    where: {
-      buyer_user_id: user.id,
-      payment_status: 'completed'
-    }
-  });
-
-  const validPurchase = purchases.find(purchase => {
-    if (purchase.purchasable_id !== entityId || purchase.purchasable_type !== entityType) {
+    // If no product found, deny access (not a valid product)
+    if (!product) {
       return false;
     }
 
-    // Check if access is still valid (not expired)
-    if (!purchase.access_expires_at || new Date(purchase.access_expires_at) > new Date()) {
+    // If free content, auto-create purchase record for tracking
+    if (parseFloat(product.price || 0) === 0) {
+      try {
+        const { sequelize } = db;
+        const transaction = await sequelize.transaction();
+
+        try {
+          const orderNumber = `FREE-AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+          await db.Purchase.findOrCreate({
+            where: {
+              buyer_user_id: user.id,
+              purchasable_type: entityType,
+              purchasable_id: entityId
+            },
+            defaults: {
+              id: `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              order_number: orderNumber,
+              buyer_user_id: user.id,
+              purchasable_type: entityType,
+              purchasable_id: entityId,
+              payment_status: 'completed',
+              payment_amount: 0,
+              original_price: 0,
+              access_expires_at: null,
+              first_accessed_at: new Date()
+            },
+            transaction
+          });
+
+          await transaction.commit();
+        } catch (transactionError) {
+          await transaction.rollback();
+          // Still return true for free content access
+        }
+      } catch (error) {
+        // Still return true for free content access
+      }
+
       return true;
     }
 
+    // Use AccessControlService for three-layer access control with Product ID
+    // This checks: Creator Access → Purchase Access → Subscription Claim Access
+    const accessResult = await AccessControlService.checkAccess(user.id, entityType, product.id);
+    return accessResult.hasAccess;
+  } catch (error) {
     return false;
-  });
-
-  return !!validPurchase;
+  }
 }
 
 /**

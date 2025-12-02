@@ -1,6 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import AccessControlService from '../services/AccessControlService.js';
+import models from '../models/index.js';
 
 
 const router = express.Router();
@@ -11,8 +12,41 @@ router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) =
   const userId = req.user.id;
 
   try {
-    const accessInfo = await AccessControlService.checkAccess(userId, entityType, entityId);
-    res.json(accessInfo);
+    // CRITICAL FIX: Find Product ID using entity ID, since AccessControlService expects Product ID
+    const product = await models.Product.findOne({
+      where: {
+        product_type: entityType,
+        entity_id: entityId
+      },
+      attributes: ['id']
+    });
+
+    if (!product) {
+      // No Product record exists for this entity - this means it's not a claimable product
+      // Return no access instead of error to handle system files, templates, etc.
+      return res.json({
+        hasAccess: false,
+        accessType: 'none',
+        reason: 'Entity is not a claimable product (no Product record)',
+        entityNotProduct: true
+      });
+    }
+
+    // Call AccessControlService with Product ID (not entity ID)
+    const accessInfo = await AccessControlService.checkAccess(userId, entityType, product.id);
+
+    // Add debug info to the response (temporary for debugging)
+    const responseWithDebug = {
+      ...accessInfo,
+      _debug: {
+        entityId,
+        productId: product.id,
+        entityType,
+        userId
+      }
+    };
+
+    res.json(responseWithDebug);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

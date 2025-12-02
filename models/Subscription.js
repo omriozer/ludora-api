@@ -229,8 +229,14 @@ export default function(sequelize) {
       updated_at: new Date()
     };
 
-    // Set next billing date if not cancelled
-    if (this.payplus_subscription_uid) {
+    // Set PayPlus subscription UID if provided
+    if (options.payplusSubscriptionUid) {
+      updateData.payplus_subscription_uid = options.payplusSubscriptionUid;
+    }
+
+    // Set next billing date for paid subscriptions with PayPlus UID
+    const hasPayplusUid = updateData.payplus_subscription_uid || this.payplus_subscription_uid;
+    if (hasPayplusUid && this.monthly_price > 0) {
       updateData.next_billing_date = this.calculateNextBillingDate(updateData.start_date);
     }
 

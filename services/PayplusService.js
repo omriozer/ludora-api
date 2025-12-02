@@ -101,8 +101,6 @@ class PayplusService {
         ...this.getAdditionalSettings(chargeMethod, frontendOrigin, purchaseItems)
       };
 
-      // TODO remove debug - investigate payment redirect issue
-      luderror.payment(`🔍 PayPlus URLs being sent:`, {
         refURL_success: paymentRequest.refURL_success,
         refURL_failure: paymentRequest.refURL_failure,
         refURL_cancel: paymentRequest.refURL_cancel,

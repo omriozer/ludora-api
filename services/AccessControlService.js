@@ -18,51 +18,51 @@ class AccessControlService {
    *
    * @param {string} userId - User ID to check access for
    * @param {string} entityType - Type of entity (workshop, course, file, game, tool)
-   * @param {string} entityId - ID of the specific entity
+   * @param {string} productId - Product ID (marketplace facade ID)
    * @returns {Object} Access result with hasAccess, accessType, and relevant data
    */
-  async checkAccess(userId, entityType, entityId) {
+  async checkAccess(userId, entityType, productId) {
     try {
-      ludlog.auth(`🔍 Checking three-layer access for user ${userId}, ${entityType}:${entityId}`);
+      ludlog.auth(`🔍 Checking three-layer access for user ${userId}, ${entityType}:${productId}`);
 
       // Layer 1: Creator Access Check (highest priority)
-      const creatorAccess = await this.checkCreatorAccess(userId, entityType, entityId);
+      const creatorAccess = await this.checkCreatorAccess(userId, entityType, productId);
       if (creatorAccess.hasAccess) {
-        ludlog.auth(`✅ Creator access granted for ${entityType}:${entityId}`);
+        ludlog.auth(`✅ Creator access granted for ${entityType}:${productId}`);
 
         // Apply content-type specific validation
         const contentValidation = await this.validateContentTypeSpecificAccess(
-          userId, entityType, entityId, { ...creatorAccess, accessType: 'creator' }
+          userId, entityType, creatorAccess.entityId, { ...creatorAccess, accessType: 'creator' }
         );
         return contentValidation;
       }
 
       // Layer 2: Purchase Access Check (existing logic)
-      const purchaseAccess = await this.checkPurchaseAccess(userId, entityType, entityId);
+      const purchaseAccess = await this.checkPurchaseAccess(userId, entityType, productId);
       if (purchaseAccess.hasAccess) {
-        ludlog.auth(`✅ Purchase access granted for ${entityType}:${entityId}`);
+        ludlog.auth(`✅ Purchase access granted for ${entityType}:${productId}`);
 
         // Apply content-type specific validation
         const contentValidation = await this.validateContentTypeSpecificAccess(
-          userId, entityType, entityId, { ...purchaseAccess, accessType: 'purchase' }
+          userId, entityType, purchaseAccess.entityId, { ...purchaseAccess, accessType: 'purchase' }
         );
         return contentValidation;
       }
 
       // Layer 3: Subscription Claim Access Check (new)
-      const subscriptionAccess = await this.checkSubscriptionClaimAccess(userId, entityType, entityId);
+      const subscriptionAccess = await this.checkSubscriptionClaimAccess(userId, entityType, productId);
       if (subscriptionAccess.hasAccess) {
-        ludlog.auth(`✅ Subscription claim access granted for ${entityType}:${entityId}`);
+        ludlog.auth(`✅ Subscription claim access granted for ${entityType}:${productId}`);
 
         // Apply content-type specific validation
         const contentValidation = await this.validateContentTypeSpecificAccess(
-          userId, entityType, entityId, { ...subscriptionAccess, accessType: 'subscription_claim' }
+          userId, entityType, subscriptionAccess.entityId, { ...subscriptionAccess, accessType: 'subscription_claim' }
         );
         return contentValidation;
       }
 
       // No access found through any layer
-      ludlog.auth(`❌ No access found for user ${userId}, ${entityType}:${entityId}`);
+      ludlog.auth(`❌ No access found for user ${userId}, ${entityType}:${productId}`);
       return {
         hasAccess: false,
         accessType: 'none',
@@ -81,19 +81,19 @@ class AccessControlService {
    *
    * @param {string} userId - User ID to check
    * @param {string} entityType - Type of entity
-   * @param {string} entityId - Entity ID
+   * @param {string} productId - Product ID
    * @returns {Object} Creator access result
    */
-  async checkCreatorAccess(userId, entityType, entityId) {
+  async checkCreatorAccess(userId, entityType, productId) {
     try {
-      // Find the product record that corresponds to this entity
+      // Find the product record by Product ID
       const product = await this.models.Product.findOne({
         where: {
+          id: productId,
           product_type: entityType,
-          entity_id: entityId,
           creator_user_id: userId
         },
-        attributes: ['id', 'creator_user_id', 'title', 'is_published'],
+        attributes: ['id', 'entity_id', 'creator_user_id', 'title', 'is_published'],
         include: [
           {
             model: this.models.User,
@@ -109,6 +109,8 @@ class AccessControlService {
           hasAccess: true,
           reason: 'creator_ownership',
           message: 'User is the creator/owner of this content',
+          productId: product.id,
+          entityId: product.entity_id,
           product: {
             id: product.id,
             title: product.title,
@@ -142,17 +144,34 @@ class AccessControlService {
    *
    * @param {string} userId - User ID to check
    * @param {string} entityType - Type of entity
-   * @param {string} entityId - Entity ID
+   * @param {string} productId - Product ID
    * @returns {Object} Purchase access result
    */
-  async checkPurchaseAccess(userId, entityType, entityId) {
+  async checkPurchaseAccess(userId, entityType, productId) {
     try {
-      // Get the purchase record for this user and entity
+      // First get the Product to find entity ID
+      const product = await this.models.Product.findOne({
+        where: {
+          id: productId,
+          product_type: entityType
+        },
+        attributes: ['id', 'entity_id']
+      });
+
+      if (!product) {
+        return {
+          hasAccess: false,
+          reason: 'product_not_found',
+          message: 'Product not found'
+        };
+      }
+
+      // Get the purchase record for this user and product
       const purchase = await this.models.Purchase.findOne({
         where: {
           buyer_user_id: userId,
           purchasable_type: entityType,
-          purchasable_id: entityId,
+          purchasable_id: productId, // Purchase records use Product ID
           payment_status: 'completed', // Only successful payments
           [Op.or]: [
             { access_expires_at: null }, // Lifetime access
@@ -173,6 +192,8 @@ class AccessControlService {
           hasAccess: true,
           reason: 'valid_purchase',
           message: 'User has valid purchase access',
+          productId: productId,
+          entityId: product.entity_id,
           purchase: purchase,
           buyer: purchase.buyer,
           isLifetimeAccess: !purchase.access_expires_at,
@@ -204,19 +225,19 @@ class AccessControlService {
    *
    * @param {string} userId - User ID to check
    * @param {string} entityType - Type of entity
-   * @param {string} entityId - Entity ID
+   * @param {string} productId - Product ID
    * @returns {Object} Subscription claim access result
    */
-  async checkSubscriptionClaimAccess(userId, entityType, entityId) {
+  async checkSubscriptionClaimAccess(userId, entityType, productId) {
     try {
       // Check direct subscription claim access
-      const directClaim = await this.checkDirectSubscriptionClaim(userId, entityType, entityId);
+      const directClaim = await this.checkDirectSubscriptionClaim(userId, entityType, productId);
       if (directClaim.hasAccess) {
         return { ...directClaim, accessMethod: 'direct_subscription_claim' };
       }
 
       // Check student access via teacher claims
-      const studentAccess = await this.checkStudentAccessViaTeacher(userId, entityType, entityId);
+      const studentAccess = await this.checkStudentAccessViaTeacher(userId, entityType, productId);
       if (studentAccess.hasAccess) {
         return { ...studentAccess, accessMethod: 'student_via_teacher_claim' };
       }
@@ -241,23 +262,48 @@ class AccessControlService {
    *
    * @param {string} userId - User ID to check
    * @param {string} entityType - Type of entity
-   * @param {string} entityId - Entity ID
+   * @param {string} productId - Product ID
    * @returns {Object} Direct subscription claim result
    */
-  async checkDirectSubscriptionClaim(userId, entityType, entityId) {
+  async checkDirectSubscriptionClaim(userId, entityType, productId) {
     try {
-      // Find active subscription purchases for this user and content
+      ludlog.auth(`🔍 DEBUG: Checking direct subscription claim for user ${userId}, ${entityType}:${productId}`);
+
+      // Get the Product record to find entity ID
+      const product = await this.models.Product.findOne({
+        where: {
+          id: productId,
+          product_type: entityType
+        },
+        attributes: ['id', 'entity_id']
+      });
+
+      if (!product) {
+        ludlog.auth(`❌ DEBUG: Product not found for ${entityType}:${productId}`);
+        return {
+          hasAccess: false,
+          reason: 'product_not_found',
+          message: 'Product record not found'
+        };
+      }
+
+      ludlog.auth(`✅ DEBUG: Product found - ID: ${product.id}, Entity ID: ${product.entity_id}`);
+
+      // DEBUG: Log what we're searching for
+      ludlog.auth(`🚨 DEBUG: Searching for SubscriptionPurchase with user_id: ${userId}, product_type: ${entityType}, product_id: ${productId}`);
+
+      // Find active subscription purchases for this user and product
       const subscriptionPurchase = await this.models.SubscriptionPurchase.findOne({
         where: {
-          purchasable_type: entityType,
-          purchasable_id: entityId
+          user_id: userId,
+          product_type: entityType,
+          product_id: productId  // Direct Product ID lookup
         },
         include: [
           {
-            model: this.models.SubscriptionHistory,
+            model: this.models.Subscription,
             as: 'subscription',
             where: {
-              user_id: userId,
               status: 'active',
               [Op.or]: [
                 { end_date: null }, // Ongoing subscription
@@ -267,7 +313,7 @@ class AccessControlService {
             include: [
               {
                 model: this.models.SubscriptionPlan,
-                as: 'plan',
+                as: 'subscriptionPlan',
                 attributes: ['id', 'name', 'benefits']
               }
             ]
@@ -275,14 +321,59 @@ class AccessControlService {
         ]
       });
 
+      // DEBUG: Also try to find any SubscriptionPurchase without the subscription include to see if records exist
+      const allUserPurchases = await this.models.SubscriptionPurchase.findAll({
+        where: {
+          user_id: userId,
+          product_type: entityType,
+          product_id: productId
+        },
+        attributes: ['id', 'user_id', 'product_type', 'product_id', 'subscription_id', 'created_at']
+      });
+
+      ludlog.auth(`🚨 DEBUG: Found ${allUserPurchases.length} SubscriptionPurchase records without subscription filter:`,
+        allUserPurchases.map(sp => ({
+          id: sp.id,
+          subscription_id: sp.subscription_id,
+          created_at: sp.created_at
+        }))
+      );
+
+      // DEBUG: Also check if there are any active subscriptions for this user
+      const activeSubscriptions = await this.models.Subscription.findAll({
+        where: {
+          user_id: userId,
+          status: 'active',
+          [Op.or]: [
+            { end_date: null },
+            { end_date: { [Op.gt]: nowInIsrael() } }
+          ]
+        },
+        attributes: ['id', 'user_id', 'status', 'start_date', 'end_date']
+      });
+
+      ludlog.auth(`🚨 DEBUG: Found ${activeSubscriptions.length} active subscriptions for user ${userId}:`,
+        activeSubscriptions.map(sub => ({
+          id: sub.id,
+          status: sub.status,
+          start_date: sub.start_date,
+          end_date: sub.end_date
+        }))
+      );
+
+      ludlog.auth(`🔍 DEBUG: SubscriptionPurchase query result: ${subscriptionPurchase ? 'FOUND' : 'NOT FOUND'}`);
+
       if (subscriptionPurchase) {
+        ludlog.auth(`✅ DEBUG: Subscription purchase found - ID: ${subscriptionPurchase.id}, Subscription Status: ${subscriptionPurchase.subscription?.status}`);
         return {
           hasAccess: true,
           reason: 'subscription_claim',
           message: 'User has claimed this content via subscription allowance',
+          productId: productId,
+          entityId: product.entity_id,
           subscriptionPurchase: subscriptionPurchase,
           subscription: subscriptionPurchase.subscription,
-          plan: subscriptionPurchase.subscription?.plan,
+          plan: subscriptionPurchase.subscription?.subscriptionPlan,
           claimedAt: subscriptionPurchase.created_at,
           usageTracking: subscriptionPurchase.usage_tracking,
           isLifetimeAccess: false, // Subscription access depends on active subscription
@@ -290,6 +381,7 @@ class AccessControlService {
         };
       }
 
+      ludlog.auth(`❌ DEBUG: No subscription purchase found for user ${userId}, ${entityType}:${productId}`);
       return {
         hasAccess: false,
         reason: 'no_direct_subscription_claim',
@@ -310,10 +402,10 @@ class AccessControlService {
    *
    * @param {string} studentUserId - Student user ID to check
    * @param {string} entityType - Type of entity
-   * @param {string} entityId - Entity ID
+   * @param {string} productId - Product ID
    * @returns {Object} Student via teacher access result
    */
-  async checkStudentAccessViaTeacher(studentUserId, entityType, entityId) {
+  async checkStudentAccessViaTeacher(studentUserId, entityType, productId) {
     try {
       // Step 1: Find all teachers connected to this student
       const teacherIds = await this.findStudentTeachers(studentUserId);
@@ -330,11 +422,11 @@ class AccessControlService {
 
       // Step 2: Check if any of these teachers have subscription claims for this content
       for (const teacherId of teacherIds) {
-        const teacherClaim = await this.checkDirectSubscriptionClaim(teacherId, entityType, entityId);
+        const teacherClaim = await this.checkDirectSubscriptionClaim(teacherId, entityType, productId);
 
         if (teacherClaim.hasAccess) {
           // Step 3: Record student usage of teacher's claim
-          await this.recordStudentUsage(studentUserId, teacherId, entityType, entityId);
+          await this.recordStudentUsage(studentUserId, teacherId, entityType, teacherClaim.entityId);
 
           ludlog.auth(`✅ Student ${studentUserId} granted access via teacher ${teacherId} claim`);
 
@@ -342,6 +434,8 @@ class AccessControlService {
             hasAccess: true,
             reason: 'teacher_subscription_claim',
             message: `Access granted via teacher's subscription claim`,
+            productId: productId,
+            entityId: teacherClaim.entityId,
             teacherId: teacherId,
             teacherSubscriptionPurchase: teacherClaim.subscriptionPurchase,
             teacherSubscription: teacherClaim.subscription,
@@ -683,8 +777,9 @@ class AccessControlService {
    */
   async validateFileAccess(userId, fileId, baseAccess) {
     try {
+      // Get the file entity data (only query fields that exist in File model)
       const file = await this.models.File.findByPk(fileId, {
-        attributes: ['id', 'title', 'is_published', 'file_size', 'mime_type', 'content_metadata']
+        attributes: ['id', 'title', 'file_name', 'file_type', 'allow_preview', 'is_asset_only']
       });
 
       if (!file) {
@@ -695,7 +790,24 @@ class AccessControlService {
         };
       }
 
-      if (!file.is_published && baseAccess.accessType !== 'creator') {
+      // Get the Product record to check publication status (is_published is in Product, not File)
+      const product = await this.models.Product.findOne({
+        where: {
+          product_type: 'file',
+          entity_id: fileId
+        },
+        attributes: ['id', 'is_published']
+      });
+
+      if (!product) {
+        return {
+          hasAccess: false,
+          reason: 'product_not_found',
+          message: 'Product record not found for this file'
+        };
+      }
+
+      if (!product.is_published && baseAccess.accessType !== 'creator') {
         return {
           hasAccess: false,
           reason: 'file_not_published',
@@ -708,9 +820,10 @@ class AccessControlService {
         file: {
           id: file.id,
           title: file.title,
-          isPublished: file.is_published,
-          size: file.file_size,
-          mimeType: file.mime_type,
+          fileName: file.file_name,
+          fileType: file.file_type,
+          isPublished: product.is_published,
+          allowPreview: file.allow_preview,
           canDownload: true
         },
         contentValidation: {

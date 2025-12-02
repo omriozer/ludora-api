@@ -3,7 +3,7 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('subscription_purchases', {
+    await queryInterface.createTable('subscription_purchase', {
       id: {
         type: Sequelize.STRING,
         primaryKey: true,
@@ -55,7 +55,7 @@ module.exports = {
         defaultValue: 'active',
         comment: 'Status: active, expired, cancelled'
       },
-      usage: {
+      usage_tracking: {
         type: Sequelize.JSONB,
         allowNull: false,
         defaultValue: {},
@@ -74,33 +74,33 @@ module.exports = {
     });
 
     // Add indexes for efficient querying
-    await queryInterface.addIndex('subscription_purchases', {
-      name: 'idx_subscription_purchases_user_month',
+    await queryInterface.addIndex('subscription_purchase', {
+      name: 'idx_subscription_purchase_user_month',
       fields: ['user_id', 'month_year']
     });
 
-    await queryInterface.addIndex('subscription_purchases', {
-      name: 'idx_subscription_purchases_product',
+    await queryInterface.addIndex('subscription_purchase', {
+      name: 'idx_subscription_purchase_product',
       fields: ['product_type', 'product_id']
     });
 
-    await queryInterface.addIndex('subscription_purchases', {
-      name: 'idx_subscription_purchases_subscription',
+    await queryInterface.addIndex('subscription_purchase', {
+      name: 'idx_subscription_purchase_subscription',
       fields: ['subscription_id']
     });
 
-    await queryInterface.addIndex('subscription_purchases', {
-      name: 'idx_subscription_purchases_status',
+    await queryInterface.addIndex('subscription_purchase', {
+      name: 'idx_subscription_purchase_status',
       fields: ['status']
     });
 
-    await queryInterface.addIndex('subscription_purchases', {
-      name: 'idx_subscription_purchases_claimed_at',
+    await queryInterface.addIndex('subscription_purchase', {
+      name: 'idx_subscription_purchase_claimed_at',
       fields: ['claimed_at']
     });
 
     // Add unique constraint to prevent duplicate claims
-    await queryInterface.addConstraint('subscription_purchases', {
+    await queryInterface.addConstraint('subscription_purchase', {
       name: 'unique_subscription_purchase_per_month',
       type: 'unique',
       fields: ['user_id', 'subscription_id', 'product_type', 'product_id', 'month_year']
@@ -108,6 +108,6 @@ module.exports = {
   },
 
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('subscription_purchases');
+    await queryInterface.dropTable('subscription_purchase');
   }
 };

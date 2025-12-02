@@ -29,6 +29,21 @@ class SubscriptionPaymentStatusService {
   static async checkSubscriptionPaymentPageStatus(pageRequestUid, options = {}) {
     const { attemptNumber = 1, maxAttempts = 6 } = options;
     try {
+      // Check if polling is disabled
+      const pollingActive = process.env.PAYMENTS_POLLING_ACTIVE === 'true';
+      if (!pollingActive) {
+        ludlog.payment('⚠️ SubscriptionPaymentStatusService: Polling disabled (PAYMENTS_POLLING_ACTIVE=false)', {
+          pageRequestUid: pageRequestUid.substring(0, 8) + '...'
+        });
+
+        return {
+          success: false,
+          pageStatus: 'disabled',
+          error: 'Subscription payment polling is disabled via PAYMENTS_POLLING_ACTIVE environment variable',
+          shouldCancelSubscription: false, // Don't cancel when disabled
+          message: 'Polling functionality is currently disabled'
+        };
+      }
       const credentials = PaymentService.getPayPlusCredentials();
       const { payplusUrl, payment_api_key, payment_secret_key, terminal_uid } = credentials;
       const statusUrl = `${payplusUrl}TransactionReports/TransactionsHistory`;
@@ -213,23 +228,31 @@ class SubscriptionPaymentStatusService {
         };
       }
 
-      ludlog.payment('🔍 Checking subscription renewal status via subscription UID', {
+      ludlog.payment('🔍 Checking subscription renewal status via PayPlus APIs', {
         subscriptionId: subscription.id,
         subscriptionUid: subscription.payplus_subscription_uid.substring(0, 8) + '...',
         attemptNumber,
         maxAttempts
       });
 
-      // Query PayPlus for all transactions related to this subscription
-      const renewalStatusResult = await this.queryPayPlusForSubscriptionTransactions(subscription.payplus_subscription_uid);
+      // Query PayPlus ViewRecurring API for subscription details
+      const subscriptionDetailsResult = await this.queryPayPlusSubscriptionDetails(subscription.payplus_subscription_uid);
 
-      if (!renewalStatusResult.success) {
-        return renewalStatusResult;
+      if (!subscriptionDetailsResult.success) {
+        return subscriptionDetailsResult;
       }
 
-      // Analyze the transactions to find renewals
-      const analysisResult = await this.analyzeSubscriptionTransactionsForRenewals(
-        renewalStatusResult.transactions,
+      // Query PayPlus ViewRecurringCharge API for charge history
+      const chargeHistoryResult = await this.queryPayPlusSubscriptionCharges(subscription.payplus_subscription_uid);
+
+      if (!chargeHistoryResult.success) {
+        return chargeHistoryResult;
+      }
+
+      // Analyze the subscription details and charges to find renewals
+      const analysisResult = await this.analyzeSubscriptionChargesForRenewals(
+        subscriptionDetailsResult.subscriptionDetails,
+        chargeHistoryResult.charges,
         subscription,
         { attemptNumber, maxAttempts }
       );
@@ -247,214 +270,312 @@ class SubscriptionPaymentStatusService {
   }
 
   /**
-   * Query PayPlus for all transactions related to a subscription UID
+   * Query PayPlus for subscription details using ViewRecurring API
    * @param {string} subscriptionUid - PayPlus subscription UID
-   * @returns {Promise<Object>} Query result with transactions
+   * @returns {Promise<Object>} Subscription details result
    */
-  static async queryPayPlusForSubscriptionTransactions(subscriptionUid) {
+  static async queryPayPlusSubscriptionDetails(subscriptionUid) {
     try {
       const credentials = PaymentService.getPayPlusCredentials();
-      const { payplusUrl, payment_api_key, payment_secret_key, terminal_uid } = credentials;
+      const { payplusUrl, payment_api_key, payment_secret_key } = credentials;
 
-      // NOTE: This approach may need adjustment based on PayPlus API capabilities
-      // If PayPlus doesn't support subscription-based queries, we may need to use a different strategy
-      const statusUrl = `${payplusUrl}TransactionReports/TransactionsHistory`;
+      // Use PayPlus ViewRecurring API as per documentation
+      const viewRecurringUrl = `${payplusUrl}RecurringPayments/${subscriptionUid}/ViewRecurring`;
 
-      ludlog.payment('📡 Querying PayPlus for subscription transactions', {
-        subscriptionUid: subscriptionUid.substring(0, 8) + '...'
+      ludlog.payment('📡 Querying PayPlus ViewRecurring API for subscription details', {
+        subscriptionUid: subscriptionUid.substring(0, 8) + '...',
+        endpoint: 'ViewRecurring'
       });
 
-      // Try to query PayPlus - this may need to be adapted based on actual PayPlus API
-      // For now, we'll attempt a broader query and filter results
-      const statusResponse = await fetch(statusUrl, {
-        method: 'POST',
+      const response = await fetch(viewRecurringUrl, {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'api-key': payment_api_key,
           'secret-key': payment_secret_key
-        },
-        body: JSON.stringify({
-          terminal_uid: terminal_uid,
-          // NOTE: May need to adjust this query based on PayPlus API capabilities
-          // subscription_uid: subscriptionUid  // If PayPlus supports this
-          // For now, we'll need to query more broadly and filter
-        })
+        }
       });
 
-      const responseText = await statusResponse.text();
+      const responseText = await response.text();
 
-      if (!statusResponse.ok) {
+      if (!response.ok) {
         return {
           success: false,
-          error: `PayPlus API HTTP ${statusResponse.status}: ${statusResponse.statusText}`,
+          error: `PayPlus ViewRecurring API HTTP ${response.status}: ${response.statusText}`,
           debug_info: {
-            http_status: statusResponse.status,
-            response_preview: responseText.substring(0, 200)
+            http_status: response.status,
+            response_preview: responseText.substring(0, 200),
+            endpoint: 'ViewRecurring'
           }
         };
       }
 
-      let statusData;
+      let subscriptionData;
       try {
-        statusData = JSON.parse(responseText);
+        subscriptionData = JSON.parse(responseText);
       } catch (parseError) {
         return {
           success: false,
-          error: 'Invalid PayPlus API response for subscription query'
+          error: 'Invalid PayPlus ViewRecurring API response',
+          debug_info: {
+            parse_error: parseError.message,
+            endpoint: 'ViewRecurring'
+          }
         };
       }
 
-      // Filter transactions related to this subscription
-      const subscriptionTransactions = (statusData.transactions || []).filter(transaction =>
-        transaction.subscription_uid === subscriptionUid ||
-        transaction.subscription_id === subscriptionUid ||
-        (transaction.custom_fields && transaction.custom_fields.subscription_uid === subscriptionUid)
-      );
-
-      ludlog.payment('📊 PayPlus subscription query result', {
-        totalTransactions: statusData.transactions ? statusData.transactions.length : 0,
-        subscriptionTransactions: subscriptionTransactions.length,
-        subscriptionUid: subscriptionUid.substring(0, 8) + '...'
+      ludlog.payment('📊 PayPlus ViewRecurring API result', {
+        subscriptionUid: subscriptionUid.substring(0, 8) + '...',
+        status: subscriptionData.status,
+        nextPaymentDate: subscriptionData.next_payment_date,
+        chargesCompleted: subscriptionData.recurring_settings?.charges_completed
       });
 
       return {
         success: true,
-        transactions: subscriptionTransactions,
-        allTransactions: statusData.transactions,
-        queryResult: statusData
+        subscriptionDetails: subscriptionData,
+        endpoint: 'ViewRecurring'
       };
 
     } catch (error) {
-      luderror.payment('❌ Error querying PayPlus for subscription transactions:', error);
+      luderror.payment('❌ Error querying PayPlus ViewRecurring API:', error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
+        endpoint: 'ViewRecurring'
       };
     }
   }
 
   /**
-   * Analyze subscription transactions to detect renewals
-   * @param {Array} transactions - PayPlus transactions related to subscription
+   * Query PayPlus for subscription charge history using ViewRecurringCharge API
+   * @param {string} subscriptionUid - PayPlus subscription UID
+   * @returns {Promise<Object>} Charge history result
+   */
+  static async queryPayPlusSubscriptionCharges(subscriptionUid) {
+    try {
+      const credentials = PaymentService.getPayPlusCredentials();
+      const { payplusUrl, payment_api_key, payment_secret_key } = credentials;
+
+      // Use PayPlus ViewRecurringCharge API as per documentation
+      const viewChargesUrl = `${payplusUrl}RecurringPayments/${subscriptionUid}/ViewRecurringCharge`;
+
+      ludlog.payment('📡 Querying PayPlus ViewRecurringCharge API for charge history', {
+        subscriptionUid: subscriptionUid.substring(0, 8) + '...',
+        endpoint: 'ViewRecurringCharge'
+      });
+
+      const response = await fetch(viewChargesUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': payment_api_key,
+          'secret-key': payment_secret_key
+        }
+      });
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `PayPlus ViewRecurringCharge API HTTP ${response.status}: ${response.statusText}`,
+          debug_info: {
+            http_status: response.status,
+            response_preview: responseText.substring(0, 200),
+            endpoint: 'ViewRecurringCharge'
+          }
+        };
+      }
+
+      let chargeData;
+      try {
+        chargeData = JSON.parse(responseText);
+      } catch (parseError) {
+        return {
+          success: false,
+          error: 'Invalid PayPlus ViewRecurringCharge API response',
+          debug_info: {
+            parse_error: parseError.message,
+            endpoint: 'ViewRecurringCharge'
+          }
+        };
+      }
+
+      ludlog.payment('📊 PayPlus ViewRecurringCharge API result', {
+        subscriptionUid: subscriptionUid.substring(0, 8) + '...',
+        totalCharges: chargeData.total_charges,
+        successfulCharges: chargeData.successful_charges,
+        failedCharges: chargeData.failed_charges,
+        chargesFound: Array.isArray(chargeData.charges) ? chargeData.charges.length : 0
+      });
+
+      return {
+        success: true,
+        chargeHistory: chargeData,
+        charges: chargeData.charges || [],
+        endpoint: 'ViewRecurringCharge'
+      };
+
+    } catch (error) {
+      luderror.payment('❌ Error querying PayPlus ViewRecurringCharge API:', error);
+      return {
+        success: false,
+        error: error.message,
+        endpoint: 'ViewRecurringCharge'
+      };
+    }
+  }
+
+  /**
+   * Analyze subscription charges using PayPlus ViewRecurringCharge API data
+   * @param {Object} subscriptionDetails - PayPlus ViewRecurring API response
+   * @param {Array} charges - PayPlus ViewRecurringCharge API charges array
    * @param {Object} subscription - Subscription record
    * @param {Object} options - Analysis options
    * @returns {Promise<Object>} Analysis result
    */
-  static async analyzeSubscriptionTransactionsForRenewals(transactions, subscription, options = {}) {
+  static async analyzeSubscriptionChargesForRenewals(subscriptionDetails, charges, subscription, options = {}) {
     const { attemptNumber = 1, maxAttempts = 6 } = options;
 
     try {
-      if (!Array.isArray(transactions) || transactions.length === 0) {
-        // No transactions found for this subscription
+      ludlog.payment('🔍 Analyzing PayPlus subscription charges for renewals', {
+        subscriptionId: subscription.id,
+        subscriptionStatus: subscriptionDetails.status,
+        totalCharges: charges.length,
+        nextPaymentDate: subscriptionDetails.next_payment_date,
+        attemptNumber,
+        maxAttempts
+      });
+
+      if (!Array.isArray(charges) || charges.length === 0) {
+        // No charges found for this subscription
         const shouldCancel = attemptNumber >= maxAttempts;
 
         return {
           success: true,
           pageStatus: shouldCancel ? 'abandoned' : 'pending_processing',
           reason: shouldCancel
-            ? `No renewal transactions found after ${maxAttempts} attempts`
-            : `No renewal transactions found yet (attempt ${attemptNumber}/${maxAttempts})`,
+            ? `No charges found after ${maxAttempts} attempts`
+            : `No charges found yet (attempt ${attemptNumber}/${maxAttempts})`,
           shouldCancelSubscription: shouldCancel,
           shouldRetryLater: !shouldCancel,
           isRenewalAttempt: true,
           attemptNumber,
-          maxAttempts
+          maxAttempts,
+          subscriptionStatus: subscriptionDetails.status
         };
       }
 
-      // Sort transactions by most recent first
-      const sortedTransactions = transactions.sort((a, b) =>
-        new Date(b.information?.transaction_at || b.created_at || 0) -
-        new Date(a.information?.transaction_at || a.created_at || 0)
-      );
+      // Sort charges by charge_number (most recent first)
+      const sortedCharges = charges.sort((a, b) => (b.charge_number || 0) - (a.charge_number || 0));
 
-      // Get the most recent transaction
-      const latestTransaction = sortedTransactions[0];
-      const transactionUuid = latestTransaction.uuid;
+      // Get the most recent charge
+      const latestCharge = sortedCharges[0];
+      const transactionUid = latestCharge.transaction_uid;
 
-      ludlog.payment('🔍 Analyzing latest subscription transaction for renewal', {
+      ludlog.payment('🔍 Analyzing latest subscription charge for renewal', {
         subscriptionId: subscription.id,
-        latestTransactionUuid: transactionUuid.substring(0, 8) + '...',
-        transactionDate: latestTransaction.information?.transaction_at,
-        statusCode: latestTransaction.information?.status_code
+        chargeNumber: latestCharge.charge_number,
+        transactionUid: transactionUid ? transactionUid.substring(0, 8) + '...' : null,
+        chargedAt: latestCharge.charged_at,
+        status: latestCharge.status,
+        statusCode: latestCharge.status_code
       });
 
-      // Check if this is a new transaction we haven't processed yet
+      if (!transactionUid) {
+        return {
+          success: true,
+          pageStatus: 'pending_processing',
+          reason: 'Latest charge has no transaction UID - still processing',
+          shouldRetryLater: true,
+          isRenewalAttempt: true,
+          chargeData: latestCharge
+        };
+      }
+
+      // Check if this is a new charge we haven't processed yet
       const existingTransaction = await models.Transaction.findOne({
         where: {
-          payplus_transaction_uid: transactionUuid
+          payplus_transaction_uid: transactionUid
         }
       });
 
       if (existingTransaction) {
-        // We already know about this transaction - check its status
-        const statusCode = latestTransaction.information?.status_code;
+        // We already know about this charge - check its status
+        const statusCode = latestCharge.status_code;
 
-        if (statusCode === '000') {
+        if (statusCode === '000' || latestCharge.status === 'success') {
           return {
             success: true,
             pageStatus: 'payment_completed',
-            reason: 'Existing renewal transaction completed successfully',
+            reason: 'Existing renewal charge completed successfully',
             shouldActivateSubscription: true,
-            transactionData: latestTransaction,
-            transactionUuid: transactionUuid,
+            transactionData: latestCharge,
+            transactionUuid: transactionUid,
             isRenewalAttempt: true,
-            existingTransactionId: existingTransaction.id
+            existingTransactionId: existingTransaction.id,
+            chargeNumber: latestCharge.charge_number
           };
         } else {
           return {
             success: true,
             pageStatus: 'payment_failed',
-            reason: `Existing renewal transaction failed with status code: ${statusCode}`,
+            reason: `Existing renewal charge failed: ${latestCharge.failure_reason || latestCharge.status}`,
             shouldCancelSubscription: true,
-            transactionData: latestTransaction,
-            isRenewalAttempt: true
+            transactionData: latestCharge,
+            isRenewalAttempt: true,
+            chargeNumber: latestCharge.charge_number
           };
         }
       }
 
-      // This is a NEW transaction - create a renewal transaction record
-      await this.createRenewalTransaction(subscription, latestTransaction);
+      // This is a NEW charge - create a renewal transaction record
+      await this.createRenewalTransactionFromCharge(subscription, latestCharge);
 
-      // Check the payment status of this new renewal
-      const statusCode = latestTransaction.information?.status_code;
+      // Check the payment status of this new renewal charge
+      const statusCode = latestCharge.status_code;
+      const status = latestCharge.status;
 
-      if (statusCode === '000') {
+      if (statusCode === '000' || status === 'success') {
         return {
           success: true,
           pageStatus: 'payment_completed',
-          reason: 'New renewal transaction completed successfully',
+          reason: 'New renewal charge completed successfully',
           shouldActivateSubscription: true,
-          transactionData: latestTransaction,
-          transactionUuid: transactionUuid,
+          transactionData: latestCharge,
+          transactionUuid: transactionUid,
           isRenewalAttempt: true,
-          newRenewalCreated: true
+          newRenewalCreated: true,
+          chargeNumber: latestCharge.charge_number
         };
-      } else if (statusCode && statusCode !== '000') {
+      } else if (status === 'failed' || (statusCode && statusCode !== '000')) {
         return {
           success: true,
           pageStatus: 'payment_failed',
-          reason: `New renewal transaction failed with status code: ${statusCode}`,
+          reason: `New renewal charge failed: ${latestCharge.failure_reason || status}`,
           shouldCancelSubscription: true,
-          transactionData: latestTransaction,
+          transactionData: latestCharge,
           isRenewalAttempt: true,
-          newRenewalCreated: true
+          newRenewalCreated: true,
+          chargeNumber: latestCharge.charge_number
         };
       } else {
-        // Transaction exists but status is pending
+        // Charge exists but status is pending
         return {
           success: true,
           pageStatus: 'pending_processing',
-          reason: 'New renewal transaction is still processing',
+          reason: 'New renewal charge is still processing',
           shouldRetryLater: true,
-          transactionData: latestTransaction,
+          transactionData: latestCharge,
           isRenewalAttempt: true,
-          newRenewalCreated: true
+          newRenewalCreated: true,
+          chargeNumber: latestCharge.charge_number
         };
       }
 
     } catch (error) {
-      luderror.payment('❌ Error analyzing subscription transactions for renewals:', error);
+      luderror.payment('❌ Error analyzing subscription charges for renewals:', error);
       return {
         success: false,
         error: error.message,
@@ -464,53 +585,61 @@ class SubscriptionPaymentStatusService {
   }
 
   /**
-   * Create a new Transaction record for a subscription renewal
+   * Create a new Transaction record for a subscription renewal from PayPlus charge data
    * @param {Object} subscription - Subscription record
-   * @param {Object} renewalTransactionData - PayPlus renewal transaction data
+   * @param {Object} chargeData - PayPlus ViewRecurringCharge API charge data
    * @returns {Promise<Object>} Created transaction
    */
-  static async createRenewalTransaction(subscription, renewalTransactionData) {
+  static async createRenewalTransactionFromCharge(subscription, chargeData) {
     const { generateId } = await import('../models/baseModel.js');
 
     try {
-      ludlog.payment('📝 Creating renewal transaction record', {
+      ludlog.payment('📝 Creating renewal transaction record from PayPlus charge', {
         subscriptionId: subscription.id,
-        renewalTransactionUuid: renewalTransactionData.uuid.substring(0, 8) + '...'
+        chargeId: chargeData.charge_id,
+        chargeNumber: chargeData.charge_number,
+        transactionUid: chargeData.transaction_uid ? chargeData.transaction_uid.substring(0, 8) + '...' : null
       });
 
       const newTransaction = await models.Transaction.create({
         id: generateId(),
         user_id: subscription.user_id,
         payment_method: 'payplus',
-        amount: renewalTransactionData.information?.amount_by_currency || subscription.amount || 0,
-        currency: renewalTransactionData.information?.currency || 'ILS',
-        payment_status: 'pending',
+        amount: chargeData.amount || subscription.monthly_price || 0,
+        currency: chargeData.currency || 'ILS',
+        payment_status: chargeData.status === 'success' ? 'completed' : 'pending',
         transaction_type: 'subscription_renewal',
-        payplus_transaction_uid: renewalTransactionData.uuid,
-        payment_page_request_uid: renewalTransactionData.payment_page_payment_request?.uuid,
+        payplus_transaction_uid: chargeData.transaction_uid,
+        payment_page_request_uid: null, // Renewals don't have page request UIDs
         metadata: {
           subscription_id: subscription.id,
           transaction_type: 'SUBSCRIPTION_RENEWAL',
           renewal_for_subscription: subscription.id,
           payplus_subscription_uid: subscription.payplus_subscription_uid,
-          charge_number: renewalTransactionData.charge_number,
-          renewal_polling_data: renewalTransactionData,
-          created_via: 'polling_renewal_detection',
+          charge_number: chargeData.charge_number,
+          charge_id: chargeData.charge_id,
+          charged_at: chargeData.charged_at,
+          next_charge_date: chargeData.next_charge_date,
+          failure_reason: chargeData.failure_reason,
+          payplus_charge_data: chargeData,
+          created_via: 'payplus_charge_polling',
           detected_at: new Date().toISOString(),
           resolvedBy: 'polling', // Track that this renewal was detected by polling
           resolvedAt: new Date().toISOString()
         }
       });
 
-      ludlog.payment('✅ Renewal transaction created successfully', {
+      ludlog.payment('✅ Renewal transaction created successfully from PayPlus charge', {
         newTransactionId: newTransaction.id,
-        subscriptionId: subscription.id
+        subscriptionId: subscription.id,
+        chargeNumber: chargeData.charge_number,
+        chargeStatus: chargeData.status
       });
 
       return newTransaction;
 
     } catch (error) {
-      luderror.payment('❌ Error creating renewal transaction:', error);
+      luderror.payment('❌ Error creating renewal transaction from charge:', error);
       throw error;
     }
   }
@@ -740,6 +869,26 @@ class SubscriptionPaymentStatusService {
    */
   static async checkUserPendingSubscriptions(userId) {
     try {
+      // Check if polling is disabled
+      const pollingActive = process.env.PAYMENTS_POLLING_ACTIVE === 'true';
+      if (!pollingActive) {
+        ludlog.payment('⚠️ SubscriptionPaymentStatusService: Polling disabled for user (PAYMENTS_POLLING_ACTIVE=false)', { userId });
+
+        return {
+          success: true,
+          message: 'Subscription payment polling is disabled',
+          summary: {
+            total_pending: 0,
+            activated: 0,
+            cancelled: 0,
+            errors: 0,
+            skipped: 0
+          },
+          results: [],
+          disabled: true
+        };
+      }
+
       ludlog.payment('🔍 Checking all pending subscriptions for user', { userId });
 
       // Find all pending subscriptions for this user

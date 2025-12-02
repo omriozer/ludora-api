@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 
 export default function(sequelize) {
@@ -49,19 +49,11 @@ export default function(sequelize) {
     month_year: {
       type: DataTypes.STRING,
       allowNull: false,
-      validate: {
-        is: /^\d{4}-\d{2}$/
-      },
-      comment: 'Format: YYYY-MM (e.g., 2025-11) for monthly allowance tracking'
     },
     status: {
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'active',
-      validate: {
-        isIn: [['active', 'expired', 'cancelled']]
-      },
-      comment: 'Status: active, expired, cancelled'
     },
     usage: {
       type: DataTypes.JSONB,
@@ -80,28 +72,28 @@ export default function(sequelize) {
       defaultValue: DataTypes.NOW,
     },
   }, {
-    tableName: 'subscription_purchase',
+    tableName: 'subscription_purchases',
     timestamps: false,
     indexes: [
       {
-        fields: ['user_id', 'month_year'],
-        name: 'idx_subscription_purchases_user_month'
-      },
-      {
         fields: ['product_type', 'product_id'],
-        name: 'idx_subscription_purchases_product'
+        name: 'idx_subscription_purchase_product'
       },
       {
         fields: ['subscription_id'],
-        name: 'idx_subscription_purchases_subscription'
+        name: 'idx_subscription_purchase_subscription'
+      },
+      {
+        fields: ['user_id', 'month_year'],
+        name: 'idx_subscription_purchase_user_month'
       },
       {
         fields: ['status'],
-        name: 'idx_subscription_purchases_status'
+        name: 'idx_subscription_purchase_status'
       },
       {
         fields: ['claimed_at'],
-        name: 'idx_subscription_purchases_claimed_at'
+        name: 'idx_subscription_purchase_claimed_at'
       },
     ],
   });
@@ -220,12 +212,11 @@ export default function(sequelize) {
   };
 
   // Class methods for querying
-  SubscriptionPurchase.findByUserAndMonth = function(userId, monthYear, options = {}) {
+  SubscriptionPurchase.findBySubscriptionAndMonth = function(subscriptionId, monthYear, options = {}) {
     return this.findAll({
       where: {
-        user_id: userId,
-        month_year: monthYear,
-        status: 'active'
+        subscription_id: subscriptionId,
+        month_year: monthYear
       },
       ...options
     });
@@ -235,8 +226,7 @@ export default function(sequelize) {
     return this.findAll({
       where: {
         product_type: productType,
-        product_id: productId,
-        status: 'active'
+        product_id: productId
       },
       ...options
     });

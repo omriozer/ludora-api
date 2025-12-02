@@ -244,8 +244,6 @@ class PaymentService {
 
       // Update all purchases with this transaction ID AND set them to pending
       if (purchaseIds.length > 0) {
-        // TODO remove debug - fix payplus pending status
-        luderror.payment(`Setting ${purchaseIds.length} purchases to pending for transaction ${transaction.id}`);
 
         const [updatedCount] = await models.Purchase.update(
           {
@@ -262,8 +260,6 @@ class PaymentService {
           }
         );
 
-        // TODO remove debug - fix payplus pending status
-        luderror.payment(`Successfully updated ${updatedCount} purchases to pending status`);
       }
 
       return transaction;
