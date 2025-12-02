@@ -32,23 +32,26 @@ class BulkSubscriptionPollingService {
       }
 
       const credentials = PaymentService.getPayPlusCredentials();
-      const { payplusUrl, payment_api_key, payment_secret_key } = credentials;
+      const { payplusUrl, payment_api_key, payment_secret_key, terminal_uid } = credentials;
 
-      // Try RecurringPaymentsReports/Charged first (bulk data for charged subscriptions)
-      const bulkUrl = `${payplusUrl}RecurringPaymentsReports/Charged`;
+      // Use RecurringPayments/View to get list of recurring payments
+      const bulkUrl = `${payplusUrl}RecurringPayments/View`;
 
       ludlog.payment('📡 Querying PayPlus bulk subscription API', {
-        endpoint: 'RecurringPaymentsReports/Charged',
+        endpoint: 'RecurringPayments/View',
         payplusUrl: payplusUrl.substring(0, 30) + '...'
       });
 
       const response = await fetch(bulkUrl, {
-        method: 'GET',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'api-key': payment_api_key,
           'secret-key': payment_secret_key
-        }
+        },
+        body: JSON.stringify({
+          terminal_uid: terminal_uid
+        })
       });
 
       const responseText = await response.text();
@@ -60,7 +63,7 @@ class BulkSubscriptionPollingService {
           debug_info: {
             http_status: response.status,
             response_preview: responseText.substring(0, 200),
-            endpoint: 'RecurringPaymentsReports/Charged'
+            endpoint: 'RecurringPayments/View'
           }
         };
       }
@@ -74,20 +77,20 @@ class BulkSubscriptionPollingService {
           error: 'Invalid PayPlus bulk API response',
           debug_info: {
             parse_error: parseError.message,
-            endpoint: 'RecurringPaymentsReports/Charged'
+            endpoint: 'RecurringPayments/View'
           }
         };
       }
 
       ludlog.payment('📊 PayPlus bulk subscription API result', {
         totalSubscriptions: Array.isArray(subscriptionData) ? subscriptionData.length : 'unknown_format',
-        endpoint: 'RecurringPaymentsReports/Charged'
+        endpoint: 'RecurringPayments/View'
       });
 
       return {
         success: true,
         subscriptions: subscriptionData,
-        endpoint: 'RecurringPaymentsReports/Charged',
+        endpoint: 'RecurringPayments/View',
         retrieved_at: new Date().toISOString()
       };
 
@@ -96,7 +99,7 @@ class BulkSubscriptionPollingService {
       return {
         success: false,
         error: error.message,
-        endpoint: 'RecurringPaymentsReports/Charged'
+        endpoint: 'RecurringPayments/View'
       };
     }
   }
