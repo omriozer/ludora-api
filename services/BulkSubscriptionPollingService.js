@@ -96,7 +96,7 @@ class BulkSubscriptionPollingService {
       return {
         success: false,
         error: error.message,
-        endpoint: 'RecurringPayments/View'
+        endpoint: 'RecurringPaymentsReports/Charged'
       };
     }
   }
