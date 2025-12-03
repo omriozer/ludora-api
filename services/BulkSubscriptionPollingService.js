@@ -34,24 +34,22 @@ class BulkSubscriptionPollingService {
       const credentials = PaymentService.getPayPlusCredentials();
       const { payplusUrl, payment_api_key, payment_secret_key, terminal_uid } = credentials;
 
-      // Use RecurringPayments/View to get list of recurring payments
-      const bulkUrl = `${payplusUrl}RecurringPayments/View`;
+      // Use RecurringPayments/View with terminal_uid as query parameter
+      const bulkUrl = `${payplusUrl}RecurringPayments/View?terminal_uid=${terminal_uid}`;
 
       ludlog.payment('📡 Querying PayPlus bulk subscription API', {
         endpoint: 'RecurringPayments/View',
-        payplusUrl: payplusUrl.substring(0, 30) + '...'
+        payplusUrl: payplusUrl.substring(0, 30) + '...',
+        terminal_uid: terminal_uid.substring(0, 8) + '...'
       });
 
       const response = await fetch(bulkUrl, {
-        method: 'POST',
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'api-key': payment_api_key,
           'secret-key': payment_secret_key
-        },
-        body: JSON.stringify({
-          terminal_uid: terminal_uid
-        })
+        }
       });
 
       const responseText = await response.text();
