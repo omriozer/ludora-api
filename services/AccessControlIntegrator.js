@@ -20,6 +20,7 @@ import { ludlog, luderror } from '../lib/ludlog.js';
  * - creator: User owns the content
  * - purchase: User purchased the content (one-time or free)
  * - subscription_claim: User claimed via active subscription
+ * - lesson_plan_derived: User has access via purchased/claimed lesson plan that includes this product
  * - student_via_teacher: Student accessing via teacher subscription
  * - none: No access
  */
@@ -239,7 +240,9 @@ class AccessControlIntegrator {
       claimedAt: accessResult.claimedAt || null,
 
       // Subscription Info (if applicable)
-      subscriptionAccess: accessType === 'subscription_claim' || accessType === 'student_via_teacher_claim',
+      subscriptionAccess: accessType === 'subscription_claim' ||
+                          accessType === 'student_via_teacher_claim' ||
+                          (accessType === 'lesson_plan_derived' && accessResult.sourceAccessType === 'subscription_claim'),
       subscriptionPlan: accessResult.plan ? {
         id: accessResult.plan.id,
         name: accessResult.plan.name,
@@ -250,6 +253,14 @@ class AccessControlIntegrator {
       teacherAccess: accessResult.teacherId ? {
         teacherId: accessResult.teacherId,
         accessMethod: 'student_via_teacher'
+      } : null,
+
+      // Lesson Plan Derived Access Info (when access comes from lesson plan)
+      lessonPlanAccess: accessType === 'lesson_plan_derived' && accessResult.lessonPlan ? {
+        lessonPlanId: accessResult.lessonPlan.id,
+        lessonPlanTitle: accessResult.lessonPlan.title,
+        sourceAccessType: accessResult.sourceAccessType,
+        accessMethod: 'derived_from_lesson_plan'
       } : null,
 
       // Content-Specific Access Info
@@ -298,6 +309,21 @@ class AccessControlIntegrator {
         canPlay: true,
         canCreateSessions: true,
         canClaim: false, // Already has access
+        showPurchaseButton: false,
+        showSubscriptionPrompt: false,
+        showFullContent: true,
+        showWatermark: false
+      };
+    }
+
+    // Flags for lesson plan derived access (derived from lesson plan purchase/claim)
+    if (accessType === 'lesson_plan_derived') {
+      return {
+        canDownload: true,
+        canPreview: true,
+        canPlay: true,
+        canCreateSessions: true,
+        canClaim: false, // Already has derived access
         showPurchaseButton: false,
         showSubscriptionPrompt: false,
         showFullContent: true,

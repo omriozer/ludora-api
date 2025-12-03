@@ -128,6 +128,32 @@ export default (sequelize) => {
 
   // Hook to auto-set is_published=false for File products without documents
   Product.addHook('beforeSave', async (product, options) => {
+    // Check lesson plans with linked products
+    if (product.product_type === 'lesson_plan' && product.is_published === true) {
+      if (product.type_attributes && product.type_attributes.supports_derived_access === true) {
+        const linkedProducts = product.type_attributes.linked_products || [];
+
+        // Lesson plans with linked products must have valid structure
+        if (linkedProducts.length > 0) {
+          // Validate each linked product exists
+          const models = sequelize.models;
+          for (const linkedProduct of linkedProducts) {
+            if (!linkedProduct.product_id || !linkedProduct.product_type) {
+              product.is_published = false;
+              return;
+            }
+
+            // Check that linked product exists and is published
+            const referencedProduct = await models.Product.findByPk(linkedProduct.product_id);
+            if (!referencedProduct || !referencedProduct.is_published) {
+              product.is_published = false;
+              return;
+            }
+          }
+        }
+      }
+    }
+
     // Only check File products that are being set to published
     if (product.product_type === 'file' && product.is_published === true) {
       // Check if this is a bundle product first

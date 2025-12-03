@@ -11,19 +11,20 @@ class AccessControlService {
   }
 
   /**
-   * Enhanced Three-Layer Access Control System
+   * Enhanced Four-Layer Access Control System
    * Layer 1: Creator Access (user owns the content)
    * Layer 2: Purchase Access (user bought the content)
    * Layer 3: Subscription Claim Access (user claimed via subscription allowance)
+   * Layer 4: Lesson Plan Derived Access (user purchased lesson plan that includes this product)
    *
    * @param {string} userId - User ID to check access for
-   * @param {string} entityType - Type of entity (workshop, course, file, game, tool)
+   * @param {string} entityType - Type of entity (workshop, course, file, game, tool, lesson_plan)
    * @param {string} productId - Product ID (marketplace facade ID)
    * @returns {Object} Access result with hasAccess, accessType, and relevant data
    */
   async checkAccess(userId, entityType, productId) {
     try {
-      ludlog.auth(`🔍 Checking three-layer access for user ${userId}, ${entityType}:${productId}`);
+      ludlog.auth(`🔍 Checking four-layer access for user ${userId}, ${entityType}:${productId}`);
 
       // Layer 1: Creator Access Check (highest priority)
       const creatorAccess = await this.checkCreatorAccess(userId, entityType, productId);
@@ -37,7 +38,7 @@ class AccessControlService {
         return contentValidation;
       }
 
-      // Layer 2: Purchase Access Check (existing logic)
+      // Layer 2: Purchase Access Check
       const purchaseAccess = await this.checkPurchaseAccess(userId, entityType, productId);
       if (purchaseAccess.hasAccess) {
         ludlog.auth(`✅ Purchase access granted for ${entityType}:${productId}`);
@@ -49,7 +50,7 @@ class AccessControlService {
         return contentValidation;
       }
 
-      // Layer 3: Subscription Claim Access Check (new)
+      // Layer 3: Subscription Claim Access Check
       const subscriptionAccess = await this.checkSubscriptionClaimAccess(userId, entityType, productId);
       if (subscriptionAccess.hasAccess) {
         ludlog.auth(`✅ Subscription claim access granted for ${entityType}:${productId}`);
@@ -61,16 +62,41 @@ class AccessControlService {
         return contentValidation;
       }
 
+      // Layer 4: Lesson Plan Derived Access Check (NEW)
+      const derivedAccess = await this.checkLessonPlanDerivedAccess(userId, entityType, productId);
+      if (derivedAccess.hasAccess) {
+        ludlog.auth(`✅ Lesson plan derived access granted for ${entityType}:${productId}`);
+
+        // Need to resolve entityId for content validation
+        const product = await this.models.Product.findByPk(productId);
+        const entityId = product?.entity_id;
+
+        if (!entityId) {
+          ludlog.auth(`❌ Could not resolve entityId for product ${productId}`);
+          return {
+            hasAccess: false,
+            reason: 'entity_not_found',
+            message: 'Product entity not found'
+          };
+        }
+
+        // Apply content-type specific validation
+        const contentValidation = await this.validateContentTypeSpecificAccess(
+          userId, entityType, entityId, { ...derivedAccess, accessType: 'lesson_plan_derived', entityId }
+        );
+        return contentValidation;
+      }
+
       // No access found through any layer
       ludlog.auth(`❌ No access found for user ${userId}, ${entityType}:${productId}`);
       return {
         hasAccess: false,
         accessType: 'none',
         reason: 'No valid access method found',
-        checkedLayers: ['creator', 'purchase', 'subscription_claim']
+        checkedLayers: ['creator', 'purchase', 'subscription_claim', 'lesson_plan_derived']
       };
     } catch (error) {
-      luderror.api('Error in three-layer access check:', error);
+      luderror.api('Error in four-layer access check:', error);
       throw new Error(`Failed to check access: ${error.message}`);
     }
   }
@@ -539,6 +565,152 @@ class AccessControlService {
       // Don't fail access check if usage recording fails, but log the error
       luderror.auth('Warning: Failed to record student usage:', error);
     }
+  }
+
+  /**
+   * Layer 4: Check Lesson Plan Derived Access (NEW)
+   * User has access if they purchased/claimed a lesson plan that includes this product
+   * This provides read-only derived access without creating additional purchase records
+   *
+   * @param {string} userId - User ID to check
+   * @param {string} entityType - Type of entity
+   * @param {string} productId - Product ID
+   * @returns {Object} Lesson plan derived access result
+   */
+  async checkLessonPlanDerivedAccess(userId, entityType, productId) {
+    try {
+      ludlog.auth(`🔍 Checking lesson plan derived access for user ${userId}, ${entityType}:${productId}`);
+
+      // Step 1: Find all lesson plans that include this product in their linked_products
+      const includingLessonPlans = await this.models.Product.findAll({
+        where: {
+          product_type: 'lesson_plan',
+          [Op.and]: [
+            // Check if type_attributes.supports_derived_access is true
+            this.models.sequelize.where(
+              this.models.sequelize.cast(
+                this.models.sequelize.json('type_attributes.supports_derived_access'),
+                'boolean'
+              ),
+              true
+            ),
+            // Check if the product is included in linked_products array
+            this.models.sequelize.where(
+              this.models.sequelize.fn(
+                'jsonb_path_exists',
+                this.models.sequelize.col('type_attributes'),
+                '$.linked_products[*] ? (@.product_id == $product_id)',
+                JSON.stringify({ product_id: productId })
+              ),
+              true
+            )
+          ]
+        },
+        attributes: ['id', 'entity_id', 'title', 'type_attributes'],
+        include: [
+          {
+            model: this.models.User,
+            as: 'creator',
+            attributes: ['id', 'full_name'],
+            required: false
+          }
+        ]
+      });
+
+      if (includingLessonPlans.length === 0) {
+        ludlog.auth(`❌ No lesson plans include product ${productId}`);
+        return {
+          hasAccess: false,
+          reason: 'no_lesson_plan_includes_this',
+          message: 'No lesson plans include this product'
+        };
+      }
+
+      ludlog.auth(`🔍 Found ${includingLessonPlans.length} lesson plans that include product ${productId}`);
+
+      // Step 2: Check if user has access to ANY of these lesson plans via any access layer
+      for (const lessonPlanProduct of includingLessonPlans) {
+        ludlog.auth(`🔍 Checking access to lesson plan ${lessonPlanProduct.id}...`);
+
+        // Check creator access to lesson plan
+        const creatorAccess = await this.checkCreatorAccess(userId, 'lesson_plan', lessonPlanProduct.id);
+        if (creatorAccess.hasAccess) {
+          return this.buildDerivedAccessResult(productId, entityType, lessonPlanProduct, creatorAccess, 'creator');
+        }
+
+        // Check purchase access to lesson plan
+        const purchaseAccess = await this.checkPurchaseAccess(userId, 'lesson_plan', lessonPlanProduct.id);
+        if (purchaseAccess.hasAccess) {
+          return this.buildDerivedAccessResult(productId, entityType, lessonPlanProduct, purchaseAccess, 'purchase');
+        }
+
+        // Check subscription claim access to lesson plan
+        const subscriptionAccess = await this.checkSubscriptionClaimAccess(userId, 'lesson_plan', lessonPlanProduct.id);
+        if (subscriptionAccess.hasAccess) {
+          return this.buildDerivedAccessResult(productId, entityType, lessonPlanProduct, subscriptionAccess, 'subscription_claim');
+        }
+      }
+
+      ludlog.auth(`❌ User has no access to any lesson plans that include product ${productId}`);
+      return {
+        hasAccess: false,
+        reason: 'no_lesson_plan_access',
+        message: 'User has no access to lesson plans that include this product',
+        checkedLessonPlans: includingLessonPlans.length
+      };
+
+    } catch (error) {
+      luderror.auth('Error checking lesson plan derived access:', error);
+      return {
+        hasAccess: false,
+        reason: 'lesson_plan_derived_check_error',
+        message: `Failed to verify lesson plan derived access: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Build derived access result object with consistent structure
+   *
+   * @param {string} productId - Target product ID
+   * @param {string} entityType - Target entity type
+   * @param {Object} lessonPlanProduct - Lesson plan Product record
+   * @param {Object} sourceAccess - Access result for the lesson plan
+   * @param {string} sourceAccessType - Type of source access (creator, purchase, subscription_claim)
+   * @returns {Object} Formatted derived access result
+   */
+  buildDerivedAccessResult(productId, entityType, lessonPlanProduct, sourceAccess, sourceAccessType) {
+    ludlog.auth(`✅ Granting derived access to ${entityType}:${productId} via lesson plan ${lessonPlanProduct.id} (${sourceAccessType})`);
+
+    // Find the target product in linked_products for metadata
+    const linkedProducts = lessonPlanProduct.type_attributes?.linked_products || [];
+    const linkedProductInfo = linkedProducts.find(lp => lp.product_id === productId);
+
+    return {
+      hasAccess: true,
+      reason: 'lesson_plan_derived',
+      message: `Access granted via lesson plan "${lessonPlanProduct.title}"`,
+      productId: productId,
+      entityId: null, // Will be resolved by content validation layer
+      sourceAccessType: sourceAccessType,
+      lessonPlan: {
+        id: lessonPlanProduct.id,
+        entityId: lessonPlanProduct.entity_id,
+        title: lessonPlanProduct.title,
+        creator: lessonPlanProduct.creator
+      },
+      sourceAccess: {
+        type: sourceAccessType,
+        isLifetimeAccess: sourceAccess.isLifetimeAccess,
+        expiresAt: sourceAccess.expiresAt,
+        purchasedAt: sourceAccess.purchasedAt || sourceAccess.claimedAt,
+        accessMethod: sourceAccess.accessMethod
+      },
+      linkedProductInfo: linkedProductInfo,
+      // Derived access inherits expiration from lesson plan access
+      isLifetimeAccess: sourceAccess.isLifetimeAccess,
+      expiresAt: sourceAccess.expiresAt
+    };
   }
 
   /**

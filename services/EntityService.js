@@ -909,6 +909,35 @@ class EntityService {
         };
       }
 
+      // LESSON PLAN VALIDATION: Validate linked products when publishing lesson plan with derived access
+      if (entityType === 'lesson_plan' &&
+          data.type_attributes?.supports_derived_access &&
+          data.is_published === true &&
+          data.type_attributes?.linked_products?.length > 0) {
+
+        const LessonPlanValidationService = (await import('./LessonPlanValidationService.js')).default;
+
+        // Validate lesson plan linked products composition
+        const validationResult = await LessonPlanValidationService.validateLessonPlan(
+          data,
+          null, // New lesson plan has no ID yet
+          createdBy
+        );
+
+        if (!validationResult.valid) {
+          throw new BadRequestError(
+            `Lesson plan validation failed: ${validationResult.errors.join(', ')}`,
+            { errors: validationResult.errors }
+          );
+        }
+
+        ludlog.auth('Lesson plan validation passed:', {
+          linkedProductsCount: validationResult.statistics.linkedProductsCount,
+          productTypes: validationResult.statistics.productTypes,
+          totalLinkedValue: validationResult.statistics.totalLinkedValue
+        });
+      }
+
       const EntityModel = this.getModel(entityType);
 
       // Prepare the type-specific data (entity record)
@@ -1055,6 +1084,36 @@ class EntityService {
           savings: validationResult.pricingInfo.savings,
           savings_percentage: validationResult.pricingInfo.savingsPercentage
         };
+      }
+
+      // LESSON PLAN VALIDATION: Validate linked products when publishing lesson plan with derived access
+      if (entityType === 'lesson_plan' &&
+          data.type_attributes?.supports_derived_access &&
+          data.is_published === true &&
+          data.type_attributes?.linked_products?.length > 0) {
+
+        const LessonPlanValidationService = (await import('./LessonPlanValidationService.js')).default;
+
+        // Validate lesson plan linked products composition
+        const validationResult = await LessonPlanValidationService.validateLessonPlan(
+          data,
+          product.id, // Use product ID for update validation
+          product.creator_user_id
+        );
+
+        if (!validationResult.valid) {
+          throw new BadRequestError(
+            `Lesson plan validation failed: ${validationResult.errors.join(', ')}`,
+            { errors: validationResult.errors }
+          );
+        }
+
+        ludlog.auth('Lesson plan validation passed for update:', {
+          lessonPlanProductId: product.id,
+          linkedProductsCount: validationResult.statistics.linkedProductsCount,
+          productTypes: validationResult.statistics.productTypes,
+          totalLinkedValue: validationResult.statistics.totalLinkedValue
+        });
       }
 
       // Separate fields that belong to Product vs Entity
