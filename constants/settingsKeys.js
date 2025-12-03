@@ -124,7 +124,8 @@ export const CONTENT_CREATOR_KEYS = {
   ALLOW_CONTENT_CREATOR_FILES: 'allow_content_creator_files',
   ALLOW_CONTENT_CREATOR_TOOLS: 'allow_content_creator_tools',
   ALLOW_CONTENT_CREATOR_GAMES: 'allow_content_creator_games',
-  ALLOW_CONTENT_CREATOR_LESSON_PLANS: 'allow_content_creator_lesson_plans'
+  ALLOW_CONTENT_CREATOR_LESSON_PLANS: 'allow_content_creator_lesson_plans',
+  ALLOW_CONTENT_CREATOR_BUNDLES: 'allow_content_creator_bundles'
 };
 
 /**
