@@ -112,7 +112,7 @@ class JobScheduler {
           const testConnection = new Redis(redisUrl, {
             maxRetriesPerRequest: null,
             lazyConnect: true,
-            connectTimeout: 2000,
+            connectTimeout: 500, // Reduced from 2000ms to 500ms
             retryConnectOnFailure: false
           });
 
@@ -121,7 +121,15 @@ class JobScheduler {
             // Silently ignore connection errors during testing
           });
 
-          await testConnection.ping();
+          // Add aggressive timeout wrapper for ping operation
+          const pingWithTimeout = Promise.race([
+            testConnection.ping(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Ping timeout')), 1000)
+            )
+          ]);
+
+          await pingWithTimeout;
           await testConnection.disconnect();
           // If we get here, Redis is available
           ludlog.generic('JobScheduler Redis available in non-production environment');

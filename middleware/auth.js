@@ -15,7 +15,7 @@ import {
   getPlayerAuthErrorCode
 } from '../utils/playerAuthErrors.js';
 
-const authService = new AuthService();
+const authService = AuthService; // Use singleton instance
 const playerService = new PlayerService();
 
 // Middleware to verify tokens

@@ -15,48 +15,50 @@ class AuthService {
     this.jwtSecret = process.env.JWT_SECRET;
     this.jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
 
-    // Session cleanup now handled by persistent job scheduler
-    // This provides better reliability and survives server restarts
-    this.initializeSessionCleanupJobs();
+    // Session cleanup initialization moved to separate method
+    // to avoid multiple instantiation during startup
+    this._sessionCleanupInitialized = false;
   }
 
   // Initialize session cleanup jobs with job scheduler
+  // Should only be called after JobScheduler is confirmed to be initialized
   async initializeSessionCleanupJobs() {
+    // Prevent duplicate initialization
+    if (this._sessionCleanupInitialized) {
+      return;
+    }
+
     try {
       // Import job scheduler dynamically to avoid circular dependencies
       const jobScheduler = (await import('./JobScheduler.js')).default;
 
-      // Wait for job scheduler to be initialized (non-blocking)
-      setTimeout(async () => {
-        try {
-          if (jobScheduler.isInitialized) {
-            // Schedule frequent cleanup every 2 hours (lighter cleanup)
-            await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
-              { type: 'light', batchSize: 500 },
-              '0 */2 * * *', // Every 2 hours
-              { priority: 60 }
-            );
+      // Only proceed if JobScheduler is initialized
+      if (!jobScheduler.isInitialized) {
+        ludlog.generic('JobScheduler not initialized, skipping session cleanup job scheduling');
+        return;
+      }
 
-            // Schedule deep cleanup every 12 hours (full cleanup)
-            await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
-              { type: 'full', batchSize: 1000 },
-              '0 */12 * * *', // Every 12 hours
-              { priority: 50 }
-            );
+      // Schedule frequent cleanup every 2 hours (lighter cleanup)
+      await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+        { type: 'light', batchSize: 500 },
+        '0 */2 * * *', // Every 2 hours
+        { priority: 60 }
+      );
 
-            ludlog.generic('Session cleanup jobs scheduled successfully', {
-              lightCleanup: 'every 2 hours',
-              deepCleanup: 'every 12 hours',
-              source: 'AuthService'
-            });
-          } else {
-            ludlog.generic('JobScheduler not yet initialized, session cleanup will use fallback');
-          }
-        } catch (jobError) {
-          luderror.generic('Failed to initialize session cleanup jobs:', jobError);
-          // Fallback to manual cleanup if job scheduler fails
-        }
-      }, 5000); // Wait 5 seconds for job scheduler initialization
+      // Schedule deep cleanup every 12 hours (full cleanup)
+      await jobScheduler.scheduleRecurringJob('SESSION_CLEANUP',
+        { type: 'full', batchSize: 1000 },
+        '0 */12 * * *', // Every 12 hours
+        { priority: 50 }
+      );
+
+      this._sessionCleanupInitialized = true;
+
+      ludlog.generic('Session cleanup jobs scheduled successfully', {
+        lightCleanup: 'every 2 hours',
+        deepCleanup: 'every 12 hours',
+        source: 'AuthService'
+      });
 
     } catch (error) {
       luderror.generic('Error setting up session cleanup jobs:', error);
@@ -865,4 +867,14 @@ class AuthService {
   }
 }
 
-export default AuthService;
+// Export singleton instance to prevent multiple instantiations
+let authServiceInstance = null;
+
+const getAuthServiceInstance = () => {
+  if (!authServiceInstance) {
+    authServiceInstance = new AuthService();
+  }
+  return authServiceInstance;
+};
+
+export default getAuthServiceInstance();

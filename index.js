@@ -128,7 +128,7 @@ import SettingsService from './services/SettingsService.js';
 import { getPortalCookieNames } from './utils/cookieConfig.js';
 
 // Initialize services for Socket.IO authentication
-const socketAuthService = new AuthService();
+const socketAuthService = AuthService; // Use singleton instance
 const socketPlayerService = new PlayerService();
 
 // Socket.IO Portal Authentication Constants
@@ -822,6 +822,15 @@ async function startServer() {
           );
 
           ludlog.api('Automated database maintenance scheduled successfully');
+
+          // Initialize AuthService session cleanup jobs
+          try {
+            const authService = (await import('./services/AuthService.js')).default;
+            await authService.initializeSessionCleanupJobs();
+          } catch (authError) {
+            luderror.api('Failed to initialize AuthService session cleanup jobs:', authError);
+          }
+
         } catch (monitoringError) {
           luderror.api('Failed to schedule automated jobs:', monitoringError);
         }

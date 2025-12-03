@@ -7,7 +7,7 @@ import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.j
 import AccessControlService from '../services/AccessControlService.js';
 
 const router = express.Router();
-const authService = new AuthService();
+const authService = AuthService; // Use singleton instance
 
 /**
  * Helper: Encode filename for Content-Disposition header

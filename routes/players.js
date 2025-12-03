@@ -13,7 +13,7 @@ import {
 } from '../utils/cookieConfig.js';
 import { luderror } from '../lib/ludlog.js';
 
-const authService = new AuthService();
+const authService = AuthService; // Use singleton instance
 const playerService = new PlayerService();
 
 const router = express.Router();

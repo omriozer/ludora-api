@@ -15,7 +15,7 @@ import {
   createPortalClearCookieConfig
 } from '../utils/cookieConfig.js';
 
-const authService = new AuthService();
+const authService = AuthService; // Use singleton instance
 import EmailService from '../services/EmailService.js';
 import SettingsService from '../services/SettingsService.js';
 import { luderror } from '../lib/ludlog.js';
