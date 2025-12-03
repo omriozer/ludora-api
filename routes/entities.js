@@ -1881,8 +1881,11 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
       return res.status(404).json({ error: 'Lesson plan entity not found' });
     }
 
-    // Get current file configs
+    // Get current file configs and ensure files array exists
     const currentConfigs = lessonPlan.file_configs || { files: [] };
+    if (!currentConfigs.files) {
+      currentConfigs.files = [];
+    }
 
     // Check if opening/body sections already have a file (single file limit)
     if (file_role === 'opening' || file_role === 'body') {
