@@ -80,14 +80,21 @@ class BulkSubscriptionPollingService {
         };
       }
 
+      // Extract the actual subscriptions array from PayPlus response
+      const subscriptions = subscriptionData.data || subscriptionData;
+      const totalCount = subscriptionData.count || (Array.isArray(subscriptions) ? subscriptions.length : 0);
+
       ludlog.payment('📊 PayPlus bulk subscription API result', {
-        totalSubscriptions: Array.isArray(subscriptionData) ? subscriptionData.length : 'unknown_format',
+        totalSubscriptions: totalCount,
+        subscriptionsArrayLength: Array.isArray(subscriptions) ? subscriptions.length : 'not_array',
         endpoint: 'RecurringPayments/View'
       });
 
       return {
         success: true,
-        subscriptions: subscriptionData,
+        subscriptions: subscriptions,
+        total_subscriptions: totalCount,
+        pages: subscriptionData.pages || 1,
         endpoint: 'RecurringPayments/View',
         retrieved_at: new Date().toISOString()
       };
