@@ -14,7 +14,7 @@ export default (sequelize) => {
     },
     short_description: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: true
     },
     description: {
       type: DataTypes.TEXT
