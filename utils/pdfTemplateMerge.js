@@ -1289,26 +1289,7 @@ async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, 
       throw new Error(`Failed to copy placeholder PDF: ${copyError.message}. Context: ${JSON.stringify(errorDetails)}. This indicates a PDF compatibility issue that needs to be resolved.`);
     }
 
-    // Add page-specific information (minimal customization)
-    const { width, height } = placeholderPage.getSize();
-
-    // Add page number
-    placeholderPage.drawText(`Page ${pageNum} of ${totalPages}`, {
-      x: width - 100,
-      y: 30,
-      size: 10,
-      color: rgb(0.68, 0.71, 0.74), // Light gray
-    });
-
-    // Add filename if available
-    if (variables.filename) {
-      placeholderPage.drawText(variables.filename, {
-        x: 50,
-        y: 30,
-        size: 10,
-        color: rgb(0.68, 0.71, 0.74),
-      });
-    }
+    // Use placeholder page as-is, without any modifications
 
     newPdf.addPage(placeholderPage);
     console.log(`✅ Added placeholder page ${pageNum} to final PDF`);
