@@ -21,7 +21,7 @@ import { loadFonts, loadLogo } from './AssetManager.js';
 import { createConverter } from './CoordinateConverter.js';
 import { createFontSelector } from './FontSelector.js';
 import { getDefaultContent, getUrlConfig } from '../config/templateConfig.js';
-import { luderror } from '../lib/ludlog.js';
+import { ludlog, luderror } from '../lib/ludlog.js';
 
 /**
  * Apply template to PDF - UNIFIED for both branding and watermark templates
@@ -1086,7 +1086,9 @@ async function processWithPageReplacement(pdfBuffer, templateSettings, variables
 
     // Detect format and load appropriate placeholder PDF
     const detectedFormat = detectDocumentFormat(templateSettings, originalPdf, variables);
+    console.log(`🔍 Detected document format: ${detectedFormat}`);
     const placeholderPdf = await loadPlaceholderPdf(detectedFormat);
+    console.log(`📄 Loaded placeholder PDF for format: ${detectedFormat}`);
 
     // Create new PDF document
     const newPdf = await PDFDocument.create();
@@ -1102,11 +1104,13 @@ async function processWithPageReplacement(pdfBuffer, templateSettings, variables
     // Process each page
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       if (validAccessiblePages.includes(pageNum)) {
+        console.log(`📄 Processing accessible page ${pageNum}`);
         // Copy accessible page and apply templates
         await copyPageWithTemplates(originalPdf, newPdf, pageNum - 1, templateSettings, variables, fontSelector);
       } else {
+        console.log(`🚫 Processing restricted page ${pageNum} - should show placeholder`);
         // Copy placeholder page (no templates)
-        await copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables);
+        await copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables, detectedFormat);
       }
     }
 
@@ -1235,11 +1239,83 @@ async function copyPageWithTemplates(originalPdf, newPdf, pageIndex, templateSet
  * @param {number} pageNum - Current page number (1-based)
  * @param {number} totalPages - Total pages in document
  * @param {Object} variables - Variables for customization
+ * @param {string} detectedFormat - Detected document format ('portrait-a4', 'landscape-a4', 'svg-slide')
  */
-async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables) {
+async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables, detectedFormat = 'portrait-a4') {
+  console.log(`🔄 Attempting to copy placeholder page ${pageNum} from placeholder PDF`);
   try {
-    // Copy placeholder page (no templates applied)
-    const [placeholderPage] = await newPdf.copyPages(placeholderPdf, [0]);
+    // First attempt: Try to copy the placeholder page directly
+    let placeholderPage;
+    try {
+      [placeholderPage] = await newPdf.copyPages(placeholderPdf, [0]);
+      console.log(`✅ Successfully copied placeholder page ${pageNum} via copyPages`);
+    } catch (copyError) {
+      console.log(`⚠️ Direct copy failed for page ${pageNum}, trying alternative approach:`, copyError.message);
+
+      // Alternative approach: Create a new page and manually copy the content
+      const originalPage = placeholderPdf.getPage(0);
+      const { width, height } = originalPage.getSize();
+
+      placeholderPage = newPdf.addPage([width, height]);
+      console.log(`✅ Created alternative placeholder page ${pageNum} (${width}x${height})`);
+
+      // Try to copy the visual content by embedding the placeholder as an image-like form
+      // This is more compatible than direct page copying
+      try {
+        // Get the placeholder page content and draw it
+        // Note: This is a simplified approach - in complex cases we might need to
+        // recreate the placeholder content manually
+        const placeholderPageRef = placeholderPdf.getPage(0);
+
+        // For now, create a basic placeholder manually since copying content is complex
+        placeholderPage.drawRectangle({
+          x: 0,
+          y: 0,
+          width: width,
+          height: height,
+          color: rgb(0.97, 0.97, 0.97), // Very light gray background
+        });
+
+        // Add a centered "Preview Not Available" message
+        const fonts = await loadStandardFonts(newPdf);
+        if (fonts.bold && fonts.regular) {
+          const messageText = 'Preview Not Available';
+          const subText = 'This page requires access to view content';
+          const fontSize = 28;
+          const subFontSize = 14;
+
+          const textWidth = fonts.bold.widthOfTextAtSize(messageText, fontSize);
+          const subTextWidth = fonts.regular.widthOfTextAtSize(subText, subFontSize);
+
+          // Main message
+          placeholderPage.drawText(messageText, {
+            x: (width - textWidth) / 2,
+            y: height / 2 + 20,
+            size: fontSize,
+            font: fonts.bold,
+            color: rgb(0.3, 0.3, 0.3),
+          });
+
+          // Subtitle
+          placeholderPage.drawText(subText, {
+            x: (width - subTextWidth) / 2,
+            y: height / 2 - 20,
+            size: subFontSize,
+            font: fonts.regular,
+            color: rgb(0.5, 0.5, 0.5),
+          });
+        }
+
+        console.log(`✅ Created manual placeholder content for page ${pageNum}`);
+
+      } catch (manualError) {
+        console.log(`⚠️ Could not create manual placeholder content for page ${pageNum}:`, manualError.message);
+        // The basic page creation already succeeded, so continue
+      }
+
+      // Skip the remaining steps since we already added the page
+      return;
+    }
 
     // Add page-specific information (minimal customization)
     const { width, height } = placeholderPage.getSize();
@@ -1263,17 +1339,71 @@ async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, 
     }
 
     newPdf.addPage(placeholderPage);
+    console.log(`✅ Added placeholder page ${pageNum} to final PDF`);
 
   } catch (error) {
-    // Create minimal fallback page
-    const fallbackPage = newPdf.addPage([612, 792]);
+    console.log(`🚨 ERROR copying placeholder page ${pageNum}:`, error.message);
+
+    // Get format-appropriate dimensions for fallback page
+    const getDimensionsForFormat = (format) => {
+      switch (format) {
+        case 'landscape-a4':
+          return [842, 595]; // A4 landscape: width=842, height=595
+        case 'svg-slide':
+          return [800, 600]; // Standard slide format
+        default: // portrait-a4
+          return [595, 842]; // A4 portrait: width=595, height=842
+      }
+    };
+
+    const [pageWidth, pageHeight] = getDimensionsForFormat(detectedFormat);
+
+    // Create format-appropriate fallback page
+    const fallbackPage = newPdf.addPage([pageWidth, pageHeight]);
+    console.log(`⚠️ Created fallback ${detectedFormat} page ${pageNum} (${pageWidth}x${pageHeight}) due to error`);
+
+    // Draw placeholder background
     fallbackPage.drawRectangle({
       x: 0,
       y: 0,
-      width: 612,
-      height: 792,
-      color: rgb(0.98, 0.98, 0.98),
+      width: pageWidth,
+      height: pageHeight,
+      color: rgb(0.95, 0.95, 0.95), // Light gray background
     });
+
+    // Add "Preview Not Available" text in center
+    try {
+      const fonts = await loadStandardFonts(newPdf);
+      if (fonts.bold) {
+        const messageText = 'Preview Not Available';
+        const fontSize = 24;
+        const textWidth = fonts.bold.widthOfTextAtSize(messageText, fontSize);
+
+        fallbackPage.drawText(messageText, {
+          x: (pageWidth - textWidth) / 2,
+          y: pageHeight / 2,
+          size: fontSize,
+          font: fonts.bold,
+          color: rgb(0.4, 0.4, 0.4),
+        });
+
+        // Add page number
+        const pageText = `Page ${pageNum} of ${totalPages}`;
+        const pageTextSize = 12;
+        const pageTextWidth = fonts.regular.widthOfTextAtSize(pageText, pageTextSize);
+
+        fallbackPage.drawText(pageText, {
+          x: pageWidth - pageTextWidth - 20,
+          y: 20,
+          size: pageTextSize,
+          font: fonts.regular,
+          color: rgb(0.5, 0.5, 0.5),
+        });
+      }
+    } catch (textError) {
+      // If text rendering fails, just use the gray background
+      console.log(`⚠️ Could not add text to fallback page ${pageNum}:`, textError.message);
+    }
   }
 }
 
