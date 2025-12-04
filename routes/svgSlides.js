@@ -23,70 +23,40 @@ function requireAdminOrTeacher(req, res, next) {
 }
 
 /**
- * Generate placeholder SVG content for restricted slides
+ * Get placeholder SVG content for restricted slides
+ * Loads from static placeholder file for consistency and maintainability
  */
 function getPlaceholderSlideContent() {
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  try {
+    const placeholderPath = path.join(process.cwd(), 'assets', 'placeholders', 'preview-not-available.svg');
+
+    if (fs.existsSync(placeholderPath)) {
+      return fs.readFileSync(placeholderPath, 'utf8');
+    }
+
+    // Fallback to inline SVG if file not found (should not happen)
+    console.error('⚠️ Placeholder SVG file not found, using fallback inline SVG');
+    return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
   <rect width="800" height="600" fill="#f8f9fa"/>
-
-  <!-- Subtle pattern background -->
-  <defs>
-    <pattern id="dots" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-      <circle cx="20" cy="20" r="1" fill="#e9ecef" opacity="0.5"/>
-    </pattern>
-  </defs>
-  <rect width="800" height="600" fill="url(#dots)"/>
-
-  <!-- Main content area -->
-  <rect x="80" y="120" width="640" height="360" rx="16" fill="white" stroke="#dee2e6" stroke-width="2"/>
-
-  <!-- Lock icon -->
-  <g transform="translate(380, 180)">
-    <!-- Lock body -->
-    <rect x="-15" y="5" width="30" height="25" rx="3" fill="#6c757d"/>
-    <!-- Lock shackle -->
-    <path d="M -8 5 A 8 8 0 0 1 8 5" stroke="#6c757d" stroke-width="3" fill="none"/>
-    <!-- Keyhole -->
-    <circle cx="0" cy="15" r="3" fill="white"/>
-    <rect x="-1" y="15" width="2" height="8" fill="white"/>
-  </g>
-
-  <!-- Primary heading -->
-  <text x="400" y="260" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#495057">
+  <text x="400" y="300" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#495057">
     Content Restricted
   </text>
-
-  <!-- Secondary text -->
-  <text x="400" y="295" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#6c757d">
+  <text x="400" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#6c757d">
     This content is available to purchased users only
   </text>
-
-  <!-- Upgrade message -->
-  <text x="400" y="330" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#007bff">
-    Upgrade your plan to access this content
-  </text>
-
-  <!-- Website URL -->
-  <text x="400" y="355" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#6c757d">
-    ludora.app
-  </text>
-
-  <!-- Ludora branding -->
-  <g transform="translate(400, 420)">
-    <!-- Simple logo placeholder - can be replaced with actual logo path -->
-    <rect x="-40" y="-15" width="80" height="30" rx="15" fill="#007bff" opacity="0.1"/>
-    <text x="0" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#007bff">
-      LUDORA
-    </text>
-  </g>
-
-  <!-- Footer note -->
-  <text x="400" y="520" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#adb5bd">
-    This slide is part of a preview version. Purchase the full content for complete access.
+</svg>`;
+  } catch (error) {
+    console.error('❌ Error loading placeholder SVG:', error);
+    // Return minimal fallback
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#f8f9fa"/>
+  <text x="400" y="300" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#495057">
+    Content Restricted
   </text>
 </svg>`;
+  }
 }
 
 // Configure multer for SVG file uploads with higher limits
