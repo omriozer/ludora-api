@@ -1086,9 +1086,7 @@ async function processWithPageReplacement(pdfBuffer, templateSettings, variables
 
     // Detect format and load appropriate placeholder PDF
     const detectedFormat = detectDocumentFormat(templateSettings, originalPdf, variables);
-    console.log(`🔍 Detected document format: ${detectedFormat}`);
     const placeholderPdf = await loadPlaceholderPdf(detectedFormat);
-    console.log(`📄 Loaded placeholder PDF for format: ${detectedFormat}`);
 
     // Create new PDF document
     const newPdf = await PDFDocument.create();
@@ -1104,11 +1102,9 @@ async function processWithPageReplacement(pdfBuffer, templateSettings, variables
     // Process each page
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       if (validAccessiblePages.includes(pageNum)) {
-        console.log(`📄 Processing accessible page ${pageNum}`);
         // Copy accessible page and apply templates
         await copyPageWithTemplates(originalPdf, newPdf, pageNum - 1, templateSettings, variables, fontSelector);
       } else {
-        console.log(`🚫 Processing restricted page ${pageNum} - should show placeholder`);
         // Copy placeholder page (no templates)
         await copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables, detectedFormat);
       }
@@ -1197,9 +1193,7 @@ async function loadPlaceholderPdf(format) {
     throw new Error(`Placeholder PDF not found for format ${format}: ${placeholderPath}. Ensure static placeholder files exist in assets/placeholders/`);
   }
 
-  console.log(`🔍 Loading placeholder PDF from: ${placeholderPath}`);
   const placeholderBuffer = fs.readFileSync(placeholderPath);
-  console.log(`📄 Placeholder PDF buffer size: ${placeholderBuffer.length} bytes`);
 
   try {
     const placeholderDoc = await PDFDocument.load(placeholderBuffer, {
@@ -1207,9 +1201,6 @@ async function loadPlaceholderPdf(format) {
       capNumbers: false,
       throwOnInvalidObject: true
     });
-
-    console.log(`✅ Placeholder PDF loaded successfully, ${placeholderDoc.getPageCount()} page(s)`);
-    console.log(`📐 Placeholder page size: ${placeholderDoc.getPage(0).getSize().width}x${placeholderDoc.getPage(0).getSize().height}`);
 
     return placeholderDoc;
   } catch (loadError) {
@@ -1258,24 +1249,12 @@ async function copyPageWithTemplates(originalPdf, newPdf, pageIndex, templateSet
  * @param {string} detectedFormat - Detected document format ('portrait-a4', 'landscape-a4', 'svg-slide')
  */
 async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables, detectedFormat = 'portrait-a4') {
-  console.log(`🔄 Attempting to copy placeholder page ${pageNum} from placeholder PDF`);
   try {
-    // Try to copy the placeholder page with detailed error reporting
+    // Try to copy the placeholder page
     let placeholderPage;
     try {
-      console.log(`🔄 Copying placeholder page ${pageNum} from placeholder PDF...`);
-      console.log(`📋 Placeholder PDF info: ${placeholderPdf.getPageCount()} pages`);
-      console.log(`📋 New PDF info: ${newPdf.getPageCount()} pages so far`);
-
       [placeholderPage] = await newPdf.copyPages(placeholderPdf, [0]);
-      console.log(`✅ Successfully copied placeholder page ${pageNum} via copyPages`);
     } catch (copyError) {
-      console.log(`🚨 CRITICAL: Failed to copy placeholder PDF for page ${pageNum}`);
-      console.log(`🚨 Error details: ${copyError.message}`);
-      console.log(`🚨 Error stack: ${copyError.stack}`);
-      console.log(`🚨 Placeholder PDF loaded: ${placeholderPdf ? 'yes' : 'no'}`);
-      console.log(`🚨 Placeholder pages count: ${placeholderPdf ? placeholderPdf.getPageCount() : 'N/A'}`);
-
       // Add specific error context
       const errorDetails = {
         pageNumber: pageNum,
@@ -1290,12 +1269,9 @@ async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, 
     }
 
     // Use placeholder page as-is, without any modifications
-
     newPdf.addPage(placeholderPage);
-    console.log(`✅ Added placeholder page ${pageNum} to final PDF`);
 
   } catch (error) {
-    console.log(`🚨 ERROR copying placeholder page ${pageNum}:`, error.message);
 
     // Get format-appropriate dimensions for fallback page
     const getDimensionsForFormat = (format) => {
@@ -1313,7 +1289,6 @@ async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, 
 
     // Create format-appropriate fallback page
     const fallbackPage = newPdf.addPage([pageWidth, pageHeight]);
-    console.log(`⚠️ Created fallback ${detectedFormat} page ${pageNum} (${pageWidth}x${pageHeight}) due to error`);
 
     // Draw placeholder background
     fallbackPage.drawRectangle({
@@ -1355,7 +1330,6 @@ async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, 
       }
     } catch (textError) {
       // If text rendering fails, just use the gray background
-      console.log(`⚠️ Could not add text to fallback page ${pageNum}:`, textError.message);
     }
   }
 }
