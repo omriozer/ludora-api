@@ -1086,7 +1086,14 @@ async function processWithPageReplacement(pdfBuffer, templateSettings, variables
 
     // Detect format and load appropriate placeholder PDF
     const detectedFormat = detectDocumentFormat(templateSettings, originalPdf, variables);
+
+    // Add debug logging
+    console.log(`🔍 [DEBUG] PDF page replacement - Detected format: ${detectedFormat}`);
+    console.log(`🔍 [DEBUG] PDF page replacement - Total pages: ${totalPages}`);
+    console.log(`🔍 [DEBUG] PDF page replacement - Accessible pages: [${validAccessiblePages.join(', ')}]`);
+
     const placeholderPdf = await loadPlaceholderPdf(detectedFormat);
+    console.log(`🔍 [DEBUG] PDF page replacement - Placeholder PDF loaded successfully`);
 
     // Create new PDF document
     const newPdf = await PDFDocument.create();
@@ -1136,6 +1143,8 @@ function detectDocumentFormat(templateSettings, originalPdf, variables) {
     // Get first page dimensions to detect PDF format
     const firstPage = originalPdf.getPage(0);
     const { width, height } = firstPage.getSize();
+
+    console.log(`🔍 [DEBUG] Document dimensions: ${width}x${height} (width x height)`);
 
     // Standard A4 dimensions in points
     const A4_PORTRAIT_WIDTH = 595; // ~210mm
@@ -1237,9 +1246,11 @@ async function copyPageWithTemplates(originalPdf, newPdf, pageIndex, templateSet
  * @param {Object} variables - Variables for customization
  */
 async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables) {
+  console.log(`🔍 [DEBUG] Copying placeholder page ${pageNum} of ${totalPages}`);
   try {
     // Copy placeholder page (no templates applied)
     const [placeholderPage] = await newPdf.copyPages(placeholderPdf, [0]);
+    console.log(`🔍 [DEBUG] Successfully copied placeholder page ${pageNum}`);
 
     // Add page-specific information (minimal customization)
     const { width, height } = placeholderPage.getSize();
@@ -1265,8 +1276,10 @@ async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, 
     newPdf.addPage(placeholderPage);
 
   } catch (error) {
+    console.log(`🚨 [ERROR] Failed to copy placeholder page ${pageNum}:`, error.message);
     // Create minimal fallback page
     const fallbackPage = newPdf.addPage([612, 792]);
+    console.log(`🔍 [DEBUG] Created fallback page ${pageNum} due to error`);
     fallbackPage.drawRectangle({
       x: 0,
       y: 0,
