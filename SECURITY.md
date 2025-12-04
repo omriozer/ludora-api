@@ -20,6 +20,7 @@ The Ludora API has been enhanced with comprehensive security measures to protect
 - **HTML Sanitization**: XSS protection for user-generated content
 - **File Upload Validation**: Type, size, and security checks
 - **Request Size Limiting**: Prevents DoS attacks via large payloads
+- **Template Validation**: Watermark templates require at least one element to prevent security bypass
 
 ### 3. Security Headers
 
@@ -164,6 +165,23 @@ This implementation addresses common security frameworks:
 - **OWASP Top 10**: Protection against most common web vulnerabilities
 - **NIST Cybersecurity Framework**: Risk management and protection
 - **SOC 2**: Security controls for service organizations
+
+## Template Security
+
+### Watermark Template Validation (Critical Fix: Dec 2025)
+
+**Security Impact**: Empty watermark templates allowed unwatermarked preview content access, bypassing content protection.
+
+**Validation Requirements**:
+- **Watermark templates MUST contain at least one element** (text, logo, etc.)
+- **Dual-layer validation**: Both model (`SystemTemplate.validateWatermarkTemplateData()`) and route level
+- **Element counting**: Validates both unified structure (`elements` object) and legacy structure
+- **Empty template prevention**: Blocks creation/update of templates with zero elements
+
+**Security Architecture**:
+- Model validation: Lines 234-249 in `models/SystemTemplate.js`
+- Route validation: Lines 27-42 in `routes/system-templates.js`
+- Prevents preview access control bypass through empty templates
 
 ## Support
 

@@ -290,7 +290,56 @@ const bulkSchema = Joi.object({
   items: Joi.array().min(1).max(100).required(),  // Max 100 items
   operation: Joi.string().valid('create', 'update', 'delete').required()
 });
+
+// ✅ CORRECT: Multi-layer validation pattern (CRITICAL for security-sensitive features)
+// Example: Watermark template validation (Dec 2025 security fix)
+
+// Layer 1: Route-level validation function
+function validateWatermarkTemplateData(templateData) {
+  // Count total elements to prevent empty templates (security bypass)
+  let totalElements = 0;
+  if (templateData.elements) {
+    totalElements = Object.values(templateData.elements).reduce((sum, arr) =>
+      sum + (Array.isArray(arr) ? arr.length : 0), 0);
+  }
+  if (totalElements === 0) {
+    throw new Error('Template must contain at least one element');
+  }
+  // Additional validation...
+}
+
+// Layer 2: Model-level validation method
+SystemTemplate.prototype.validateWatermarkTemplateData = function() {
+  // Duplicate validation at model level for defense in depth
+  // This catches issues even if route validation is bypassed
+  const totalElements = countElements(this.template_data);
+  if (totalElements === 0) {
+    throw new Error('Empty watermark templates are not allowed');
+  }
+}
+
+// ❌ WRONG: Single validation layer (can be bypassed)
+// Only validating in routes OR only in models creates security risk
 ```
+
+### Validation Best Practices (Dec 2025 Update)
+
+**Critical Security Pattern**: Implement multi-layer validation for security-sensitive features:
+
+1. **Route-level validation**: First line of defense, validates API input
+2. **Model-level validation**: Catches issues during direct model operations
+3. **Business logic validation**: Service layer checks for complex rules
+
+**Example Security Fix**: Watermark template validation
+- **Problem**: Empty templates bypassed content protection
+- **Solution**: Dual validation in both routes and models
+- **Impact**: Prevents unwatermarked preview content access
+
+**When to use multi-layer validation**:
+- Content protection features (watermarks, access control)
+- Payment/subscription operations
+- File upload and processing
+- User permission changes
 
 ---
 

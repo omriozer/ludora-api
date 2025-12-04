@@ -24,6 +24,23 @@ function validateWatermarkTemplateData(templateData) {
     throw new Error('Template must have unified structure (elements object) or legacy elements (textElements, logoElements)');
   }
 
+  // CRITICAL FIX: Validate that watermark templates actually contain watermark elements
+  let totalElements = 0;
+
+  if (hasUnifiedStructure) {
+    // Count elements in unified structure
+    totalElements = Object.values(templateData.elements).reduce((sum, elementArray) => {
+      return sum + (Array.isArray(elementArray) ? elementArray.length : 0);
+    }, 0);
+  } else if (hasLegacyStructure) {
+    // Count elements in legacy structure
+    totalElements = (templateData.textElements?.length || 0) + (templateData.logoElements?.length || 0);
+  }
+
+  if (totalElements === 0) {
+    throw new Error('Watermark template must contain at least one watermark element (text, logo, etc.). Empty watermark templates are not allowed.');
+  }
+
   // Validate unified structure
   if (hasUnifiedStructure) {
     Object.entries(templateData.elements).forEach(([elementType, elementArray]) => {
