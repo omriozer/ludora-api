@@ -1197,8 +1197,24 @@ async function loadPlaceholderPdf(format) {
     throw new Error(`Placeholder PDF not found for format ${format}: ${placeholderPath}. Ensure static placeholder files exist in assets/placeholders/`);
   }
 
+  console.log(`🔍 Loading placeholder PDF from: ${placeholderPath}`);
   const placeholderBuffer = fs.readFileSync(placeholderPath);
-  return await PDFDocument.load(placeholderBuffer);
+  console.log(`📄 Placeholder PDF buffer size: ${placeholderBuffer.length} bytes`);
+
+  try {
+    const placeholderDoc = await PDFDocument.load(placeholderBuffer, {
+      ignoreEncryption: true,
+      capNumbers: false,
+      throwOnInvalidObject: true
+    });
+
+    console.log(`✅ Placeholder PDF loaded successfully, ${placeholderDoc.getPageCount()} page(s)`);
+    console.log(`📐 Placeholder page size: ${placeholderDoc.getPage(0).getSize().width}x${placeholderDoc.getPage(0).getSize().height}`);
+
+    return placeholderDoc;
+  } catch (loadError) {
+    throw new Error(`Failed to load placeholder PDF ${placeholderPath}: ${loadError.message}. The PDF file may be corrupted or incompatible with pdf-lib.`);
+  }
 }
 
 /**
@@ -1244,77 +1260,33 @@ async function copyPageWithTemplates(originalPdf, newPdf, pageIndex, templateSet
 async function copyPlaceholderPage(newPdf, placeholderPdf, pageNum, totalPages, variables, detectedFormat = 'portrait-a4') {
   console.log(`🔄 Attempting to copy placeholder page ${pageNum} from placeholder PDF`);
   try {
-    // First attempt: Try to copy the placeholder page directly
+    // Try to copy the placeholder page with detailed error reporting
     let placeholderPage;
     try {
+      console.log(`🔄 Copying placeholder page ${pageNum} from placeholder PDF...`);
+      console.log(`📋 Placeholder PDF info: ${placeholderPdf.getPageCount()} pages`);
+      console.log(`📋 New PDF info: ${newPdf.getPageCount()} pages so far`);
+
       [placeholderPage] = await newPdf.copyPages(placeholderPdf, [0]);
       console.log(`✅ Successfully copied placeholder page ${pageNum} via copyPages`);
     } catch (copyError) {
-      console.log(`⚠️ Direct copy failed for page ${pageNum}, trying alternative approach:`, copyError.message);
+      console.log(`🚨 CRITICAL: Failed to copy placeholder PDF for page ${pageNum}`);
+      console.log(`🚨 Error details: ${copyError.message}`);
+      console.log(`🚨 Error stack: ${copyError.stack}`);
+      console.log(`🚨 Placeholder PDF loaded: ${placeholderPdf ? 'yes' : 'no'}`);
+      console.log(`🚨 Placeholder pages count: ${placeholderPdf ? placeholderPdf.getPageCount() : 'N/A'}`);
 
-      // Alternative approach: Create a new page and manually copy the content
-      const originalPage = placeholderPdf.getPage(0);
-      const { width, height } = originalPage.getSize();
+      // Add specific error context
+      const errorDetails = {
+        pageNumber: pageNum,
+        placeholderFormat: detectedFormat,
+        errorMessage: copyError.message,
+        placeholderLoaded: !!placeholderPdf,
+        placeholderPageCount: placeholderPdf ? placeholderPdf.getPageCount() : 0
+      };
 
-      placeholderPage = newPdf.addPage([width, height]);
-      console.log(`✅ Created alternative placeholder page ${pageNum} (${width}x${height})`);
-
-      // Try to copy the visual content by embedding the placeholder as an image-like form
-      // This is more compatible than direct page copying
-      try {
-        // Get the placeholder page content and draw it
-        // Note: This is a simplified approach - in complex cases we might need to
-        // recreate the placeholder content manually
-        const placeholderPageRef = placeholderPdf.getPage(0);
-
-        // For now, create a basic placeholder manually since copying content is complex
-        placeholderPage.drawRectangle({
-          x: 0,
-          y: 0,
-          width: width,
-          height: height,
-          color: rgb(0.97, 0.97, 0.97), // Very light gray background
-        });
-
-        // Add a centered "Preview Not Available" message
-        const fonts = await loadStandardFonts(newPdf);
-        if (fonts.bold && fonts.regular) {
-          const messageText = 'Preview Not Available';
-          const subText = 'This page requires access to view content';
-          const fontSize = 28;
-          const subFontSize = 14;
-
-          const textWidth = fonts.bold.widthOfTextAtSize(messageText, fontSize);
-          const subTextWidth = fonts.regular.widthOfTextAtSize(subText, subFontSize);
-
-          // Main message
-          placeholderPage.drawText(messageText, {
-            x: (width - textWidth) / 2,
-            y: height / 2 + 20,
-            size: fontSize,
-            font: fonts.bold,
-            color: rgb(0.3, 0.3, 0.3),
-          });
-
-          // Subtitle
-          placeholderPage.drawText(subText, {
-            x: (width - subTextWidth) / 2,
-            y: height / 2 - 20,
-            size: subFontSize,
-            font: fonts.regular,
-            color: rgb(0.5, 0.5, 0.5),
-          });
-        }
-
-        console.log(`✅ Created manual placeholder content for page ${pageNum}`);
-
-      } catch (manualError) {
-        console.log(`⚠️ Could not create manual placeholder content for page ${pageNum}:`, manualError.message);
-        // The basic page creation already succeeded, so continue
-      }
-
-      // Skip the remaining steps since we already added the page
-      return;
+      // Don't create fallback - fail explicitly so the issue is visible
+      throw new Error(`Failed to copy placeholder PDF: ${copyError.message}. Context: ${JSON.stringify(errorDetails)}. This indicates a PDF compatibility issue that needs to be resolved.`);
     }
 
     // Add page-specific information (minimal customization)
