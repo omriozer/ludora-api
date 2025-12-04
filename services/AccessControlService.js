@@ -596,13 +596,13 @@ class AccessControlService {
             ),
             // Check if the product is included in linked_products array
             this.models.sequelize.where(
-              this.models.sequelize.fn(
-                'jsonb_path_exists',
-                this.models.sequelize.col('type_attributes'),
-                '$.linked_products[*] ? (@.product_id == $product_id)',
-                JSON.stringify({ product_id: productId })
-              ),
-              true
+              this.models.sequelize.literal(`
+                EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(type_attributes->'linked_products') AS linked_product
+                  WHERE linked_product->>'product_id' = :productId
+                )
+              `),
+              { productId: productId }
             )
           ]
         },
