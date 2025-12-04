@@ -581,32 +581,22 @@ class AccessControlService {
     try {
       ludlog.auth(`🔍 Checking lesson plan derived access for user ${userId}, ${entityType}:${productId}`);
 
-      // Step 1: Find all lesson plans that include this product in their linked_products
+      // Step 1: Find all lesson plans that include this product in their file_configs.files
       const includingLessonPlans = await this.models.Product.findAll({
         where: {
           product_type: 'lesson_plan',
-          [Op.and]: [
-            // Check if type_attributes.supports_derived_access is true
-            this.models.sequelize.where(
-              this.models.sequelize.cast(
-                this.models.sequelize.json('type_attributes.supports_derived_access'),
-                'boolean'
-              ),
-              true
-            ),
-            // Check if the product is included in linked_products array
-            this.models.sequelize.where(
-              this.models.sequelize.literal(`
-                EXISTS (
-                  SELECT 1 FROM jsonb_array_elements(type_attributes->'linked_products') AS linked_product
-                  WHERE linked_product->>'product_id' = :productId
-                )
-              `),
-              { productId: productId }
-            )
-          ]
+          // Use a subquery to check if this product is in the lesson plan's file_configs.files
+          entity_id: {
+            [Op.in]: this.models.sequelize.literal(`(
+              SELECT id FROM lesson_plan
+              WHERE EXISTS (
+                SELECT 1 FROM jsonb_array_elements(file_configs->'files') AS linked_file
+                WHERE linked_file->>'product_id' = '${productId.replace(/'/g, "''")}'
+              )
+            )`)
+          }
         },
-        attributes: ['id', 'entity_id', 'title', 'type_attributes'],
+        attributes: ['id', 'entity_id', 'title'],
         include: [
           {
             model: this.models.User,
@@ -682,10 +672,6 @@ class AccessControlService {
   buildDerivedAccessResult(productId, entityType, lessonPlanProduct, sourceAccess, sourceAccessType) {
     ludlog.auth(`✅ Granting derived access to ${entityType}:${productId} via lesson plan ${lessonPlanProduct.id} (${sourceAccessType})`);
 
-    // Find the target product in linked_products for metadata
-    const linkedProducts = lessonPlanProduct.type_attributes?.linked_products || [];
-    const linkedProductInfo = linkedProducts.find(lp => lp.product_id === productId);
-
     return {
       hasAccess: true,
       reason: 'lesson_plan_derived',
@@ -706,7 +692,7 @@ class AccessControlService {
         purchasedAt: sourceAccess.purchasedAt || sourceAccess.claimedAt,
         accessMethod: sourceAccess.accessMethod
       },
-      linkedProductInfo: linkedProductInfo,
+      // Note: linkedProductInfo metadata is available in lesson plan file_configs if needed
       // Derived access inherits expiration from lesson plan access
       isLifetimeAccess: sourceAccess.isLifetimeAccess,
       expiresAt: sourceAccess.expiresAt
