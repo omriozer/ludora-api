@@ -18,7 +18,7 @@ import { constructS3Path } from '../utils/s3PathUtils.js';
 import { generateIsraeliCacheHeaders } from '../middleware/israeliCaching.js';
 import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.js';
 import { createFileLogger, createErrorResponse, createSuccessResponse } from '../utils/fileOperationLogger.js';
-import { luderror } from '../lib/ludlog.js';
+import { luderror, ludlog } from '../lib/ludlog.js';
 import { createFileVerifier } from '../utils/fileOperationVerifier.js';
 import { createPreUploadValidator } from '../utils/preUploadValidator.js';
 // Import pptx2html library - try using dynamic import to handle the UMD build correctly
@@ -108,12 +108,15 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
 
       // 1. Add watermark elements if needed
       if (needsWatermarks) {
+        ludlog.media(`🔍 Preview watermark processing: needsWatermarks=true, fileId=${fileEntity.id}`);
         try {
           const { SystemTemplate } = db;
           let watermarkTemplate = null;
+          let watermarkSource = null;
 
           // Try to get the configured watermark template
           if (fileEntity.watermark_template_id) {
+            ludlog.media(`Attempting to load configured watermark template: ${fileEntity.watermark_template_id}`);
             const template = await SystemTemplate.findOne({
               where: {
                 id: fileEntity.watermark_template_id,
@@ -122,30 +125,43 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
             });
             if (template) {
               watermarkTemplate = template.template_data;
+              watermarkSource = 'configured_template';
+              ludlog.media(`✅ Found configured watermark template: ${fileEntity.watermark_template_id}`);
+            } else {
+              ludlog.media(`❌ Configured watermark template not found: ${fileEntity.watermark_template_id}`);
             }
           }
 
           // If no configured template, try to get default watermark template
           if (!watermarkTemplate) {
+            const targetFormat = fileEntity.target_format || 'pdf-a4-portrait';
+            ludlog.media(`Attempting to load default watermark template for format: ${targetFormat}`);
             const defaultTemplate = await SystemTemplate.findOne({
               where: {
                 template_type: 'watermark',
-                target_format: fileEntity.target_format || 'pdf-a4-portrait',
+                target_format: targetFormat,
                 is_default: true
               }
             });
             if (defaultTemplate) {
               watermarkTemplate = defaultTemplate.template_data;
+              watermarkSource = 'default_template';
+              ludlog.media(`✅ Found default watermark template for format: ${targetFormat}`);
+            } else {
+              ludlog.media(`❌ No default watermark template found for format: ${targetFormat}`);
             }
           }
 
           // Override with custom watermark settings if available
           if (fileEntity.watermark_settings) {
             watermarkTemplate = fileEntity.watermark_settings;
+            watermarkSource = 'custom_settings';
+            ludlog.media(`✅ Using custom watermark settings from file entity`);
           }
 
           // Add watermark elements to unified template
           if (watermarkTemplate && watermarkTemplate.elements) {
+            let elementCount = 0;
             // Merge element arrays by type
             for (const [elementType, elementArray] of Object.entries(watermarkTemplate.elements)) {
               if (Array.isArray(elementArray)) {
@@ -153,12 +169,19 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
                   unifiedTemplate.elements[elementType] = [];
                 }
                 unifiedTemplate.elements[elementType].push(...elementArray);
+                elementCount += elementArray.length;
               }
             }
+            ludlog.media(`✅ Added ${elementCount} watermark elements from ${watermarkSource} to unified template`);
+          } else {
+            ludlog.media(`⚠️ No watermark template found or template has no elements (source: ${watermarkSource || 'none'})`);
           }
         } catch (templateError) {
+          luderror.media(`❌ Error loading watermark template:`, templateError);
           // Template error - continue without watermark elements
         }
+      } else {
+        ludlog.media(`ℹ️ Watermark processing skipped: needsWatermarks=false, isPreviewMode=${isPreviewMode}, skipWatermarks=${skipWatermarks}`);
       }
 
       // 2. Add branding elements if needed

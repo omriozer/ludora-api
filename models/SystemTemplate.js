@@ -231,6 +231,23 @@ export default function(sequelize) {
       throw new Error('Template must have unified structure (elements object) or legacy elements (textElements, logoElements)');
     }
 
+    // CRITICAL FIX: Validate that watermark templates actually contain watermark elements
+    let totalElements = 0;
+
+    if (hasUnifiedStructure) {
+      // Count elements in unified structure
+      totalElements = Object.values(data.elements).reduce((sum, elementArray) => {
+        return sum + (Array.isArray(elementArray) ? elementArray.length : 0);
+      }, 0);
+    } else if (hasLegacyStructure) {
+      // Count elements in legacy structure
+      totalElements = (data.textElements?.length || 0) + (data.logoElements?.length || 0);
+    }
+
+    if (totalElements === 0) {
+      throw new Error('Watermark template must contain at least one watermark element (text, logo, etc.). Empty watermark templates are not allowed.');
+    }
+
     // Validate unified structure
     if (hasUnifiedStructure) {
       // Validate each element type array in the elements object

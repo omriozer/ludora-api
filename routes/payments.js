@@ -53,8 +53,93 @@ router.post('/purchases', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'purchasableType and purchasableId are required' });
     }
 
-    // Validate purchase creation constraints
-    const validation = await PaymentService.validatePurchaseCreation(userId, purchasableType, purchasableId);
+    // CRITICAL FIX: The purchasableId could be either a Product ID (for bundles) or an entity ID (for other types)
+    // We need to find the correct Product ID to store in the Purchase record for access control
+    let productId = null;
+    let productRecord = null;
+    let entityRecord = null;
+    let isBundle = false;
+
+    // Try to find as Product first (could be a bundle or direct product ID)
+    productRecord = await models.Product.findByPk(purchasableId);
+
+    if (productRecord) {
+      // Found as Product - this could be a bundle or direct product reference
+      productId = productRecord.id;
+      isBundle = productRecord.type_attributes?.is_bundle || false;
+
+      // If not a bundle, get the entity record for price info
+      if (!isBundle && productRecord.entity_id) {
+        switch (purchasableType) {
+          case 'workshop':
+            entityRecord = await models.Workshop.findByPk(productRecord.entity_id);
+            break;
+          case 'course':
+            entityRecord = await models.Course.findByPk(productRecord.entity_id);
+            break;
+          case 'file':
+            entityRecord = await models.File.findByPk(productRecord.entity_id);
+            break;
+          case 'lesson_plan':
+            entityRecord = await models.LessonPlan.findByPk(productRecord.entity_id);
+            break;
+          case 'tool':
+            entityRecord = await models.Tool.findByPk(productRecord.entity_id);
+            break;
+          case 'game':
+            entityRecord = await models.Game.findByPk(productRecord.entity_id);
+            break;
+        }
+      }
+    } else {
+      // Not found as Product - must be an entity ID, need to find the corresponding Product
+      switch (purchasableType) {
+        case 'workshop':
+          entityRecord = await models.Workshop.findByPk(purchasableId);
+          break;
+        case 'course':
+          entityRecord = await models.Course.findByPk(purchasableId);
+          break;
+        case 'file':
+          entityRecord = await models.File.findByPk(purchasableId);
+          break;
+        case 'lesson_plan':
+          entityRecord = await models.LessonPlan.findByPk(purchasableId);
+          break;
+        case 'tool':
+          entityRecord = await models.Tool.findByPk(purchasableId);
+          break;
+        case 'game':
+          entityRecord = await models.Game.findByPk(purchasableId);
+          break;
+        // NOTE: 'subscription' case removed - use dedicated /api/subscriptions endpoints
+        default:
+          return res.status(400).json({ error: `Unknown purchasable type: ${purchasableType}` });
+      }
+
+      if (!entityRecord) {
+        return res.status(404).json({ error: `${purchasableType} not found` });
+      }
+
+      // Find the Product record that references this entity
+      productRecord = await models.Product.findOne({
+        where: {
+          product_type: purchasableType,
+          entity_id: purchasableId
+        }
+      });
+
+      if (!productRecord) {
+        return res.status(404).json({
+          error: `Product record not found for ${purchasableType} ${purchasableId}. This entity may not be properly set up as a product.`
+        });
+      }
+
+      productId = productRecord.id;
+    }
+
+    // Validate purchase creation constraints using Product ID
+    const validation = await PaymentService.validatePurchaseCreation(userId, purchasableType, productId);
 
     if (!validation.valid) {
       if (validation.canUpdate && purchasableType === 'subscription') {
@@ -68,76 +153,34 @@ router.post('/purchases', authenticateToken, async (req, res) => {
       return res.status(409).json({ error: validation.error });
     }
 
+    // Determine item for price extraction (Product for bundles, entity for others)
+    const item = isBundle ? productRecord : (entityRecord || productRecord);
 
-    // For bundles, we need to fetch the Product record, not the entity
-    // Check if this might be a bundle by trying to find it as a Product first
-    let isBundle = false;
-    let bundleProduct = null;
-
-    // Try to find as Product first (could be a bundle)
-    const productRecord = await models.Product.findByPk(purchasableId);
-    if (productRecord && productRecord.type_attributes?.is_bundle) {
-      isBundle = true;
-      bundleProduct = productRecord;
-    }
-
-    // Get product/subscription details to determine price
-    let item = null;
-    if (isBundle) {
-      // For bundles, use the Product record as the item
-      item = bundleProduct;
-    } else {
-      // For regular entities, find the entity record
-      switch (purchasableType) {
-        case 'workshop':
-          item = await models.Workshop.findByPk(purchasableId);
-          break;
-        case 'course':
-          item = await models.Course.findByPk(purchasableId);
-          break;
-        case 'file':
-          item = await models.File.findByPk(purchasableId);
-          break;
-        case 'lesson_plan':
-          item = await models.LessonPlan.findByPk(purchasableId);
-          break;
-        case 'tool':
-          item = await models.Tool.findByPk(purchasableId);
-          break;
-        case 'game':
-          item = await models.Game.findByPk(purchasableId);
-          break;
-        // NOTE: 'subscription' case removed - use dedicated /api/subscriptions endpoints
-        default:
-          return res.status(400).json({ error: `Unknown purchasable type: ${purchasableType}` });
-      }
-    }
-
-    if (!item) {
-      return res.status(404).json({ error: `${purchasableType} not found` });
-    }
+    // Get price from Product record (which has the authoritative price)
+    let price = parseFloat(productRecord.price || 0);
 
     // Check if price is provided in additionalData (for entities that don't have price)
-    let price = parseFloat(item.price || 0);
     if (additionalData.product_price && price === 0) {
       price = parseFloat(additionalData.product_price || 0);
     }
 
     const isFree = price === 0;
 
-    // Create purchase with appropriate status based on price
+    // CRITICAL: Create purchase with Product ID (not entity ID) for proper access control
     const purchaseData = {
       id: `pur_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       buyer_user_id: userId,
       purchasable_type: purchasableType,
-      purchasable_id: purchasableId,
+      purchasable_id: productId, // ✅ FIXED: Use Product ID instead of entity ID
       payment_amount: price,
       original_price: price,
       discount_amount: 0,
       payment_status: isFree ? 'completed' : 'cart', // Complete free items immediately
       payment_method: isFree ? 'free' : null,
       metadata: {
-        product_title: item.title || item.name || 'Unknown Product',
+        product_title: productRecord.title || item.title || item.name || 'Unknown Product',
+        entity_id: entityRecord?.id || null, // Store entity ID in metadata for reference
+        is_bundle: isBundle,
         ...additionalData
       },
       created_at: new Date(),
