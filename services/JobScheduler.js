@@ -153,7 +153,8 @@ class JobScheduler {
         }
       }
 
-      this.redis = new Redis(redisUrl, {
+      // Configure SSL options for Heroku Redis
+      const redisOptions = {
         maxRetriesPerRequest: shouldFailGracefully ? null : 3,
         retryDelayOnFailover: shouldFailGracefully ? 0 : 100,
         enableReadyCheck: false,
@@ -163,7 +164,16 @@ class JobScheduler {
         retryDelayOnClusterDown: shouldFailGracefully ? 0 : 100,
         retryDelayOnClusterFailover: shouldFailGracefully ? 0 : 100,
         retryConnectOnFailure: !shouldFailGracefully  // Don't retry in graceful environments
-      });
+      };
+
+      // Add SSL configuration for Heroku Redis (rediss:// URLs)
+      if (redisUrl.startsWith('rediss://')) {
+        redisOptions.tls = {
+          rejectUnauthorized: false  // Accept Heroku's self-signed certificates
+        };
+      }
+
+      this.redis = new Redis(redisUrl, redisOptions);
 
       this.redis.on('connect', () => {
         ludlog.generic('JobScheduler Redis connected successfully');
