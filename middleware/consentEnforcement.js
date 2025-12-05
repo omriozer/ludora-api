@@ -31,7 +31,7 @@ export const requireStudentConsent = async (req, res, next) => {
     // Skip enforcement if parent consent is not required (admin setting)
     let isConsentRequired;
     try {
-      isConsentRequired = await SettingsService.getSettingValue('parent_consent_required', false);
+      isConsentRequired = await SettingsService.get('parent_consent_required', false);
     } catch (settingsError) {
       luderror.auth('Failed to check parent_consent_required setting:', {
         ...requestContext,
