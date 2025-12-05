@@ -155,7 +155,7 @@ class JobScheduler {
 
       // Configure SSL options for Heroku Redis
       const redisOptions = {
-        maxRetriesPerRequest: shouldFailGracefully ? null : 3,
+        maxRetriesPerRequest: null,  // Required by BullMQ for all environments
         retryDelayOnFailover: shouldFailGracefully ? 0 : 100,
         enableReadyCheck: false,
         maxLoadingTimeout: 1000,
