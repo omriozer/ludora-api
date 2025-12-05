@@ -21,9 +21,6 @@ import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 
 const router = express.Router();
 
-// Apply consent enforcement middleware for student protection
-router.use(requireStudentConsent);
-
 // Rate limiting for session operations
 const sessionRateLimit = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
@@ -84,6 +81,7 @@ async function validateSessionAccess(sessionId, userId, userRole, transaction = 
  */
 router.get('/game-sessions/:sessionId',
   checkStudentsLobbyAccess,
+  requireStudentConsent,
   validateSessionId,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
@@ -315,6 +313,7 @@ router.get('/game-sessions/:sessionId/participants',
 router.post('/game-sessions/:sessionId/participants',
   sessionRateLimit,
   checkStudentsLobbyAccess, // Student access control for joining sessions
+  requireStudentConsent,
   validateAddParticipant,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
@@ -383,6 +382,7 @@ router.post('/game-sessions/:sessionId/participants',
  */
 router.delete('/game-sessions/:sessionId/participants/:participantId',
   checkStudentsLobbyAccess,
+  requireStudentConsent,
   validateRemoveParticipant,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();

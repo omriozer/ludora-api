@@ -131,7 +131,7 @@ async function getGamesWithProducts(userId, userRole) {
 
 // Student-facing route for getting teacher games by invitation code
 // GET /api/games/teacher/:code - Get games for teacher by invitation code (with student access control)
-router.get('/teacher/:code', checkStudentsAccess, async (req, res) => {
+router.get('/teacher/:code', checkStudentsAccess, requireStudentConsent, async (req, res) => {
   try {
     const { code } = req.params;
 
@@ -172,9 +172,6 @@ router.get('/teacher/:code', checkStudentsAccess, async (req, res) => {
 
 // Apply unified auth middleware to all other routes (supports both users and players)
 router.use(authenticateUserOrPlayer);
-
-// Apply consent enforcement for students on all authenticated routes
-router.use(requireStudentConsent);
 
 // GET /api/games - Get games for authenticated user or player
 // Returns entity's games (or all games if admin) with associated product data

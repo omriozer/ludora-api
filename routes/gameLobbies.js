@@ -28,9 +28,6 @@ import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 
 const router = express.Router();
 
-// Apply consent enforcement middleware for student protection
-router.use(requireStudentConsent);
-
 // Rate limiting for lobby operations
 const lobbyRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -77,6 +74,7 @@ async function validateGameOwnership(gameId, userId, userRole = null) {
  */
 router.get('/games/:gameId/lobbies',
   checkStudentsLobbyAccess,
+  requireStudentConsent,
   validateGameId,
   validateLobbyListQuery,
   async (req, res) => {
@@ -527,6 +525,7 @@ router.delete('/game-lobbies/:lobbyId',
  */
 router.post('/game-lobbies/join-by-code',
   checkStudentsAccess, // Student access control with rate limiting
+  requireStudentConsent,
   validateJoinByCode,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
@@ -619,6 +618,7 @@ router.post('/game-lobbies/join-by-code',
  */
 router.post('/game-lobbies/:lobbyId/join',
   checkStudentsAccess, // Student access control with rate limiting
+  requireStudentConsent,
   validateJoinByCode, // Reuse validation for participant data
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
@@ -970,6 +970,7 @@ router.post('/game-lobbies/:lobbyId/sessions',
  */
 router.post('/game-lobbies/:lobbyId/sessions/create-student',
   checkStudentsAccess, // Student conditional authentication middleware
+  requireStudentConsent,
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
     try {

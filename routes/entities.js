@@ -25,9 +25,6 @@ import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 
 const router = express.Router();
 
-// Apply consent enforcement middleware for student protection
-router.use(requireStudentConsent);
-
 // Configure multer for file uploads (memory storage for S3)
 const fileUpload = multer({
   storage: multer.memoryStorage(),

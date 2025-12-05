@@ -10,9 +10,6 @@ import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 const router = express.Router();
 const authService = AuthService; // Use singleton instance
 
-// Apply consent enforcement middleware for student protection
-router.use(requireStudentConsent);
-
 /**
  * Helper: Encode filename for Content-Disposition header
  *
