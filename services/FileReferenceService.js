@@ -47,7 +47,7 @@ class FileReferenceService {
       'marketing-video': { access: 'public', standardFilename: 'video.mp4' }
     },
     school: {
-      logo: { access: 'public', standardFilename: 'logo.png' }
+      logo: { access: 'public', standardFilename: 'logo.svg' }
     }
   };
 
@@ -188,7 +188,7 @@ class FileReferenceService {
           location: 'FileReferenceService.getFilenameFromEntity'
         });
       }
-      return entity.logo_url ? 'logo.png' : null;
+      return entity.logo_url ? 'logo.svg' : null;
     }
 
     // Default: use standard filename if indicated

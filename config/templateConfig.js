@@ -21,8 +21,8 @@ export const TEMPLATE_CONFIG = {
   // Asset paths and locations
   assets: {
     logo: {
-      defaultPath: path.join(process.cwd(), 'assets', 'images', 'logo.png'),
-      fallbackApiPath: '/api/assets/image/settings/logo.png',
+      defaultPath: path.join(process.cwd(), 'assets', 'images', 'logo.svg'),
+      fallbackApiPath: '/api/assets/image/settings/logo.svg',
       fallbackText: 'LOGO',
       fallbackColor: { r: 0.2, g: 0.4, b: 0.8 } // Blue-ish color for logo placeholder
     },

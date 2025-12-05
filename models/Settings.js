@@ -101,7 +101,7 @@ export default function(sequelize) {
       // Legacy fallback - extract filename from URL
       if (this.logo_url && this.logo_url.includes('/')) {
         const parts = this.logo_url.split('/');
-        return parts[parts.length - 1] || 'logo.png';
+        return parts[parts.length - 1] || 'logo.svg';
       }
       return null;
     };

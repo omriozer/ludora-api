@@ -7,8 +7,9 @@
 
 import fs from 'fs';
 import path from 'path';
+import sharp from 'sharp';
 import { TEMPLATE_CONFIG, getLogoConfig, getFontConfig, getUrlConfig } from '../config/templateConfig.js';
-import { luderror } from '../lib/ludlog.js';
+import { luderror, ludlog } from '../lib/ludlog.js';
 
 /**
  * Asset Manager class for handling template assets
@@ -31,9 +32,22 @@ export class AssetManager {
     const config = getLogoConfig(options);
     const cacheKey = `${options.source || 'file'}-${options.path || config.path}`;
 
+    ludlog.file('🎯 [AssetManager] Loading logo with options:', JSON.stringify({
+      source: options.source || 'file',
+      path: options.path || config.path,
+      size: options.size || config.size,
+      cacheKey
+    }));
+
     // Check cache first
     if (this.logoCache.has(cacheKey)) {
-      return this.logoCache.get(cacheKey);
+      const cachedResult = this.logoCache.get(cacheKey);
+      ludlog.file('📦 [AssetManager] Using cached logo:', {
+        type: cachedResult.type,
+        converted: cachedResult.converted,
+        fallback: cachedResult.fallback
+      });
+      return cachedResult;
     }
 
     let logoResult = null;
@@ -52,6 +66,14 @@ export class AssetManager {
           break;
       }
 
+      ludlog.file('✅ [AssetManager] Logo loaded successfully:', {
+        type: logoResult?.type,
+        originalType: logoResult?.originalType,
+        converted: logoResult?.converted,
+        fallback: logoResult?.fallback,
+        dataLength: logoResult?.data?.length
+      });
+
       // Cache successful result
       if (logoResult && logoResult.data) {
         this.logoCache.set(cacheKey, logoResult);
@@ -59,8 +81,9 @@ export class AssetManager {
 
       return logoResult;
     } catch (error) {
-      luderror.file('⚠️ Logo loading failed:', error.message);
-      return this._getLogoFallback(config);
+      luderror.file('❌ [AssetManager] Logo loading failed:', error.message);
+      // Don't use fallback - let the error bubble up so we can debug properly
+      throw error;
     }
   }
 
@@ -82,6 +105,31 @@ export class AssetManager {
 
     // Detect image type
     const imageType = this._detectImageType(logoBuffer);
+
+    // Handle SVG conversion to PNG for PDF compatibility
+    if (imageType === 'svg') {
+      try {
+        // Convert SVG to PNG using Sharp
+        const pngBuffer = await this._convertSvgToPng(logoBuffer, {
+          width: config.size || 400,
+          height: config.size || 400,
+          density: 300
+        });
+
+        return {
+          data: pngBuffer,
+          type: 'png', // Return as PNG after conversion
+          source: 'file',
+          path: logoPath,
+          originalType: 'svg', // Track original format
+          converted: true, // Mark as converted
+          fallback: false
+        };
+      } catch (conversionError) {
+        // If conversion fails, throw error to trigger fallback
+        throw new Error(`SVG conversion failed: ${conversionError.message}`);
+      }
+    }
 
     return {
       data: logoData,
@@ -127,6 +175,32 @@ export class AssetManager {
   }
 
   /**
+   * Convert SVG to PNG using Sharp
+   * @private
+   * @param {Buffer} svgBuffer - SVG data as buffer
+   * @param {Object} options - Conversion options
+   * @returns {Promise<Buffer>} PNG buffer
+   */
+  async _convertSvgToPng(svgBuffer, options = {}) {
+    try {
+      const { width = 400, height = 400, density = 300 } = options;
+
+      // Convert SVG to PNG using Sharp
+      const pngBuffer = await sharp(svgBuffer, { density })
+        .resize(width, height, {
+          fit: 'contain',
+          background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent background
+        })
+        .png()
+        .toBuffer();
+
+      return pngBuffer;
+    } catch (error) {
+      throw new Error(`SVG to PNG conversion failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Get logo fallback when loading fails
    * @private
    * @param {Object} config - Logo configuration
@@ -147,7 +221,7 @@ export class AssetManager {
    * Detect image type from buffer
    * @private
    * @param {Buffer} buffer - Image buffer
-   * @returns {string} Image type ('png', 'jpeg', or 'unknown')
+   * @returns {string} Image type ('png', 'jpeg', 'svg', or 'unknown')
    */
   _detectImageType(buffer) {
     // PNG signature
@@ -158,6 +232,17 @@ export class AssetManager {
     if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
       return 'jpeg';
     }
+
+    // SVG detection - check for SVG XML content
+    try {
+      const fileStart = buffer.toString('utf8', 0, Math.min(buffer.length, 200)).toLowerCase();
+      if (fileStart.includes('<svg') || fileStart.includes('<?xml') && fileStart.includes('<svg')) {
+        return 'svg';
+      }
+    } catch (error) {
+      // If toString fails, it's not SVG
+    }
+
     return 'unknown';
   }
 

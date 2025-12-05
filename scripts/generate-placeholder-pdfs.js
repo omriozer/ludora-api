@@ -44,7 +44,7 @@ const COLORS = {
  */
 async function loadLogo() {
   try {
-    const logoPath = path.join(__dirname, '..', 'assets', 'images', 'logo.png');
+    const logoPath = path.join(__dirname, '..', 'assets', 'images', 'logo.svg');
     if (!fs.existsSync(logoPath)) {
       console.log('⚠️ Logo file not found at:', logoPath);
       return null;

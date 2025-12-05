@@ -21,7 +21,7 @@ import { loadFonts, loadLogo } from './AssetManager.js';
 import { createConverter } from './CoordinateConverter.js';
 import { createFontSelector } from './FontSelector.js';
 import { getDefaultContent, getUrlConfig } from '../config/templateConfig.js';
-import { ludlog, luderror } from '../lib/ludlog.js';
+import { luderror } from '../lib/ludlog.js';
 
 /**
  * Apply template to PDF - UNIFIED for both branding and watermark templates
@@ -198,7 +198,9 @@ async function addTemplateElement(page, elementType, element, variables, coordin
     }
 
   } catch (error) {
-    // Element render failed - continue with other elements
+    // Don't swallow element errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] Element render failed:', elementType, error.message);
+    throw error;
   }
 }
 
@@ -229,6 +231,7 @@ async function renderLogoElement(page, element, x, y, opacity, rotation, shadowP
         let logoImage;
 
         // Embed image based on detected type
+        // Note: SVG files are automatically converted to PNG by AssetManager
         if (logoAsset.type === 'png') {
           logoImage = await page.doc.embedPng(logoAsset.data);
         } else if (logoAsset.type === 'jpeg') {
@@ -281,64 +284,18 @@ async function renderLogoElement(page, element, x, y, opacity, rotation, shadowP
         return; // Successfully rendered image, exit function
 
       } catch (imageError) {
-        // Fall through to text fallback
+        // Throw the error instead of falling back - we want to see what's wrong
+        throw new Error(`Logo image embedding failed: ${imageError.message}`);
       }
-    }
-
-    // Fallback: render configured fallback text if image loading failed
-    if (logoAsset && logoAsset.fallback) {
-      try {
-        // Use fallback configuration from AssetManager
-        const logoText = logoAsset.text || getDefaultContent('logo');
-        const fontSize = logoSize / 4;
-
-        // Load standard fonts for fallback rendering
-        const standardFonts = await loadStandardFonts(page.doc);
-        if (standardFonts.regular) {
-          const textWidth = standardFonts.regular.widthOfTextAtSize(logoText, fontSize);
-
-          // COORDINATE SYSTEM FIX: Apply same direction fix for logo text fallback
-          let finalLogoTextRotation = -rotation; // Negate to match CSS direction
-
-          // Only apply rotation if there's actually rotation to avoid precision issues
-          if (Math.abs(rotation) < 0.01) {
-            finalLogoTextRotation = 0; // Force zero for very small values
-          }
-
-          // Render text shadow first (if enabled)
-          if (shadowParams) {
-            const shadowX = x + shadowParams.offsetX - (textWidth / 2);
-            const shadowY = y - shadowParams.offsetY - (fontSize / 2);
-
-            page.drawText(logoText, {
-              x: shadowX,
-              y: shadowY,
-              size: fontSize,
-              opacity: shadowParams.opacity,
-              color: rgb(shadowParams.color.r, shadowParams.color.g, shadowParams.color.b),
-              rotate: degrees(finalLogoTextRotation),
-              font: standardFonts.regular
-            });
-          }
-
-          // Render main text (on top of shadow)
-          page.drawText(logoText, {
-            x: x - (textWidth / 2), // Center horizontally
-            y: y - (fontSize / 2), // Center vertically
-            size: fontSize,
-            opacity: opacity,
-            color: rgb(logoAsset.color?.r || 0.2, logoAsset.color?.g || 0.4, logoAsset.color?.b || 0.8),
-            rotate: degrees(finalLogoTextRotation),
-            font: standardFonts.regular
-          });
-        }
-      } catch (fallbackError) {
-        // Logo fallback rendering failed
-      }
+    } else {
+      // If we don't have valid logo data, throw an error
+      throw new Error('No valid logo data received from AssetManager');
     }
 
   } catch (error) {
-    // Logo render failed
+    // Don't swallow logo errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] Logo render failed:', error.message);
+    throw error;
   }
 }
 
@@ -497,7 +454,9 @@ async function renderTextElement(page, element, x, y, opacity, rotation, variabl
     }
 
   } catch (error) {
-    // Text render failed for element
+    // Don't swallow text errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] Text render failed:', error.message);
+    throw error;
   }
 }
 
@@ -635,7 +594,9 @@ async function renderUrlElement(page, element, x, y, opacity, rotation, variable
       }
     }
   } catch (error) {
-    // URL render failed for element
+    // Don't swallow URL errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] URL render failed:', error.message);
+    throw error;
   }
 }
 
@@ -782,7 +743,9 @@ async function renderMultiLineText(page, content, x, y, fontSize, font, color, o
     }
 
   } catch (error) {
-    // Multiline text render failed
+    // Don't swallow multiline text errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] Multiline text render failed:', error.message);
+    throw error;
   }
 }
 
@@ -908,7 +871,9 @@ async function renderBoxElement(page, element, x, y, opacity, rotation, shadowPa
     }
 
   } catch (error) {
-    // Box render failed
+    // Don't swallow box errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] Box render failed:', error.message);
+    throw error;
   }
 }
 
@@ -964,7 +929,9 @@ async function renderCircleElement(page, element, x, y, opacity, rotation, shado
     page.drawCircle(circleOptions);
 
   } catch (error) {
-    // Circle render failed
+    // Don't swallow circle errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] Circle render failed:', error.message);
+    throw error;
   }
 }
 
@@ -1044,7 +1011,9 @@ async function renderLineElement(page, element, x, y, opacity, rotation, shadowP
     });
 
   } catch (error) {
-    // Line render failed
+    // Don't swallow line errors - let them bubble up for debugging
+    luderror.file('❌ [pdfTemplateMerge] Line render failed:', error.message);
+    throw error;
   }
 }
 
