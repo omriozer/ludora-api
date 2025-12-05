@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 
 export default function(sequelize) {
   const UserSession = sequelize.define('UserSession', {
@@ -247,7 +247,7 @@ export default function(sequelize) {
       where: {
         user_id: userId,
         is_active: true,
-        expires_at: { [sequelize.Sequelize.Op.gt]: now },
+        expires_at: { [Op.gt]: now },
         invalidated_at: null
       },
       order: [['last_accessed_at', 'DESC']]
@@ -263,9 +263,9 @@ export default function(sequelize) {
 
     const deletedCount = await this.destroy({
       where: {
-        [sequelize.Sequelize.Op.and]: [
-          { expires_at: { [sequelize.Sequelize.Op.lt]: now } },
-          { last_accessed_at: { [sequelize.Sequelize.Op.lt]: gracePeriodAgo } }
+        [Op.and]: [
+          { expires_at: { [Op.lt]: now } },
+          { last_accessed_at: { [Op.lt]: gracePeriodAgo } }
         ]
       }
     });
@@ -282,7 +282,7 @@ export default function(sequelize) {
     };
 
     if (exceptSessionId) {
-      where.id = { [sequelize.Sequelize.Op.ne]: exceptSessionId };
+      where.id = { [Op.ne]: exceptSessionId };
     }
 
     const [updatedCount] = await this.update(
@@ -304,7 +304,7 @@ export default function(sequelize) {
       where: {
         player_id: playerId,
         is_active: true,
-        expires_at: { [sequelize.Sequelize.Op.gt]: now },
+        expires_at: { [Op.gt]: now },
         invalidated_at: null
       },
       order: [['last_accessed_at', 'DESC']]
@@ -320,7 +320,7 @@ export default function(sequelize) {
     };
 
     if (exceptSessionId) {
-      where.id = { [sequelize.Sequelize.Op.ne]: exceptSessionId };
+      where.id = { [Op.ne]: exceptSessionId };
     }
 
     const [updatedCount] = await this.update(
@@ -391,7 +391,7 @@ export default function(sequelize) {
       },
       {
         where: {
-          id: { [sequelize.Sequelize.Op.in]: sessionsToExtend.map(s => s.id) }
+          id: { [Op.in]: sessionsToExtend.map(s => s.id) }
         }
       }
     );
@@ -409,7 +409,7 @@ export default function(sequelize) {
         user_id: userId,
         portal: portal,
         is_active: true,
-        expires_at: { [sequelize.Sequelize.Op.gt]: now },
+        expires_at: { [Op.gt]: now },
         invalidated_at: null
       },
       order: [['last_accessed_at', 'DESC']]
@@ -424,7 +424,7 @@ export default function(sequelize) {
         player_id: playerId,
         portal: portal,
         is_active: true,
-        expires_at: { [sequelize.Sequelize.Op.gt]: now },
+        expires_at: { [Op.gt]: now },
         invalidated_at: null
       },
       order: [['last_accessed_at', 'DESC']]
@@ -441,7 +441,7 @@ export default function(sequelize) {
     };
 
     if (exceptSessionId) {
-      where.id = { [sequelize.Sequelize.Op.ne]: exceptSessionId };
+      where.id = { [Op.ne]: exceptSessionId };
     }
 
     const [updatedCount] = await this.update(
@@ -463,7 +463,7 @@ export default function(sequelize) {
         user_id: userId,
         portal: portal,
         is_active: true,
-        expires_at: { [sequelize.Sequelize.Op.gt]: new Date() },
+        expires_at: { [Op.gt]: new Date() },
         invalidated_at: null
       }
     });
