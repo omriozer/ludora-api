@@ -145,6 +145,10 @@ const SOCKET_CREDENTIAL_POLICIES = {
 
 const app = express();
 
+// CRITICAL: Trust proxy setting for Heroku and other proxy services
+// Without this, rate limiting and X-Forwarded-For headers fail
+app.set('trust proxy', true);
+
 // Create HTTP server for Socket.IO integration
 const httpServer = createServer(app);
 
