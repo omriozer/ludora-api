@@ -103,8 +103,8 @@ class JobScheduler {
       const environment = process.env.ENVIRONMENT || 'development';
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
 
-      // Development or staging without Redis should fail gracefully
-      const shouldFailGracefully = environment === 'development' || !hasRedisUrl;
+      // Development or staging should fail gracefully if Redis issues occur
+      const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
 
       // In non-production environments without Redis, do a quick availability check first
       if (shouldFailGracefully) {
@@ -169,7 +169,9 @@ class JobScheduler {
       // Add SSL configuration for Heroku Redis (rediss:// URLs)
       if (redisUrl.startsWith('rediss://')) {
         redisOptions.tls = {
-          rejectUnauthorized: false  // Accept Heroku's self-signed certificates
+          rejectUnauthorized: false,  // Accept Heroku's self-signed certificates
+          requestCert: true,
+          agent: false
         };
       }
 
@@ -258,7 +260,7 @@ class JobScheduler {
     } catch (error) {
       const environment = process.env.ENVIRONMENT || 'development';
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
-      const shouldFailGracefully = environment === 'development' || !hasRedisUrl;
+      const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
 
       if (shouldFailGracefully && (error.code === 'ECONNREFUSED' || error.message.includes('Redis connection timeout'))) {
         // Graceful failure in non-production environments without Redis
@@ -389,7 +391,7 @@ class JobScheduler {
     if (!this.isInitialized) {
       const environment = process.env.ENVIRONMENT || 'development';
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
-      const shouldFailGracefully = environment === 'development' || !hasRedisUrl;
+      const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
 
       if (shouldFailGracefully && this.redisAvailable === false) {
         // Graceful failure in non-production environments without Redis - just log and return null
