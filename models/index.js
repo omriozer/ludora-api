@@ -50,6 +50,7 @@ import RefreshToken from './RefreshToken.js';
 import UserSession from './UserSession.js';
 import Player from './Player.js';
 import SubscriptionPurchase from './SubscriptionPurchase.js';
+import ParentConsent from './ParentConsent.js';
 
 // Initialize models
 const models = {
@@ -94,6 +95,7 @@ const models = {
   UserSession: UserSession(sequelize),
   Player: Player(sequelize),
   SubscriptionPurchase: SubscriptionPurchase(sequelize),
+  ParentConsent: ParentConsent(sequelize),
 };
 
 // Define associations

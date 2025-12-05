@@ -17,8 +17,12 @@ import {
 import { authenticateToken } from '../middleware/auth.js';
 import { checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
 import { luderror } from '../lib/ludlog.js';
+import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 
 const router = express.Router();
+
+// Apply consent enforcement middleware for student protection
+router.use(requireStudentConsent);
 
 // Rate limiting for session operations
 const sessionRateLimit = rateLimit({

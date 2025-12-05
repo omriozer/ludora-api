@@ -18,7 +18,7 @@ import {
 const authService = AuthService; // Use singleton instance
 import EmailService from '../services/EmailService.js';
 import SettingsService from '../services/SettingsService.js';
-import { luderror } from '../lib/ludlog.js';
+import { luderror, ludlog } from '../lib/ludlog.js';
 
 const verifyAdminPassword = (inputPassword) => {
   if (!process.env.ADMIN_PASSWORD) {
@@ -184,6 +184,14 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
 
       const user = await authService.getUserByToken(accessToken);
 
+      // Auto-assign user_type='student' for Firebase users on student portal (if currently null)
+      if (portal === 'student' && user.user_type === null) {
+        await user.update({ user_type: 'student' });
+
+        // Log the auto-assignment for visibility
+        luderror.auth(`[Auto-Assignment] User ${user.id} (${user.email}) assigned user_type='student' on student portal data fetch`);
+      }
+
       // Get cached settings once to avoid N+1 query
       const cachedSettings = await SettingsService.getSettings();
 
@@ -207,6 +215,7 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         onboarding_completed: onboardingCompleted,
         birth_date: user.birth_date,
         invitation_code: user.invitation_code,
+        linked_teacher_id: user.linked_teacher_id,
         created_at: user.created_at,
         updated_at: user.updated_at,
         last_login: user.last_login
@@ -298,6 +307,7 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       onboarding_completed: onboardingCompleted,
       birth_date: user.birth_date,
       invitation_code: user.invitation_code,
+      linked_teacher_id: user.linked_teacher_id,
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login
@@ -386,8 +396,19 @@ router.post('/verify', async (req, res) => {
       throw new Error('User not found');
     }
 
-    // Update last login (like loginWithEmailPassword does)
-    await user.update({ last_login: new Date() });
+    // Auto-assign user_type='student' for Firebase users on student portal (if currently null)
+    if (portal === 'student' && user.user_type === null) {
+      await user.update({
+        user_type: 'student',
+        last_login: new Date()
+      });
+
+      // Log the auto-assignment for visibility
+      luderror.auth(`[Auto-Assignment] User ${user.id} (${user.email}) assigned user_type='student' on student portal login`);
+    } else {
+      // Update last login only (like loginWithEmailPassword does)
+      await user.update({ last_login: new Date() });
+    }
 
     // Create user session with metadata and portal context
     const sessionMetadata = {
@@ -636,6 +657,403 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error'
+    });
+  }
+});
+
+// GET /auth/consent-status - Check student consent and teacher linking status
+router.get('/consent-status', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+
+    // Only applies to students
+    if (!user || user.user_type !== 'student') {
+      return res.json({
+        needs_teacher: false,
+        needs_consent: false,
+        status: 'not_applicable'
+      });
+    }
+
+    // Check if student is linked to a teacher
+    const hasLinkedTeacher = !!user.linked_teacher_id;
+
+    // Check if student has parent consent
+    const parentConsent = await models.ParentConsent.findOne({
+      where: { student_user_id: user.id }
+    });
+
+    // Check if consent exists AND is active (not revoked)
+    const hasActiveParentConsent = parentConsent && parentConsent.isActive();
+    const hasParentConsentRecord = !!parentConsent;
+
+    // Determine status
+    let status = 'complete';
+    let needs_teacher = false;
+    let needs_consent = false;
+    let consent_revoked = false;
+    let revocation_info = null;
+
+    if (!hasLinkedTeacher) {
+      status = 'needs_teacher';
+      needs_teacher = true;
+    } else if (!hasParentConsentRecord) {
+      status = 'needs_consent';
+      needs_consent = true;
+    } else if (parentConsent && !parentConsent.isActive()) {
+      // Consent exists but has been revoked
+      status = 'consent_revoked';
+      consent_revoked = true;
+      revocation_info = parentConsent.getRevocationInfo();
+    }
+
+    const responseData = {
+      needs_teacher,
+      needs_consent,
+      status,
+      linked_teacher_id: user.linked_teacher_id,
+      has_parent_consent: hasActiveParentConsent, // Only true if active
+      has_consent_record: hasParentConsentRecord,
+      consent_revoked,
+      revocation_info
+    };
+
+    res.json(responseData);
+
+  } catch (error) {
+    luderror.auth('Error checking consent status:', error);
+    res.status(500).json({
+      error: 'Failed to check consent status',
+      message: error.message
+    });
+  }
+});
+
+// POST /auth/link-teacher - Link student to teacher using invitation code
+router.post('/link-teacher',
+  authenticateToken,
+  rateLimiters.auth, // Add rate limiting for invitation code attempts
+  async (req, res) => {
+  try {
+    const user = req.user;
+    const { invitation_code } = req.body;
+
+    // Only students can link to teachers
+    if (!user || user.user_type !== 'student') {
+      return res.status(400).json({
+        error: 'Only students can link to teachers'
+      });
+    }
+
+    // EDGE CASE 1: Check if student is already linked to a teacher
+    if (user.linked_teacher_id) {
+      return res.status(400).json({
+        error: 'Student is already linked to a teacher',
+        code: 'ALREADY_LINKED',
+        current_teacher_id: user.linked_teacher_id
+      });
+    }
+
+    // EDGE CASE 2: Enhanced invitation code validation
+    if (!invitation_code || typeof invitation_code !== 'string') {
+      return res.status(400).json({
+        error: 'Invitation code is required'
+      });
+    }
+
+    // Validate invitation code format (should be 6 alphanumeric characters)
+    const trimmedCode = invitation_code.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6}$/.test(trimmedCode)) {
+      luderror.auth('Invalid invitation code format attempted:', {
+        studentId: user.id,
+        attemptedCode: invitation_code,
+        ip: req.ip
+      });
+
+      return res.status(400).json({
+        error: 'Invalid invitation code format. Code must be 6 characters.'
+      });
+    }
+
+    // Find teacher by invitation code
+    const teacher = await models.User.findOne({
+      where: {
+        invitation_code: trimmedCode,
+        user_type: 'teacher',
+        is_active: true
+      }
+    });
+
+    if (!teacher) {
+      // Log failed invitation code attempts for security monitoring
+      luderror.auth('Failed invitation code attempt:', {
+        studentId: user.id,
+        attemptedCode: trimmedCode,
+        ip: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      return res.status(404).json({
+        error: 'Invalid invitation code or teacher not found'
+      });
+    }
+
+    // EDGE CASE 3: Check if teacher account is properly set up
+    if (!teacher.full_name || teacher.full_name.trim() === '') {
+      return res.status(400).json({
+        error: 'Teacher account is not fully set up. Please contact your teacher.'
+      });
+    }
+
+    // Update student with linked teacher using transaction for safety
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      const updatedUser = await user.update({
+        linked_teacher_id: teacher.id
+      }, { transaction });
+
+      await transaction.commit();
+
+      // Use ludlog for successful operation, not luderror
+      ludlog.auth('Student successfully linked to teacher:', {
+        studentId: user.id,
+        studentEmail: user.email,
+        teacherId: teacher.id,
+        teacherName: teacher.full_name,
+        invitationCode: trimmedCode
+      });
+
+      res.json({
+        message: 'Successfully linked to teacher',
+        teacher: {
+          id: teacher.id,
+          full_name: teacher.full_name,
+          email: teacher.email
+        },
+        linked_teacher_id: teacher.id
+      });
+
+    } catch (updateError) {
+      await transaction.rollback();
+      throw updateError;
+    }
+
+  } catch (error) {
+    luderror.auth('Error linking student to teacher:', error);
+    res.status(500).json({
+      error: 'Failed to link to teacher',
+      message: error.message
+    });
+  }
+});
+
+// POST /auth/revoke-consent - Revoke parent consent (admin/teacher only)
+router.post('/revoke-consent', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { student_user_id, revocation_reason, notes } = req.body;
+
+    // Only admins and teachers can revoke consent
+    if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
+      return res.status(403).json({
+        error: 'Only admins and teachers can revoke parent consent'
+      });
+    }
+
+    // Validate required fields
+    if (!student_user_id || !revocation_reason) {
+      return res.status(400).json({
+        error: 'student_user_id and revocation_reason are required'
+      });
+    }
+
+    // Validate revocation reason
+    const validReasons = ['parent_request', 'teacher_unlink', 'admin_action', 'student_deactivation', 'system_cleanup'];
+    if (!validReasons.includes(revocation_reason)) {
+      return res.status(400).json({
+        error: 'Invalid revocation reason'
+      });
+    }
+
+    // Find the student
+    const student = await models.User.findOne({
+      where: { id: student_user_id, user_type: 'student' }
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        error: 'Student not found'
+      });
+    }
+
+    // If teacher is making the request, verify they are linked to this student
+    if (user.user_type === 'teacher' && student.linked_teacher_id !== user.id) {
+      return res.status(403).json({
+        error: 'You can only revoke consent for students linked to you'
+      });
+    }
+
+    // Find active parent consent
+    const parentConsent = await models.ParentConsent.findOne({
+      where: { student_user_id: student_user_id }
+    });
+
+    if (!parentConsent) {
+      return res.status(404).json({
+        error: 'No parent consent found for this student'
+      });
+    }
+
+    if (!parentConsent.isActive()) {
+      return res.status(400).json({
+        error: 'Parent consent is already revoked'
+      });
+    }
+
+    // Prepare audit data
+    const auditData = {
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    };
+
+    // Revoke the consent
+    await parentConsent.revokeConsent(user.id, revocation_reason, auditData);
+
+    ludlog.auth('Parent consent revoked:', {
+      studentId: student_user_id,
+      studentEmail: student.email,
+      revokedBy: user.id,
+      revokerEmail: user.email,
+      revocationReason: revocation_reason,
+      notes: notes || 'No additional notes',
+      ip: req.ip
+    });
+
+    res.json({
+      message: 'Parent consent revoked successfully',
+      student: {
+        id: student.id,
+        email: student.email
+      },
+      revocation: {
+        revoked_by: user.id,
+        revocation_reason: revocation_reason,
+        revoked_at: parentConsent.revoked_at
+      }
+    });
+
+  } catch (error) {
+    luderror.auth('Error revoking parent consent:', error);
+    res.status(500).json({
+      error: 'Failed to revoke parent consent',
+      message: error.message
+    });
+  }
+});
+
+// POST /auth/unlink-student - Unlink student from teacher (teacher/admin only)
+router.post('/unlink-student', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const { student_user_id, auto_revoke_consent } = req.body;
+
+    // Only admins and teachers can unlink students
+    if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
+      return res.status(403).json({
+        error: 'Only admins and teachers can unlink students'
+      });
+    }
+
+    // Validate required fields
+    if (!student_user_id) {
+      return res.status(400).json({
+        error: 'student_user_id is required'
+      });
+    }
+
+    // Find the student
+    const student = await models.User.findOne({
+      where: { id: student_user_id, user_type: 'student' }
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        error: 'Student not found'
+      });
+    }
+
+    if (!student.linked_teacher_id) {
+      return res.status(400).json({
+        error: 'Student is not linked to any teacher'
+      });
+    }
+
+    // If teacher is making the request, verify they are linked to this student
+    if (user.user_type === 'teacher' && student.linked_teacher_id !== user.id) {
+      return res.status(403).json({
+        error: 'You can only unlink students linked to you'
+      });
+    }
+
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      const previousTeacherId = student.linked_teacher_id;
+
+      // Unlink the student
+      await student.update({
+        linked_teacher_id: null
+      }, { transaction });
+
+      // Optionally revoke parent consent when unlinking
+      if (auto_revoke_consent) {
+        const parentConsent = await models.ParentConsent.findOne({
+          where: { student_user_id: student_user_id }
+        });
+
+        if (parentConsent && parentConsent.isActive()) {
+          const auditData = {
+            ip: req.ip,
+            userAgent: req.get('User-Agent')
+          };
+
+          await parentConsent.revokeConsent(user.id, 'teacher_unlink', auditData);
+        }
+      }
+
+      await transaction.commit();
+
+      ludlog.auth('Student unlinked from teacher:', {
+        studentId: student_user_id,
+        studentEmail: student.email,
+        previousTeacherId: previousTeacherId,
+        unlinkedBy: user.id,
+        unlinkerEmail: user.email,
+        consentRevoked: auto_revoke_consent || false,
+        ip: req.ip
+      });
+
+      res.json({
+        message: 'Student unlinked successfully',
+        student: {
+          id: student.id,
+          email: student.email,
+          linked_teacher_id: null
+        },
+        consent_revoked: auto_revoke_consent || false
+      });
+
+    } catch (updateError) {
+      await transaction.rollback();
+      throw updateError;
+    }
+
+  } catch (error) {
+    luderror.auth('Error unlinking student:', error);
+    res.status(500).json({
+      error: 'Failed to unlink student',
+      message: error.message
     });
   }
 });

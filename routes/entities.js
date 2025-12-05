@@ -21,8 +21,12 @@ import { GAME_TYPES } from '../config/gameTypes.js';
 import { generateId } from '../models/baseModel.js';
 import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
 import { luderror } from '../lib/ludlog.js';
+import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 
 const router = express.Router();
+
+// Apply consent enforcement middleware for student protection
+router.use(requireStudentConsent);
 
 // Configure multer for file uploads (memory storage for S3)
 const fileUpload = multer({

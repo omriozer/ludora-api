@@ -2,6 +2,7 @@ import express from 'express';
 import Joi from 'joi';
 import { authenticateUserOrPlayer } from '../middleware/auth.js';
 import { checkStudentsAccess } from '../middleware/studentsAccessMiddleware.js';
+import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 import models from '../models/index.js';
 import EntityService from '../services/EntityService.js';
 import GameContentService from '../services/GameContentService.js';
@@ -171,6 +172,9 @@ router.get('/teacher/:code', checkStudentsAccess, async (req, res) => {
 
 // Apply unified auth middleware to all other routes (supports both users and players)
 router.use(authenticateUserOrPlayer);
+
+// Apply consent enforcement for students on all authenticated routes
+router.use(requireStudentConsent);
 
 // GET /api/games - Get games for authenticated user or player
 // Returns entity's games (or all games if admin) with associated product data

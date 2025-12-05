@@ -116,6 +116,16 @@ export default function(sequelize) {
       unique: true,
       comment: 'Unique invitation code for teachers to share their catalog with students'
     },
+    age_verified_by: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'User ID of teacher who verified student is 18+ years old. NULL = not verified'
+    },
+    linked_teacher_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'User ID of teacher this student is linked to for parent consent requirements. NULL = not linked to teacher'
+    },
   }, {
     tableName: 'user', // Match Base44 table name
     timestamps: false, // We handle timestamps manually
@@ -161,6 +171,14 @@ export default function(sequelize) {
         name: 'idx_user_invitation_code',
         unique: true
       },
+      {
+        fields: ['age_verified_by'],
+        name: 'idx_user_age_verified_by'
+      },
+      {
+        fields: ['linked_teacher_id'],
+        name: 'idx_user_linked_teacher'
+      },
     ],
   });
 
@@ -185,6 +203,44 @@ export default function(sequelize) {
     User.hasOne(models.School, {
       foreignKey: 'school_headmaster_id',
       as: 'ManagedSchool',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+
+    // Parent consent association (students can have one parent consent record)
+    User.hasOne(models.ParentConsent, {
+      foreignKey: 'student_user_id',
+      as: 'ParentConsent',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
+    });
+
+    // Age verification associations (self-referential)
+    User.belongsTo(models.User, {
+      foreignKey: 'age_verified_by',
+      as: 'AgeVerifiedByTeacher',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+
+    User.hasMany(models.User, {
+      foreignKey: 'age_verified_by',
+      as: 'StudentsAgeVerified',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+
+    // Linked teacher associations (for parent consent flow)
+    User.belongsTo(models.User, {
+      foreignKey: 'linked_teacher_id',
+      as: 'LinkedTeacher',
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE'
+    });
+
+    User.hasMany(models.User, {
+      foreignKey: 'linked_teacher_id',
+      as: 'LinkedStudents',
       onDelete: 'SET NULL',
       onUpdate: 'CASCADE'
     });

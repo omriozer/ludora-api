@@ -3,7 +3,14 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('subscription_purchase', {
+    // Check if table already exists (fix for existing deployment)
+    const tables = await queryInterface.showAllTables();
+    if (tables.includes('subscription_purchases')) {
+      console.log('⚠️ subscription_purchases table already exists');
+      return;
+    }
+
+    await queryInterface.createTable('subscription_purchases', {
       id: {
         type: Sequelize.STRING,
         primaryKey: true,
@@ -74,33 +81,33 @@ module.exports = {
     });
 
     // Add indexes for efficient querying
-    await queryInterface.addIndex('subscription_purchase', {
+    await queryInterface.addIndex('subscription_purchases', {
       name: 'idx_subscription_purchase_user_month',
       fields: ['user_id', 'month_year']
     });
 
-    await queryInterface.addIndex('subscription_purchase', {
+    await queryInterface.addIndex('subscription_purchases', {
       name: 'idx_subscription_purchase_product',
       fields: ['product_type', 'product_id']
     });
 
-    await queryInterface.addIndex('subscription_purchase', {
+    await queryInterface.addIndex('subscription_purchases', {
       name: 'idx_subscription_purchase_subscription',
       fields: ['subscription_id']
     });
 
-    await queryInterface.addIndex('subscription_purchase', {
+    await queryInterface.addIndex('subscription_purchases', {
       name: 'idx_subscription_purchase_status',
       fields: ['status']
     });
 
-    await queryInterface.addIndex('subscription_purchase', {
+    await queryInterface.addIndex('subscription_purchases', {
       name: 'idx_subscription_purchase_claimed_at',
       fields: ['claimed_at']
     });
 
     // Add unique constraint to prevent duplicate claims
-    await queryInterface.addConstraint('subscription_purchase', {
+    await queryInterface.addConstraint('subscription_purchases', {
       name: 'unique_subscription_purchase_per_month',
       type: 'unique',
       fields: ['user_id', 'subscription_id', 'product_type', 'product_id', 'month_year']
@@ -108,6 +115,6 @@ module.exports = {
   },
 
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('subscription_purchase');
+    await queryInterface.dropTable('subscription_purchases');
   }
 };

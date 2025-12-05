@@ -2,9 +2,13 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import AccessControlService from '../services/AccessControlService.js';
 import models from '../models/index.js';
+import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 
 
 const router = express.Router();
+
+// Apply consent enforcement middleware for student protection
+router.use(requireStudentConsent);
 
 // GET /access/check/:entityType/:entityId - Check if user has access to entity
 router.get('/check/:entityType/:entityId', authenticateToken, async (req, res) => {
