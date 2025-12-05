@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { baseOptions } from './baseModel.js';
 import { nowInIsrael, isExpired } from '../utils/dateUtils.js';
 
@@ -287,7 +287,7 @@ export default function(sequelize) {
     return this.findAll({
       where: {
         expires_at: {
-          [sequelize.Sequelize.Op.gt]: nowInIsrael()
+          [Op.gt]: nowInIsrael()
         },
         finished_at: null,
         ...options.where
@@ -298,9 +298,9 @@ export default function(sequelize) {
           as: 'lobby',
           where: {
             // Include lobby expiration in the query
-            [sequelize.Sequelize.Op.or]: [
+            [Op.or]: [
               { expires_at: null }, // pending lobbies
-              { expires_at: { [sequelize.Sequelize.Op.gt]: nowInIsrael() } }, // not expired lobbies (Israel timezone)
+              { expires_at: { [Op.gt]: nowInIsrael() } }, // not expired lobbies (Israel timezone)
             ],
             closed_at: null // not manually closed
           }
@@ -314,7 +314,7 @@ export default function(sequelize) {
     return this.findAll({
       where: {
         participants: {
-          [sequelize.Sequelize.Op.contains]: [{ id: participantId }]
+          [Op.contains]: [{ id: participantId }]
         },
         ...options.where
       },

@@ -1,4 +1,5 @@
 import models from '../models/index.js';
+import { Op } from 'sequelize';
 import { luderror } from '../lib/ludlog.js';
 import { calcSubscriptionPlanPrice } from '../utils/purchasePricing.js';
 
@@ -388,7 +389,7 @@ class SubscriptionService {
         where: {
           status: 'active',
           end_date: {
-            [models.sequelize.Sequelize.Op.lte]: new Date()
+            [Op.lte]: new Date()
           }
         }
       });

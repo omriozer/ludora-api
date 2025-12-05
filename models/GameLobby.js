@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
 
 export default function(sequelize) {
@@ -185,7 +185,7 @@ export default function(sequelize) {
     return this.findAll({
       where: {
         expires_at: {
-          [sequelize.Sequelize.Op.gt]: new Date()
+          [Op.gt]: new Date()
         },
         closed_at: null, // Not manually closed
         ...options.where

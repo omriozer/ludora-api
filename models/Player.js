@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { generateId } from './baseModel.js';
 
 export default function(sequelize) {
@@ -272,7 +272,7 @@ export default function(sequelize) {
 
     const deletedCount = await this.destroy({
       where: {
-        last_seen: { [sequelize.Sequelize.Op.lt]: cutoffDate },
+        last_seen: { [Op.lt]: cutoffDate },
         is_active: false
       }
     });

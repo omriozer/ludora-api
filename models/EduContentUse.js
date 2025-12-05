@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { baseFields, baseOptions, generateId } from './baseModel.js';
 
 export default function(sequelize) {
@@ -281,7 +281,7 @@ export default function(sequelize) {
     return this.findAll({
       where: {
         contents_data: {
-          [sequelize.Sequelize.Op.contains]: [contentId]
+          [Op.contains]: [contentId]
         },
         ...options.where
       },
@@ -338,7 +338,7 @@ export default function(sequelize) {
       const eduContents = await EduContent.findAll({
         where: {
           id: {
-            [sequelize.Sequelize.Op.in]: eduContentIds
+            [Op.in]: eduContentIds
           }
         },
         order: [['created_at', 'ASC']]
@@ -352,7 +352,7 @@ export default function(sequelize) {
       const eduContentUses = await EduContentUse.findAll({
         where: {
           id: {
-            [sequelize.Sequelize.Op.in]: eduContentUseIds
+            [Op.in]: eduContentUseIds
           }
         },
         order: [['created_at', 'ASC']]

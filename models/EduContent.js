@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { baseFields, baseOptions, generateId } from './baseModel.js';
 
 export default function(sequelize) {
@@ -122,7 +122,7 @@ export default function(sequelize) {
     return this.findAll({
       where: {
         content_metadata: {
-          [sequelize.Sequelize.Op.contains]: metadataQuery
+          [Op.contains]: metadataQuery
         },
         ...options.where
       },

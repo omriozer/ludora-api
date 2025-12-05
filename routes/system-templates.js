@@ -1,4 +1,5 @@
 import express from 'express';
+import { Op } from 'sequelize';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import models from '../models/index.js';
 import { luderror } from '../lib/ludlog.js';
@@ -496,7 +497,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
           where: {
             template_type: template.template_type,
             is_default: true,
-            id: { [models.sequelize.Sequelize.Op.ne]: template.id }
+            id: { [Op.ne]: template.id }
           }
         });
 
@@ -567,7 +568,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
         where: {
           template_type: template.template_type,
           is_default: true,
-          id: { [models.sequelize.Sequelize.Op.ne]: template.id }
+          id: { [Op.ne]: template.id }
         }
       });
 
