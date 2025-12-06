@@ -1,5 +1,5 @@
 import { ValidationError, DatabaseError, ForeignKeyConstraintError, UniqueConstraintError } from 'sequelize';
-import { ludlog, luderror } from '../lib/ludlog.js';
+import { luderror } from '../lib/ludlog.js';
 
 // Custom error classes
 export class APIError extends Error {
@@ -108,7 +108,7 @@ export class ErrorLogger {
 }
 
 // Main error handling middleware
-export function globalErrorHandler(error, req, res, next) {
+export function globalErrorHandler(error, req, res, _next) {
   // Default error response
   let statusCode = 500;
   let message = 'Internal server error';

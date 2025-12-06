@@ -132,7 +132,7 @@ export const getCatalogVisibleGameTypes = () => {
 };
 
 // Validation functions
-export const validateGameTypeData = (gameTypeKey, gameData) => {
+export const validateGameTypeData = (gameTypeKey, _gameData) => {
 	const gameType = GAME_TYPES[gameTypeKey];
 	if (!gameType) {
 		return { isValid: false, errors: [`Invalid game type: ${gameTypeKey}`] };

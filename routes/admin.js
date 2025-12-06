@@ -1,6 +1,13 @@
 import express from 'express';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import BulkSubscriptionPollingService from '../services/BulkSubscriptionPollingService.js';
+import SubscriptionAllowanceService from '../services/SubscriptionAllowanceService.js';
+import SubscriptionPlanChangeService from '../services/SubscriptionPlanChangeService.js';
+import PayplusSubscriptionService from '../services/PayplusSubscriptionService.js';
+import SubscriptionPaymentStatusService from '../services/SubscriptionPaymentStatusService.js';
+import SubscriptionService from '../services/SubscriptionService.js';
+import models from '../models/index.js';
+import { ludlog, luderror } from '../lib/ludlog.js';
 
 const router = express.Router();
 
@@ -103,5 +110,861 @@ router.get('/subscriptions/payplus-raw', async (req, res) => {
     });
   }
 });
+
+/**
+ * GET /api/admin/users/:userId/subscription
+ *
+ * Get complete subscription details for a user including:
+ * - Current subscription and plan details
+ * - Benefits usage tracking
+ * - PayPlus subscription data
+ * - Subscription history
+ * - Next billing information
+ */
+router.get('/users/:userId/subscription', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    ludlog.payments('Admin fetching subscription details for user:', { userId, adminId: req.user.id });
+
+    // Get active subscription with plan
+    const subscription = await models.Subscription.findOne({
+      where: {
+        user_id: userId,
+        status: 'active'
+      },
+      include: [{
+        model: models.SubscriptionPlan,
+        as: 'subscriptionPlan'
+      }]
+    });
+
+    if (!subscription) {
+      return res.json({
+        success: true,
+        hasSubscription: false,
+        message: 'User has no active subscription'
+      });
+    }
+
+    // Get monthly allowances and usage
+    const allowances = await SubscriptionAllowanceService.calculateMonthlyAllowances(userId);
+
+    // Get subscription history
+    const history = await models.SubscriptionHistory.findAll({
+      where: { subscription_id: subscription.id },
+      order: [['created_at', 'DESC']],
+      limit: 10
+    });
+
+    // Get PayPlus subscription details if available
+    let payplusDetails = null;
+    if (subscription.payplus_subscription_uid) {
+      const payplusResult = await PayplusSubscriptionService.getSubscriptionDetails(
+        subscription.payplus_subscription_uid
+      );
+      if (payplusResult.success) {
+        payplusDetails = payplusResult.subscription;
+      }
+    }
+
+    // Get available plan change options
+    const planChangeOptions = await SubscriptionPlanChangeService.getAvailablePlanChanges({
+      userId,
+      subscriptionId: subscription.id
+    });
+
+    res.json({
+      success: true,
+      hasSubscription: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        billing_price: subscription.billing_price,
+        original_price: subscription.original_price,
+        start_date: subscription.start_date,
+        end_date: subscription.end_date,
+        next_billing_date: subscription.next_billing_date,
+        auto_renew: subscription.auto_renew,
+        metadata: subscription.metadata,
+        payplus_subscription_uid: subscription.payplus_subscription_uid
+      },
+      plan: subscription.subscriptionPlan,
+      allowances: allowances?.allowances || {},
+      monthYear: allowances?.monthYear,
+      history: history.map(h => ({
+        id: h.id,
+        action_type: h.action_type,
+        previous_plan_id: h.previous_plan_id,
+        purchased_price: h.purchased_price,
+        notes: h.notes,
+        created_at: h.created_at
+      })),
+      payplusDetails,
+      planChangeOptions: planChangeOptions.success ? {
+        upgradePlans: planChangeOptions.upgradePlans,
+        downgradePlans: planChangeOptions.downgradePlans,
+        pendingChange: planChangeOptions.pendingChange
+      } : null
+    });
+
+  } catch (error) {
+    luderror.payments('Admin subscription details error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch subscription details',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/users/:userId/subscription/poll-payplus
+ *
+ * Poll PayPlus for current subscription status and payment history
+ */
+router.post('/users/:userId/subscription/poll-payplus', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    ludlog.payments('Admin polling PayPlus for user subscription:', { userId, adminId: req.user.id });
+
+    // Get user's active subscription
+    const subscription = await models.Subscription.findOne({
+      where: {
+        user_id: userId,
+        status: 'active'
+      }
+    });
+
+    if (!subscription || !subscription.payplus_subscription_uid) {
+      return res.status(404).json({
+        error: 'No active subscription with PayPlus UID found'
+      });
+    }
+
+    // Poll PayPlus for subscription details
+    const payplusResult = await PayplusSubscriptionService.getSubscriptionDetails(
+      subscription.payplus_subscription_uid
+    );
+
+    if (!payplusResult.success) {
+      return res.status(500).json({
+        error: 'Failed to fetch PayPlus subscription details',
+        message: payplusResult.error
+      });
+    }
+
+    // Check for pending subscription payments with timeout and staging awareness
+    let statusCheckResult = null;
+    try {
+      // Add timeout for PayPlus staging behavior (5 second limit)
+      const statusCheckPromise = SubscriptionPaymentStatusService.checkAndHandleSubscriptionPaymentPageStatus(
+        subscription.id
+      );
+
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('PayPlus status check timed out')), 5000);
+      });
+
+      statusCheckResult = await Promise.race([statusCheckPromise, timeoutPromise]);
+
+    } catch (error) {
+      ludlog.payments('PayPlus status check failed or timed out (likely staging environment):', {
+        error: error.message,
+        subscriptionId: subscription.id,
+        environment: process.env.ENVIRONMENT
+      });
+
+      // In staging/development, this is expected behavior
+      statusCheckResult = {
+        success: false,
+        error: 'PayPlus status check unavailable',
+        message: process.env.ENVIRONMENT === 'production'
+          ? 'PayPlus polling temporarily unavailable'
+          : 'PayPlus staging environment does not process charges',
+        stagingLimitation: process.env.ENVIRONMENT !== 'production'
+      };
+    }
+
+    res.json({
+      success: true,
+      payplus: payplusResult.subscription,
+      statusCheck: statusCheckResult,
+      localSubscription: {
+        id: subscription.id,
+        status: subscription.status,
+        billing_price: subscription.billing_price,
+        next_billing_date: subscription.next_billing_date
+      },
+      syncStatus: {
+        amountMatch: payplusResult.subscription.amount ?
+          parseFloat(payplusResult.subscription.amount) === parseFloat(subscription.billing_price) :
+          null,
+        statusMatch: payplusResult.subscription.status === subscription.status
+      }
+    });
+
+  } catch (error) {
+    luderror.payments('Admin PayPlus polling error:', error);
+    res.status(500).json({
+      error: 'Failed to poll PayPlus',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/subscriptions/:subscriptionId/adjust-usage
+ *
+ * Manually adjust user benefits usage (add or deduct allowances)
+ * For current billing period only
+ */
+router.post('/subscriptions/:subscriptionId/adjust-usage', async (req, res) => {
+  try {
+    const { subscriptionId } = req.params;
+    const { productType, adjustment, reason } = req.body;
+
+    if (!productType || typeof adjustment !== 'number' || !reason) {
+      return res.status(400).json({
+        error: 'Missing required fields: productType, adjustment (number), reason'
+      });
+    }
+
+    ludlog.payments('Admin adjusting subscription usage:', {
+      subscriptionId,
+      productType,
+      adjustment,
+      reason,
+      adminId: req.user.id
+    });
+
+    // Get subscription
+    const subscription = await models.Subscription.findByPk(subscriptionId, {
+      include: [{
+        model: models.SubscriptionPlan,
+        as: 'subscriptionPlan'
+      }]
+    });
+
+    if (!subscription) {
+      return res.status(404).json({
+        error: 'Subscription not found'
+      });
+    }
+
+    // Validate product type exists in plan benefits
+    const benefits = SubscriptionAllowanceService.transformBenefits(
+      subscription.subscriptionPlan.benefits
+    );
+
+    if (!benefits[productType]) {
+      return res.status(400).json({
+        error: `Product type '${productType}' not included in subscription plan`
+      });
+    }
+
+    // Create audit record in subscription metadata
+    const currentMonth = SubscriptionAllowanceService.getCurrentMonthYear();
+    const metadata = subscription.metadata || {};
+
+    if (!metadata.admin_adjustments) {
+      metadata.admin_adjustments = [];
+    }
+
+    metadata.admin_adjustments.push({
+      product_type: productType,
+      adjustment,
+      reason,
+      month_year: currentMonth,
+      adjusted_by: req.user.id,
+      adjusted_at: new Date().toISOString()
+    });
+
+    // If adding claims (positive adjustment), create SubscriptionPurchase records
+    // If removing (negative adjustment), mark existing claims
+    if (adjustment > 0) {
+      // Create placeholder subscription purchases to track admin-added allowances
+      const transaction = await models.sequelize.transaction();
+
+      try {
+        for (let i = 0; i < adjustment; i++) {
+          await models.SubscriptionPurchase.create({
+            user_id: subscription.user_id,
+            subscription_id: subscription.id,
+            product_type: productType,
+            product_id: `admin_adjustment_${Date.now()}_${i}`,
+            month_year: currentMonth,
+            usage: {
+              claimed_at: new Date().toISOString(),
+              claim_source: 'admin_adjustment',
+              admin_reason: reason,
+              admin_user_id: req.user.id,
+              is_admin_added: true
+            }
+          }, { transaction });
+        }
+
+        await subscription.update({ metadata }, { transaction });
+        await transaction.commit();
+
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
+      }
+
+    } else if (adjustment < 0) {
+      // Deduct allowances by marking in metadata
+      // Don't delete SubscriptionPurchase records, just track the deduction
+      await subscription.update({ metadata });
+    }
+
+    // Get updated allowances
+    const allowances = await SubscriptionAllowanceService.calculateMonthlyAllowances(
+      subscription.user_id
+    );
+
+    ludlog.payments('Usage adjustment completed:', {
+      subscriptionId,
+      productType,
+      adjustment,
+      newAllowances: allowances?.allowances[productType]
+    });
+
+    res.json({
+      success: true,
+      message: `Successfully adjusted ${productType} allowances by ${adjustment}`,
+      adjustment: {
+        productType,
+        adjustment,
+        reason,
+        adminId: req.user.id,
+        timestamp: new Date().toISOString()
+      },
+      updatedAllowances: allowances?.allowances[productType] || null
+    });
+
+  } catch (error) {
+    luderror.payments('Admin usage adjustment error:', error);
+    res.status(500).json({
+      error: 'Failed to adjust usage',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/subscriptions/:subscriptionId/change-plan
+ *
+ * Change subscription plan with optional price override
+ * Allows admins to change benefits without changing billing price
+ */
+router.post('/subscriptions/:subscriptionId/change-plan', async (req, res) => {
+  try {
+    const { subscriptionId } = req.params;
+    const { newPlanId, overridePrice, reason } = req.body;
+
+    if (!newPlanId || !reason) {
+      return res.status(400).json({
+        error: 'Missing required fields: newPlanId, reason'
+      });
+    }
+
+    ludlog.payments('Admin changing subscription plan:', {
+      subscriptionId,
+      newPlanId,
+      overridePrice,
+      reason,
+      adminId: req.user.id
+    });
+
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Get subscription
+      const subscription = await models.Subscription.findByPk(subscriptionId, {
+        include: [{
+          model: models.SubscriptionPlan,
+          as: 'subscriptionPlan'
+        }],
+        transaction
+      });
+
+      if (!subscription) {
+        await transaction.rollback();
+        return res.status(404).json({
+          error: 'Subscription not found'
+        });
+      }
+
+      // Get new plan
+      const newPlan = await models.SubscriptionPlan.findByPk(newPlanId, { transaction });
+      if (!newPlan) {
+        await transaction.rollback();
+        return res.status(404).json({
+          error: 'New plan not found'
+        });
+      }
+
+      const previousPlanId = subscription.subscription_plan_id;
+      const previousPrice = subscription.billing_price;
+
+      // Update subscription with new plan
+      const updateData = {
+        subscription_plan_id: newPlanId,
+        metadata: {
+          ...subscription.metadata,
+          admin_plan_changes: [
+            ...(subscription.metadata?.admin_plan_changes || []),
+            {
+              from_plan_id: previousPlanId,
+              to_plan_id: newPlanId,
+              previous_price: previousPrice,
+              new_price: overridePrice || newPlan.price,
+              price_overridden: !!overridePrice,
+              reason,
+              changed_by: req.user.id,
+              changed_at: new Date().toISOString()
+            }
+          ]
+        },
+        updated_at: new Date()
+      };
+
+      // Apply price override if provided
+      if (overridePrice !== undefined) {
+        updateData.billing_price = overridePrice;
+        updateData.metadata.price_override = {
+          original_plan_price: newPlan.price,
+          override_price: overridePrice,
+          reason,
+          set_by: req.user.id,
+          set_at: new Date().toISOString()
+        };
+      } else {
+        updateData.billing_price = newPlan.price;
+      }
+
+      await subscription.update(updateData, { transaction });
+
+      // Record history
+      await models.SubscriptionHistory.create({
+        user_id: subscription.user_id,
+        subscription_plan_id: newPlanId,
+        subscription_id: subscription.id,
+        action_type: 'admin_plan_change',
+        previous_plan_id: previousPlanId,
+        purchased_price: updateData.billing_price,
+        notes: `Admin plan change: ${reason}`,
+        metadata: {
+          admin_user_id: req.user.id,
+          price_overridden: !!overridePrice,
+          original_plan_price: newPlan.price,
+          actual_billing_price: updateData.billing_price
+        }
+      }, { transaction });
+
+      await transaction.commit();
+
+      ludlog.payments('Admin plan change completed:', {
+        subscriptionId,
+        fromPlan: previousPlanId,
+        toPlan: newPlanId,
+        priceOverride: overridePrice
+      });
+
+      res.json({
+        success: true,
+        message: 'Subscription plan changed successfully',
+        changes: {
+          previousPlan: subscription.subscriptionPlan.name,
+          newPlan: newPlan.name,
+          previousPrice,
+          newPrice: updateData.billing_price,
+          priceOverridden: !!overridePrice
+        }
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    luderror.payments('Admin plan change error:', error);
+    res.status(500).json({
+      error: 'Failed to change plan',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/subscriptions/:subscriptionId/add-one-time-charge
+ *
+ * Add one-time charge or discount to next billing cycle
+ * Negative amounts = discount, positive = extra charge
+ */
+router.post('/subscriptions/:subscriptionId/add-one-time-charge', async (req, res) => {
+  try {
+    const { subscriptionId } = req.params;
+    const { amount, description, reason } = req.body;
+
+    if (amount === undefined || !description || !reason) {
+      return res.status(400).json({
+        error: 'Missing required fields: amount (number), description, reason'
+      });
+    }
+
+    ludlog.payments('Admin adding one-time charge to subscription:', {
+      subscriptionId,
+      amount,
+      description,
+      reason,
+      adminId: req.user.id
+    });
+
+    // Get subscription
+    const subscription = await models.Subscription.findByPk(subscriptionId);
+
+    if (!subscription || !subscription.payplus_subscription_uid) {
+      return res.status(404).json({
+        error: 'Subscription not found or missing PayPlus UID'
+      });
+    }
+
+    // Add one-time charge via PayPlus
+    const chargeResult = await PayplusSubscriptionService.addOneTimeCharge({
+      subscriptionUid: subscription.payplus_subscription_uid,
+      amount: parseFloat(amount),
+      description: `${description} (Admin: ${reason})`,
+      metadata: {
+        admin_user_id: req.user.id,
+        admin_reason: reason,
+        charge_type: amount < 0 ? 'admin_discount' : 'admin_charge'
+      }
+    });
+
+    if (!chargeResult.success) {
+      return res.status(500).json({
+        error: 'Failed to add one-time charge',
+        message: chargeResult.error
+      });
+    }
+
+    // Record in subscription metadata
+    const metadata = subscription.metadata || {};
+    if (!metadata.admin_charges) {
+      metadata.admin_charges = [];
+    }
+
+    metadata.admin_charges.push({
+      amount,
+      description,
+      reason,
+      transaction_uid: chargeResult.transactionUid,
+      added_by: req.user.id,
+      added_at: new Date().toISOString(),
+      payplus_response: chargeResult
+    });
+
+    await subscription.update({ metadata });
+
+    ludlog.payments('One-time charge added successfully:', {
+      subscriptionId,
+      amount,
+      transactionUid: chargeResult.transactionUid
+    });
+
+    res.json({
+      success: true,
+      message: amount < 0 ?
+        `Discount of ₪${Math.abs(amount)} applied successfully` :
+        `Charge of ₪${amount} added successfully`,
+      charge: {
+        amount,
+        description,
+        transactionUid: chargeResult.transactionUid,
+        status: chargeResult.chargeStatus
+      }
+    });
+
+  } catch (error) {
+    luderror.payments('Admin one-time charge error:', error);
+    res.status(500).json({
+      error: 'Failed to add one-time charge',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/admin/subscription-plans
+ *
+ * Get all available subscription plans for admin selection
+ */
+router.get('/subscription-plans', async (req, res) => {
+  try {
+    ludlog.payments('Admin fetching subscription plans for creation:', { adminId: req.user.id });
+
+    // Get all subscription plans
+    const subscriptionPlans = await models.SubscriptionPlan.findAll({
+      order: [['price', 'ASC']],
+      attributes: ['id', 'name', 'description', 'price', 'billing_cycle', 'benefits']
+    });
+
+    res.json({
+      success: true,
+      plans: subscriptionPlans.map(plan => ({
+        id: plan.id,
+        name: plan.name,
+        description: plan.description,
+        price: parseFloat(plan.price),
+        billing_cycle: plan.billing_cycle,
+        benefits: plan.benefits,
+        benefitsSummary: formatPlanBenefits(plan.benefits)
+      }))
+    });
+
+  } catch (error) {
+    luderror.payments('Admin subscription plans fetch error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch subscription plans',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/users/:userId/subscription/create
+ *
+ * Create a new subscription for a user (free or paid)
+ * Allows complete customization of subscription details
+ */
+router.post('/users/:userId/subscription/create', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const {
+      planId,
+      subscriptionType, // 'free' or 'paid'
+      customPrice,
+      customStartDate,
+      customEndDate,
+      customBenefits,
+      adminNotes,
+      reason
+    } = req.body;
+
+    // Validation
+    if (!planId || !subscriptionType || !reason) {
+      return res.status(400).json({
+        error: 'Missing required fields: planId, subscriptionType (free/paid), reason'
+      });
+    }
+
+    if (!['free', 'paid'].includes(subscriptionType)) {
+      return res.status(400).json({
+        error: 'subscriptionType must be "free" or "paid"'
+      });
+    }
+
+    ludlog.payments('Admin creating subscription for user:', {
+      userId,
+      planId,
+      subscriptionType,
+      customPrice,
+      reason,
+      adminId: req.user.id
+    });
+
+    // Check if user already has an active subscription
+    const existingSubscription = await models.Subscription.findOne({
+      where: {
+        user_id: userId,
+        status: 'active'
+      }
+    });
+
+    if (existingSubscription) {
+      return res.status(400).json({
+        error: 'User already has an active subscription',
+        existingSubscriptionId: existingSubscription.id
+      });
+    }
+
+    // Get the subscription plan
+    const subscriptionPlan = await models.SubscriptionPlan.findByPk(planId);
+    if (!subscriptionPlan) {
+      return res.status(404).json({
+        error: 'Subscription plan not found'
+      });
+    }
+
+    // Get the user
+    const user = await models.User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Prepare subscription data
+      const subscriptionData = {
+        planId: planId,
+        userId: userId,
+        skipValidation: true, // Admin override
+        adminCreated: true
+      };
+
+      // Set pricing based on subscription type
+      if (subscriptionType === 'free') {
+        subscriptionData.billing_price = 0;
+        subscriptionData.original_price = subscriptionPlan.price;
+      } else {
+        subscriptionData.billing_price = customPrice || subscriptionPlan.price;
+        subscriptionData.original_price = subscriptionPlan.price;
+      }
+
+      // Set custom dates if provided
+      if (customStartDate) {
+        subscriptionData.start_date = new Date(customStartDate);
+      }
+
+      if (customEndDate) {
+        subscriptionData.end_date = new Date(customEndDate);
+      }
+
+      // Prepare admin metadata
+      const adminMetadata = {
+        admin_created: true,
+        created_by_admin: req.user.id,
+        admin_creation_reason: reason,
+        subscription_type: subscriptionType,
+        admin_notes: adminNotes,
+        created_at: new Date().toISOString(),
+        custom_overrides: {
+          price_override: subscriptionType === 'free' || customPrice !== subscriptionPlan.price,
+          original_plan_price: subscriptionPlan.price,
+          actual_billing_price: subscriptionData.billing_price,
+          custom_start_date: !!customStartDate,
+          custom_end_date: !!customEndDate,
+          custom_benefits: !!customBenefits
+        }
+      };
+
+      if (customBenefits) {
+        adminMetadata.custom_benefits = customBenefits;
+      }
+
+      subscriptionData.metadata = adminMetadata;
+
+      // Create subscription using SubscriptionService
+      const result = await SubscriptionService.createSubscription(subscriptionData, { transaction });
+
+      if (!result.success) {
+        await transaction.rollback();
+        return res.status(500).json({
+          error: 'Failed to create subscription',
+          message: result.error
+        });
+      }
+
+      // Record in subscription history
+      await models.SubscriptionHistory.create({
+        user_id: userId,
+        subscription_plan_id: planId,
+        subscription_id: result.subscription.id,
+        action_type: 'admin_created',
+        purchased_price: subscriptionData.billing_price,
+        notes: `Admin created ${subscriptionType} subscription: ${reason}`,
+        metadata: {
+          admin_user_id: req.user.id,
+          creation_type: subscriptionType,
+          admin_reason: reason,
+          admin_notes: adminNotes,
+          original_plan_price: subscriptionPlan.price,
+          overrides_applied: adminMetadata.custom_overrides
+        }
+      }, { transaction });
+
+      await transaction.commit();
+
+      // Get updated allowances
+      const allowances = await SubscriptionAllowanceService.calculateMonthlyAllowances(userId);
+
+      ludlog.payments('Admin subscription creation completed:', {
+        subscriptionId: result.subscription.id,
+        userId,
+        planId,
+        subscriptionType,
+        billingPrice: subscriptionData.billing_price
+      });
+
+      res.json({
+        success: true,
+        message: `${subscriptionType === 'free' ? 'Free' : 'Paid'} subscription created successfully`,
+        subscription: {
+          id: result.subscription.id,
+          planName: subscriptionPlan.name,
+          subscriptionType,
+          billingPrice: subscriptionData.billing_price,
+          originalPrice: subscriptionPlan.price,
+          status: result.subscription.status,
+          startDate: result.subscription.start_date,
+          endDate: result.subscription.end_date
+        },
+        allowances: allowances?.allowances || {},
+        creation: {
+          adminId: req.user.id,
+          reason,
+          notes: adminNotes,
+          timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    luderror.payments('Admin subscription creation error:', error);
+    res.status(500).json({
+      error: 'Failed to create subscription',
+      message: error.message
+    });
+  }
+});
+
+// Helper function to format plan benefits for display
+function formatPlanBenefits(benefits) {
+  if (!benefits || typeof benefits !== 'object') return 'No benefits';
+
+  const benefitParts = [];
+
+  if (benefits.video_access) benefitParts.push('Video access');
+  if (benefits.workshop_videos) benefitParts.push('Workshop videos');
+  if (benefits.course_videos) benefitParts.push('Course videos');
+  if (benefits.workshop_access) benefitParts.push('Workshop access');
+  if (benefits.course_access) benefitParts.push('Course access');
+  if (benefits.all_content) benefitParts.push('All content access');
+
+  // Add allowances
+  Object.keys(benefits).forEach(key => {
+    if (key.includes('_allowance') && benefits[key] !== undefined) {
+      const productType = key.replace('_allowance', '');
+      const allowance = benefits[key];
+      if (allowance === 'unlimited') {
+        benefitParts.push(`Unlimited ${productType}`);
+      } else if (typeof allowance === 'number') {
+        benefitParts.push(`${allowance} ${productType}/month`);
+      }
+    }
+  });
+
+  return benefitParts.length > 0 ? benefitParts.join(', ') : 'Custom benefits';
+}
 
 export default router;

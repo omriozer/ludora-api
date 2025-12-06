@@ -54,7 +54,7 @@ export const AUDIANCE_TARGETS_GROUPS = {
     parents: [
         'הורים'
     ]
-}
+};
 
 export const FILES_AUDIANCE_TARGETS = [
     ...AUDIANCE_TARGETS_GROUPS.student_ages,
@@ -97,4 +97,3 @@ export const AUDIANCE_TARGETS = {
     game: GAMES_AUDIANCE_TARGETS,
     lesson_plan: LESSON_PLANS_AUDIANCE_TARGETS
 };
-

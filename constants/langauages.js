@@ -9,7 +9,7 @@ export const OTHER_LANGUAGES = {
     arabic: 'ערבית',
     physics: 'פיזיקה',
     french: 'צרפתית',
-}
+};
 
 export const LANGUAGES_OPTIONS = {
     ...SYSTEM_DEFAULT_LANGUAGE,
@@ -20,4 +20,3 @@ export const LANGUAGES_STUDY_SUBJECTS = {
     hebrew_language: 'לשון והבעה',
     ...OTHER_LANGUAGES
 };
-

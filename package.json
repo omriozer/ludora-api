@@ -48,7 +48,10 @@
     "pm2:reload": "pm2 reload ludora-api-dev",
     "pm2:reload:staging": "pm2 reload ludora-api-staging",
     "pm2:reload:prod": "pm2 reload ludora-api-prod",
-    "logs:prod": "heroku logs -a ludora-api-prod --tail",
+    "logs:prod": "heroku logs -a ludora-api --tail",
+    "logs:staging": "heroku logs -a ludora-api-staging --tail",
+    "ssh-prod": "heroku run bash --app ludora-api",
+    "ssh-staging": "heroku run bash --app ludora-api-staging",
     "logs:clean": "truncate -s 0 logs/pm2-*.log",
     "logs:backup": "mkdir -p logs/backup-$(date +%Y%m%d-%H%M) && cp logs/*.log logs/backup-$(date +%Y%m%d-%H%M)/",
     "logs:size": "du -sh logs/ && ls -lah logs/",
@@ -88,7 +91,10 @@
     "hooks:install": "node scripts/install-hooks.js",
     "hooks:remove": "node scripts/install-hooks.js --remove",
     "hooks:check": "node scripts/install-hooks.js --check",
-    "postinstall": "node scripts/install-hooks.js 2>/dev/null || true"
+    "postinstall": "node scripts/install-hooks.js 2>/dev/null || true",
+    "db:create-copy": "node ../ludora-utils/scripts/db-management/create-db-copy.js",
+    "db:reset": "node ../ludora-utils/scripts/db-management/reset-db.js",
+    "db:manage-copies": "node ../ludora-utils/scripts/db-management/manage-copies.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.673.0",

@@ -14,7 +14,7 @@ try {
   const serviceAccount = secretsService.getFirebaseServiceAccount();
 
   if (!serviceAccount) {
-
+    luderror.auth('❌ Firebase service account not found');
   } else {
     // Initialize Firebase Admin SDK
     admin.initializeApp({

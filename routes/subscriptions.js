@@ -5,6 +5,7 @@ import SubscriptionService from '../services/SubscriptionService.js';
 import SubscriptionPaymentService from '../services/SubscriptionPaymentService.js';
 import SubscriptionPaymentStatusService from '../services/SubscriptionPaymentStatusService.js';
 import SubscriptionAllowanceService from '../services/SubscriptionAllowanceService.js';
+import SubscriptionPlanChangeService from '../services/SubscriptionPlanChangeService.js';
 import models from '../models/index.js';
 import { luderror, ludlog } from '../lib/ludlog.js';
 
@@ -609,6 +610,218 @@ router.post('/check-payment-status', rateLimiters.paymentStatusCheck, authentica
       message: 'Please try again in a few moments',
       retryAfter: 60
     });
+  }
+});
+
+// ===== SUBSCRIPTION PLAN CHANGE ENDPOINTS =====
+
+/**
+ * Get available plan change options for user's subscription
+ * GET /api/subscriptions/plan-changes/available
+ */
+router.get('/plan-changes/available', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user's active subscription
+    const activeSubscription = await SubscriptionService.getUserActiveSubscription(userId);
+
+    if (!activeSubscription) {
+      return res.status(404).json({
+        error: 'No active subscription found',
+        message: 'You must have an active subscription to change plans'
+      });
+    }
+
+    // Get available plan changes
+    const result = await SubscriptionPlanChangeService.getAvailablePlanChanges({
+      userId,
+      subscriptionId: activeSubscription.id
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions: Error getting available plan changes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Upgrade subscription plan with immediate proration
+ * POST /api/subscriptions/plan-changes/upgrade
+ */
+router.post('/plan-changes/upgrade', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { newPlanId, paymentMethodId } = req.body;
+
+    // Validation
+    if (!newPlanId) {
+      return res.status(400).json({ error: 'newPlanId is required' });
+    }
+
+    // Get user's active subscription
+    const activeSubscription = await SubscriptionService.getUserActiveSubscription(userId);
+
+    if (!activeSubscription) {
+      return res.status(404).json({
+        error: 'No active subscription found',
+        message: 'You must have an active subscription to upgrade'
+      });
+    }
+
+    // Perform upgrade
+    const result = await SubscriptionPlanChangeService.upgradeSubscription({
+      userId,
+      subscriptionId: activeSubscription.id,
+      newPlanId,
+      paymentMethodId
+    });
+
+    if (!result.success) {
+      // Check if error is payment-related
+      if (result.error.includes('payment method')) {
+        return res.status(400).json({
+          error: result.error,
+          needsPaymentMethod: true
+        });
+      }
+
+      if (result.error.includes('charge failed')) {
+        return res.status(402).json({
+          error: result.error,
+          paymentFailed: true
+        });
+      }
+
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions: Error upgrading subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Schedule subscription downgrade for next billing cycle
+ * POST /api/subscriptions/plan-changes/downgrade
+ */
+router.post('/plan-changes/downgrade', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { newPlanId } = req.body;
+
+    // Validation
+    if (!newPlanId) {
+      return res.status(400).json({ error: 'newPlanId is required' });
+    }
+
+    // Get user's active subscription
+    const activeSubscription = await SubscriptionService.getUserActiveSubscription(userId);
+
+    if (!activeSubscription) {
+      return res.status(404).json({
+        error: 'No active subscription found',
+        message: 'You must have an active subscription to downgrade'
+      });
+    }
+
+    // Check if there's already a pending downgrade
+    if (activeSubscription.metadata?.pending_plan_change) {
+      return res.status(409).json({
+        error: 'You already have a pending plan change',
+        pendingChange: activeSubscription.metadata.pending_plan_change,
+        message: 'Cancel your pending change before scheduling a new one'
+      });
+    }
+
+    // Perform downgrade scheduling
+    const result = await SubscriptionPlanChangeService.downgradeSubscription({
+      userId,
+      subscriptionId: activeSubscription.id,
+      newPlanId
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions: Error downgrading subscription:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Cancel a pending subscription downgrade
+ * POST /api/subscriptions/plan-changes/cancel-pending-downgrade
+ */
+router.post('/plan-changes/cancel-pending-downgrade', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user's active subscription
+    const activeSubscription = await SubscriptionService.getUserActiveSubscription(userId);
+
+    if (!activeSubscription) {
+      return res.status(404).json({
+        error: 'No active subscription found'
+      });
+    }
+
+    // Check if there's a pending downgrade
+    if (!activeSubscription.metadata?.pending_plan_change) {
+      return res.status(404).json({
+        error: 'No pending plan change found to cancel'
+      });
+    }
+
+    if (activeSubscription.metadata.pending_plan_change.type !== 'downgrade') {
+      return res.status(400).json({
+        error: 'Can only cancel pending downgrades'
+      });
+    }
+
+    // Cancel pending downgrade
+    const result = await SubscriptionPlanChangeService.cancelPendingDowngrade({
+      userId,
+      subscriptionId: activeSubscription.id
+    });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+
+  } catch (error) {
+    luderror.payment('Subscriptions: Error canceling pending downgrade:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
