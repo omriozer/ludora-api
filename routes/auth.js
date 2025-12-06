@@ -175,28 +175,128 @@ router.post('/logout', async (req, res) => {
 // Get current user or player info (unified endpoint)
 router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (req, res) => {
   try {
+    ludlog.auth('[AUTH-ME] Starting user/player info fetch', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      entityType: req.entityType,
+      hasUser: !!req.user,
+      hasPlayer: !!req.player
+    });
+
     // Check if authenticated as user or player
     if (req.entityType === 'user' && req.user) {
+      ludlog.auth('[AUTH-ME] Processing user authentication', {
+        userId: req.user.id,
+        email: req.user.email
+      });
+
       // Return user data
       const portal = detectPortal(req);
+      ludlog.auth('[AUTH-ME] Portal detected for user', { portal, userId: req.user.id });
+
       const cookieNames = getPortalCookieNames(portal);
       const accessToken = req.cookies[cookieNames.accessToken];
 
-      const user = await authService.getUserByToken(accessToken);
+      ludlog.auth('[AUTH-ME] Fetching user by token', {
+        userId: req.user.id,
+        portal,
+        hasAccessToken: !!accessToken,
+        cookieName: cookieNames.accessToken
+      });
+
+      let user;
+      try {
+        user = await authService.getUserByToken(accessToken);
+        ludlog.auth('[AUTH-ME] User fetch successful', {
+          userId: user.id,
+          email: user.email,
+          userType: user.user_type,
+          portal
+        });
+      } catch (userFetchError) {
+        luderror.auth('[AUTH-ME] Failed to get user by token', {
+          userId: req.user.id,
+          portal,
+          accessTokenPresent: !!accessToken,
+          error: userFetchError.message,
+          stack: userFetchError.stack
+        });
+        throw userFetchError;
+      }
 
       // Auto-assign user_type='student' for Firebase users on student portal (if currently null)
       if (portal === 'student' && user.user_type === null) {
-        await user.update({ user_type: 'student' });
+        ludlog.auth('[AUTH-ME] Auto-assigning student user_type for user data fetch', {
+          userId: user.id,
+          email: user.email,
+          portal
+        });
+
+        try {
+          await user.update({ user_type: 'student' });
+          ludlog.auth('[AUTH-ME] Student auto-assignment successful', {
+            userId: user.id,
+            email: user.email
+          });
+        } catch (updateError) {
+          luderror.auth('[AUTH-ME] Failed to auto-assign student user_type during data fetch', {
+            userId: user.id,
+            email: user.email,
+            error: updateError.message,
+            portal
+          });
+          throw updateError;
+        }
 
         // Log the auto-assignment for visibility
         luderror.auth(`[Auto-Assignment] User ${user.id} (${user.email}) assigned user_type='student' on student portal data fetch`);
       }
 
-      // Get cached settings once to avoid N+1 query
-      const cachedSettings = await SettingsService.getSettings();
+      ludlog.auth('[AUTH-ME] Fetching cached settings', { userId: user.id });
+      let cachedSettings;
+      try {
+        // Get cached settings once to avoid N+1 query
+        cachedSettings = await SettingsService.getSettings();
+        ludlog.auth('[AUTH-ME] Cached settings retrieved successfully', {
+          userId: user.id,
+          settingsCount: Object.keys(cachedSettings).length
+        });
+      } catch (settingsError) {
+        luderror.auth('[AUTH-ME] Failed to get cached settings', {
+          userId: user.id,
+          email: user.email,
+          error: settingsError.message,
+          stack: settingsError.stack
+        });
+        throw settingsError;
+      }
 
-      // Compute onboarding_completed based on required fields and feature flag with cached settings
-      const onboardingCompleted = await user.getOnboardingCompleted(cachedSettings);
+      ludlog.auth('[AUTH-ME] Computing onboarding completion status', { userId: user.id });
+      let onboardingCompleted;
+      try {
+        // Compute onboarding_completed based on required fields and feature flag with cached settings
+        onboardingCompleted = await user.getOnboardingCompleted(cachedSettings);
+        ludlog.auth('[AUTH-ME] Onboarding completion computed successfully', {
+          userId: user.id,
+          onboardingCompleted
+        });
+      } catch (onboardingError) {
+        luderror.auth('[AUTH-ME] Failed to compute onboarding completion', {
+          userId: user.id,
+          email: user.email,
+          error: onboardingError.message,
+          stack: onboardingError.stack
+        });
+        throw onboardingError;
+      }
+
+      ludlog.auth('[AUTH-ME] User data fetch completed successfully', {
+        userId: user.id,
+        email: user.email,
+        portal,
+        userType: user.user_type,
+        onboardingCompleted
+      });
 
       // Return clean user data - all from database except computed fields
       return res.json({
@@ -221,6 +321,12 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         last_login: user.last_login
       });
     } else if (req.entityType === 'player' && req.player) {
+      ludlog.auth('[AUTH-ME] Processing player authentication', {
+        playerId: req.player.id,
+        privacyCode: req.player.privacy_code,
+        teacherId: req.player.teacher_id
+      });
+
       // Return player data
       return res.json({
         entityType: 'player',
@@ -235,9 +341,28 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         sessionType: req.player.sessionType
       });
     } else {
+      luderror.auth('[AUTH-ME] No valid authentication found', {
+        ip: req.ip,
+        entityType: req.entityType,
+        hasUser: !!req.user,
+        hasPlayer: !!req.player,
+        cookies: Object.keys(req.cookies),
+        userAgent: req.get('User-Agent')
+      });
       throw new Error('No valid authentication found');
     }
   } catch (error) {
+    luderror.auth('[AUTH-ME] Failed to fetch authentication information', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      entityType: req.entityType,
+      hasUser: !!req.user,
+      hasPlayer: !!req.player,
+      error: error.message,
+      stack: error.stack,
+      portal: detectPortal(req)
+    });
+
     res.status(500).json({ error: 'Failed to fetch authentication information' });
   }
 });
@@ -379,35 +504,106 @@ router.post('/set-claims', authenticateToken, async (req, res) => {
 // Verify ID token endpoint
 router.post('/verify', async (req, res) => {
   try {
+    ludlog.auth('[AUTH-VERIFY] Starting token verification process', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      hasIdToken: !!req.body.idToken
+    });
+
     const { idToken } = req.body;
 
     if (!idToken) {
+      luderror.auth('[AUTH-VERIFY] Missing idToken in request body', {
+        ip: req.ip,
+        body: req.body
+      });
       return res.status(400).json({ error: 'ID token is required' });
     }
 
+    ludlog.auth('[AUTH-VERIFY] IdToken provided, detecting portal', {
+      idTokenLength: idToken.length,
+      idTokenPrefix: idToken.substring(0, 20) + '...'
+    });
+
     // Detect portal from request
     const portal = detectPortal(req);
+    ludlog.auth('[AUTH-VERIFY] Portal detected', { portal });
 
+    ludlog.auth('[AUTH-VERIFY] Calling authService.verifyToken', { portal });
     const tokenData = await authService.verifyToken(idToken);
+    ludlog.auth('[AUTH-VERIFY] Token verification successful', {
+      userId: tokenData.id,
+      email: tokenData.email,
+      portal
+    });
 
     // Get the actual user from database (like loginWithEmailPassword does)
+    ludlog.auth('[AUTH-VERIFY] Looking up user in database', { userId: tokenData.id });
     const user = await models.User.findByPk(tokenData.id);
     if (!user) {
+      luderror.auth('[AUTH-VERIFY] User not found in database after successful token verification', {
+        tokenUserId: tokenData.id,
+        tokenEmail: tokenData.email,
+        portal
+      });
       throw new Error('User not found');
     }
+    ludlog.auth('[AUTH-VERIFY] User found in database', {
+      userId: user.id,
+      email: user.email,
+      userType: user.user_type,
+      portal
+    });
 
     // Auto-assign user_type='student' for Firebase users on student portal (if currently null)
     if (portal === 'student' && user.user_type === null) {
-      await user.update({
-        user_type: 'student',
-        last_login: new Date()
+      ludlog.auth('[AUTH-VERIFY] Auto-assigning student user_type', {
+        userId: user.id,
+        email: user.email,
+        portal
       });
+
+      try {
+        await user.update({
+          user_type: 'student',
+          last_login: new Date()
+        });
+        ludlog.auth('[AUTH-VERIFY] Student auto-assignment successful', {
+          userId: user.id,
+          email: user.email
+        });
+      } catch (updateError) {
+        luderror.auth('[AUTH-VERIFY] Failed to auto-assign student user_type', {
+          userId: user.id,
+          email: user.email,
+          error: updateError.message,
+          portal
+        });
+        throw updateError;
+      }
 
       // Log the auto-assignment for visibility
       luderror.auth(`[Auto-Assignment] User ${user.id} (${user.email}) assigned user_type='student' on student portal login`);
     } else {
-      // Update last login only (like loginWithEmailPassword does)
-      await user.update({ last_login: new Date() });
+      ludlog.auth('[AUTH-VERIFY] Updating last login only', {
+        userId: user.id,
+        currentUserType: user.user_type,
+        portal
+      });
+
+      try {
+        // Update last login only (like loginWithEmailPassword does)
+        await user.update({ last_login: new Date() });
+        ludlog.auth('[AUTH-VERIFY] Last login update successful', { userId: user.id });
+      } catch (updateError) {
+        luderror.auth('[AUTH-VERIFY] Failed to update last login', {
+          userId: user.id,
+          email: user.email,
+          error: updateError.message,
+          portal
+        });
+        throw updateError;
+      }
     }
 
     // Create user session with metadata and portal context
@@ -418,13 +614,59 @@ router.post('/verify', async (req, res) => {
       loginMethod: 'firebase_google'
     };
 
-    await authService.createSession(user.id, sessionMetadata, portal);
+    ludlog.auth('[AUTH-VERIFY] Creating user session', {
+      userId: user.id,
+      portal,
+      sessionMetadata
+    });
 
-    // Generate proper access and refresh tokens using AuthService
-    const result = await authService.generateTokenPair(user, sessionMetadata);
+    try {
+      await authService.createSession(user.id, sessionMetadata, portal);
+      ludlog.auth('[AUTH-VERIFY] Session creation successful', {
+        userId: user.id,
+        portal
+      });
+    } catch (sessionError) {
+      luderror.auth('[AUTH-VERIFY] Failed to create user session', {
+        userId: user.id,
+        email: user.email,
+        portal,
+        sessionMetadata,
+        error: sessionError.message,
+        stack: sessionError.stack
+      });
+      throw sessionError;
+    }
+
+    ludlog.auth('[AUTH-VERIFY] Generating token pair', { userId: user.id, portal });
+    let result;
+    try {
+      // Generate proper access and refresh tokens using AuthService
+      result = await authService.generateTokenPair(user, sessionMetadata);
+      ludlog.auth('[AUTH-VERIFY] Token pair generation successful', {
+        userId: user.id,
+        hasAccessToken: !!result.accessToken,
+        hasRefreshToken: !!result.refreshToken
+      });
+    } catch (tokenError) {
+      luderror.auth('[AUTH-VERIFY] Failed to generate token pair', {
+        userId: user.id,
+        email: user.email,
+        portal,
+        error: tokenError.message,
+        stack: tokenError.stack
+      });
+      throw tokenError;
+    }
 
     // Get portal-specific cookie names
     const cookieNames = getPortalCookieNames(portal);
+    ludlog.auth('[AUTH-VERIFY] Setting cookies', {
+      portal,
+      cookieNames,
+      accessTokenName: cookieNames.accessToken,
+      refreshTokenName: cookieNames.refreshToken
+    });
 
     // Set access token as httpOnly cookie (15 minutes) with portal-specific name
     const accessConfig = createPortalAccessTokenConfig(portal);
@@ -435,6 +677,13 @@ router.post('/verify', async (req, res) => {
     const refreshConfig = createPortalRefreshTokenConfig(portal);
     logCookieConfig(`Verify ${portal} - Refresh Token`, refreshConfig);
     res.cookie(cookieNames.refreshToken, result.refreshToken, refreshConfig);
+
+    ludlog.auth('[AUTH-VERIFY] Authentication verification completed successfully', {
+      userId: user.id,
+      email: user.email,
+      portal,
+      userType: user.user_type
+    });
 
     res.json({
       valid: true,
@@ -447,6 +696,16 @@ router.post('/verify', async (req, res) => {
       }
     });
   } catch (error) {
+    luderror.auth('[AUTH-VERIFY] Authentication verification failed', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      hasIdToken: !!req.body.idToken,
+      idTokenLength: req.body.idToken?.length,
+      error: error.message,
+      stack: error.stack,
+      portal: detectPortal(req)
+    });
+
     res.status(401).json({
       valid: false,
       error: error.message || 'Invalid or expired token'
