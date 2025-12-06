@@ -675,7 +675,39 @@ class AuthService {
             user = await models.User.findOne({ where: { email: decodedToken.email } });
             ludlog.auth('Database query completed', { userFound: !!user, userId: user?.id });
           } catch (dbError) {
-            // Comprehensive error logging to handle Sequelize and other error types
+            // EMERGENCY DEBUGGING: Multiple logging approaches to capture this error
+            console.log('=== DATABASE ERROR DEBUG START ===');
+            console.log('Error type:', typeof dbError);
+            console.log('Error constructor:', dbError?.constructor?.name);
+            console.log('Error message:', dbError?.message);
+            console.log('Error name:', dbError?.name);
+            console.log('Error code:', dbError?.code);
+
+            // Try different serialization methods
+            try {
+              console.log('JSON stringify attempt:', JSON.stringify(dbError));
+            } catch (jsonError) {
+              console.log('JSON stringify failed:', jsonError.message);
+            }
+
+            try {
+              console.log('Error toString:', dbError.toString());
+            } catch (toStringError) {
+              console.log('toString failed:', toStringError.message);
+            }
+
+            // Try to extract specific properties
+            console.log('Error properties:');
+            for (const key in dbError) {
+              try {
+                console.log(`  ${key}:`, dbError[key]);
+              } catch (propError) {
+                console.log(`  ${key}: [Error accessing property]`);
+              }
+            }
+            console.log('=== DATABASE ERROR DEBUG END ===');
+
+            // Also try the structured logging
             luderror.auth.prod('Database query failed when looking for user:', {
               email: decodedToken.email,
               errorType: typeof dbError,
@@ -686,10 +718,7 @@ class AuthService {
               errorStack: dbError?.stack || 'No stack',
               errorSql: dbError?.sql || 'No SQL',
               errorOriginal: dbError?.original || 'No original',
-              errorParent: dbError?.parent || 'No parent',
-              fullErrorObject: JSON.stringify(dbError, null, 2),
-              sequelizeErrorType: dbError?.parent?.code || 'Not Sequelize',
-              postgresErrorCode: dbError?.original?.code || 'No PG code'
+              errorParent: dbError?.parent || 'No parent'
             });
             throw dbError;
           }
