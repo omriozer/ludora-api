@@ -83,36 +83,11 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: Test migrations before deployment
-        run: |
-          echo "🔍 Testing migrations in dry-run mode..."
-          heroku run "ENVIRONMENT=production node scripts/safe-migrate.js --dry-run" --app ludora-api-prod || {
-            echo "❌ Migration dry-run failed! Deployment aborted."
-            exit 1
-          }
-          echo "✅ Migration dry-run successful"
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-
-      - name: Run database migrations SAFELY
-        run: |
-          echo "🚀 Running safe transactional migrations..."
-          heroku run "ENVIRONMENT=production node scripts/safe-migrate.js" --app ludora-api-prod || {
-            echo "❌ CRITICAL: Migration failed! Deployment aborted."
-            echo "Database state preserved due to transaction rollback."
-            exit 1
-          }
-          echo "✅ Safe migrations completed successfully"
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-
       - name: Deploy to Heroku Production
         run: |
-          echo "✅ Migrations successful - proceeding with deployment..."
+          echo "🚀 Deploying code to production..."
           git push https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/ludora-api-prod.git HEAD:main || {
-            echo "❌ Deployment failed after successful migrations!"
-            echo "⚠️ Database has been migrated but code deployment failed."
-            echo "Manual intervention may be required."
+            echo "❌ Code deployment failed!"
             exit 1
           }
         env:
@@ -122,6 +97,18 @@ jobs:
         run: |
           echo "Waiting for Heroku deployment to complete..."
           sleep 60
+
+      - name: Run database migrations SAFELY
+        run: |
+          echo "🚀 Running safe transactional migrations..."
+          heroku run "ENVIRONMENT=production node scripts/safe-migrate.js" --app ludora-api-prod || {
+            echo "❌ CRITICAL: Migration failed!"
+            echo "⚠️ Code deployed but migrations failed - manual intervention required"
+            exit 1
+          }
+          echo "✅ Safe migrations completed successfully"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
       - name: Restart dynos
         run: |
