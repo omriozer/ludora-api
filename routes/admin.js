@@ -709,7 +709,7 @@ router.get('/subscription-plans', async (req, res) => {
     // Get all subscription plans
     const subscriptionPlans = await models.SubscriptionPlan.findAll({
       order: [['price', 'ASC']],
-      attributes: ['id', 'name', 'description', 'price', 'billing_cycle', 'benefits']
+      attributes: ['id', 'name', 'description', 'price', 'billing_period', 'benefits']
     });
 
     res.json({
@@ -719,7 +719,7 @@ router.get('/subscription-plans', async (req, res) => {
         name: plan.name,
         description: plan.description,
         price: parseFloat(plan.price),
-        billing_cycle: plan.billing_cycle,
+        billing_period: plan.billing_period,
         benefits: plan.benefits,
         benefitsSummary: formatPlanBenefits(plan.benefits)
       }))
