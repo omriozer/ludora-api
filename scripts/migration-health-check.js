@@ -7,8 +7,8 @@
  * Can be integrated into health check endpoints
  */
 
-const { exec } = require('child_process');
-const util = require('util');
+import { exec } from 'child_process';
+import util from 'util';
 
 const execAsync = util.promisify(exec);
 
@@ -111,10 +111,10 @@ class MigrationHealthChecker {
 }
 
 // For use in other modules
-module.exports = MigrationHealthChecker;
+export default MigrationHealthChecker;
 
 // Run if called directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   const checker = new MigrationHealthChecker();
   checker.run();
 }
