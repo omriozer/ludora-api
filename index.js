@@ -275,7 +275,37 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/health', healthCheckErrorHandler);
+// Enhanced health check with migration status
+app.get('/health', async (req, res) => {
+  try {
+    const MigrationHealthChecker = await import('./scripts/migration-health-check.js');
+    const checker = new MigrationHealthChecker.default();
+    const healthReport = await checker.generateHealthReport();
+
+    const status = healthReport.healthy ? 200 : 503;
+
+    res.status(status).json({
+      ...healthReport,
+      api: {
+        message: 'Ludora API Health Check',
+        version: process.env.npm_package_version || '1.0.0',
+        uptime: process.uptime()
+      }
+    });
+  } catch (error) {
+    res.status(503).json({
+      healthy: false,
+      status: 'error',
+      error: error.message,
+      api: {
+        message: 'Ludora API Health Check',
+        version: process.env.npm_package_version || '1.0.0',
+        uptime: process.uptime()
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 // API info endpoint
 app.get('/api', (req, res) => {

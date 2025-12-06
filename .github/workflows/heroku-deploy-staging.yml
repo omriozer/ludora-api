@@ -83,28 +83,45 @@ jobs:
           fi
         continue-on-error: true
 
+      - name: Test migrations before deployment
+        run: |
+          echo "🔍 Testing migrations in dry-run mode..."
+          heroku run "ENVIRONMENT=staging node scripts/safe-migrate.js --dry-run" --app ludora-api-staging || {
+            echo "❌ Migration dry-run failed! Deployment aborted."
+            exit 1
+          }
+          echo "✅ Migration dry-run successful"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
+      - name: Run database migrations SAFELY
+        run: |
+          echo "🚀 Running safe transactional migrations..."
+          heroku run "ENVIRONMENT=staging node scripts/safe-migrate.js" --app ludora-api-staging || {
+            echo "❌ CRITICAL: Migration failed! Deployment aborted."
+            echo "Database state preserved due to transaction rollback."
+            exit 1
+          }
+          echo "✅ Safe migrations completed successfully"
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+
       - name: Deploy to Heroku Staging
-        uses: akhileshns/heroku-deploy@v3.13.15
-        with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "ludora-api-staging"
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
-          usedocker: false
-          dontautocreate: true
-          branch: "staging"
+        run: |
+          echo "✅ Migrations successful - proceeding with deployment..."
+          git push https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/ludora-api-staging.git HEAD:main || {
+            echo "❌ Deployment failed after successful migrations!"
+            echo "⚠️ Database has been migrated but code deployment failed."
+            echo "Manual intervention may be required."
+            exit 1
+          }
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
       - name: Wait for deployment
         run: |
           echo "Waiting for Heroku deployment to complete..."
           sleep 60
-
-      - name: Run database migrations
-        run: |
-          echo "Running database migrations for staging..."
-          heroku run "ENVIRONMENT=staging npx sequelize-cli db:migrate" --app ludora-api-staging
-          echo "✅ Migrations completed successfully"
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 
       - name: Restart dynos
         run: |
@@ -120,12 +137,26 @@ jobs:
           echo "⚠️ Package.json changes detected - dependencies will be updated during Heroku build"
           echo "Heroku automatically installs dependencies based on package.json during build"
 
-      - name: Health check
+      - name: Health check with migration validation
         run: |
           echo "Waiting for deployment to be ready..."
           sleep 60
-          curl -f https://api-staging.ludora.app/ || exit 1
-          echo "✅ API staging deployment successful and healthy!"
+
+          echo "🔍 Checking API health and migration status..."
+          HEALTH_RESPONSE=$(curl -s https://api-staging.ludora.app/health)
+          HEALTH_STATUS=$(curl -s -w "%{http_code}" -o /dev/null https://api-staging.ludora.app/health)
+
+          echo "Health check response:"
+          echo "$HEALTH_RESPONSE" | jq . || echo "$HEALTH_RESPONSE"
+
+          if [ "$HEALTH_STATUS" -eq "200" ]; then
+            echo "✅ API staging deployment successful and healthy!"
+            echo "✅ All migrations applied successfully!"
+          else
+            echo "❌ Health check failed with status: $HEALTH_STATUS"
+            echo "❌ Deployment may have succeeded but system is unhealthy!"
+            exit 1
+          fi
 
       - name: Check dyno status
         run: |
