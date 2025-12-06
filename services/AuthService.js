@@ -657,12 +657,22 @@ class AuthService {
 
       // Try Firebase token verification
       if (admin && admin.auth) {
+        ludlog.auth('Attempting Firebase token verification');
         try {
+          ludlog.auth('Calling Firebase admin.auth().verifyIdToken()');
           const decodedToken = await admin.auth().verifyIdToken(token);
+          ludlog.auth('Firebase token verification successful', {
+            uid: decodedToken.uid,
+            email: decodedToken.email,
+            email_verified: decodedToken.email_verified
+          });
 
           // Find or create user in our database
+          ludlog.auth('Looking for existing user in database', { email: decodedToken.email });
           let user = await models.User.findOne({ where: { email: decodedToken.email } });
+
           if (!user && decodedToken.email) {
+            ludlog.auth('User not found, creating new user', { uid: decodedToken.uid, email: decodedToken.email });
             user = await models.User.create({
               id: decodedToken.uid,
               email: decodedToken.email,
@@ -673,6 +683,9 @@ class AuthService {
               created_at: new Date(),
               updated_at: new Date()
             });
+            ludlog.auth('New user created successfully', { id: user.id });
+          } else {
+            ludlog.auth('Existing user found', { id: user?.id });
           }
 
           const userData = user ? user.toJSON() : {
@@ -684,11 +697,23 @@ class AuthService {
             is_active: true
           };
 
+          ludlog.auth('Firebase authentication completed successfully', { userId: userData.id });
           return {
             ...userData,
             type: 'firebase'
           };
         } catch (firebaseError) {
+          // CRITICAL: Log the actual Firebase error before masking it
+          luderror.auth.prod('Firebase token verification failed - ACTUAL ERROR:', {
+            errorMessage: firebaseError.message,
+            errorCode: firebaseError.code,
+            errorName: firebaseError.name,
+            errorStack: firebaseError.stack,
+            tokenPrefix: token ? token.substring(0, 20) + '...' : 'no token',
+            firebaseConfigPresent: !!admin,
+            firebaseAuthPresent: !!(admin && admin.auth),
+            timestamp: new Date().toISOString()
+          });
           throw new Error('Invalid or expired token');
         }
       }
