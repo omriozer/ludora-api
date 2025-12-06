@@ -11,9 +11,9 @@
  * - Fails fast with clear error messages
  */
 
-const { exec } = require('child_process');
-const path = require('path');
-const util = require('util');
+import { exec } from 'child_process';
+import path from 'path';
+import util from 'util';
 
 const execAsync = util.promisify(exec);
 
@@ -213,7 +213,7 @@ class SafeMigrationRunner {
 
     // Test basic database operations
     const testResult = await this.runCommand(
-      `node -e "const models = require('./models'); models.sequelize.authenticate().then(() => console.log('DB OK')).catch(e => { console.error('DB FAIL:', e.message); process.exit(1); })"`,
+      `node -e "import('./models/index.js').then(models => models.default.sequelize.authenticate()).then(() => console.log('DB OK')).catch(e => { console.error('DB FAIL:', e.message); process.exit(1); })"`,
       'Database connectivity test'
     );
 
@@ -305,9 +305,9 @@ class SafeMigrationRunner {
 }
 
 // Run if called directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   const runner = new SafeMigrationRunner();
   runner.run();
 }
 
-module.exports = SafeMigrationRunner;
+export default SafeMigrationRunner;
