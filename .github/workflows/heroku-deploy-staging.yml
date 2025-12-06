@@ -54,7 +54,6 @@ jobs:
 
       - name: Authenticate Heroku CLI
         run: |
-          echo "${{ secrets.HEROKU_API_KEY }}" | heroku auth:token
           heroku auth:whoami
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
