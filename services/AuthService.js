@@ -669,25 +669,56 @@ class AuthService {
 
           // Find or create user in our database
           ludlog.auth('Looking for existing user in database', { email: decodedToken.email });
-          let user = await models.User.findOne({ where: { email: decodedToken.email } });
+          let user;
+
+          try {
+            user = await models.User.findOne({ where: { email: decodedToken.email } });
+            ludlog.auth('Database query completed', { userFound: !!user, userId: user?.id });
+          } catch (dbError) {
+            luderror.auth.prod('Database query failed when looking for user:', {
+              email: decodedToken.email,
+              error: {
+                message: dbError.message,
+                name: dbError.name,
+                stack: dbError.stack,
+                code: dbError.code
+              }
+            });
+            throw dbError;
+          }
 
           if (!user && decodedToken.email) {
             ludlog.auth('User not found, creating new user', { uid: decodedToken.uid, email: decodedToken.email });
-            user = await models.User.create({
-              id: decodedToken.uid,
-              email: decodedToken.email,
-              full_name: decodedToken.name || decodedToken.email.split('@')[0],
-              is_verified: decodedToken.email_verified,
-              is_active: true,
-              role: 'user',
-              created_at: new Date(),
-              updated_at: new Date()
-            });
-            ludlog.auth('New user created successfully', { id: user.id });
+            try {
+              user = await models.User.create({
+                id: decodedToken.uid,
+                email: decodedToken.email,
+                full_name: decodedToken.name || decodedToken.email.split('@')[0],
+                is_verified: decodedToken.email_verified,
+                is_active: true,
+                role: 'user',
+                created_at: new Date(),
+                updated_at: new Date()
+              });
+              ludlog.auth('New user created successfully', { id: user.id });
+            } catch (createError) {
+              luderror.auth.prod('User creation failed:', {
+                uid: decodedToken.uid,
+                email: decodedToken.email,
+                error: {
+                  message: createError.message,
+                  name: createError.name,
+                  stack: createError.stack,
+                  code: createError.code
+                }
+              });
+              throw createError;
+            }
           } else {
             ludlog.auth('Existing user found', { id: user?.id });
           }
 
+          ludlog.auth('Building userData object', { hasUser: !!user, userId: user?.id });
           const userData = user ? user.toJSON() : {
             id: decodedToken.uid,
             email: decodedToken.email,
@@ -696,6 +727,7 @@ class AuthService {
             is_verified: decodedToken.email_verified,
             is_active: true
           };
+          ludlog.auth('UserData built successfully', { userId: userData.id });
 
           ludlog.auth('Firebase authentication completed successfully', { userId: userData.id });
           return {
