@@ -3,6 +3,27 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // Check if tables exist before adding indexes
+    const subscriptionTableExists = await queryInterface.sequelize.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'subscription';`
+    );
+    const subscriptionPlanTableExists = await queryInterface.sequelize.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'subscriptionplan';`
+    );
+
+    // Only proceed if both tables exist
+    if (subscriptionTableExists[0].length === 0) {
+      console.log('⚠️  Skipping subscription indexes: subscription table does not exist');
+      return;
+    }
+
+    if (subscriptionPlanTableExists[0].length === 0) {
+      console.log('⚠️  Skipping subscription plan indexes: subscriptionplan table does not exist');
+      return;
+    }
+
+    console.log('✅ Both subscription tables exist, adding performance indexes...');
+
     // 1. Composite index for user's active/pending subscriptions (most frequent query)
     // Used in: SubscriptionService.validateSubscriptionCreation, getUserActiveSubscription
     await queryInterface.addIndex('subscription', ['user_id', 'status'], {
@@ -47,12 +68,57 @@ module.exports = {
   },
 
   async down(queryInterface, Sequelize) {
-    // Drop indexes in reverse order
-    await queryInterface.removeIndex('subscription', 'subscriptions_user_created_idx');
-    await queryInterface.removeIndex('subscriptionplan', 'subscription_plans_active_idx');
-    await queryInterface.removeIndex('subscription', 'subscriptions_user_plan_status_idx');
-    await queryInterface.removeIndex('subscription', 'subscriptions_payplus_uid_idx');
-    await queryInterface.removeIndex('subscription', 'subscriptions_plan_idx');
-    await queryInterface.removeIndex('subscription', 'subscriptions_user_status_idx');
+    // Check if tables exist before removing indexes
+    const subscriptionTableExists = await queryInterface.sequelize.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'subscription';`
+    );
+    const subscriptionPlanTableExists = await queryInterface.sequelize.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'subscriptionplan';`
+    );
+
+    // Only proceed if tables exist
+    if (subscriptionTableExists[0].length === 0 || subscriptionPlanTableExists[0].length === 0) {
+      console.log('⚠️  Skipping index removal: subscription tables do not exist');
+      return;
+    }
+
+    console.log('✅ Removing subscription performance indexes...');
+
+    // Drop indexes in reverse order (with error handling for non-existent indexes)
+    try {
+      await queryInterface.removeIndex('subscription', 'subscriptions_user_created_idx');
+    } catch (e) {
+      console.log('Index subscriptions_user_created_idx does not exist, skipping');
+    }
+
+    try {
+      await queryInterface.removeIndex('subscriptionplan', 'subscription_plans_active_idx');
+    } catch (e) {
+      console.log('Index subscription_plans_active_idx does not exist, skipping');
+    }
+
+    try {
+      await queryInterface.removeIndex('subscription', 'subscriptions_user_plan_status_idx');
+    } catch (e) {
+      console.log('Index subscriptions_user_plan_status_idx does not exist, skipping');
+    }
+
+    try {
+      await queryInterface.removeIndex('subscription', 'subscriptions_payplus_uid_idx');
+    } catch (e) {
+      console.log('Index subscriptions_payplus_uid_idx does not exist, skipping');
+    }
+
+    try {
+      await queryInterface.removeIndex('subscription', 'subscriptions_plan_idx');
+    } catch (e) {
+      console.log('Index subscriptions_plan_idx does not exist, skipping');
+    }
+
+    try {
+      await queryInterface.removeIndex('subscription', 'subscriptions_user_status_idx');
+    } catch (e) {
+      console.log('Index subscriptions_user_status_idx does not exist, skipping');
+    }
   }
 };
