@@ -67,28 +67,72 @@ export default function(sequelize) {
     payplus_subscription_uid: {
       type: DataTypes.STRING,
       allowNull: true,
+      validate: {
+        // UUID-like format validation if provided
+        isValidUid(value) {
+          if (value && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)) {
+            throw new Error('PayPlus subscription UID must be a valid UUID format');
+          }
+        }
+      }
     },
     payplus_status: {
       type: DataTypes.STRING,
       allowNull: true,
+      validate: {
+        isIn: {
+          args: [['active', 'cancelled', 'expired', 'failed', 'pending', 'suspended']],
+          msg: 'PayPlus status must be a valid status'
+        }
+      }
     },
 
     // Pricing (snapshot at subscription time)
-    monthly_price: {
+    billing_price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
-      comment: 'Final price for this subscription after discounts'
+      comment: 'Price for this subscription billing period after discounts',
+      validate: {
+        min: {
+          args: [0],
+          msg: 'Billing price must be zero or positive'
+        },
+        max: {
+          args: [99999.99],
+          msg: 'Billing price cannot exceed 99,999.99'
+        }
+      }
     },
     original_price: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
-      comment: 'Original price before discounts'
+      comment: 'Original price before discounts',
+      validate: {
+        min: {
+          args: [0],
+          msg: 'Original price must be zero or positive'
+        },
+        max: {
+          args: [99999.99],
+          msg: 'Original price cannot exceed 99,999.99'
+        }
+      }
     },
     discount_amount: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       defaultValue: 0,
-      comment: 'Discount amount applied to this subscription'
+      comment: 'Discount amount applied to this subscription',
+      validate: {
+        min: {
+          args: [0],
+          msg: 'Discount amount must be zero or positive'
+        },
+        max: {
+          args: [99999.99],
+          msg: 'Discount amount cannot exceed 99,999.99'
+        }
+      }
     },
     billing_period: {
       type: DataTypes.STRING,
@@ -122,6 +166,56 @@ export default function(sequelize) {
   }, {
     tableName: 'subscription',
     timestamps: false,
+    validate: {
+      // Model-level validation for field relationships
+      validatePricing() {
+        // Check that original_price >= billing_price when both are provided
+        if (this.original_price && this.billing_price && this.original_price < this.billing_price) {
+          throw new Error('Original price cannot be less than billing price');
+        }
+
+        // Check that discount_amount doesn't exceed original_price when both are provided
+        if (this.original_price && this.discount_amount && this.discount_amount > this.original_price) {
+          throw new Error('Discount amount cannot exceed original price');
+        }
+
+        // Check that billing_price + discount_amount equals original_price when all are provided
+        if (this.original_price && this.billing_price && this.discount_amount) {
+          const calculatedOriginal = parseFloat(this.billing_price) + parseFloat(this.discount_amount);
+          const actualOriginal = parseFloat(this.original_price);
+          // Allow small floating point differences (0.01)
+          if (Math.abs(calculatedOriginal - actualOriginal) > 0.01) {
+            throw new Error('Pricing calculation mismatch: billing_price + discount_amount must equal original_price');
+          }
+        }
+      },
+
+      // Validate date relationships
+      validateDates() {
+        // Check that end_date is after start_date when both are provided
+        if (this.start_date && this.end_date && new Date(this.end_date) <= new Date(this.start_date)) {
+          throw new Error('End date must be after start date');
+        }
+
+        // Check that next_billing_date is after start_date when both are provided
+        if (this.start_date && this.next_billing_date && new Date(this.next_billing_date) <= new Date(this.start_date)) {
+          throw new Error('Next billing date must be after start date');
+        }
+
+        // Check that cancelled_at is only set when status is 'cancelled'
+        if (this.cancelled_at && this.status !== 'cancelled') {
+          throw new Error('Cancelled date can only be set when status is cancelled');
+        }
+      },
+
+      // Validate PayPlus fields consistency
+      validatePayPlusFields() {
+        // If subscription has a paid billing_price, it should have a PayPlus UID when active
+        if (this.status === 'active' && this.billing_price > 0 && !this.payplus_subscription_uid) {
+          throw new Error('Active paid subscriptions must have a PayPlus subscription UID');
+        }
+      }
+    },
     indexes: [
       {
         fields: ['user_id'],
@@ -234,9 +328,14 @@ export default function(sequelize) {
       updateData.payplus_subscription_uid = options.payplusSubscriptionUid;
     }
 
+    // Set PayPlus status if provided
+    if (options.payplusStatus) {
+      updateData.payplus_status = options.payplusStatus;
+    }
+
     // Set next billing date for paid subscriptions with PayPlus UID
     const hasPayplusUid = updateData.payplus_subscription_uid || this.payplus_subscription_uid;
-    if (hasPayplusUid && this.monthly_price > 0) {
+    if (hasPayplusUid && this.billing_price > 0) {
       updateData.next_billing_date = this.calculateNextBillingDate(updateData.start_date);
     }
 

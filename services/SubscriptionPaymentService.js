@@ -454,6 +454,7 @@ class SubscriptionPaymentService {
       // PayPlus might send the recurring UID in different fields depending on webhook type
       const possibleUidFields = [
         webhookData.subscription_uid,
+        webhookData.transaction?.recurring_charge_information?.recurring_uid, // ✅ FIX: Added missing path
         webhookData.recurring_charge_information?.recurring_uid,
         webhookData.recurring_uid,
         webhookData.recurring_info?.recurring_uid,
@@ -524,14 +525,20 @@ class SubscriptionPaymentService {
         }
       }
 
-      // Activate subscription with PayPlus UID and resolution source tracking
+      // Extract PayPlus status for subscription record
+      const payplusStatus = webhookData.status ||
+                           (webhookData.transaction?.status_code === '000' ? 'active' : 'unknown');
+
+      // Activate subscription with PayPlus UID, status, and resolution source tracking
       const activatedSubscription = await SubscriptionService.activateSubscription(subscription.id, {
         payplusSubscriptionUid: subscriptionUid, // Set UID during activation
+        payplusStatus: payplusStatus, // Set PayPlus status
         activationDate: new Date(),
         payplusWebhookData: webhookData,
         metadata: {
           paymentCompletedAt: new Date().toISOString(),
           payplusData: webhookData,
+          payplusStatusCaptured: payplusStatus,
           resolvedBy: resolvedBy, // Track resolution source
           resolvedAt: new Date().toISOString()
         }
@@ -603,13 +610,19 @@ class SubscriptionPaymentService {
    */
   static async handlePaymentFailure(subscription, webhookData) {
     try {
-      // Update subscription status to failed
+      // Extract PayPlus status for failed payment
+      const payplusStatus = webhookData.status ||
+                           (webhookData.transaction?.status_code ? 'failed' : 'unknown');
+
+      // Update subscription status to failed with PayPlus status
       const updatedSubscription = await subscription.update({
         status: 'failed',
+        payplus_status: payplusStatus, // Set PayPlus status for failures
         metadata: {
           ...subscription.metadata,
           paymentFailedAt: new Date().toISOString(),
           failureReason: webhookData.reason || 'Payment declined',
+          payplusStatusCaptured: payplusStatus,
           payplusWebhookData: webhookData
         },
         updated_at: new Date()

@@ -192,7 +192,7 @@ class SubscriptionService {
         status: finalPrice === 0 ? 'active' : 'pending', // Free plans are immediately active
         start_date: startDate,
         next_billing_date: nextBillingDate,
-        monthly_price: finalPrice, // Use discounted price for billing
+        billing_price: finalPrice, // Use discounted price for billing
         original_price: pricingInfo.originalPrice,
         discount_amount: pricingInfo.discountAmount,
         billing_period: planObject.billing_period || 'monthly',
@@ -421,13 +421,16 @@ class SubscriptionService {
   /**
    * Calculate next billing date
    * @param {Date} fromDate - Starting date
-   * @param {string} billingPeriod - Billing period ('monthly' or 'yearly')
+   * @param {string} billingPeriod - Billing period ('daily', 'monthly' or 'yearly')
    * @returns {Date} Next billing date
    */
   static calculateNextBillingDate(fromDate, billingPeriod) {
     const nextBilling = new Date(fromDate);
 
     switch (billingPeriod) {
+      case 'daily':
+        nextBilling.setDate(nextBilling.getDate() + 1);
+        break;
       case 'monthly':
         nextBilling.setMonth(nextBilling.getMonth() + 1);
         break;
