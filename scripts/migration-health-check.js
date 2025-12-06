@@ -64,7 +64,7 @@ class MigrationHealthChecker {
     try {
       // Simple connection test
       const { stdout } = await execAsync(
-        'node -e "const models = require(\'./models\'); models.sequelize.authenticate().then(() => console.log(\'OK\')).catch(e => { console.error(e.message); process.exit(1); })"',
+        'node -e "import(\'./models/index.js\').then(models => models.default.sequelize.authenticate()).then(() => console.log(\'OK\')).catch(e => { console.error(e.message); process.exit(1); })"',
         { env: { ...process.env, NODE_ENV: this.environment } }
       );
 
