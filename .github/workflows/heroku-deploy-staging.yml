@@ -103,7 +103,12 @@ jobs:
           echo "🚀 Running safe transactional migrations..."
           heroku run "ENVIRONMENT=staging node scripts/safe-migrate.js" --app ludora-api-staging || {
             echo "❌ CRITICAL: Migration failed!"
-            echo "⚠️ Code deployed but migrations failed - manual intervention required"
+            echo "🔄 Attempting to rollback deployment to previous stable version..."
+            heroku releases:rollback --app ludora-api-staging || {
+              echo "❌ ROLLBACK FAILED! Manual intervention urgently required!"
+              exit 1
+            }
+            echo "✅ Rollback completed - system reverted to previous stable version"
             exit 1
           }
           echo "✅ Safe migrations completed successfully"
@@ -141,7 +146,12 @@ jobs:
             echo "✅ All migrations applied successfully!"
           else
             echo "❌ Health check failed with status: $HEALTH_STATUS"
-            echo "❌ Deployment may have succeeded but system is unhealthy!"
+            echo "🔄 Attempting to rollback deployment due to unhealthy system..."
+            heroku releases:rollback --app ludora-api-staging || {
+              echo "❌ ROLLBACK FAILED! Manual intervention urgently required!"
+              exit 1
+            }
+            echo "✅ Rollback completed - system reverted to previous stable version"
             exit 1
           fi
 
