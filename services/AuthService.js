@@ -675,14 +675,21 @@ class AuthService {
             user = await models.User.findOne({ where: { email: decodedToken.email } });
             ludlog.auth('Database query completed', { userFound: !!user, userId: user?.id });
           } catch (dbError) {
+            // Comprehensive error logging to handle Sequelize and other error types
             luderror.auth.prod('Database query failed when looking for user:', {
               email: decodedToken.email,
-              error: {
-                message: dbError.message,
-                name: dbError.name,
-                stack: dbError.stack,
-                code: dbError.code
-              }
+              errorType: typeof dbError,
+              errorConstructor: dbError?.constructor?.name,
+              errorMessage: dbError?.message || 'No message',
+              errorName: dbError?.name || 'No name',
+              errorCode: dbError?.code || 'No code',
+              errorStack: dbError?.stack || 'No stack',
+              errorSql: dbError?.sql || 'No SQL',
+              errorOriginal: dbError?.original || 'No original',
+              errorParent: dbError?.parent || 'No parent',
+              fullErrorObject: JSON.stringify(dbError, null, 2),
+              sequelizeErrorType: dbError?.parent?.code || 'Not Sequelize',
+              postgresErrorCode: dbError?.original?.code || 'No PG code'
             });
             throw dbError;
           }
@@ -702,15 +709,22 @@ class AuthService {
               });
               ludlog.auth('New user created successfully', { id: user.id });
             } catch (createError) {
+              // Comprehensive error logging for user creation failure
               luderror.auth.prod('User creation failed:', {
                 uid: decodedToken.uid,
                 email: decodedToken.email,
-                error: {
-                  message: createError.message,
-                  name: createError.name,
-                  stack: createError.stack,
-                  code: createError.code
-                }
+                errorType: typeof createError,
+                errorConstructor: createError?.constructor?.name,
+                errorMessage: createError?.message || 'No message',
+                errorName: createError?.name || 'No name',
+                errorCode: createError?.code || 'No code',
+                errorStack: createError?.stack || 'No stack',
+                errorSql: createError?.sql || 'No SQL',
+                errorOriginal: createError?.original || 'No original',
+                errorParent: createError?.parent || 'No parent',
+                fullErrorObject: JSON.stringify(createError, null, 2),
+                sequelizeErrorType: createError?.parent?.code || 'Not Sequelize',
+                postgresErrorCode: createError?.original?.code || 'No PG code'
               });
               throw createError;
             }
