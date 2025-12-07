@@ -292,6 +292,19 @@ export default function(sequelize) {
            (!this.end_date || new Date() < new Date(this.end_date));
   };
 
+  // Auto-renewal computed properties (single source of truth based on billing dates)
+  Subscription.prototype.isAutoRenewing = function() {
+    return !!this.next_billing_date && !this.end_date;
+  };
+
+  Subscription.prototype.isExpiring = function() {
+    return !!this.end_date && !this.next_billing_date;
+  };
+
+  Subscription.prototype.getAutoRenewStatus = function() {
+    return this.isAutoRenewing();
+  };
+
   // Calculate next billing date based on billing period
   Subscription.prototype.calculateNextBillingDate = function(fromDate = null) {
     const baseDate = fromDate ? new Date(fromDate) : new Date(this.start_date);

@@ -185,7 +185,7 @@ router.get('/users/:userId/subscription', async (req, res) => {
         start_date: subscription.start_date,
         end_date: subscription.end_date,
         next_billing_date: subscription.next_billing_date,
-        auto_renew: subscription.auto_renew,
+        auto_renew: subscription.getAutoRenewStatus(),
         metadata: subscription.metadata,
         payplus_subscription_uid: subscription.payplus_subscription_uid
       },
@@ -735,6 +735,290 @@ router.get('/subscription-plans', async (req, res) => {
 });
 
 /**
+ * POST /api/admin/subscriptions/:subscriptionId/toggle-auto-renew
+ *
+ * Toggle auto renewal for a subscription
+ * Updates PayPlus if it's a PayPlus subscription
+ */
+router.post('/subscriptions/:subscriptionId/toggle-auto-renew', async (req, res) => {
+  try {
+    const { subscriptionId } = req.params;
+    const { autoRenew, reason } = req.body;
+
+    if (typeof autoRenew !== 'boolean' || !reason) {
+      return res.status(400).json({
+        error: 'Missing required fields: autoRenew (boolean), reason'
+      });
+    }
+
+    ludlog.payments('Admin toggling auto renew for subscription:', {
+      subscriptionId,
+      autoRenew,
+      reason,
+      adminId: req.user.id
+    });
+
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Get subscription
+      const subscription = await models.Subscription.findByPk(subscriptionId, {
+        transaction
+      });
+
+      if (!subscription) {
+        await transaction.rollback();
+        return res.status(404).json({
+          error: 'Subscription not found'
+        });
+      }
+
+      const previousAutoRenew = subscription.getAutoRenewStatus();
+
+      // Update PayPlus if this is a PayPlus subscription
+      if (subscription.payplus_subscription_uid) {
+        try {
+          const payplusResult = await PayplusSubscriptionService.updateAutoRenewal({
+            subscriptionUid: subscription.payplus_subscription_uid,
+            autoRenew: autoRenew
+          });
+
+          if (!payplusResult.success) {
+            await transaction.rollback();
+            return res.status(500).json({
+              error: 'Failed to update PayPlus auto renewal',
+              message: payplusResult.error
+            });
+          }
+        } catch (error) {
+          await transaction.rollback();
+          luderror.payments('PayPlus auto renew update error:', error);
+          return res.status(500).json({
+            error: 'PayPlus update failed',
+            message: error.message
+          });
+        }
+      }
+
+      // Update subscription metadata
+      const metadata = subscription.metadata || {};
+      if (!metadata.admin_auto_renew_changes) {
+        metadata.admin_auto_renew_changes = [];
+      }
+
+      metadata.admin_auto_renew_changes.push({
+        from: previousAutoRenew,
+        to: autoRenew,
+        reason,
+        changed_by: req.user.id,
+        changed_at: new Date().toISOString(),
+        payplus_updated: !!subscription.payplus_subscription_uid
+      });
+
+      // Calculate billing date changes when toggling auto-renewal
+      let updateData = {
+        metadata,
+        updated_at: new Date()
+      };
+
+      // Get subscription plan for billing period calculation
+      const subscriptionPlan = await models.SubscriptionPlan.findByPk(subscription.subscription_plan_id, { transaction });
+
+      if (autoRenew && !subscription.next_billing_date) {
+        // Enabling auto-renewal: convert from end_date to next_billing_date
+        const startDate = subscription.end_date || subscription.start_date || new Date();
+        updateData.next_billing_date = SubscriptionService.calculateNextBillingDate(startDate, subscriptionPlan.billing_period || 'monthly');
+        updateData.end_date = null; // Clear end_date for auto-renewable subscriptions
+
+      } else if (!autoRenew && subscription.next_billing_date) {
+        // Disabling auto-renewal: convert from next_billing_date to end_date
+        updateData.end_date = subscription.next_billing_date;
+        updateData.next_billing_date = null; // Clear next_billing_date for non-renewable subscriptions
+
+      }
+
+      // Update subscription
+      await subscription.update(updateData, { transaction });
+
+      // Record in history
+      await models.SubscriptionHistory.recordAction({
+        userId: subscription.user_id,
+        subscriptionPlanId: subscription.subscription_plan_id,
+        subscriptionId: subscription.id,
+        actionType: 'renewed', // Use valid enum value for auto-renew changes
+        notes: `Admin ${autoRenew ? 'enabled' : 'disabled'} auto renewal: ${reason}`,
+        metadata: {
+          admin_user_id: req.user.id,
+          action_type: 'auto_renew_toggle',
+          previous_auto_renew: previousAutoRenew,
+          new_auto_renew: autoRenew,
+          reason,
+          payplus_updated: !!subscription.payplus_subscription_uid
+        }
+      });
+
+      await transaction.commit();
+
+      ludlog.payments('Auto renew toggle completed:', {
+        subscriptionId,
+        from: previousAutoRenew,
+        to: autoRenew,
+        payplusUpdated: !!subscription.payplus_subscription_uid
+      });
+
+      res.json({
+        success: true,
+        message: `Auto renewal ${autoRenew ? 'enabled' : 'disabled'} successfully`,
+        autoRenew: autoRenew,
+        previousAutoRenew: previousAutoRenew,
+        payplusUpdated: !!subscription.payplus_subscription_uid
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    luderror.payments('Admin auto renew toggle error:', error);
+    res.status(500).json({
+      error: 'Failed to toggle auto renewal',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/subscriptions/:subscriptionId/reset
+ *
+ * Delete/reset a user's subscription entirely
+ * Cancels PayPlus subscription if applicable
+ */
+router.post('/subscriptions/:subscriptionId/reset', async (req, res) => {
+  try {
+    const { subscriptionId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({
+        error: 'Missing required field: reason'
+      });
+    }
+
+    ludlog.payments('Admin resetting subscription:', {
+      subscriptionId,
+      reason,
+      adminId: req.user.id
+    });
+
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Get subscription with related data
+      const subscription = await models.Subscription.findByPk(subscriptionId, {
+        include: [{
+          model: models.SubscriptionPlan,
+          as: 'subscriptionPlan'
+        }],
+        transaction
+      });
+
+      if (!subscription) {
+        await transaction.rollback();
+        return res.status(404).json({
+          error: 'Subscription not found'
+        });
+      }
+
+      const subscriptionData = {
+        id: subscription.id,
+        user_id: subscription.user_id,
+        plan_name: subscription.subscriptionPlan?.name,
+        billing_price: subscription.billing_price,
+        status: subscription.status,
+        payplus_uid: subscription.payplus_subscription_uid
+      };
+
+      // Cancel PayPlus subscription if it exists
+      if (subscription.payplus_subscription_uid) {
+        try {
+          const payplusResult = await PayplusSubscriptionService.cancelSubscription({
+            subscriptionUid: subscription.payplus_subscription_uid,
+            reason: `Admin reset: ${reason}`
+          });
+
+          if (!payplusResult.success) {
+            ludlog.payments('PayPlus cancellation failed during reset, continuing with local deletion:', {
+              subscriptionId,
+              payplusError: payplusResult.error
+            });
+          }
+        } catch (error) {
+          ludlog.payments('PayPlus cancellation error during reset, continuing with local deletion:', {
+            subscriptionId,
+            error: error.message
+          });
+        }
+      }
+
+      // Record final history entry before deletion
+      await models.SubscriptionHistory.recordAction({
+        userId: subscription.user_id,
+        subscriptionPlanId: subscription.subscription_plan_id,
+        subscriptionId: subscription.id,
+        actionType: 'cancelled',
+        notes: `Admin reset subscription: ${reason}`,
+        metadata: {
+          admin_user_id: req.user.id,
+          action_type: 'admin_reset',
+          reason,
+          reset_at: new Date().toISOString(),
+          subscription_snapshot: subscriptionData,
+          payplus_cancelled: !!subscription.payplus_subscription_uid
+        }
+      });
+
+      // Delete the subscription
+      await subscription.destroy({ transaction });
+
+      await transaction.commit();
+
+      ludlog.payments('Subscription reset completed:', {
+        subscriptionId,
+        userId: subscription.user_id,
+        planName: subscriptionData.plan_name,
+        payplusCancelled: !!subscription.payplus_subscription_uid
+      });
+
+      res.json({
+        success: true,
+        message: 'Subscription reset successfully',
+        deletedSubscription: {
+          id: subscriptionData.id,
+          planName: subscriptionData.plan_name,
+          billingPrice: subscriptionData.billing_price,
+          status: subscriptionData.status
+        },
+        payplusCancelled: !!subscription.payplus_subscription_uid,
+        resetBy: req.user.id,
+        resetAt: new Date().toISOString()
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    luderror.payments('Admin subscription reset error:', error);
+    res.status(500).json({
+      error: 'Failed to reset subscription',
+      message: error.message
+    });
+  }
+});
+
+/**
  * POST /api/admin/users/:userId/subscription/create
  *
  * Create a new subscription for a user (free or paid)
@@ -751,7 +1035,8 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
       customEndDate,
       customBenefits,
       adminNotes,
-      reason
+      reason,
+      enableAutoRenewal = null  // Whether to enable auto-renewal (null = auto-decide based on price)
     } = req.body;
 
     // Validation
@@ -767,11 +1052,13 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
       });
     }
 
+
     ludlog.payments('Admin creating subscription for user:', {
       userId,
       planId,
       subscriptionType,
       customPrice,
+      enableAutoRenewal,
       reason,
       adminId: req.user.id
     });
@@ -810,34 +1097,19 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
     const transaction = await models.sequelize.transaction();
 
     try {
-      // Prepare subscription data
-      const subscriptionData = {
-        planId: planId,
-        userId: userId,
-        skipValidation: true, // Admin override
-        adminCreated: true
-      };
-
-      // Set pricing based on subscription type
+      // Prepare billing price based on subscription type
+      let billingPrice = null;
       if (subscriptionType === 'free') {
-        subscriptionData.billing_price = 0;
-        subscriptionData.original_price = subscriptionPlan.price;
-      } else {
-        subscriptionData.billing_price = customPrice || subscriptionPlan.price;
-        subscriptionData.original_price = subscriptionPlan.price;
+        billingPrice = 0; // Free subscription
+      } else if (customPrice !== undefined) {
+        billingPrice = customPrice; // Paid with custom price
       }
+      // If subscriptionType === 'paid' and no customPrice, billingPrice stays null (use plan price)
 
-      // Set custom dates if provided
-      if (customStartDate) {
-        subscriptionData.start_date = new Date(customStartDate);
-      }
-
-      if (customEndDate) {
-        subscriptionData.end_date = new Date(customEndDate);
-      }
-
-      // Prepare admin metadata
+      // Prepare admin metadata - this follows the same pattern as regular subscription creation
       const adminMetadata = {
+        source: 'admin_created_subscription',
+        environment: process.env.NODE_ENV || 'development',
         admin_created: true,
         created_by_admin: req.user.id,
         admin_creation_reason: reason,
@@ -845,12 +1117,13 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
         admin_notes: adminNotes,
         created_at: new Date().toISOString(),
         custom_overrides: {
-          price_override: subscriptionType === 'free' || customPrice !== subscriptionPlan.price,
+          price_override: billingPrice !== null,
           original_plan_price: subscriptionPlan.price,
-          actual_billing_price: subscriptionData.billing_price,
+          actual_billing_price: billingPrice || subscriptionPlan.price,
           custom_start_date: !!customStartDate,
           custom_end_date: !!customEndDate,
-          custom_benefits: !!customBenefits
+          custom_benefits: !!customBenefits,
+          enable_auto_renewal: enableAutoRenewal
         }
       };
 
@@ -858,26 +1131,29 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
         adminMetadata.custom_benefits = customBenefits;
       }
 
-      subscriptionData.metadata = adminMetadata;
+      // Debug logging before calling SubscriptionService
+      const subscriptionOptions = {
+        userId: userId,
+        subscriptionPlanId: planId,
+        skipValidation: true, // Admin override
+        billing_price: billingPrice, // Use admin override for billing price
+        start_date: customStartDate || null, // Use admin override for start date
+        end_date: customEndDate || null, // Use admin override for end date
+        enableAutoRenewal: enableAutoRenewal, // Whether subscription should auto-renew (for free subscriptions)
+        metadata: adminMetadata
+      };
 
-      // Create subscription using SubscriptionService
-      const result = await SubscriptionService.createSubscription(subscriptionData, { transaction });
 
-      if (!result.success) {
-        await transaction.rollback();
-        return res.status(500).json({
-          error: 'Failed to create subscription',
-          message: result.error
-        });
-      }
+      // Create subscription using SubscriptionService - same pattern as regular subscription creation
+      const subscription = await SubscriptionService.createSubscription(subscriptionOptions);
 
-      // Record in subscription history
-      await models.SubscriptionHistory.create({
-        user_id: userId,
-        subscription_plan_id: planId,
-        subscription_id: result.subscription.id,
-        action_type: 'admin_created',
-        purchased_price: subscriptionData.billing_price,
+      // Record in subscription history using the proper static method
+      await models.SubscriptionHistory.recordAction({
+        userId: userId,
+        subscriptionPlanId: planId,
+        subscriptionId: subscription.id,
+        actionType: 'started', // Use valid enum value
+        purchasedPrice: subscription.billing_price,
         notes: `Admin created ${subscriptionType} subscription: ${reason}`,
         metadata: {
           admin_user_id: req.user.id,
@@ -885,9 +1161,10 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
           admin_reason: reason,
           admin_notes: adminNotes,
           original_plan_price: subscriptionPlan.price,
-          overrides_applied: adminMetadata.custom_overrides
+          overrides_applied: adminMetadata.custom_overrides,
+          admin_created: true
         }
-      }, { transaction });
+      });
 
       await transaction.commit();
 
@@ -895,25 +1172,25 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
       const allowances = await SubscriptionAllowanceService.calculateMonthlyAllowances(userId);
 
       ludlog.payments('Admin subscription creation completed:', {
-        subscriptionId: result.subscription.id,
+        subscriptionId: subscription.id,
         userId,
         planId,
         subscriptionType,
-        billingPrice: subscriptionData.billing_price
+        billingPrice: subscription.billing_price
       });
 
       res.json({
         success: true,
         message: `${subscriptionType === 'free' ? 'Free' : 'Paid'} subscription created successfully`,
         subscription: {
-          id: result.subscription.id,
+          id: subscription.id,
           planName: subscriptionPlan.name,
           subscriptionType,
-          billingPrice: subscriptionData.billing_price,
+          billingPrice: subscription.billing_price,
           originalPrice: subscriptionPlan.price,
-          status: result.subscription.status,
-          startDate: result.subscription.start_date,
-          endDate: result.subscription.end_date
+          status: subscription.status,
+          startDate: subscription.start_date,
+          endDate: subscription.end_date
         },
         allowances: allowances?.allowances || {},
         creation: {

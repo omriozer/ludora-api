@@ -1,6 +1,5 @@
 import { LANGUAGES_STUDY_SUBJECTS } from "./langauages.js";
 
-// Test deployment change - API key fix
 export const STUDY_SUBJECTS = {
     civics: 'אזרחות',
     art: 'אמנות',

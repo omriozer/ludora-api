@@ -5,8 +5,9 @@ import fs from 'fs';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import fileService from '../services/FileService.js';
 import SettingsService from '../services/SettingsService.js';
+import LogService from '../services/LogService.js';
 import db from '../models/index.js';
-import { sequelize } from '../models/index.js';
+const { sequelize } = db;
 import { mergePdfTemplate } from '../utils/pdfTemplateMerge.js';
 // Removed getPreviewTemplate import - no longer applying automatic preview watermarks
 import { resolveBrandingSettingsWithFallback } from '../utils/brandingSettingsHelper.js';
@@ -21,33 +22,10 @@ import { createFileLogger, createErrorResponse, createSuccessResponse } from '..
 import { luderror, ludlog } from '../lib/ludlog.js';
 import { createFileVerifier } from '../utils/fileOperationVerifier.js';
 import { createPreUploadValidator } from '../utils/preUploadValidator.js';
-// Import pptx2html library - try using dynamic import to handle the UMD build correctly
-let renderPptx;
 
 const router = express.Router();
-const { File: FileModel, User, Purchase } = db;
+const { File: FileModel } = db;
 
-/**
- * Helper: Encode filename for Content-Disposition header
- *
- * HTTP headers cannot contain non-ASCII characters directly.
- * This function creates a proper Content-Disposition header value
- * with both a fallback ASCII filename and an RFC 5987 encoded filename.
- *
- * @param {string} disposition - 'attachment' or 'inline'
- * @param {string} filename - Original filename (may contain Hebrew/Unicode)
- * @returns {string} Properly formatted Content-Disposition header value
- */
-function encodeContentDisposition(disposition, filename) {
-  // Create ASCII fallback by removing non-ASCII characters
-  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_');
-
-  // RFC 5987 encoding: UTF-8 percent-encoding
-  const encodedFilename = encodeURIComponent(filename);
-
-  // Return both formats for maximum compatibility
-  return `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
-}
 
 // Configure multer for asset uploads (memory storage for S3)
 const assetUpload = multer({
@@ -69,7 +47,7 @@ const assetUpload = multer({
  * @param {Object} user - User object for variables (optional)
  * @returns {Promise<Buffer>} Processed PDF buffer
  */
-async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBranding = false, skipWatermarks = false, user = null, userEmail = null, previewOptions = {}) {
+async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBranding = false, skipWatermarks = false, user = null, userEmail = null, _previewOptions = {}) {
   try {
 
     // Determine access mode and processing requirements
@@ -103,7 +81,7 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
       };
 
       // Build unified template settings combining watermarks and branding
-      let unifiedTemplate = { elements: {} };
+      const unifiedTemplate = { elements: {} };
 
 
       // 1. Add watermark elements if needed
@@ -218,7 +196,6 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
     }
 
     // Fall back to legacy processing for backward compatibility
-    const shouldAddWatermarks = !hasAccess && fileEntity.allow_preview;
     let finalPdfBuffer = pdfBuffer;
 
     // Build complete branding settings using template-based helper function
@@ -252,7 +229,7 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
 
   } catch (error) {
     // FALLBACK MECHANISM: Handle PDF corruption and unprocessable files
-    return await handlePdfProcessingFailure(error, pdfBuffer, fileEntity, hasAccess, settings, user);
+    return handlePdfProcessingFailure(error, pdfBuffer, fileEntity, hasAccess, user);
   }
 }
 
@@ -262,11 +239,10 @@ async function processPdf(pdfBuffer, fileEntity, hasAccess, settings, skipBrandi
  * @param {Buffer} pdfBuffer - Original PDF buffer
  * @param {Object} fileEntity - File entity from database
  * @param {boolean} hasAccess - Whether user has access
- * @param {Object} settings - System settings
  * @param {Object} user - User object
  * @returns {Promise<Buffer|Error>} - Either the original PDF or throws error
  */
-async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, hasAccess, settings, user) {
+async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, hasAccess, user) {
 
   // Check if this is a PDF corruption error (sizeInBytes, invalid PDF, etc.)
   const isCorruptionError = originalError.message.includes('sizeInBytes') ||
@@ -280,19 +256,18 @@ async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, 
 
     // Log the corruption issue for monitoring
     try {
-      await db.Logs.create({
-        source_type: 'pdf_processing',
+      await LogService.createLog({
+        source_type: 'api',
         log_type: 'error',
         message: `PDF corruption detected: ${JSON.stringify({
           fileName: fileEntity.file_name,
           fileId: fileEntity.id,
           error: originalError.message,
           errorType: originalError.constructor.name,
-          userId: user?.id,
           userAgent: 'server-side',
           timestamp: new Date().toISOString()
         })}`,
-        created_at: new Date()
+        user_id: user?.id
       });
     } catch (logError) {
       // Log error - corruption logging failed
@@ -323,8 +298,8 @@ async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, 
 
   // Log this access denial for monitoring
   try {
-    await db.Logs.create({
-      source_type: 'access_control',
+    await LogService.createLog({
+      source_type: 'api',
       log_type: 'warn',
       message: `PDF access denied due to processing failure: ${JSON.stringify({
         fileName: fileEntity.file_name,
@@ -332,11 +307,10 @@ async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, 
         hasAccess,
         allowPreview: fileEntity.allow_preview,
         processingError: originalError.message,
-        userId: user?.id,
         accessDeniedReason: 'processing_failed_without_full_access',
         timestamp: new Date().toISOString()
       })}`,
-      created_at: new Date()
+      user_id: user?.id
     });
   } catch (logError) {
     // Access denial logging failed
@@ -360,50 +334,46 @@ async function deleteAllFileAssets(fileEntityId) {
     marketingVideo: { deleted: false, error: null }
   };
 
-  try {
-    // Get File entity to check if document exists
-    const fileEntity = await FileModel.findByPk(fileEntityId);
-    if (!fileEntity) {
-      return results;
-    }
+  // Get File entity to check if document exists
+  const fileEntity = await FileModel.findByPk(fileEntityId);
+  if (!fileEntity) {
+    return results;
+  }
 
-    // Delete document if it exists
-    if (fileEntity.file_name) {
-      try {
-        const deleteResult = await fileService.deleteAsset({
-          entityType: 'file',
-          entityId: fileEntityId,
-          assetType: 'document',
-          userId: 'system' // System deletion
-        });
-        results.document.deleted = deleteResult.success;
-      } catch (error) {
-        results.document.error = error.message;
-      }
-    }
-
-    // Delete marketing video if it exists
+  // Delete document if it exists
+  if (fileEntity.file_name) {
     try {
       const deleteResult = await fileService.deleteAsset({
         entityType: 'file',
         entityId: fileEntityId,
-        assetType: 'marketing-video',
+        assetType: 'document',
         userId: 'system' // System deletion
       });
-      results.marketingVideo.deleted = deleteResult.success;
+      results.document.deleted = deleteResult.success;
     } catch (error) {
-      // Marketing video might not exist, which is okay
-      if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
-        results.marketingVideo.deleted = true; // Treat as success if already deleted
-      } else {
-        results.marketingVideo.error = error.message;
-      }
+      results.document.error = error.message;
     }
-
-    return results;
-  } catch (error) {
-    throw error;
   }
+
+  // Delete marketing video if it exists
+  try {
+    const deleteResult = await fileService.deleteAsset({
+      entityType: 'file',
+      entityId: fileEntityId,
+      assetType: 'marketing-video',
+      userId: 'system' // System deletion
+    });
+    results.marketingVideo.deleted = deleteResult.success;
+  } catch (error) {
+    // Marketing video might not exist, which is okay
+    if (error.message?.includes('not found') || error.message?.includes('already deleted')) {
+      results.marketingVideo.deleted = true; // Treat as success if already deleted
+    } else {
+      results.marketingVideo.error = error.message;
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -831,9 +801,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
               product_type: entityType
             }
           });
-
-          if (product) {
-          }
         }
 
         // Second try: If not found, try the entity_id approach (backwards compatibility)
@@ -844,9 +811,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
               entity_id: entityId
             }
           });
-
-          if (product) {
-          }
         }
 
         if (product) {
@@ -880,7 +844,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
     if (!entityData) {
 
       // Log this inconsistency to the log table
-      await db.Logs.create({
+      await LogService.createLog({
         source_type: 'api',
         log_type: 'warn',
         message: `Image request for non-existent entity: ${JSON.stringify({
@@ -891,8 +855,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
           userAgent: req.headers['user-agent'],
           ip: req.ip,
           timestamp: new Date().toISOString()
-        })}`,
-        created_at: new Date()
+        })}`
       });
 
       return res.status(404).json(createErrorResponse(
@@ -971,9 +934,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                       product_type: entityType
                     }
                   });
-
-                  if (retryProduct) {
-                  }
                 }
 
                 // Second try: If not found, try the entity_id approach (backwards compatibility)
@@ -984,9 +944,6 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                       entity_id: entityId
                     }
                   });
-
-                  if (retryProduct) {
-                  }
                 }
 
                 if (retryProduct) {
@@ -1005,7 +962,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                 // Still shows has_image=false after retry - this might be a genuine orphan
 
                 // Log as warning (not error) since we're not certain it's an orphan
-                await db.Logs.create({
+                await LogService.createLog({
                   source_type: 'api',
                   log_type: 'warn',
                   message: `Potential orphaned image file detected after retry: ${JSON.stringify({
@@ -1014,7 +971,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                     filename,
                     s3Key,
                     issue: 'potential_orphaned_s3_file',
-                    fileAge: Math.round(fileAge/1000),
+                    fileAge: Math.round(fileAge / 1000),
                     retryPerformed: true,
                     entityData: {
                       id: entityData.id,
@@ -1026,8 +983,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                     userAgent: req.headers['user-agent'],
                     ip: req.ip,
                     timestamp: new Date().toISOString()
-                  })}`,
-                  created_at: new Date()
+                  })}`
                 });
 
                 // Still return 404 to not serve potentially orphaned files
@@ -1048,7 +1004,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
             // File is older than 30 seconds and still has has_image=false - likely orphaned
 
             // Log this as an error since it's likely a genuine orphan
-            await db.Logs.create({
+            await LogService.createLog({
               source_type: 'api',
               log_type: 'error',
               message: `Confirmed orphaned image file detected in S3: ${JSON.stringify({
@@ -1057,7 +1013,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                 filename,
                 s3Key,
                 issue: 'confirmed_orphaned_s3_file',
-                fileAge: Math.round(fileAge/1000),
+                fileAge: Math.round(fileAge / 1000),
                 entityData: {
                   id: entityData.id,
                   has_image: entityData.has_image,
@@ -1068,8 +1024,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
                 userAgent: req.headers['user-agent'],
                 ip: req.ip,
                 timestamp: new Date().toISOString()
-              })}`,
-              created_at: new Date()
+              })}`
             });
 
             // DO NOT serve the image - return 404 as if it doesn't exist
@@ -1100,6 +1055,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
 
     // Entity should have an image according to database - proceed to serve it
     const s3Key = constructS3Path(entityType, entityId, 'image', filename);
+    const legacyS3Key = null; // TODO: Implement legacy path fallback logic if needed
 
     try {
       // Get image metadata first - wrap in try-catch to handle S3 errors
@@ -1111,16 +1067,16 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
         metadataResult = { success: false, error: s3MetadataError.message };
       }
 
-      let activeS3Key = s3Key;
+      const activeS3Key = s3Key;
 
       if (!metadataResult.success) {
         // If metadata check failed, return 404
         // Image should exist but doesn't - log this inconsistency
 
-        await db.Logs.create({
-            level: 'warning',
-            message: 'Expected image file missing from S3',
-            details: JSON.stringify({
+        await LogService.createLog({
+            source_type: 'api',
+            log_type: 'warn',
+            message: `Expected image file missing from S3: ${JSON.stringify({
               entityType,
               entityId,
               filename,
@@ -1136,9 +1092,7 @@ router.get('/image/:entityType/:entityId/:filename', async (req, res) => {
               userAgent: req.headers['user-agent'],
               ip: req.ip,
               timestamp: new Date().toISOString()
-            }),
-            created_at: new Date(),
-            updated_at: new Date()
+            })}`
           });
 
           return res.status(404).json(createErrorResponse(
@@ -1246,8 +1200,8 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
     let hasAccess = false;
     if (req.user) {
       // Ensure consistent user ID property
-      if (!req.user.id && req.user.id) {
-        req.user.id = req.user.id;
+      if (!req.user.id && req.user.uid) {
+        req.user.id = req.user.uid;
       }
 
       // Check if user has access to the lesson plan
@@ -1270,6 +1224,14 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
           }
         }
       } catch (accessError) {
+        // SECURITY: Log access check failure and fail safe by denying access
+        await LogService.createLog({
+          source_type: 'access_control',
+          log_type: 'error',
+          message: `Access check failed for lesson plan ${lessonPlanId}: ${accessError.message}`,
+          user_id: req.user?.id
+        });
+        // hasAccess remains false (fail safe)
       }
     }
 
@@ -1370,7 +1332,6 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
 
             if (template) {
               watermarkTemplate = template.template_data;
-            } else {
             }
           }
 
@@ -1387,7 +1348,7 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
             };
 
             // Build unified template settings combining watermarks and potential branding
-            let unifiedTemplate = { elements: [] };
+            const unifiedTemplate = { elements: [] };
 
             // Add watermark elements
             if (watermarkTemplate && watermarkTemplate.elements) {
@@ -1406,6 +1367,19 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
             svgContent = await mergeSvgTemplate(svgContent, unifiedTemplate, variables);
           }
         } catch (watermarkError) {
+          // SECURITY: Log watermark failure and block content delivery
+          await LogService.createLog({
+            source_type: 'watermark_processing',
+            log_type: 'error',
+            message: `Watermark processing failed for lesson plan ${lessonPlanId}, slide ${slideId}: ${watermarkError.message}`,
+            user_id: req.user?.id
+          });
+
+          return res.status(500).json(createErrorResponse(
+            'Content processing failed',
+            'Unable to apply required content protection',
+            { lessonPlanId, slideId }
+          ));
         }
       }
 
@@ -1747,8 +1721,8 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
     let hasAccess = false;
     if (req.user) {
       // Ensure req.user has consistent id property (from either uid or id)
-      if (!req.user.id && req.user.id) {
-        req.user.id = req.user.id;
+      if (!req.user.id && req.user.uid) {
+        req.user.id = req.user.uid;
       }
 
 
@@ -1756,7 +1730,6 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
       hasAccess = await checkUserAccess(req.user, fileEntity);
 
     }
-    const isPreviewRequest = req.query.preview === 'true';
 
     // UPDATED access control requirements:
     // 1. ALL file downloads require authentication - enforced by authenticateToken middleware
@@ -2074,7 +2047,7 @@ router.delete('/:entityType/:entityId', authenticateToken, async (req, res) => {
     const transaction = await sequelize.transaction();
     logger.transaction('start', { s3Key, preDeleteChecks: preDeleteCheck.checks });
 
-    let dbUpdateCompleted = false;
+    const dbUpdateCompleted = false;
 
     try {
       // Use consolidated FileService deleteAsset method for unified deletion
@@ -2742,7 +2715,7 @@ router.get('/template-preview/:fileId', authenticateToken, async (req, res) => {
 
     // Process custom elements
     if (resolvedTemplate.customElements) {
-      for (const [elementId, element] of Object.entries(resolvedTemplate.customElements)) {
+      for (const [_elementId, element] of Object.entries(resolvedTemplate.customElements)) {
         if (element.type === 'user-info' && !element.content) {
           // Apply same default content logic as PDF processing
           element.content = 'קובץ זה נוצר עבור {{user.email}}';

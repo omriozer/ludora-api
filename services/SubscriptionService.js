@@ -134,6 +134,10 @@ class SubscriptionService {
    * @param {Object} options.metadata - Additional metadata
    * @param {Object} options.subscriptionPlan - Pre-fetched subscription plan object (optional)
    * @param {boolean} options.skipValidation - Skip validation constraints (optional)
+   * @param {number|null} options.billing_price - Admin override for billing price (optional)
+   * @param {Date|string|null} options.start_date - Admin override for start date (optional)
+   * @param {Date|string|null} options.end_date - Admin override for end date (optional)
+   * @param {boolean} options.enableAutoRenewal - Whether to enable auto-renewal (uses next_billing_date) (optional)
    * @returns {Promise<Object>} Created subscription object
    */
   static async createSubscription(options = {}) {
@@ -143,7 +147,11 @@ class SubscriptionService {
       transactionId = null,
       metadata = {},
       subscriptionPlan = null,
-      skipValidation = false
+      skipValidation = false,
+      billing_price = null,  // Admin can override the billing price
+      start_date = null,     // Admin can override start date
+      end_date = null,       // Admin can override end date
+      enableAutoRenewal = null  // Whether to enable auto-renewal (null = auto-decide based on price)
     } = options;
 
     try {
@@ -167,21 +175,51 @@ class SubscriptionService {
         }
       }
 
-      // Calculate pricing with discounts
-      const pricingInfo = calcSubscriptionPlanPrice(planObject);
-      const finalPrice = pricingInfo.finalPrice;
+      // Calculate pricing with discounts (or use admin override)
+      let pricingInfo;
+      let finalPrice;
+
+      if (billing_price !== null) {
+        // Admin override - use provided billing price instead of calculating
+        finalPrice = parseFloat(billing_price);
+        pricingInfo = {
+          originalPrice: parseFloat(planObject.price),
+          finalPrice: finalPrice,
+          discountAmount: parseFloat(planObject.price) - finalPrice,
+          isDiscounted: finalPrice !== parseFloat(planObject.price),
+          discountType: 'admin_override',
+          discountValue: finalPrice === 0 ? 'free' : finalPrice
+        };
+      } else {
+        // Normal pricing calculation
+        pricingInfo = calcSubscriptionPlanPrice(planObject);
+        finalPrice = pricingInfo.finalPrice;
+      }
 
       // Generate subscription ID
       const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
-      // Calculate subscription dates
-      const startDate = new Date();
+      // Calculate subscription dates (use admin overrides if provided)
+      const startDate = start_date ? new Date(start_date) : new Date();
       let nextBillingDate = null;
+      let calculatedEndDate = null;
 
-      // Only set billing date for paid subscriptions
-      if (finalPrice > 0) {
+      // Determine auto-renewal logic
+      const shouldAutoRenew = enableAutoRenewal !== null
+        ? enableAutoRenewal  // Admin explicitly set auto-renewal preference
+        : true;              // Default: both free and paid subscriptions auto-renew by default
+
+      if (shouldAutoRenew) {
+        // Auto-renewable subscriptions: set next billing date
         nextBillingDate = this.calculateNextBillingDate(startDate, planObject.billing_period);
+      } else {
+        // One-time expiring subscriptions: set end date
+        calculatedEndDate = this.calculateNextBillingDate(startDate, planObject.billing_period);
       }
+
+      // Use admin override for end date if provided, otherwise use calculated
+      // Note: If shouldAutoRenew is true, calculatedEndDate is null
+      const finalEndDate = end_date ? new Date(end_date) : calculatedEndDate;
 
       // Create subscription record
       const subscriptionData = {
@@ -191,7 +229,8 @@ class SubscriptionService {
         transaction_id: transactionId,
         status: finalPrice === 0 ? 'active' : 'pending', // Free plans are immediately active
         start_date: startDate,
-        next_billing_date: nextBillingDate,
+        end_date: finalEndDate, // One-time subscriptions have end date
+        next_billing_date: nextBillingDate, // Auto-renewable subscriptions have next billing date
         billing_price: finalPrice, // Use discounted price for billing
         original_price: pricingInfo.originalPrice,
         discount_amount: pricingInfo.discountAmount,
@@ -210,6 +249,7 @@ class SubscriptionService {
           },
           pricingSnapshot: pricingInfo,
           createdAt: new Date().toISOString(),
+          autoRenewalEnabled: shouldAutoRenew, // Track auto-renewal decision in metadata for auditing
           ...metadata
         },
         created_at: new Date(),

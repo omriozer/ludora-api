@@ -69,6 +69,13 @@ class JobScheduler {
         backoffType: 'fixed',
         backoffSettings: { delay: 60000 }
       },
+      LOGS_CLEANUP: {
+        queue: 'medium',
+        priority: 35,
+        maxAttempts: 2,
+        backoffType: 'fixed',
+        backoffSettings: { delay: 90000 }
+      },
       DATABASE_MAINTENANCE: {
         queue: 'medium',
         priority: 30,
@@ -363,6 +370,9 @@ class JobScheduler {
 
         case 'FILE_CLEANUP_ORPHANED':
           return await this.processFileCleanupOrphaned(data);
+
+        case 'LOGS_CLEANUP':
+          return await this.processLogsCleanup(data);
 
         case 'DATABASE_MAINTENANCE':
           return await this.processDatabaseMaintenance(data);
@@ -1723,6 +1733,73 @@ class JobScheduler {
   isTimeRemaining(startTime, maxExecutionTime, bufferMs = 30000) {
     const elapsed = Date.now() - startTime;
     return (elapsed + bufferMs) < maxExecutionTime;
+  }
+
+  async processLogsCleanup(data) {
+    const {
+      daysOld = 30,
+      batchSize = 1000,
+      environment = process.env.ENVIRONMENT || 'development'
+    } = data;
+
+    try {
+      ludlog.generic(`Processing logs cleanup - delete logs older than ${daysOld} days`, {
+        daysOld,
+        batchSize,
+        environment,
+        source: 'job_scheduler'
+      });
+
+      // Import LogService dynamically
+      const LogService = (await import('./LogService.js')).default;
+
+      // Calculate cutoff date
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+      ludlog.generic(`Deleting logs created before: ${cutoffDate.toISOString()}`);
+
+      // Delete old logs using LogService
+      const deletedCount = await LogService.deleteOldLogs(daysOld);
+
+      ludlog.generic('Logs cleanup completed', {
+        deletedCount,
+        daysOld,
+        cutoffDate: cutoffDate.toISOString(),
+        environment,
+        source: 'job_scheduler'
+      });
+
+      return {
+        success: true,
+        action: 'cleanup_completed',
+        results: {
+          deletedCount,
+          daysOld,
+          cutoffDate: cutoffDate.toISOString(),
+          batchSize
+        },
+        environment
+      };
+
+    } catch (error) {
+      luderror.generic('Logs cleanup failed:', {
+        error: error.message,
+        daysOld,
+        batchSize,
+        environment,
+        source: 'job_scheduler'
+      });
+
+      return {
+        success: false,
+        action: 'cleanup_failed',
+        error: error.message,
+        daysOld,
+        batchSize,
+        environment
+      };
+    }
   }
 
   async processAnalyticsReport(data) {

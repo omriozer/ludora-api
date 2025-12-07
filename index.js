@@ -857,6 +857,19 @@ async function startServer() {
 
           ludlog.api('Automated database maintenance scheduled successfully');
 
+          // Schedule logs cleanup (daily at 5 AM to avoid conflicts)
+          await jobScheduler.scheduleRecurringJob('LOGS_CLEANUP',
+            {
+              daysOld: 30, // Delete logs older than 30 days
+              batchSize: 1000,
+              environment: env
+            },
+            '0 5 * * *', // Every day at 5 AM
+            { priority: 35 }
+          );
+
+          ludlog.api('Automated logs cleanup scheduled successfully');
+
           // Initialize AuthService session cleanup jobs
           try {
             const authService = (await import('./services/AuthService.js')).default;
