@@ -200,8 +200,7 @@ router.get(
       }
 
       const { lessonPlanId } = req.params;
-      const userId = req.user?.uid || null;
-      const isPreviewRequest = req.query.preview === 'true';
+      const userId = req.user?.id || null;
 
       // Get lesson plan entity to check preview settings
       const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId);

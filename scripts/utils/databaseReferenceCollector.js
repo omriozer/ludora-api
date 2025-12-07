@@ -5,7 +5,7 @@
  */
 
 import models from '../../models/index.js';
-import EntityService from '../../services/EntityService.js';
+import ProductServiceRouter from '../../services/ProductServiceRouter.js';
 import { constructS3Path } from '../../utils/s3PathUtils.js';
 import FileReferenceService from '../../services/FileReferenceService.js';
 

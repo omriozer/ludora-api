@@ -142,7 +142,7 @@ export function requireRole(requiredRole = 'user') {
       const cookieNames = getPortalCookieNames(portal);
       const accessToken = req.cookies[cookieNames.accessToken];
       const user = req.user || await authService.getUserByToken(accessToken);
-      
+
       authService.validatePermissions(user, requiredRole);
       req.userRecord = user; // Attach full user record
       next();
@@ -171,7 +171,7 @@ export function requireUserType(requiredUserType) {
       const cookieNames = getPortalCookieNames(portal);
       const accessToken = req.cookies[cookieNames.accessToken];
       const user = req.user || await authService.getUserByToken(accessToken);
-      
+
       if (!user.user_type || user.user_type !== requiredUserType) {
         return res.status(403).json({ error: `${requiredUserType} user type required` });
       }

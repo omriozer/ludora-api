@@ -4,6 +4,7 @@ import Joi from 'joi';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { addETagSupport } from '../middleware/etagMiddleware.js';
 import { validateBody, validateQuery, schemas, customValidators } from '../middleware/validation.js';
+import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import EntityService from '../services/EntityService.js';
 import GameDetailsService from '../services/GameDetailsService.js';
 import SettingsService from '../services/SettingsService.js';
@@ -20,7 +21,7 @@ import { countSlidesInPowerPoint, calculateTotalSlides } from '../utils/slideCou
 import { GAME_TYPES } from '../config/gameTypes.js';
 import { generateId } from '../models/baseModel.js';
 import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
-import { luderror } from '../lib/ludlog.js';
+import { luderror, ludlog } from '../lib/ludlog.js';
 import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 
 const router = express.Router();
@@ -211,7 +212,7 @@ async function getFullProduct(product, userId = null, includeGameDetails = false
   let entity = null;
   if (product.entity_id && product.product_type) {
     // Regular polymorphic association for all product types
-    const entityModel = EntityService.getModel(product.product_type);
+    const entityModel = ProductServiceRouter.getModel(product.product_type);
     entity = await entityModel.findByPk(product.entity_id);
   }
 
@@ -329,7 +330,7 @@ router.get('/products/list', optionalAuth, async (req, res) => {
     const sortDirection = sort_order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     // Get user ID from auth if available
-    const userId = req.user?.uid || null;
+    const userId = req.user?.id || null;
 
     // PERFORMANCE OPTIMIZATION: Use eager loading for creator to reduce N+1 queries
     const options = {
@@ -386,7 +387,7 @@ router.get('/products/list', optionalAuth, async (req, res) => {
     const entityDataMap = {};
     for (const [productType, entityIds] of Object.entries(entitiesByType)) {
       try {
-        const entityModel = EntityService.getModel(productType);
+        const entityModel = ProductServiceRouter.getModel(productType);
         const entities = await entityModel.findAll({
           where: { id: entityIds }
         });
@@ -460,7 +461,7 @@ router.get('/product/:id/details', optionalAuth, async (req, res) => {
     }
 
     // Get user ID from auth if available
-    const userId = req.user?.uid || null;
+    const userId = req.user?.id || null;
 
     const fullProduct = await getFullProduct(product, userId, includeGameDetails);
 
@@ -751,10 +752,33 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
       }
     }
 
-    const results = await EntityService.find(entityType, query, options);
+    // Route to appropriate service based on entity type
+    const results = ProductServiceRouter.isDomainManaged(entityType)
+      ? await ProductServiceRouter.find(entityType, query, options)
+      : await EntityService.find(entityType, query, options);
+
+    // Enrich product types with access control information
+    if (ALL_PRODUCT_TYPES.includes(entityType)) {
+      const userId = req.user?.id || null;
+      const enrichedResults = await AccessControlIntegrator.enrichProductsWithAccess(results, userId);
+      return res.json(enrichedResults);
+    }
 
     res.json(results);
   } catch (error) {
+    luderror.api('[ENTITIES-FIND] Failed to find entities', {
+      entityType,
+      query: req.query,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      error: error.message,
+      stack: error.stack,
+      isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+      serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+    });
     res.status(500).json({ error: error.message });
   }
 });
@@ -777,13 +801,50 @@ router.get('/:type/:id',
 
   try {
     const include = req.query.include;
-    const entity = await EntityService.findById(entityType, id, include);
+    // Route to appropriate service based on entity type
+    const entity = ProductServiceRouter.isDomainManaged(entityType)
+      ? await ProductServiceRouter.findById(entityType, id, include)
+      : await EntityService.findById(entityType, id, include);
+
+    // Enrich product types with access control information
+    if (ALL_PRODUCT_TYPES.includes(entityType)) {
+      const userId = req.user?.id || null;
+      const enrichedEntity = await AccessControlIntegrator.enrichProductWithAccess(entity, userId);
+      return res.json(enrichedEntity);
+    }
 
     res.json(entity);
   } catch (error) {
-    if (error.message.includes('not found')) {
+    const isNotFound = error.message.includes('not found');
+
+    if (isNotFound) {
+      ludlog.api('[ENTITIES-FIND-BY-ID] Entity not found', {
+        entityType,
+        entityId: id,
+        userId: req.user?.id || null,
+        userEmail: req.user?.email || null,
+        userRole: req.user?.role || null,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+        serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+      });
       return res.status(404).json({ error: error.message });
     }
+
+    luderror.api('[ENTITIES-FIND-BY-ID] Failed to find entity by ID', {
+      entityType,
+      entityId: id,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      error: error.message,
+      stack: error.stack,
+      isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+      serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+    });
     res.status(500).json({ error: error.message });
   }
 });
@@ -836,9 +897,30 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
       // If non-admin tries to set is_ludora_creator, ignore it and use their ID
     }
 
-    const entity = await EntityService.create(entityType, req.body, createdBy);
+    // Route to appropriate service based on entity type
+    const entity = ProductServiceRouter.isDomainManaged(entityType)
+      ? await ProductServiceRouter.create(entityType, req.body, createdBy)
+      : await EntityService.create(entityType, req.body, createdBy);
     res.status(201).json(entity);
   } catch (error) {
+    // Determine error type for better categorization
+    const isValidationError = error.message.includes('validation') || error.message.includes('invalid') || error.message.includes('required');
+    const isPermissionError = error.message.includes('permission') || error.message.includes('access') || error.message.includes('allowed');
+
+    luderror.api('[ENTITIES-CREATE] Failed to create entity', {
+      entityType,
+      requestBody: req.body,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      error: error.message,
+      stack: error.stack,
+      errorType: isValidationError ? 'validation' : isPermissionError ? 'permission' : 'unknown',
+      isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+      serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+    });
     res.status(500).json({ error: error.message });
   }
 });
@@ -978,13 +1060,49 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
         }
       }
     }
-    const entity = await EntityService.update(entityType, id, req.body, req.user.id);
+
+    // Route to appropriate service based on entity type
+    const entity = ProductServiceRouter.isDomainManaged(entityType)
+      ? await ProductServiceRouter.update(entityType, id, req.body, req.user.id)
+      : await EntityService.update(entityType, id, req.body, req.user.id);
 
     res.json(entity);
   } catch (error) {
-    if (error.message.includes('not found')) {
+    const isNotFound = error.message.includes('not found');
+    const isValidationError = error.message.includes('validation') || error.message.includes('invalid') || error.message.includes('required');
+    const isPermissionError = error.message.includes('permission') || error.message.includes('access') || error.message.includes('allowed');
+
+    if (isNotFound) {
+      ludlog.api('[ENTITIES-UPDATE] Entity not found for update', {
+        entityType,
+        entityId: id,
+        requestBody: req.body,
+        userId: req.user?.id || null,
+        userEmail: req.user?.email || null,
+        userRole: req.user?.role || null,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+        serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+      });
       return res.status(404).json({ error: error.message });
     }
+
+    luderror.api('[ENTITIES-UPDATE] Failed to update entity', {
+      entityType,
+      entityId: id,
+      requestBody: req.body,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      error: error.message,
+      stack: error.stack,
+      errorType: isValidationError ? 'validation' : isPermissionError ? 'permission' : 'unknown',
+      isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+      serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+    });
     res.status(500).json({ error: error.message });
   }
 });
@@ -995,12 +1113,44 @@ router.delete('/:type/:id', authenticateToken, customValidators.validateEntityTy
   const id = req.params.id;
   
   try {
-    const result = await EntityService.delete(entityType, id);
+    // Route to appropriate service based on entity type
+    const result = ProductServiceRouter.isDomainManaged(entityType)
+      ? await ProductServiceRouter.delete(entityType, id)
+      : await EntityService.delete(entityType, id);
     res.json({ message: 'Entity deleted successfully', ...result });
   } catch (error) {
-    if (error.message.includes('not found')) {
+    const isNotFound = error.message.includes('not found');
+    const isPermissionError = error.message.includes('permission') || error.message.includes('access') || error.message.includes('allowed');
+
+    if (isNotFound) {
+      ludlog.api('[ENTITIES-DELETE] Entity not found for deletion', {
+        entityType,
+        entityId: id,
+        userId: req.user?.id || null,
+        userEmail: req.user?.email || null,
+        userRole: req.user?.role || null,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+        serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+      });
       return res.status(404).json({ error: error.message });
     }
+
+    luderror.api('[ENTITIES-DELETE] Failed to delete entity', {
+      entityType,
+      entityId: id,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      error: error.message,
+      stack: error.stack,
+      errorType: isPermissionError ? 'permission' : 'unknown',
+      isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+      serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+    });
     res.status(500).json({ error: error.message });
   }
 });
@@ -1015,11 +1165,17 @@ router.post('/:type/bulk', authenticateToken, customValidators.validateEntityTyp
     
     switch (operation) {
       case 'create':
-        results = await EntityService.bulkCreate(entityType, data, req.user.id);
+        // Route to appropriate service based on entity type
+        results = ProductServiceRouter.isDomainManaged(entityType)
+          ? await ProductServiceRouter.bulkCreate(entityType, data, req.user.id)
+          : await EntityService.bulkCreate(entityType, data, req.user.id);
         break;
         
       case 'delete':
-        const deleteResult = await EntityService.bulkDelete(entityType, data);
+        // Route to appropriate service based on entity type
+        const deleteResult = ProductServiceRouter.isDomainManaged(entityType)
+          ? await ProductServiceRouter.bulkDelete(entityType, data)
+          : await EntityService.bulkDelete(entityType, data);
         results = data.map(id => ({
           id,
           deleted: deleteResult.ids.includes(id),
@@ -1033,6 +1189,20 @@ router.post('/:type/bulk', authenticateToken, customValidators.validateEntityTyp
     
     res.json({ results, count: results.length });
   } catch (error) {
+    luderror.api('[ENTITIES-BULK] Failed to execute bulk operation', {
+      entityType,
+      operation: req.body.operation,
+      dataLength: req.body.data ? req.body.data.length : 0,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      error: error.message,
+      stack: error.stack,
+      isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+      serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+    });
     res.status(500).json({ error: error.message });
   }
 });
@@ -1042,17 +1212,36 @@ router.get('/:type/count', optionalAuth, customValidators.validateEntityType, as
   const entityType = req.params.type;
   
   try {
-    const count = await EntityService.count(entityType, req.query);
+    // Route to appropriate service based on entity type
+    const count = ProductServiceRouter.isDomainManaged(entityType)
+      ? await ProductServiceRouter.count(entityType, req.query)
+      : await EntityService.count(entityType, req.query);
     res.json({ count });
   } catch (error) {
+    luderror.api('[ENTITIES-COUNT] Failed to count entities', {
+      entityType,
+      query: req.query,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      error: error.message,
+      stack: error.stack,
+      isDomainManaged: ProductServiceRouter.isDomainManaged(entityType),
+      serviceUsed: ProductServiceRouter.isDomainManaged(entityType) ? 'ProductServiceRouter' : 'EntityService'
+    });
     res.status(500).json({ error: error.message });
   }
 });
 
 // GET /entities - List all available entity types
 router.get('/', optionalAuth, (_req, res) => {
-  const entityTypes = EntityService.getAvailableEntityTypes();
-  res.json({ entityTypes, count: entityTypes.length });
+  // Combine product entity types and non-product entity types
+  const productTypes = ProductServiceRouter.getAvailableEntityTypes();
+  const nonProductTypes = EntityService.getAvailableEntityTypes();
+  const allEntityTypes = [...productTypes, ...nonProductTypes];
+  res.json({ entityTypes: allEntityTypes, count: allEntityTypes.length });
 });
 
 // GET /entities/purchase/check-product-purchases/:productId - Check if product has completed non-free purchases
@@ -1435,7 +1624,7 @@ router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody(
 router.get('/curriculum/:id/products', optionalAuth, async (req, res) => {
   try {
     const curriculumItemId = req.params.id;
-    const userId = req.user?.uid || null;
+    const userId = req.user?.id || null;
 
     // Get the curriculum item to verify it exists
     const curriculumItem = await models.CurriculumItem.findByPk(curriculumItemId);

@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { validateBody, schemas } from '../middleware/validation.js';
-import EntityService from '../services/EntityService.js';
+import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
@@ -105,8 +105,8 @@ router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (r
       // If non-admin tries to set is_ludora_creator, ignore it and use their ID
     }
 
-    // Create product using existing EntityService method
-    const result = await EntityService.createProductTypeEntity(product_type, {
+    // Create product using ProductServiceRouter method
+    const result = await ProductServiceRouter.create(product_type, {
       product_type,
       ...productData
     }, createdBy);

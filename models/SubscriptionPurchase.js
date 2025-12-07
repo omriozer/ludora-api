@@ -8,16 +8,6 @@ export default function(sequelize) {
       primaryKey: true,
       allowNull: false,
     },
-    user_id: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      references: {
-        model: 'user',
-        key: 'id',
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE'
-      }
-    },
     subscription_id: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -40,20 +30,6 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: false,
       comment: 'ID of the specific product entity'
-    },
-    claimed_at: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: DataTypes.NOW,
-    },
-    month_year: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    status: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      defaultValue: 'active',
     },
     usage: {
       type: DataTypes.JSONB,
@@ -84,10 +60,6 @@ export default function(sequelize) {
         name: 'idx_subscription_purchase_subscription'
       },
       {
-        fields: ['user_id', 'month_year'],
-        name: 'idx_subscription_purchase_user_month'
-      },
-      {
         fields: ['status'],
         name: 'idx_subscription_purchase_status'
       },
@@ -99,54 +71,16 @@ export default function(sequelize) {
   });
 
   SubscriptionPurchase.associate = function(models) {
-    // Belongs to User
-    SubscriptionPurchase.belongsTo(models.User, {
-      foreignKey: 'user_id',
-      as: 'user'
-    });
-
     // Belongs to Subscription
     SubscriptionPurchase.belongsTo(models.Subscription, {
       foreignKey: 'subscription_id',
       as: 'subscription'
     });
 
-    // Polymorphic associations to product entities
-    SubscriptionPurchase.belongsTo(models.Workshop, {
+    // Belongs to Product (correct association)
+    SubscriptionPurchase.belongsTo(models.Product, {
       foreignKey: 'product_id',
-      constraints: false,
-      scope: { product_type: 'workshop' },
-      as: 'workshop'
-    });
-    SubscriptionPurchase.belongsTo(models.Course, {
-      foreignKey: 'product_id',
-      constraints: false,
-      scope: { product_type: 'course' },
-      as: 'course'
-    });
-    SubscriptionPurchase.belongsTo(models.File, {
-      foreignKey: 'product_id',
-      constraints: false,
-      scope: { product_type: 'file' },
-      as: 'file'
-    });
-    SubscriptionPurchase.belongsTo(models.Tool, {
-      foreignKey: 'product_id',
-      constraints: false,
-      scope: { product_type: 'tool' },
-      as: 'tool'
-    });
-    SubscriptionPurchase.belongsTo(models.Game, {
-      foreignKey: 'product_id',
-      constraints: false,
-      scope: { product_type: 'game' },
-      as: 'game'
-    });
-    SubscriptionPurchase.belongsTo(models.LessonPlan, {
-      foreignKey: 'product_id',
-      constraints: false,
-      scope: { product_type: 'lesson_plan' },
-      as: 'lessonPlan'
+      as: 'product'
     });
   };
 
@@ -188,7 +122,7 @@ export default function(sequelize) {
       };
     }
 
-    return await this.update({
+    return this.update({
       usage: updatedUsage,
       updated_at: new Date()
     });
@@ -213,10 +147,17 @@ export default function(sequelize) {
 
   // Class methods for querying
   SubscriptionPurchase.findBySubscriptionAndMonth = function(subscriptionId, monthYear, options = {}) {
+    // Parse monthYear to get date range
+    const [year, month] = monthYear.split('-').map(Number);
+    const startOfMonth = new Date(year, month - 1, 1); // Month is 0-indexed
+    const endOfMonth = new Date(year, month, 0, 23, 59, 59); // Last day of month
+
     return this.findAll({
       where: {
         subscription_id: subscriptionId,
-        month_year: monthYear
+        created_at: {
+          [Op.between]: [startOfMonth, endOfMonth]
+        }
       },
       ...options
     });

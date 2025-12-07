@@ -416,7 +416,7 @@ async function checkUserAccess(user, fileEntity) {
 
   // Use AccessControlService to check if user has purchased access
   try {
-    const accessResult = await AccessControlService.checkAccess(user.id, 'file', product.id);
+    const accessResult = await AccessControlService.checkAccess(user.id, 'file', product.entity_id);
     return accessResult.hasAccess;
   } catch (error) {
     return false;
@@ -1218,7 +1218,7 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
             hasAccess = true;
           } else {
             // Use AccessControlService to check purchase access
-            const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', product.id);
+            const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', product.entity_id);
             hasAccess = accessResult.hasAccess;
 
           }

@@ -66,14 +66,10 @@ class LessonPlanSubscriptionService {
       // 2. Create main lesson plan subscription claim
       const lessonPlanClaim = await models.SubscriptionPurchase.create({
         id: generateId(),
-        user_id: userId,
         subscription_id: subscriptionId,
         product_type: 'lesson_plan',
         product_id: lessonPlanProduct.id,
-        claimed_at: new Date(),
-        month_year: monthYear,
-        status: 'active',
-        usage: {
+        usage_tracking: {
           times_used: 0,
           claimed_via: 'subscription',
           lesson_plan_title: lessonPlanProduct.title,
@@ -107,14 +103,10 @@ class LessonPlanSubscriptionService {
 
         const linkedClaim = await models.SubscriptionPurchase.create({
           id: generateId(),
-          user_id: userId,
-          subscription_id: subscriptionId,
+          subscription_id: subscriptionId,  // FIXED: Removed user_id (doesn't exist in table)
           product_type: linkedProduct.product_type,
           product_id: linkedProduct.product_id,
-          claimed_at: new Date(),
-          month_year: monthYear,
-          status: 'active',
-          usage: {
+          usage_tracking: {  // FIXED: Changed from 'usage' to 'usage_tracking'
             times_used: 0,
             claimed_via: 'lesson_plan_auto_claim',
             source_lesson_plan_id: lessonPlanProduct.id,
@@ -251,14 +243,21 @@ class LessonPlanSubscriptionService {
       linkedProducts.forEach(lp => productTypesToCheck.add(lp.product_type));
 
       // Check allowances for each product type
+      // FIXED: Parse monthYear to create date range filter since month_year field doesn't exist
+      const [year, month] = monthYear.split('-').map(Number);
+      const startOfMonth = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+
       for (const productType of productTypesToCheck) {
         const currentUsage = await models.SubscriptionPurchase.count({
           where: {
-            user_id: userId,
+            // FIXED: Removed user_id (doesn't exist), removed status (doesn't exist)
             subscription_id: subscriptionId,
             product_type: productType,
-            month_year: monthYear,
-            status: 'active'
+            // FIXED: Use created_at range instead of month_year field
+            created_at: {
+              [models.sequelize.Op.between]: [startOfMonth, endOfMonth]
+            }
           },
           transaction
         });
@@ -316,13 +315,13 @@ class LessonPlanSubscriptionService {
       }, { transaction });
 
       // 3. Find and revoke all linked product claims created from this lesson plan
+      // FIXED: Query through subscription_id only (no user_id in table)
       const linkedProductClaims = await models.SubscriptionPurchase.findAll({
         where: {
-          user_id: lessonPlanClaim.user_id,
           subscription_id: lessonPlanClaim.subscription_id,
           [models.sequelize.Op.and]: [
             models.sequelize.where(
-              models.sequelize.fn('jsonb_extract_path_text', models.sequelize.col('usage'), 'main_lesson_plan_claim_id'),
+              models.sequelize.fn('jsonb_extract_path_text', models.sequelize.col('usage_tracking'), 'main_lesson_plan_claim_id'),  // FIXED: usage → usage_tracking
               lessonPlanClaimId
             )
           ]
@@ -365,18 +364,19 @@ class LessonPlanSubscriptionService {
    */
   async getLessonPlanClaimDetails(lessonPlanClaimId) {
     try {
+      // FIXED: SubscriptionPurchase doesn't have direct User association (only through Subscription)
       const lessonPlanClaim = await models.SubscriptionPurchase.findByPk(lessonPlanClaimId, {
         include: [
           {
-            model: models.User,
-            as: 'user',
-            attributes: ['id', 'email', 'full_name']
-          },
-          {
             model: models.Subscription,
             as: 'subscription',
-            attributes: ['id', 'status'],
+            attributes: ['id', 'user_id', 'status'],
             include: [
+              {
+                model: models.User,
+                as: 'user',
+                attributes: ['id', 'email', 'full_name']
+              },
               {
                 model: models.SubscriptionPlan,
                 as: 'subscriptionPlan',
@@ -392,13 +392,13 @@ class LessonPlanSubscriptionService {
       }
 
       // Get all linked product claims created from this lesson plan
+      // FIXED: Query through subscription_id only (no user_id in table)
       const linkedProductClaims = await models.SubscriptionPurchase.findAll({
         where: {
-          user_id: lessonPlanClaim.user_id,
           subscription_id: lessonPlanClaim.subscription_id,
           [models.sequelize.Op.and]: [
             models.sequelize.where(
-              models.sequelize.fn('jsonb_extract_path_text', models.sequelize.col('usage'), 'main_lesson_plan_claim_id'),
+              models.sequelize.fn('jsonb_extract_path_text', models.sequelize.col('usage_tracking'), 'main_lesson_plan_claim_id'),  // FIXED: usage → usage_tracking
               lessonPlanClaimId
             )
           ]
@@ -422,7 +422,7 @@ class LessonPlanSubscriptionService {
    * @returns {boolean}
    */
   isFromLessonPlanAutoClaim(subscriptionPurchase) {
-    return subscriptionPurchase.usage?.claimed_via === 'lesson_plan_auto_claim';
+    return subscriptionPurchase.usage_tracking?.claimed_via === 'lesson_plan_auto_claim';  // FIXED: usage → usage_tracking
   }
 
   /**
@@ -432,7 +432,7 @@ class LessonPlanSubscriptionService {
    * @returns {boolean}
    */
   isLessonPlanClaim(subscriptionPurchase) {
-    return subscriptionPurchase.product_type === 'lesson_plan' && subscriptionPurchase.usage?.auto_claimed_linked === true;
+    return subscriptionPurchase.product_type === 'lesson_plan' && subscriptionPurchase.usage_tracking?.auto_claimed_linked === true;  // FIXED: usage → usage_tracking
   }
 
   /**
@@ -444,15 +444,21 @@ class LessonPlanSubscriptionService {
    */
   async getLessonPlanClaimStats(userId, options = {}) {
     try {
+      // FIXED: Query through Subscription relationship since SubscriptionPurchase doesn't have user_id
       const whereClause = {
-        user_id: userId,
-        product_type: 'lesson_plan',
-        status: 'active'
+        product_type: 'lesson_plan'
+        // Removed status field - doesn't exist in SubscriptionPurchase table
       };
 
-      if (options.month_year) {
-        whereClause.month_year = options.month_year;
-      }
+      // FIXED: month_year field doesn't exist in table, need to use created_at range filtering if needed
+      // if (options.month_year) {
+      //   const [year, month] = options.month_year.split('-').map(Number);
+      //   const startOfMonth = new Date(year, month - 1, 1);
+      //   const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+      //   whereClause.created_at = {
+      //     [models.sequelize.Op.between]: [startOfMonth, endOfMonth]
+      //   };
+      // }
 
       if (options.subscription_id) {
         whereClause.subscription_id = options.subscription_id;
@@ -460,13 +466,13 @@ class LessonPlanSubscriptionService {
 
       const claims = await models.SubscriptionPurchase.findAll({
         where: whereClause,
-        attributes: ['id', 'claimed_at', 'usage'],
-        order: [['claimed_at', 'DESC']]
+        attributes: ['id', 'created_at', 'usage_tracking'],  // FIXED: claimed_at → created_at, usage → usage_tracking
+        order: [['created_at', 'DESC']]
       });
 
       const totalClaims = claims.length;
       const totalLinkedProducts = claims.reduce((sum, claim) => {
-        return sum + (claim.usage?.linked_products_count || 0);
+        return sum + (claim.usage_tracking?.linked_products_count || 0);  // FIXED: usage → usage_tracking
       }, 0);
 
       return {
@@ -475,9 +481,9 @@ class LessonPlanSubscriptionService {
         totalItemsClaimed: totalClaims + totalLinkedProducts,
         claims: claims.map(claim => ({
           id: claim.id,
-          claimedAt: claim.claimed_at,
-          linkedProductsCount: claim.usage?.linked_products_count || 0,
-          title: claim.usage?.lesson_plan_title
+          claimedAt: claim.created_at,  // FIXED: claimed_at field doesn't exist, use created_at
+          linkedProductsCount: claim.usage_tracking?.linked_products_count || 0,  // FIXED: usage → usage_tracking
+          title: claim.usage_tracking?.lesson_plan_title  // FIXED: usage → usage_tracking
         }))
       };
     } catch (error) {

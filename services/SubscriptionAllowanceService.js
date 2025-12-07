@@ -153,7 +153,12 @@ class SubscriptionAllowanceService {
 
       // Query the SubscriptionPurchase table for monthly usage with fallback
       try {
-        // Query using month_year field directly (no date parsing needed)
+        // Query using date range filtering instead of month_year field
+
+        // Parse target month to get date range
+        const [year, month] = targetMonth.split('-').map(Number);
+        const startOfMonth = new Date(year, month - 1, 1); // Month is 0-indexed
+        const endOfMonth = new Date(year, month, 0, 23, 59, 59); // Last day of month
 
         const monthlyUsage = await models.SubscriptionPurchase.findAll({
           attributes: [
@@ -162,7 +167,9 @@ class SubscriptionAllowanceService {
           ],
           where: {
             subscription_id: activeSubscription.id,
-            month_year: targetMonth
+            created_at: {
+              [Op.between]: [startOfMonth, endOfMonth]
+            }
           },
           group: ['product_type'],
           raw: true
@@ -549,11 +556,9 @@ class SubscriptionAllowanceService {
       // DEBUG: Log exact data being inserted
       const insertData = {
         id: generateId(),
-        user_id: userId,
         subscription_id: subscription.id,
         product_type: productType,
         product_id: productId,
-        month_year: currentMonth,
         usage: {
           claimed_at: new Date().toISOString(),
           claim_source: 'subscription_allowance',
@@ -703,10 +708,30 @@ class SubscriptionAllowanceService {
 
       // Verify subscription still has this benefit
       // Get the current subscription and its plan
-      const currentSubscription = await this.getActiveSubscription(claim.user_id);
+      // Note: We need to get user_id through the subscription relationship
+      const claimWithSubscription = await models.SubscriptionPurchase.findOne({
+        where: { id: claim.id },
+        include: [{
+          model: models.Subscription,
+          as: 'subscription',
+          attributes: ['user_id']
+        }]
+      });
+
+      const userId = claimWithSubscription?.subscription?.user_id;
+      if (!userId) {
+        ludlog.generic('Could not find user for subscription claim:', {
+          claimId: claim.id,
+          productType,
+          productId
+        });
+        return false;
+      }
+
+      const currentSubscription = await this.getActiveSubscription(userId);
       if (!currentSubscription || !currentSubscription.subscriptionPlan) {
         ludlog.generic('No active subscription or plan found for benefit verification:', {
-          userId: claim.user_id,
+          userId,
           productType,
           productId
         });

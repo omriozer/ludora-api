@@ -31,6 +31,131 @@ router.post('/games', async (req, res) => {
 });
 ```
 
+### NEW: Domain-Specific Product Services Architecture (Dec 2025)
+
+**Revolutionary clean service layer with type-specific business logic:**
+
+```javascript
+// Service layer hierarchy (internal architecture)
+// BaseProductService.js - Abstract base class with shared CRUD patterns
+class BaseProductService {
+  async create(data, creatorId, options = {}) {
+    const transaction = options.transaction || await sequelize.transaction();
+    try {
+      // Create entity record
+      const entity = await this.createEntity(data, { transaction });
+
+      // Create product record
+      const product = await this.createProduct(entity, creatorId, data, { transaction });
+
+      // Type-specific post-creation logic
+      await this.afterCreate(entity, product, { transaction });
+
+      if (!options.transaction) await transaction.commit();
+      return { entity, product };
+    } catch (error) {
+      if (!options.transaction) await transaction.rollback();
+      throw error;
+    }
+  }
+
+  // Abstract methods for domain-specific implementation
+  abstract createEntity(data, options);
+  abstract afterCreate(entity, product, options);
+  abstract beforeDelete(entityId, options);
+}
+
+// Domain-specific service examples
+// FileProductService.js - S3 asset cleanup integration
+class FileProductService extends BaseProductService {
+  async beforeDelete(entityId, options) {
+    // Clean up S3 assets for file products
+    const file = await models.File.findByPk(entityId);
+    if (file?.content_metadata?.file_s3_keys) {
+      for (const s3Key of file.content_metadata.file_s3_keys) {
+        await FileService.deleteAsset(s3Key, options.transaction);
+      }
+    }
+  }
+}
+
+// GameProductService.js - Game-specific business logic
+class GameProductService extends BaseProductService {
+  async afterCreate(entity, product, options) {
+    // Initialize game-specific data
+    await models.GameSession.create({
+      game_id: entity.id,
+      status: 'draft'
+    }, { transaction: options.transaction });
+  }
+}
+
+// ProductServiceRouter.js - Backward compatibility layer
+class ProductServiceRouter {
+  constructor() {
+    this.services = {
+      file: new FileProductService(),
+      game: new GameProductService(),
+      bundle: new BundleProductService(),
+      lesson_plan: new LessonPlanProductService(),
+      workshop: new WorkshopProductService(),
+      course: new CourseProductService(),
+      tool: new ToolProductService()
+    };
+  }
+
+  getService(productType) {
+    const service = this.services[productType];
+    if (!service) {
+      throw new Error(`No service registered for product type: ${productType}`);
+    }
+    return service;
+  }
+}
+
+// EntityService now delegates to domain services internally
+class EntityService {
+  constructor() {
+    this.router = new ProductServiceRouter();
+  }
+
+  async create(productType, data, creatorId, options = {}) {
+    // Routes to appropriate domain service
+    const service = this.router.getService(productType);
+    return await service.create(data, creatorId, options);
+  }
+
+  async delete(productType, entityIds, options = {}) {
+    // Routes to appropriate domain service
+    const service = this.router.getService(productType);
+    return await service.delete(entityIds, options);
+  }
+}
+```
+
+**Key Architecture Principles:**
+- **Service Layer Pattern** - Clean separation of concerns with inheritance
+- **Transaction Safety** - All multi-step operations use database transactions
+- **Domain Logic Encapsulation** - Each product type has its own service class
+- **Backward Compatibility** - Existing EntityService API maintained via ProductServiceRouter
+- **File Cleanup Integration** - Proper S3 asset cleanup coordination
+- **Type-Specific Validation** - Domain services handle their own business rules
+
+**Integration with AccessControlIntegrator:**
+```javascript
+// Enhanced performance with embedded access control
+const products = await EntityService.find('game', filters);
+
+// Single line embeds complete access info (NEW)
+const enrichedProducts = await AccessControlIntegrator.enrichProductsWithAccess(
+  products,
+  userId
+);
+
+// Each product now has embedded 'access' field
+// No separate access control API calls needed
+```
+
 ### Bundle Services (NEW: Nov 2025, Enhanced: Nov 29-30)
 
 **Bundle products use specialized services with auto-purchase pattern:**

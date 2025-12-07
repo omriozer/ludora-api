@@ -5,6 +5,7 @@ import EmailService from '../services/EmailService.js';
 import CouponValidationService from '../services/CouponValidationService.js';
 import CouponCodeGenerator from '../utils/couponCodeGenerator.js';
 import models from '../models/index.js';
+import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import EntityService from '../services/EntityService.js';
 
 const router = express.Router();
@@ -305,7 +306,7 @@ router.post('/updateExistingGames', authenticateToken, async (req, res) => {
     const results = [];
     for (const gameUpdate of gameUpdates) {
       try {
-        const updated = await EntityService.update('Game', gameUpdate.id, gameUpdate);
+        const updated = await ProductServiceRouter.update('game', gameUpdate.id, gameUpdate);
         results.push({ id: gameUpdate.id, status: 'updated', data: updated });
       } catch (error) {
         results.push({ id: gameUpdate.id, status: 'failed', error: error.message });
@@ -364,8 +365,12 @@ router.post('/deleteFile', authenticateToken, async (req, res) => {
     const { fileId, filePath, entityType } = req.body;
 
     if (fileId && entityType) {
-      // Delete File entity from database (includes automatic S3 cleanup via EntityService)
-      const result = await EntityService.delete(entityType, fileId);
+      // Delete entity from database (includes automatic S3 cleanup)
+      // Route to appropriate service based on entity type
+      const productTypes = ['file', 'game', 'bundle', 'lesson_plan', 'workshop', 'course', 'tool'];
+      const result = productTypes.includes(entityType)
+        ? await ProductServiceRouter.delete(entityType, fileId)
+        : await EntityService.delete(entityType, fileId);
       res.json({
         success: true,
         message: `${entityType} record and associated files deleted successfully`,

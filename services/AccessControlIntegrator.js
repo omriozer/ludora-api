@@ -125,10 +125,12 @@ class AccessControlIntegrator {
       }
 
       // Check access using AccessControlService (single source of truth)
+      // CRITICAL: Must pass Product ID (not entity_id) for subscription claim lookups
+      // SubscriptionPurchase table uses product_id to link to Product table
       const accessResult = await AccessControlService.checkAccess(
         userId,
         productData.product_type,
-        productData.id // Use Product ID directly
+        productData.id // Pass Product ID for proper subscription claim lookup
       );
 
       // Format access info for frontend consumption
@@ -313,6 +315,21 @@ class AccessControlIntegrator {
         showSubscriptionPrompt: false,
         showFullContent: true,
         showWatermark: false
+      };
+    }
+
+    // Special case: User can claim via subscription (NEW)
+    if (accessType === 'subscription_claimable' && hasAccess) {
+      return {
+        canDownload: false, // No download until claimed
+        canPreview: this.determinePreviewAccess(productData),
+        canPlay: false, // No play until claimed
+        canCreateSessions: false, // No session creation until claimed
+        canClaim: true, // Show claim button
+        showPurchaseButton: false, // Hide purchase button when can claim
+        showSubscriptionPrompt: false, // Hide subscription prompt when can claim
+        showFullContent: false, // No full content until claimed
+        showWatermark: this.determinePreviewAccess(productData) // Show watermark if preview allowed
       };
     }
 

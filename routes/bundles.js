@@ -1,7 +1,7 @@
 import express from 'express';
 import BundleValidationService from '../services/BundleValidationService.js';
 import BundlePurchaseService from '../services/BundlePurchaseService.js';
-import EntityService from '../services/EntityService.js';
+import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
 import models from '../models/index.js';
@@ -129,10 +129,10 @@ router.post('/create', authenticateToken, async (req, res, next) => {
       });
     }
 
-    // Create dummy entity for EntityService compatibility
+    // Create dummy entity for ProductServiceRouter compatibility
     // Bundle products need an entity_id but don't have real entity data
     const dummyEntity = await models.File.create({
-      id: EntityService.models.sequelize.fn('gen_random_uuid'),
+      id: models.sequelize.fn('gen_random_uuid'),
       content_metadata: {
         is_bundle: true,
         bundle_type: productType

@@ -316,12 +316,11 @@ class AccessControlService {
       ludlog.auth(`✅ DEBUG: Product found - ID: ${product.id}, Entity ID: ${product.entity_id}`);
 
       // DEBUG: Log what we're searching for
-      ludlog.auth(`🚨 DEBUG: Searching for SubscriptionPurchase with user_id: ${userId}, product_type: ${entityType}, product_id: ${productId}`);
+      ludlog.auth(`🚨 DEBUG: Searching for SubscriptionPurchase via Subscription.user_id: ${userId}, product_type: ${entityType}, product_id: ${productId}`);
 
       // Find active subscription purchases for this user and product
       const subscriptionPurchase = await this.models.SubscriptionPurchase.findOne({
         where: {
-          user_id: userId,
           product_type: entityType,
           product_id: productId  // Direct Product ID lookup
         },
@@ -330,6 +329,7 @@ class AccessControlService {
             model: this.models.Subscription,
             as: 'subscription',
             where: {
+              user_id: userId,  // Join through subscription to find user
               status: 'active',
               [Op.or]: [
                 { end_date: null }, // Ongoing subscription
@@ -350,17 +350,26 @@ class AccessControlService {
       // DEBUG: Also try to find any SubscriptionPurchase without the subscription include to see if records exist
       const allUserPurchases = await this.models.SubscriptionPurchase.findAll({
         where: {
-          user_id: userId,
           product_type: entityType,
           product_id: productId
         },
-        attributes: ['id', 'user_id', 'product_type', 'product_id', 'subscription_id', 'created_at']
+        include: [
+          {
+            model: this.models.Subscription,
+            as: 'subscription',
+            where: { user_id: userId },
+            attributes: ['id', 'user_id', 'status']
+          }
+        ],
+        attributes: ['id', 'product_type', 'product_id', 'subscription_id', 'created_at']
       });
 
-      ludlog.auth(`🚨 DEBUG: Found ${allUserPurchases.length} SubscriptionPurchase records without subscription filter:`,
+      ludlog.auth(`🚨 DEBUG: Found ${allUserPurchases.length} SubscriptionPurchase records without status filter:`,
         allUserPurchases.map(sp => ({
           id: sp.id,
           subscription_id: sp.subscription_id,
+          subscription_user_id: sp.subscription?.user_id,
+          subscription_status: sp.subscription?.status,
           created_at: sp.created_at
         }))
       );
@@ -408,6 +417,10 @@ class AccessControlService {
       }
 
       ludlog.auth(`❌ DEBUG: No subscription purchase found for user ${userId}, ${entityType}:${productId}`);
+
+      // User has not claimed this product yet - return no access
+      // AccessControlIntegrator will check subscription allowances separately using determineCanClaim()
+      ludlog.auth(`❌ DEBUG: No active subscription claim found for user ${userId}`);
       return {
         hasAccess: false,
         reason: 'no_direct_subscription_claim',
@@ -451,8 +464,8 @@ class AccessControlService {
         const teacherClaim = await this.checkDirectSubscriptionClaim(teacherId, entityType, productId);
 
         if (teacherClaim.hasAccess) {
-          // Step 3: Record student usage of teacher's claim
-          await this.recordStudentUsage(studentUserId, teacherId, entityType, teacherClaim.entityId);
+          // Step 3: Record student usage of teacher's claim (FIXED: pass productId not entityId)
+          await this.recordStudentUsage(studentUserId, teacherId, entityType, productId);
 
           ludlog.auth(`✅ Student ${studentUserId} granted access via teacher ${teacherId} claim`);
 
@@ -544,15 +557,15 @@ class AccessControlService {
    * @param {string} studentUserId - Student user ID
    * @param {string} teacherId - Teacher user ID
    * @param {string} entityType - Type of entity
-   * @param {string} entityId - Entity ID
+   * @param {string} productId - Product ID (NOT entity_id)
    */
-  async recordStudentUsage(studentUserId, teacherId, entityType, entityId) {
+  async recordStudentUsage(studentUserId, teacherId, entityType, productId) {
     try {
-      // Use SubscriptionAllowanceService to record usage
+      // Use SubscriptionAllowanceService to record usage (CRITICAL: productId required, not entityId)
       await SubscriptionAllowanceService.recordUsage(
         teacherId,
         entityType,
-        entityId,
+        productId,  // FIXED: Pass productId to match SubscriptionPurchase.product_id column
         {
           studentUserId: studentUserId,
           accessType: 'student_via_teacher',
@@ -560,7 +573,7 @@ class AccessControlService {
         }
       );
 
-      ludlog.auth(`📊 Recorded student usage: ${studentUserId} using ${teacherId}'s claim for ${entityType}:${entityId}`);
+      ludlog.auth(`📊 Recorded student usage: ${studentUserId} using ${teacherId}'s claim for ${entityType}:${productId}`);
     } catch (error) {
       // Don't fail access check if usage recording fails, but log the error
       luderror.auth('Warning: Failed to record student usage:', error);
@@ -884,7 +897,7 @@ class AccessControlService {
    * Game-specific access validation
    * Checks session creation permissions and multiplayer limits
    */
-  async validateGameAccess(userId, gameId, baseAccess) {
+  async validateGameAccess(_userId, gameId, baseAccess) {
     try {
       const game = await this.models.Game.findByPk(gameId, {
         attributes: ['id', 'game_type', 'digital', 'game_settings']
@@ -1321,7 +1334,7 @@ class AccessControlService {
 
   // Generate unique purchase ID
   generatePurchaseId() {
-    return 'pur_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+    return 'pur_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
   }
 }
 

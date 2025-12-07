@@ -4,7 +4,7 @@ import { authenticateUserOrPlayer } from '../middleware/auth.js';
 import { checkStudentsAccess } from '../middleware/studentsAccessMiddleware.js';
 import { requireStudentConsent } from '../middleware/consentEnforcement.js';
 import models from '../models/index.js';
-import EntityService from '../services/EntityService.js';
+import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import GameContentService from '../services/GameContentService.js';
 import GameLobbyService from '../services/GameLobbyService.js';
 import { luderror } from '../lib/ludlog.js';
@@ -302,8 +302,8 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Create game using EntityService
-    const game = await EntityService.create('game', gameData, entity.id);
+    // Create game using ProductServiceRouter
+    const game = await ProductServiceRouter.create('game', gameData, entity.id);
 
     // Return game with creator info
     const gameWithCreator = await models.Game.findOne({
@@ -354,8 +354,8 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Update game using EntityService
-    const updatedGame = await EntityService.update('game', id, updateData, entity.id);
+    // Update game using ProductServiceRouter
+    const updatedGame = await ProductServiceRouter.update('game', id, updateData, entity.id);
 
     // Return updated game with product info
     const gameWithDetails = await models.Game.findByPk(id);
@@ -411,8 +411,8 @@ router.delete('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Delete game using EntityService (this will also handle product deletion)
-    await EntityService.delete('game', id);
+    // Delete game using ProductServiceRouter (this will also handle product deletion)
+    await ProductServiceRouter.delete('game', id);
 
     res.json({ message: 'Game deleted successfully' });
   } catch (error) {

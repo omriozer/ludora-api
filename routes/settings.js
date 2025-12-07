@@ -1,7 +1,6 @@
 import express from 'express';
 import { optionalAuth } from '../middleware/auth.js';
 import { addETagSupport } from '../middleware/etagMiddleware.js';
-import EntityService from '../services/EntityService.js';
 import SettingsService from '../services/SettingsService.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';

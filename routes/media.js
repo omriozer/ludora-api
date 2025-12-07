@@ -112,7 +112,7 @@ async function checkVideoAccess(user, entityType, entityId) {
 
     // Use AccessControlService for three-layer access control with Product ID
     // This checks: Creator Access → Purchase Access → Subscription Claim Access
-    const accessResult = await AccessControlService.checkAccess(user.id, entityType, product.id);
+    const accessResult = await AccessControlService.checkAccess(user.id, entityType, product.entity_id);
     return accessResult.hasAccess;
   } catch (error) {
     return false;
