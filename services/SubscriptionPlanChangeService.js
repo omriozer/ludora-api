@@ -87,7 +87,7 @@ class SubscriptionPlanChangeService {
         throw new Error(`Proration calculation failed: ${prorationResult.error}`);
       }
 
-      const proratedAmount = prorationResult.calculation.proratedAmount;
+      const { proratedAmount } = prorationResult.calculation;
 
       ludlog.payments('💰 Proration calculated:', {
         currentPlan: subscription.subscriptionPlan.name,
@@ -322,8 +322,8 @@ class SubscriptionPlanChangeService {
         throw new Error(`Downgrade scheduling failed: ${schedulingResult.error}`);
       }
 
-      const effectiveDate = schedulingResult.scheduling.effectiveDate;
-      const daysRemaining = schedulingResult.scheduling.daysRemaining;
+      const { effectiveDate } = schedulingResult.scheduling;
+      const { daysRemaining } = schedulingResult.scheduling;
 
       ludlog.payments('📅 Downgrade scheduled:', {
         currentPlan: subscription.subscriptionPlan.name,

@@ -9,6 +9,13 @@ import { CONTENT_CREATOR_KEYS } from '../constants/settingsKeys.js';
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * tags:
+ *   - name: Products
+ *     description: Product management API (polymorphic product system)
+ */
+
 // Helper function to check content creator permissions (copied from entities.js)
 async function checkContentCreatorPermissions(user, entityType) {
   // Admins and sysadmins always have permission
@@ -63,6 +70,63 @@ async function checkContentCreatorPermissions(user, entityType) {
   return { allowed: true };
 }
 
+/**
+ * @openapi
+ * /api/products:
+ *   post:
+ *     summary: Create a new product
+ *     tags: [Products]
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateProductRequest'
+ *     responses:
+ *       201:
+ *         description: Product created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ProductWithAccess'
+ *       400:
+ *         description: Invalid request (missing product_type or invalid type)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             examples:
+ *               missingType:
+ *                 value:
+ *                   error: "product_type is required"
+ *               invalidType:
+ *                 value:
+ *                   error: "Invalid product_type: invalid_type"
+ *                   allowedTypes: ["file", "lesson_plan", "game", "workshop", "course", "tool", "bundle"]
+ *       401:
+ *         description: Unauthorized (user not authenticated or not found)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Forbidden (user lacks content creator permissions)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             example:
+ *               error: "Only signed content creators can create products"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 // POST /api/products - Create new product with unified endpoint
 router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (req, res) => {
   const { product_type, ...productData } = req.body;
@@ -112,16 +176,6 @@ router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (r
     }, createdBy);
 
     res.status(201).json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/products - List products (optional - for future use)
-router.get('/', async (req, res) => {
-  try {
-    // Redirect to existing products list endpoint
-    res.redirect('/api/entities/products/list');
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

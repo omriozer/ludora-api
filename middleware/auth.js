@@ -199,7 +199,7 @@ export function requireOwnership(getResourceOwnerId) {
       }
 
       const resourceOwnerId = await getResourceOwnerId(req);
-      
+
       // Admin and sysadmin can access any resource
       if (req.user.role === 'admin' || req.user.role === 'sysadmin') {
         return next();

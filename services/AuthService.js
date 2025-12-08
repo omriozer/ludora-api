@@ -598,14 +598,25 @@ class AuthService {
   // Verify token (supports both JWT and Firebase)
   async verifyToken(token) {
     try {
+      // Check if token is provided
+      if (!token || typeof token !== 'string') {
+        throw new Error('Token is required');
+      }
 
       // Development token support - ONLY in development environment
       if (token.startsWith('token_') && process.env.ENVIRONMENT === 'development') {
+        // Extract user ID from token (format: token_<userId>)
+        const userId = token.substring(6); // Remove 'token_' prefix
+
+        // Look up the actual user in the database
+        const user = await models.User.findByPk(userId);
+
+        if (!user || !user.is_active) {
+          throw new Error('Development user not found or inactive');
+        }
 
         return {
-          id: `dev_user_${Date.now()}`,
-          email: 'dev@example.com',
-          role: 'user',
+          ...user.toJSON(),
           type: 'development'
         };
       }

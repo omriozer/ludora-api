@@ -72,7 +72,7 @@ router.get('/:entityType/:entityId', authenticateToken, async (req, res) => {
       return res.status(404).json(entityValidation.error);
     }
 
-    const entity = entityValidation.entity;
+    const { entity } = entityValidation;
 
     // Define possible asset types for this entity type
     const assetTypeDefinitions = {
@@ -450,7 +450,7 @@ router.get('/:entityType/:entityId/:assetType', optionalAuth, async (req, res) =
       filename = 'image.jpg';
     } else if (assetType === 'document' && entityType === 'file') {
       // For documents, get filename from database
-      const entity = entityValidation.entity;
+      const { entity } = entityValidation;
       if (!entity.file_name) {
         const errorResponse = createErrorResponse(
           'Document not found',
@@ -506,7 +506,7 @@ router.get('/:entityType/:entityId/:assetType', optionalAuth, async (req, res) =
     // Handle different asset types with appropriate content negotiation
     if (assetType === 'marketing-video' || assetType === 'content-video') {
       // Stream video with range support
-      const range = req.headers.range;
+      const { range } = req.headers;
 
       if (range) {
         // Parse range header
@@ -635,7 +635,7 @@ router.post('/:entityType/:entityId/:assetType', authenticateToken, upload.singl
 
   try {
     const { entityType, entityId, assetType } = req.params;
-    const file = req.file;
+    const { file } = req;
 
     logger.start({
       entityType,

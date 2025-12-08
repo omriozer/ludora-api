@@ -4,7 +4,7 @@ import { luderror } from '../lib/ludlog.js';
 
 /**
  * Video Access Control Service
- * 
+ *
  * This service handles checking if a user has access to video content
  * based on their purchases and subscription status.
  */
@@ -19,7 +19,7 @@ export async function checkVideoAccess(userId, videoId) {
   try {
     // First, find the product that contains this video
     const product = await findProductByVideoId(videoId);
-    
+
     if (!product) {
       return {
         hasAccess: false,
@@ -71,7 +71,7 @@ async function findProductByVideoId(videoId) {
   let product = await db.Product.findOne({
     where: { id: videoId, is_published: true }
   });
-  
+
   if (product) return product;
 
   // Strategy 2: Look for video in workshop video URLs
@@ -84,7 +84,7 @@ async function findProductByVideoId(videoId) {
       is_published: true
     }
   });
-  
+
   if (product) return product;
 
   // Strategy 3: Look for video in course modules (JSONB search)
@@ -140,7 +140,7 @@ async function checkPurchaseAccess(userId, productId) {
   if (purchase.access_until) {
     const accessUntil = new Date(purchase.access_until);
     const now = new Date();
-    
+
     if (now <= accessUntil) {
       return {
         hasAccess: true,
@@ -196,7 +196,6 @@ async function checkPurchaseAccess(userId, productId) {
 }
 
 
-
 /**
  * Check if user is the creator of the content
  * @param {string} userId - User ID
@@ -231,14 +230,14 @@ async function checkCreatorAccess(userId, productId) {
  */
 export async function getVideoAccessDetails(userId, videoId) {
   const accessResult = await checkVideoAccess(userId, videoId);
-  
+
   if (!accessResult.hasAccess) {
     return accessResult;
   }
 
   // If user has access, get additional details
   const product = await findProductByVideoId(videoId);
-  
+
   return {
     ...accessResult,
     product: {
@@ -260,7 +259,7 @@ export async function getVideoAccessDetails(userId, videoId) {
 export async function videoAccessMiddleware(req, res, next) {
   try {
     const { videoId } = req.params;
-    const user = req.user; // Assumes auth middleware has already set req.user
+    const { user } = req; // Assumes auth middleware has already set req.user
 
     if (!user) {
       return res.status(401).json({
@@ -283,7 +282,7 @@ export async function videoAccessMiddleware(req, res, next) {
 
     // Add access info to request for logging/analytics
     req.videoAccess = accessResult;
-    
+
     next();
   } catch (error) {
     luderror.api('Video access middleware error:', error);

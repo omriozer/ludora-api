@@ -305,7 +305,7 @@ async function runCleanup() {
 
       // Detect orphans
       const detection = detectOrphans(needsCheck, databaseReferences);
-      const orphans = detection.orphans;
+      const { orphans } = detection;
 
       // Mark all files as checked
       fileCheckCache.markBatchChecked(

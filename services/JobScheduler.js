@@ -1220,7 +1220,7 @@ class JobScheduler {
 
       // Detect orphans
       const detection = detectOrphans(needsCheck, databaseReferences);
-      const orphans = detection.orphans;
+      const { orphans } = detection;
       orphansFound = orphans.length;
 
       ludlog.generic(`Found ${orphansFound} orphaned files out of ${needsCheck.length} checked`);
@@ -1358,7 +1358,7 @@ class JobScheduler {
 
       // Import models and Sequelize dynamically
       const models = (await import('../models/index.js')).default;
-      const sequelize = models.sequelize;
+      const { sequelize } = models;
 
       // Set statement timeout for safety
       await sequelize.query('SET statement_timeout = :timeout', {

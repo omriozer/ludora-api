@@ -316,21 +316,21 @@ class AccessControlService {
       ludlog.auth(`✅ DEBUG: Product found - ID: ${product.id}, Entity ID: ${product.entity_id}`);
 
       // DEBUG: Log what we're searching for
-      ludlog.auth(`🚨 DEBUG: Searching for SubscriptionPurchase via Subscription.user_id: ${userId}, product_type: ${entityType}, product_id: ${productId}`);
+      ludlog.auth(`🚨 DEBUG: Searching for SubscriptionPurchase directly by user_id: ${userId}, product_type: ${entityType}, product_id: ${productId}`);
 
-      // Find active subscription purchases for this user and product
+      // Find active subscription purchases for this user and product directly
       const subscriptionPurchase = await this.models.SubscriptionPurchase.findOne({
         where: {
+          user_id: userId,        // Direct user lookup in SubscriptionPurchase table
           product_type: entityType,
-          product_id: productId  // Direct Product ID lookup
+          product_id: productId
         },
         include: [
           {
             model: this.models.Subscription,
             as: 'subscription',
             where: {
-              user_id: userId,  // Join through subscription to find user
-              status: 'active',
+              status: 'active',   // Only active subscriptions
               [Op.or]: [
                 { end_date: null }, // Ongoing subscription
                 { end_date: { [Op.gt]: nowInIsrael() } } // Not expired
@@ -340,61 +340,15 @@ class AccessControlService {
               {
                 model: this.models.SubscriptionPlan,
                 as: 'subscriptionPlan',
-                attributes: ['id', 'name', 'benefits']
+                attributes: ['id', 'name', 'benefits'],
+                required: false
               }
-            ]
+            ],
+            required: true        // Subscription must exist and match user
           }
         ]
       });
 
-      // DEBUG: Also try to find any SubscriptionPurchase without the subscription include to see if records exist
-      const allUserPurchases = await this.models.SubscriptionPurchase.findAll({
-        where: {
-          product_type: entityType,
-          product_id: productId
-        },
-        include: [
-          {
-            model: this.models.Subscription,
-            as: 'subscription',
-            where: { user_id: userId },
-            attributes: ['id', 'user_id', 'status']
-          }
-        ],
-        attributes: ['id', 'product_type', 'product_id', 'subscription_id', 'created_at']
-      });
-
-      ludlog.auth(`🚨 DEBUG: Found ${allUserPurchases.length} SubscriptionPurchase records without status filter:`,
-        allUserPurchases.map(sp => ({
-          id: sp.id,
-          subscription_id: sp.subscription_id,
-          subscription_user_id: sp.subscription?.user_id,
-          subscription_status: sp.subscription?.status,
-          created_at: sp.created_at
-        }))
-      );
-
-      // DEBUG: Also check if there are any active subscriptions for this user
-      const activeSubscriptions = await this.models.Subscription.findAll({
-        where: {
-          user_id: userId,
-          status: 'active',
-          [Op.or]: [
-            { end_date: null },
-            { end_date: { [Op.gt]: nowInIsrael() } }
-          ]
-        },
-        attributes: ['id', 'user_id', 'status', 'start_date', 'end_date']
-      });
-
-      ludlog.auth(`🚨 DEBUG: Found ${activeSubscriptions.length} active subscriptions for user ${userId}:`,
-        activeSubscriptions.map(sub => ({
-          id: sub.id,
-          status: sub.status,
-          start_date: sub.start_date,
-          end_date: sub.end_date
-        }))
-      );
 
       ludlog.auth(`🔍 DEBUG: SubscriptionPurchase query result: ${subscriptionPurchase ? 'FOUND' : 'NOT FOUND'}`);
 
@@ -946,7 +900,7 @@ class AccessControlService {
    * File-specific access validation
    * Checks file availability and download permissions
    */
-  async validateFileAccess(userId, fileId, baseAccess) {
+  async validateFileAccess(_userId, fileId, baseAccess) {
     try {
       // Get the file entity data (only query fields that exist in File model)
       const file = await this.models.File.findByPk(fileId, {
@@ -1061,7 +1015,7 @@ class AccessControlService {
    * Lesson Plan-specific access validation
    * Checks template availability and customization permissions
    */
-  async validateLessonPlanAccess(userId, lessonPlanId, baseAccess) {
+  async validateLessonPlanAccess(_userId, lessonPlanId, baseAccess) {
     try {
       const lessonPlan = await this.models.LessonPlan.findByPk(lessonPlanId, {
         attributes: ['id', 'title', 'is_published', 'template_data']
@@ -1108,7 +1062,7 @@ class AccessControlService {
    * Get course progress for a user (placeholder implementation)
    * TODO: Implement actual course progress tracking
    */
-  async getCourseProgress(userId, courseId) {
+  async getCourseProgress(_userId, _courseId) {
     try {
       // Placeholder implementation - would need actual progress tracking
       return {
@@ -1316,9 +1270,9 @@ class AccessControlService {
 
   // Format purchase with entity information
   formatPurchaseWithEntity(purchase) {
-    const entityData = purchase.workshop || purchase.course || purchase.file || 
+    const entityData = purchase.workshop || purchase.course || purchase.file ||
                       purchase.tool || purchase.game;
-    
+
     return {
       id: purchase.id,
       entityType: purchase.purchasable_type,

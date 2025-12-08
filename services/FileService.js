@@ -13,7 +13,7 @@ class FileService {
     this.localStoragePath = process.env.LOCAL_STORAGE_PATH || './uploads';
     this.useS3 = true;
     this.bucketName = process.env.AWS_S3_BUCKET;
-    
+
     if (this.useS3) {
       this.initializeS3();
     } else {
@@ -121,7 +121,7 @@ class FileService {
     try {
       // Get image metadata using sharp
       const metadata = await sharp(file.buffer).metadata();
-      
+
       return {
         type: 'image',
         ocrText: 'OCR text extraction not implemented yet',
@@ -436,7 +436,6 @@ class FileService {
       throw error;
     }
   }
-
 
 
   // CONSOLIDATED UPLOAD METHODS

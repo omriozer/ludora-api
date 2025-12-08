@@ -82,7 +82,7 @@ router.get('/games/:gameId/lobbies',
     try {
       const { gameId } = req.validatedParams;
       const { limit, offset, expired } = req.validatedQuery;
-      const user = req.user; // May be null for anonymous users
+      const { user } = req; // May be null for anonymous users
 
       if (user) {
 
@@ -174,7 +174,7 @@ router.post('/games/:gameId/lobbies',
     try {
       const { gameId } = req.validatedParams;
       const lobbyData = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Validate user can create lobbies for this game
       const hasAccess = await validateGameOwnership(gameId, user.id, user.role);
@@ -233,7 +233,7 @@ router.get('/game-lobbies/:lobbyId',
     const transaction = await models.sequelize.transaction();
     try {
       const { lobbyId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Get lobby details
       const lobby = await GameLobbyService.getLobbyDetails(lobbyId, transaction);
@@ -284,7 +284,7 @@ router.put('/game-lobbies/:lobbyId',
     try {
       const { lobbyId } = req.validatedParams;
       const updateData = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Get current lobby to check permissions
       const currentLobby = await models.GameLobby.findByPk(lobbyId, { transaction });
@@ -342,7 +342,7 @@ router.put('/game-lobbies/:lobbyId/activate',
     try {
       const { lobbyId } = req.validatedParams;
       const activationData = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Activate the lobby with enhanced configuration
       const updatedLobby = await GameLobbyService.activateLobby(
@@ -394,7 +394,7 @@ router.put('/game-lobbies/:lobbyId/close',
     const transaction = await models.sequelize.transaction();
     try {
       const { lobbyId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Close the lobby
       const updatedLobby = await GameLobbyService.closeLobby(
@@ -437,7 +437,7 @@ router.put('/game-lobbies/:lobbyId/expiration',
     try {
       const { lobbyId } = req.validatedParams;
       const { expires_at } = req.validatedData; // Date, 'indefinite', or null
-      const user = req.user;
+      const { user } = req;
 
       // Set lobby expiration
       const updatedLobby = await GameLobbyService.setLobbyExpiration(
@@ -480,7 +480,7 @@ router.delete('/game-lobbies/:lobbyId',
     const transaction = await models.sequelize.transaction();
     try {
       const { lobbyId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Close the lobby
       const closedLobby = await GameLobbyService.closeLobby(
@@ -873,7 +873,7 @@ router.get('/game-lobbies/:lobbyId/sessions',
     const transaction = await models.sequelize.transaction();
     try {
       const { lobbyId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Verify lobby exists and user has access
       const lobby = await models.GameLobby.findByPk(lobbyId, { transaction });
@@ -928,7 +928,7 @@ router.post('/game-lobbies/:lobbyId/sessions',
     try {
       const { lobbyId } = req.validatedParams;
       const sessionData = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Create session using service
       const session = await GameSessionService.createSession(
@@ -976,7 +976,7 @@ router.post('/game-lobbies/:lobbyId/sessions/create-student',
     try {
       const { lobbyId } = req.params;
       const { participant } = req.body; // Extract participant data from request
-      const user = req.user; // May be null for anonymous users
+      const { user } = req; // May be null for anonymous users
       const authenticatedPlayer = req.player; // From authentication middleware
 
       // NEW AUTH MODEL: If player is authenticated, validate teacher connection
@@ -1153,7 +1153,7 @@ router.get('/game-lobbies/:lobbyId/debug',
     const transaction = await models.sequelize.transaction();
     try {
       const { lobbyId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Get debug information
       const debugInfo = await GameLobbyService.debugLobby(lobbyId, transaction);

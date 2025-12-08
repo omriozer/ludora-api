@@ -297,7 +297,7 @@ class GameLobbyService {
       const invitationType = updatedSettings.invitation_type || 'manual_selection'; // Default to manual_selection
 
       // For the supported invitation types, sessions are created on-demand when students join
-      let createdSessions = [];
+      const createdSessions = [];
       const autoCreateSessions = lobbyDefaults.auto_create_sessions || false;
 
       // Return updated lobby with details and sessions

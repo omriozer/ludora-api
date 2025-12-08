@@ -26,7 +26,7 @@ export async function getLessonPlanPresentationFiles(lessonPlanId) {
       };
     }
 
-    const files = lessonPlan.file_configs.files;
+    const { files } = lessonPlan.file_configs;
     const openingFiles = files.filter(f => f.file_role === 'opening');
     const bodyFiles = files.filter(f => f.file_role === 'body');
 

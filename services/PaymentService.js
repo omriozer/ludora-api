@@ -356,7 +356,7 @@ class PaymentService {
 
       if (missingFields.length > 0) {
         const missingEnvVars = missingFields.map(field => {
-          switch(field) {
+          switch (field) {
             case 'payment_page_uid': return 'PAYPLUS_PAYMENT_PAGE_UID';
             case 'payment_api_key': return 'PAYPLUS_API_KEY';
             case 'payment_secret_key': return 'PAYPLUS_SECRET_KEY';

@@ -52,7 +52,7 @@ class PayplusService {
 
     try {
       // Get PayPlus credentials (environment auto-detected from NODE_ENV)
-      const {payplusUrl, payment_page_uid, payment_api_key, payment_secret_key, environment} = PaymentService.getPayPlusCredentials();
+      const { payplusUrl, payment_page_uid, payment_api_key, payment_secret_key, environment } = PaymentService.getPayPlusCredentials();
       const payplusPaymentPageUrl = `${payplusUrl}PaymentPages/generateLink`;
 
       // Determine charge method based on frontend origin and purchase items
@@ -228,7 +228,7 @@ class PayplusService {
     // Common settings for all payment types
     settings.payments = 1; // Single payment by default
     settings.hide_other_charge_methods = false;
-    
+
     settings.send_failure_callback = true;
     settings.create_token = true;
     settings.hide_payments_field = true;

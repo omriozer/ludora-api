@@ -238,10 +238,12 @@ async function getFullProduct(product, userId = null, includeGameDetails = false
   let purchase = null;
   if (userId && product.id) {
     // Check for any non-refunded purchase (completed OR pending)
+    // CRITICAL FIX: Must use product.id (Product table ID), not entity_id
+    // Purchase records are created with purchasable_id = Product ID for proper access control
     purchase = await models.Purchase.findOne({
       where: {
         buyer_user_id: userId,
-        purchasable_id: product.entity_id || product.id,
+        purchasable_id: product.id, // ✅ FIXED: Use Product ID (matches how purchases are created)
         purchasable_type: product.product_type,
         payment_status: ['completed', 'pending', 'cart'] // Include completed, pending, and cart purchases
       },
@@ -317,7 +319,6 @@ router.get('/products/list', optionalAuth, async (req, res) => {
       sort_by = 'created_at',
       sort_order = 'DESC'
     } = req.query;
-
     // Build where clause
     const where = {};
     if (product_type) where.product_type = product_type;
@@ -357,17 +358,17 @@ router.get('/products/list', optionalAuth, async (req, res) => {
       const purchases = await models.Purchase.findAll({
         where: {
           buyer_user_id: userId,
-          product_id: productIds,
+          purchasable_id: productIds,
           payment_status: ['completed', 'pending', 'cart']
         },
-        attributes: ['id', 'product_id', 'payment_status', 'access_expires_at', 'created_at'],
+        attributes: ['id', 'purchasable_id', 'payment_status', 'access_expires_at', 'created_at'],
         order: [['created_at', 'DESC']]
       });
 
       // Group purchases by product_id
       purchases.forEach(purchase => {
-        if (!purchasesByProduct[purchase.product_id]) {
-          purchasesByProduct[purchase.product_id] = purchase;
+        if (!purchasesByProduct[purchase.purchasable_id]) {
+          purchasesByProduct[purchase.purchasable_id] = purchase;
         }
       });
     }
@@ -591,7 +592,7 @@ router.get('/curriculum/available-combinations', optionalAuth, async (_req, res)
     const combinations = {};
 
     results.forEach(curriculum => {
-      const subject = curriculum.subject;
+      const { subject } = curriculum;
 
       // Initialize subject array if it doesn't exist
       if (!combinations[subject]) {
@@ -630,6 +631,47 @@ router.get('/curriculum/available-combinations', optionalAuth, async (_req, res)
   }
 });
 
+/**
+ * @openapi
+ * /api/entities/{type}:
+ *   get:
+ *     summary: List entities of a specific type with filtering and pagination
+ *     tags: [Entities]
+ *     parameters:
+ *       - name: type
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [product, game, file, workshop, course, tool, lessonplan, user, classroom, subscription, settings]
+ *         description: Entity type to query
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *           maximum: 1000
+ *         description: Maximum number of results
+ *       - name: offset
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: Number of results to skip (for pagination)
+ *     responses:
+ *       200:
+ *         description: List of entities retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EntityListResponse'
+ *       400:
+ *         description: Invalid entity type or query parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 // Generic CRUD routes for all entities
 // GET /entities/:type - Find entities with query params
 router.get('/:type', optionalAuth, customValidators.validateEntityType, validateQuery(schemas.entityQuery), async (req, res) => {
@@ -760,7 +802,31 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
     // Enrich product types with access control information
     if (ALL_PRODUCT_TYPES.includes(entityType)) {
       const userId = req.user?.id || null;
+
+      // TODO remove debug - Add debugging for AccessControlIntegrator call
+      ludlog.auth('🔍 ENTITIES ROUTE: About to enrich products with access control:', {
+        entityType,
+        userId,
+        hasUser: !!req.user,
+        userEmail: req.user?.email || 'anonymous',
+        resultsCount: Array.isArray(results) ? results.length : 'single_item',
+        firstProductId: Array.isArray(results) ? results[0]?.id : results?.id
+      });
+
       const enrichedResults = await AccessControlIntegrator.enrichProductsWithAccess(results, userId);
+
+      // TODO remove debug - Log enrichment results
+      ludlog.auth('🔍 ENTITIES ROUTE: AccessControlIntegrator enrichment completed:', {
+        originalCount: Array.isArray(results) ? results.length : 'single_item',
+        enrichedCount: Array.isArray(enrichedResults) ? enrichedResults.length : 'single_item',
+        hasAccessField: Array.isArray(enrichedResults)
+          ? enrichedResults[0]?.access ? 'yes' : 'no'
+          : enrichedResults?.access ? 'yes' : 'no',
+        sampleAccessObject: Array.isArray(enrichedResults)
+          ? enrichedResults[0]?.access
+          : enrichedResults?.access
+      });
+
       return res.json(enrichedResults);
     }
 
@@ -797,10 +863,10 @@ router.get('/:type/:id',
   },
   async (req, res) => {
   const entityType = req.params.type;
-  const id = req.params.id;
+  const { id } = req.params;
 
   try {
-    const include = req.query.include;
+    const { include } = req.query;
     // Route to appropriate service based on entity type
     const entity = ProductServiceRouter.isDomainManaged(entityType)
       ? await ProductServiceRouter.findById(entityType, id, include)
@@ -849,12 +915,55 @@ router.get('/:type/:id',
   }
 });
 
+/**
+ * @openapi
+ * /api/entities/{type}:
+ *   post:
+ *     summary: Create a new entity of specified type
+ *     tags: [Entities]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - name: type
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [product, game, file, workshop, course, tool, lessonplan, classroom, settings]
+ *         description: Entity type to create
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/EntityCreateRequest'
+ *     responses:
+ *       201:
+ *         description: Entity created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               description: Created entity (schema varies by type)
+ *       400:
+ *         description: Validation error or invalid entity type
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Unauthorized - authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 // POST /entities/:type - Create new entity
 router.post('/:type', authenticateToken, customValidators.validateEntityType, (req, res, next) => {
   // Use entity-specific validation schemas when available
   const entityType = req.params.type;
   let validationSchema;
-  
+
   switch (entityType) {
     case 'workshop':
       validationSchema = schemas.workshopCreate;
@@ -865,7 +974,7 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
     default:
       validationSchema = schemas.entityCreate;
   }
-  
+
   return validateBody(validationSchema)(req, res, next);
 }, async (req, res) => {
   const entityType = req.params.type;
@@ -988,7 +1097,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
   return validateBody(validationSchema)(req, res, next);
 }, async (req, res) => {
   const entityType = req.params.type;
-  const id = req.params.id;
+  const { id } = req.params;
 
   try {
     // Sanitize numeric fields before processing
@@ -1110,8 +1219,8 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
 // DELETE /entities/:type/:id - Delete entity
 router.delete('/:type/:id', authenticateToken, customValidators.validateEntityType, async (req, res) => {
   const entityType = req.params.type;
-  const id = req.params.id;
-  
+  const { id } = req.params;
+
   try {
     // Route to appropriate service based on entity type
     const result = ProductServiceRouter.isDomainManaged(entityType)
@@ -1159,10 +1268,10 @@ router.delete('/:type/:id', authenticateToken, customValidators.validateEntityTy
 router.post('/:type/bulk', authenticateToken, customValidators.validateEntityType, validateBody(schemas.bulkOperation), async (req, res) => {
   const entityType = req.params.type;
   const { operation, data } = req.body;
-  
+
   try {
     let results = [];
-    
+
     switch (operation) {
       case 'create':
         // Route to appropriate service based on entity type
@@ -1170,7 +1279,7 @@ router.post('/:type/bulk', authenticateToken, customValidators.validateEntityTyp
           ? await ProductServiceRouter.bulkCreate(entityType, data, req.user.id)
           : await EntityService.bulkCreate(entityType, data, req.user.id);
         break;
-        
+
       case 'delete':
         // Route to appropriate service based on entity type
         const deleteResult = ProductServiceRouter.isDomainManaged(entityType)
@@ -1182,11 +1291,11 @@ router.post('/:type/bulk', authenticateToken, customValidators.validateEntityTyp
           error: deleteResult.ids.includes(id) ? null : 'Not found'
         }));
         break;
-        
+
       default:
         return res.status(400).json({ error: 'Unsupported bulk operation' });
     }
-    
+
     res.json({ results, count: results.length });
   } catch (error) {
     luderror.api('[ENTITIES-BULK] Failed to execute bulk operation', {
@@ -1210,7 +1319,7 @@ router.post('/:type/bulk', authenticateToken, customValidators.validateEntityTyp
 // GET /entities/:type/count - Count entities with optional filtering
 router.get('/:type/count', optionalAuth, customValidators.validateEntityType, async (req, res) => {
   const entityType = req.params.type;
-  
+
   try {
     // Route to appropriate service based on entity type
     const count = ProductServiceRouter.isDomainManaged(entityType)
@@ -1258,7 +1367,7 @@ router.get('/purchase/check-product-purchases/:productId', authenticateToken, as
     // Check for completed purchases where product is not free
     const purchases = await models.Purchase.findAll({
       where: {
-        product_id: productId,
+        purchasable_id: productId,
         status: 'completed'
       }
     });
@@ -1713,7 +1822,7 @@ router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) =>
     }
 
     // Check if this curriculum has been copied by any user (for admin) or by this user (for teachers)
-    let whereClause = {
+    const whereClause = {
       original_curriculum_id: curriculumId,
       is_active: true
     };
@@ -1767,7 +1876,7 @@ router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) =>
 
 // POST /entities/lesson-plan/:lessonPlanId/upload-file - Atomic file upload for lesson plans
 router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpload.single('file'), async (req, res) => {
-  const lessonPlanId = req.params.lessonPlanId;
+  const { lessonPlanId } = req.params;
   const transaction = await sequelize.transaction();
   let uploadedS3Key = null;
 
@@ -1890,7 +1999,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
     }, { transaction });
 
     // 3. TODO: SVG slide handling will be implemented here
-    let slideCount = 0;
+    const slideCount = 0;
 
     // 4. Update lesson plan file_configs within same transaction
     const lessonPlan = await models.LessonPlan.findByPk(lessonPlanId, { transaction });
@@ -2022,7 +2131,7 @@ router.post('/lesson-plan/:lessonPlanId/upload-file', authenticateToken, fileUpl
 
 // POST /entities/lesson-plan/:lessonPlanId/link-file-product - Link existing File product to lesson plan
 router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, async (req, res) => {
-  const lessonPlanId = req.params.lessonPlanId;
+  const { lessonPlanId } = req.params;
   const transaction = await sequelize.transaction();
 
   try {
@@ -2225,8 +2334,8 @@ router.post('/lesson-plan/:lessonPlanId/link-file-product', authenticateToken, a
 
 // DELETE /entities/lesson-plan/:lessonPlanId/unlink-file-product/:fileId - Unlink File product from lesson plan
 router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenticateToken, async (req, res) => {
-  const lessonPlanId = req.params.lessonPlanId;
-  const fileId = req.params.fileId;
+  const { lessonPlanId } = req.params;
+  const { fileId } = req.params;
   const transaction = await sequelize.transaction();
 
   try {
@@ -2320,8 +2429,8 @@ router.delete('/lesson-plan/:lessonPlanId/unlink-file-product/:fileId', authenti
 
 // DELETE /entities/lesson-plan/:lessonPlanId/file/:fileId - Delete file from lesson plan
 router.delete('/lesson-plan/:lessonPlanId/file/:fileId', authenticateToken, async (req, res) => {
-  const lessonPlanId = req.params.lessonPlanId;
-  const fileId = req.params.fileId;
+  const { lessonPlanId } = req.params;
+  const { fileId } = req.params;
   const transaction = await sequelize.transaction();
 
   try {

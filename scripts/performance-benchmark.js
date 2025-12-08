@@ -305,7 +305,7 @@ class PerformanceBenchmark {
    * Calculate metrics for a scenario
    */
   calculateScenarioMetrics(results, memoryBefore, memoryAfter) {
-    const responseTimes = results.metrics.responseTimes;
+    const { responseTimes } = results.metrics;
 
     if (responseTimes.length === 0) {
       results.metrics.avgResponseTime = 0;
@@ -444,7 +444,7 @@ class PerformanceBenchmark {
     console.log('='.repeat(60));
 
     // Summary
-    const summary = this.results.summary;
+    const { summary } = this.results;
     console.log('\n📈 OVERALL PERFORMANCE:');
     console.log(`   Total Requests: ${summary.totalRequests}`);
     console.log(`   Average Response Time: ${summary.overallAvgResponseTime.toFixed(2)}ms`);

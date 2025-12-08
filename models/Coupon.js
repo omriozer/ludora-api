@@ -14,8 +14,8 @@ export default function(sequelize) {
         isIn: [['percentage', 'fixed']]
       }
     },
-    discount_value: { type: DataTypes.DECIMAL(10,2), allowNull: true },
-    minimum_amount: { type: DataTypes.DECIMAL(10,2), allowNull: true },
+    discount_value: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+    minimum_amount: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     usage_limit: { type: DataTypes.INTEGER, allowNull: true },
     usage_count: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
     valid_until: { type: DataTypes.DATE, allowNull: true },
@@ -66,7 +66,7 @@ export default function(sequelize) {
       comment: '1=highest priority, 10=lowest priority for conflict resolution'
     },
     max_discount_cap: {
-      type: DataTypes.DECIMAL(10,2),
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       comment: 'Maximum discount amount in currency, overrides percentage calculations'
     },

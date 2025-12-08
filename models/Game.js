@@ -90,7 +90,6 @@ export default function(sequelize) {
   };
 
 
-
   Game.findByFormat = function(isDigital, options = {}) {
     return this.findAll({
       where: {

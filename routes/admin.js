@@ -816,7 +816,7 @@ router.post('/subscriptions/:subscriptionId/toggle-auto-renew', async (req, res)
       });
 
       // Calculate billing date changes when toggling auto-renewal
-      let updateData = {
+      const updateData = {
         metadata,
         updated_at: new Date()
       };

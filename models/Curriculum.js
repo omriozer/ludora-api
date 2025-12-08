@@ -178,7 +178,7 @@ export default function(sequelize) {
 
   Curriculum.findByGradeAndSubject = function(grade, subject, options = {}) {
 
-    const Op = this.sequelize.Sequelize.Op;
+    const { Op } = this.sequelize.Sequelize;
 
     // Extract specific where conditions and remove them from options.where to avoid conflicts
     const { teacher_user_id, class_id, is_active, ...otherWhereConditions } = options.where || {};
@@ -242,7 +242,7 @@ export default function(sequelize) {
 
   // New method for finding curricula by grade range
   Curriculum.findByGradeRange = function(gradeFrom, gradeTo, subject, options = {}) {
-    const Op = this.sequelize.Sequelize.Op;
+    const { Op } = this.sequelize.Sequelize;
 
     return this.findAll({
       where: {
@@ -261,7 +261,7 @@ export default function(sequelize) {
 
   // Helper method to find all curricula that overlap with a grade range
   Curriculum.findOverlappingGradeRange = function(gradeFrom, gradeTo, subject, options = {}) {
-    const Op = this.sequelize.Sequelize.Op;
+    const { Op } = this.sequelize.Sequelize;
 
     return this.findAll({
       where: {

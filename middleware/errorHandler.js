@@ -155,7 +155,7 @@ export function globalErrorHandler(error, req, res, _next) {
     statusCode = 500;
     message = 'Database error';
     code = 'DATABASE_ERROR';
-    
+
     // Don't expose database details in production
     if (process.env.ENVIRONMENT !== 'production') {
       details = { originalError: error.message };
@@ -174,7 +174,7 @@ export function globalErrorHandler(error, req, res, _next) {
     // File upload errors
     statusCode = 400;
     code = 'FILE_UPLOAD_ERROR';
-    
+
     switch (error.code) {
       case 'LIMIT_FILE_SIZE':
         message = 'File too large';
@@ -325,7 +325,7 @@ export function requestIdMiddleware(req, res, next) {
 // Request logging middleware
 export function requestLogger(req, res, next) {
   const start = Date.now();
-  
+
   res.on('finish', () => {
     const duration = Date.now() - start;
     const logData = {

@@ -363,7 +363,7 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
 
           const metadata = metadataResult.data;
           const fileSize = metadata.size;
-          const range = req.headers.range;
+          const { range } = req.headers;
 
           // Generate Israeli-optimized cache headers for marketing videos
           const israeliCacheHeaders = generateIsraeliCacheHeaders('marketing-video');
@@ -510,7 +510,7 @@ router.get('/stream/:entityType/:entityId', async (req, res) => {
 
       const metadata = metadataResult.data;
       const fileSize = metadata.size;
-      const range = req.headers.range;
+      const { range } = req.headers;
 
       // Generate Israeli timezone info for debugging private content access
       const israeliCacheHeaders = generateIsraeliCacheHeaders('user-data', { skipTimeOptimization: true });

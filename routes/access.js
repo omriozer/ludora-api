@@ -74,7 +74,7 @@ router.get('/my-purchases', authenticateToken, async (req, res) => {
 // GET /access/entity/:entityType/:entityId/users - Get users with access to entity (admin only)
 router.get('/entity/:entityType/:entityId/users', authenticateToken, async (req, res) => {
   const { entityType, entityId } = req.params;
-  
+
   if (!req.user.isAdmin) {
     return res.status(403).json({ error: 'Admin access required' });
   }
@@ -90,7 +90,7 @@ router.get('/entity/:entityType/:entityId/users', authenticateToken, async (req,
 // GET /access/entity/:entityType/:entityId/stats - Get access statistics for entity (admin only)
 router.get('/entity/:entityType/:entityId/stats', authenticateToken, async (req, res) => {
   const { entityType, entityId } = req.params;
-  
+
   if (!req.user.isAdmin) {
     return res.status(403).json({ error: 'Admin access required' });
   }
@@ -106,23 +106,23 @@ router.get('/entity/:entityType/:entityId/stats', authenticateToken, async (req,
 // POST /access/grant - Grant access to user (admin only)
 router.post('/grant', authenticateToken, async (req, res) => {
   const { userEmail, entityType, entityId, accessDays, isLifetimeAccess, price } = req.body;
-  
+
   if (!req.user.isAdmin) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
   // Validation
   if (!userEmail || !entityType || !entityId) {
-    return res.status(400).json({ 
-      error: 'userEmail, entityType, and entityId are required' 
+    return res.status(400).json({
+      error: 'userEmail, entityType, and entityId are required'
     });
   }
 
   try {
     const purchase = await AccessControlService.grantAccess(
-      userEmail, 
-      entityType, 
-      entityId, 
+      userEmail,
+      entityType,
+      entityId,
       {
         accessDays,
         isLifetimeAccess: isLifetimeAccess || false,
@@ -150,7 +150,7 @@ router.post('/grant', authenticateToken, async (req, res) => {
 // DELETE /access/revoke - Revoke access from user (admin only)
 router.delete('/revoke', authenticateToken, async (req, res) => {
   const { userEmail, entityType, entityId } = req.body;
-  
+
   // TODO: Add admin role check
   // if (!req.user.isAdmin) {
   //   return res.status(403).json({ error: 'Admin access required' });
@@ -158,14 +158,14 @@ router.delete('/revoke', authenticateToken, async (req, res) => {
 
   // Validation
   if (!userEmail || !entityType || !entityId) {
-    return res.status(400).json({ 
-      error: 'userEmail, entityType, and entityId are required' 
+    return res.status(400).json({
+      error: 'userEmail, entityType, and entityId are required'
     });
   }
 
   try {
     const result = await AccessControlService.revokeAccess(userEmail, entityType, entityId);
-    
+
     if (result.revoked) {
       res.json({
         message: 'Access revoked successfully',

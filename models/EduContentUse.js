@@ -323,8 +323,8 @@ export default function(sequelize) {
       return [];
     }
 
-    const EduContent = sequelize.models.EduContent;
-    const EduContentUse = sequelize.models.EduContentUse;
+    const { EduContent } = sequelize.models;
+    const { EduContentUse } = sequelize.models;
 
     if (!EduContent || !EduContentUse) {
       throw new Error('Required models not found');

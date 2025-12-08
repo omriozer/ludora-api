@@ -400,7 +400,7 @@ router.post('/payplus',
       // ENHANCED LOGGING: Capture PayPlus subscription webhook structure for analysis
       // This helps us understand recurring payment webhook payloads vs first payment
       if (isSubscriptionTransaction) {
-        const ludlog = (await import('../lib/ludlog.js')).ludlog;
+        const { ludlog } = await import('../lib/ludlog.js');
         ludlog.payments.prod('📊 SUBSCRIPTION WEBHOOK PAYLOAD ANALYSIS:', {
           webhookId: webhookLog.id,
           subscriptionId,
@@ -644,7 +644,7 @@ router.post('/payplus',
 router.post('/generic/:provider',
   verifyWebhookSignature('generic'),
   asyncHandler(async (req, res) => {
-    const provider = req.params.provider;
+    const { provider } = req.params;
 
     // TODO: Implement generic webhook handling
     res.status(200).json({

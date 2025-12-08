@@ -40,7 +40,7 @@ function parseCookies(handshake) {
 export function authenticateSocketUser(socket, next) {
   try {
     const cookies = parseCookies(socket.handshake);
-    const origin = socket.handshake.headers.origin;
+    const { origin } = socket.handshake.headers;
 
     // Detect portal from origin
     const portal = detectPortalFromOrigin(origin);

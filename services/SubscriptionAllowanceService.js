@@ -57,26 +57,96 @@ class SubscriptionAllowanceService {
    */
   static async getActiveSubscription(userId) {
     try {
+      // Get current date for comparison
+      const now = new Date();
+
+      ludlog.auth('🔍 getActiveSubscription - Starting query:', {
+        userId,
+        userIdType: typeof userId,
+        userIdLength: userId?.length,
+        currentDate: now.toISOString()
+      });
+
+      // Raw query to debug what's in the database
+      const rawQuery = `
+        SELECT id, user_id, status, end_date, subscription_plan_id, created_at
+        FROM subscription
+        WHERE user_id = $1 AND status = 'active'
+        ORDER BY created_at DESC
+        LIMIT 1;
+      `;
+
+      const rawResults = await models.sequelize.query(rawQuery, {
+        bind: [userId],
+        type: models.sequelize.QueryTypes.SELECT
+      });
+
+      ludlog.auth('🔍 getActiveSubscription - Raw SQL query result:', {
+        userId,
+        rawQueryFound: rawResults.length,
+        rawQueryData: rawResults.length > 0 ? {
+          id: rawResults[0].id,
+          status: rawResults[0].status,
+          end_date: rawResults[0].end_date
+        } : null
+      });
+
       const activeSubscription = await models.Subscription.findOne({
         where: {
           user_id: userId,
           status: 'active',
           [Op.or]: [
             { end_date: null },                              // Ongoing subscription
-            { end_date: { [Op.gte]: new Date() } }           // Not expired yet
+            models.sequelize.where(
+              models.sequelize.literal('end_date + INTERVAL \'1 day\''),
+              Op.gt,
+              now
+            )  // FIXED: Active through the entire end_date day (expires at beginning of next day)
           ]
-        },
-        include: [{
-          model: models.SubscriptionPlan,
-          as: 'subscriptionPlan',
-          attributes: ['id', 'name', 'benefits'],
-          required: false  // LEFT JOIN to see if association is the issue
-        }]
+        }
       });
+
+      ludlog.auth('🔍 getActiveSubscription - Query result:', {
+        userId,
+        foundSubscription: !!activeSubscription,
+        subscriptionId: activeSubscription?.id,
+        subscriptionStatus: activeSubscription?.status,
+        subscriptionEndDate: activeSubscription?.end_date,
+        hasPlan: !!activeSubscription?.subscription_plan_id,
+        planId: activeSubscription?.subscription_plan_id,
+        hasBenefits: false,
+        benefitsKeys: []
+      });
+
+      // If subscription found, get the plan separately
+      if (activeSubscription && activeSubscription.subscription_plan_id) {
+        try {
+          const subscriptionPlan = await models.SubscriptionPlan.findByPk(
+            activeSubscription.subscription_plan_id,
+            {
+              attributes: ['id', 'name', 'benefits']
+            }
+          );
+
+          // Manually attach the plan to the subscription object
+          activeSubscription.subscriptionPlan = subscriptionPlan;
+        } catch (planError) {
+          luderror.db('Error fetching subscription plan:', {
+            userId,
+            subscriptionPlanId: activeSubscription.subscription_plan_id,
+            error: planError.message
+          });
+          // Continue without plan data
+        }
+      }
+
 
       return activeSubscription;
     } catch (error) {
-      luderror.db('Error fetching active subscription:', { userId, error: error.message });
+      luderror.db('Error fetching active subscription:', {
+        userId,
+        error: error.message
+      });
       return null;
     }
   }
@@ -136,6 +206,7 @@ class SubscriptionAllowanceService {
     try {
       const targetMonth = monthYear || this.getCurrentMonthYear();
 
+
       // 1. Get active subscription with plan benefits
       const activeSubscription = await this.getActiveSubscription(userId);
 
@@ -146,7 +217,10 @@ class SubscriptionAllowanceService {
       // Use plan snapshot to preserve benefits user signed up for (critical fix for plan changes)
       const rawBenefits = activeSubscription.metadata?.planSnapshot?.benefits ||
                           activeSubscription.subscriptionPlan.benefits; // Fallback for old subscriptions
+
+
       const planBenefits = this.transformBenefits(rawBenefits);
+
 
       // 2. Count current month usage by product type
       let usageByType;
@@ -222,6 +296,7 @@ class SubscriptionAllowanceService {
           };
         }
       }
+
 
       return {
         subscription: activeSubscription,
@@ -543,7 +618,7 @@ class SubscriptionAllowanceService {
 
       // 🔍 STEP 5: Atomic Claim Creation (Database constraint handles concurrency)
       const currentMonth = this.getCurrentMonthYear();
-      const subscription = allowanceCheck.subscription;
+      const { subscription } = allowanceCheck;
 
       ludlog.generic('Creating subscription purchase claim:', {
         userId,
@@ -553,14 +628,19 @@ class SubscriptionAllowanceService {
         monthYear: currentMonth
       });
 
-      // DEBUG: Log exact data being inserted
+      // Create insert data with ONLY fields that exist in database schema
+      const claimedAtTimestamp = new Date();
       const insertData = {
         id: generateId(),
+        user_id: userId, // CRITICAL FIX: Add missing user_id field (required by model)
         subscription_id: subscription.id,
         product_type: productType,
         product_id: productId,
-        usage: {
-          claimed_at: new Date().toISOString(),
+        claimed_at: claimedAtTimestamp, // CRITICAL FIX: Add missing claimed_at field (required by model)
+        month_year: currentMonth, // CRITICAL FIX: Add missing month_year field (required NOT NULL constraint)
+        status: 'active', // CRITICAL FIX: Add missing status field (required by model)
+        usage_tracking: {  // FIXED: Use correct database column name "usage_tracking"
+          claimed_at: claimedAtTimestamp.toISOString(),
           claim_source: 'subscription_allowance',
           total_sessions: 0,
           total_usage_minutes: 0,
@@ -573,24 +653,30 @@ class SubscriptionAllowanceService {
             retention_score: 0
           },
           feature_usage: {}
-        }
+        },
+        // CRITICAL FIX: Explicitly provide timestamp fields
+        // Model has timestamps: false, so we must provide these NOT NULL fields
+        created_at: claimedAtTimestamp,
+        updated_at: claimedAtTimestamp
       };
 
-      ludlog.generic('🚨 DEBUG: About to call SubscriptionPurchase.create() with data:', insertData);
+      ludlog.generic('Creating SubscriptionPurchase with complete data:', {
+        id: insertData.id,
+        subscriptionId: insertData.subscription_id,
+        productType: insertData.product_type,
+        productId: insertData.product_id
+      });
 
       const subscriptionPurchase = await models.SubscriptionPurchase.create(insertData, { transaction });
 
-      ludlog.generic('🚨 DEBUG: SubscriptionPurchase.create() returned:', {
+      ludlog.generic('SubscriptionPurchase created successfully:', {
         id: subscriptionPurchase.id,
-        createdAt: subscriptionPurchase.created_at,
-        userId: subscriptionPurchase.user_id,
-        productType: subscriptionPurchase.product_type,
-        productId: subscriptionPurchase.product_id
+        subscriptionId: subscriptionPurchase.subscription_id,
+        createdAt: subscriptionPurchase.created_at
       });
 
-      ludlog.generic('🚨 DEBUG: About to commit transaction...');
       await transaction.commit();
-      ludlog.generic('🚨 DEBUG: Transaction committed successfully!');
+      ludlog.generic('Transaction committed successfully');
 
       ludlog.generic('Product claimed successfully:', {
         userId,
@@ -642,18 +728,39 @@ class SubscriptionAllowanceService {
         };
       }
 
-      luderror.db('Error claiming product:', {
+      // Enhanced error logging with full error details
+      luderror.db('CRITICAL: Error claiming product via subscription:');
+      console.error({
         userId,
         productType,
         productId,
-        error: error.message,
-        stack: error.stack,
-        name: error.name
+        errorName: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        // Sequelize-specific error details
+        sqlMessage: error.parent?.message,
+        sqlCode: error.parent?.code,
+        sqlDetail: error.parent?.detail,
+        sqlHint: error.parent?.hint,
+        // Database constraint details
+        constraintName: error.parent?.constraint,
+        tableName: error.parent?.table,
+        columnName: error.parent?.column,
+        // Full error object for debugging
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
       });
+
+      // Return detailed error for debugging (will be sanitized in production)
       return {
         success: false,
         reason: 'An error occurred while claiming the product. Please try again.',
-        step: 'database_error'
+        step: 'database_error',
+        // Include error details for debugging (these should be logged, not shown to user)
+        debugInfo: process.env.NODE_ENV === 'development' ? {
+          errorType: error.name,
+          errorMessage: error.message,
+          sqlError: error.parent?.message
+        } : undefined
       };
     }
   }
@@ -799,7 +906,7 @@ class SubscriptionAllowanceService {
         throw new Error('No active subscription claim found for this product');
       }
 
-      const currentUsage = claim.usage || {};
+      const currentUsage = claim.usage_tracking || {};
       const now = new Date().toISOString();
 
       // Update core metrics
@@ -853,7 +960,7 @@ class SubscriptionAllowanceService {
       }
 
       await models.SubscriptionPurchase.update({
-        usage: updatedUsage
+        usage_tracking: updatedUsage
       }, {
         where: { id: claim.id }
       });
@@ -1024,7 +1131,7 @@ class SubscriptionAllowanceService {
 
       const claims = await models.SubscriptionPurchase.findAll({
         where: whereClause,
-        attributes: ['subscription_id', 'product_type', 'product_id', 'created_at', 'usage']
+        attributes: ['subscription_id', 'product_type', 'product_id', 'created_at', 'usage_tracking']
       });
 
       // Aggregate analytics
@@ -1048,7 +1155,7 @@ class SubscriptionAllowanceService {
           (analytics.claimsByType[claim.product_type] || 0) + 1;
 
         // Usage metrics
-        const usage = claim.usage || {};
+        const usage = claim.usage_tracking || {};
         analytics.totalUsageMinutes += usage.total_usage_minutes || 0;
         totalSessions += usage.total_sessions || 0;
 
@@ -1155,7 +1262,7 @@ class SubscriptionAllowanceService {
             [Op.between]: [startDate, endDate]
           }
         },
-        attributes: ['product_type', 'product_id', 'created_at', 'usage'],
+        attributes: ['product_type', 'product_id', 'created_at', 'usage_tracking'],
         order: [['created_at', 'DESC']]
       });
 
@@ -1184,7 +1291,7 @@ class SubscriptionAllowanceService {
         summary.claimsByType[claim.product_type] =
           (summary.claimsByType[claim.product_type] || 0) + 1;
 
-        const usage = claim.usage || {};
+        const usage = claim.usage_tracking || {};
         totalUsageMinutes += usage.total_usage_minutes || 0;
         totalSessions += usage.total_sessions || 0;
 

@@ -240,7 +240,7 @@ export async function resolveBrandingSettingsWithFallback(fileEntity, configurat
   // PRIORITY 1: Check if file has custom branding_settings
   if (fileEntity?.branding_settings && Object.keys(fileEntity.branding_settings).length > 0) {
     // Apply copyright text from Configuration settings
-    let result = JSON.parse(JSON.stringify(fileEntity.branding_settings));
+    const result = JSON.parse(JSON.stringify(fileEntity.branding_settings));
     if (configurationSettings?.copyright_text && result.elements?.['copyright-text']) {
       result.elements['copyright-text'].forEach(element => {
         element.content = configurationSettings.copyright_text;
@@ -279,4 +279,3 @@ export async function resolveBrandingSettingsWithFallback(fileEntity, configurat
   // PRIORITY 4: FAIL - No template configuration found
   throw new Error(`No branding template configured for file ${fileEntity?.id}. Please configure branding_settings, branding_template_id, or set a default template for format: ${targetFormat}`);
 }
-

@@ -23,7 +23,7 @@ export function validateBody(schema) {
 export function validateQuery(schema) {
   return (req, res, next) => {
     const { error, value } = schema.validate(req.query, { abortEarly: false });
-    
+
     if (error) {
       const errorMessages = error.details.map(detail => detail.message);
       return res.status(400).json({
@@ -31,7 +31,7 @@ export function validateQuery(schema) {
         details: errorMessages
       });
     }
-    
+
     // Replace query parameters with validated values
     Object.keys(req.query).forEach(key => delete req.query[key]);
     Object.assign(req.query, value);
@@ -236,17 +236,17 @@ export const schemas = {
     tags: Joi.array().items(Joi.string()).default([]),
     target_audience: Joi.string().allow(null, ''),
     access_days: Joi.number().integer().min(0).allow(null), // null = lifetime access
-    
+
     // Workshop type validation
     workshop_type: Joi.string().valid('recorded', 'online_live').required(),
-    
+
     // Fields for recorded workshops
     video_file_url: Joi.when('workshop_type', {
       is: 'recorded',
       then: Joi.string().allow(null, ''), // Optional for recorded workshops
       otherwise: Joi.string().allow(null, '') // Not needed for online workshops
     }),
-    
+
     // Fields for online live workshops
     scheduled_date: Joi.when('workshop_type', {
       is: 'online_live',
@@ -256,7 +256,7 @@ export const schemas = {
       }),
       otherwise: Joi.date().iso().allow(null)
     }),
-    
+
     meeting_link: Joi.when('workshop_type', {
       is: 'online_live',
       then: Joi.string().uri().required().messages({
@@ -265,7 +265,7 @@ export const schemas = {
       }),
       otherwise: Joi.string().allow(null, '')
     }),
-    
+
     meeting_platform: Joi.when('workshop_type', {
       is: 'online_live',
       then: Joi.string().valid('zoom', 'google_meet', 'teams', 'other').required().messages({
@@ -274,11 +274,11 @@ export const schemas = {
       }),
       otherwise: Joi.string().valid('zoom', 'google_meet', 'teams', 'other').allow(null)
     }),
-    
+
     meeting_password: Joi.string().allow(null, ''),
     max_participants: Joi.number().integer().min(1).allow(null),
     duration_minutes: Joi.number().integer().min(1).allow(null),
-    
+
     // Optional marketing video fields that may be sent from frontend
     marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null),
     marketing_video_id: Joi.string().allow(null, ''),
@@ -311,7 +311,7 @@ export const schemas = {
     meeting_password: Joi.string().allow(null, ''),
     max_participants: Joi.number().integer().min(1).allow(null),
     duration_minutes: Joi.number().integer().min(1).allow(null),
-    
+
     // Optional marketing video fields that may be sent from frontend
     marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null),
     marketing_video_id: Joi.string().allow(null, ''),
@@ -491,7 +491,7 @@ export const customValidators = {
       });
     }
 
-    const file = req.file;
+    const { file } = req;
     const maxSize = 50 * 1024 * 1024; // 50MB
 
     if (file.size > maxSize) {
@@ -527,7 +527,7 @@ export const customValidators = {
       });
     }
 
-    const file = req.file;
+    const { file } = req;
     const maxVideoSize = 500 * 1024 * 1024; // 500MB for videos
 
     if (file.size > maxVideoSize) {

@@ -241,8 +241,7 @@ class SecretsService {
       else if (serviceAccountData.length > 100 && !serviceAccountData.includes('/')) {
         const decoded = Buffer.from(serviceAccountData, 'base64').toString('utf8');
         parsedAccount = JSON.parse(decoded);
-      }
-      else {
+      } else {
         throw new Error('Invalid Firebase service account format');
       }
 

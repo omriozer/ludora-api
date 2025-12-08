@@ -152,10 +152,10 @@ router.post('/extractDataFromUploadedFile', authenticateToken, rateLimiters.uplo
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded for data extraction' });
     }
-    
-    const result = await FileService.extractDataFromUploadedFile({ 
-      file: req.file, 
-      extractionType: req.body.extractionType 
+
+    const result = await FileService.extractDataFromUploadedFile({
+      file: req.file,
+      extractionType: req.body.extractionType
     });
     res.json({
       success: true,

@@ -39,7 +39,7 @@ async function mergePdfTemplate(pdfBuffer, templateSettings, variables = {}, opt
     }
 
     // Check if page replacement is needed
-    const accessiblePages = options.accessiblePages;
+    const { accessiblePages } = options;
     const needsPageReplacement = accessiblePages && Array.isArray(accessiblePages);
 
     if (needsPageReplacement) {
@@ -149,7 +149,6 @@ async function addTemplateElement(page, elementType, element, variables, coordin
 
     // Convert percentage positions to PDF coordinates using utility
     const { x: elementX, y: elementY } = coordinateConverter.percentageToPdf(elementXPercent, elementYPercent);
-
 
 
     // Get common style properties
@@ -645,7 +644,7 @@ async function renderMultiLineText(page, content, x, y, fontSize, font, color, o
 
     // Calculate starting Y position to center the text block
     const totalHeight = lines.length * lineHeight;
-    let startY = y + (totalHeight / 2) - (lineHeight / 2);
+    const startY = y + (totalHeight / 2) - (lineHeight / 2);
 
     // Render each line with proper rotation around center
     for (let i = 0; i < lines.length; i++) {

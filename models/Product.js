@@ -135,7 +135,7 @@ export default (sequelize) => {
         // Lesson plans with linked products must have valid structure
         if (linkedProducts.length > 0) {
           // Validate each linked product exists
-          const models = sequelize.models;
+          const { models } = sequelize;
           for (const linkedProduct of linkedProducts) {
             if (!linkedProduct.product_id || !linkedProduct.product_type) {
               product.is_published = false;
@@ -168,7 +168,7 @@ export default (sequelize) => {
       }
 
       // For regular file products, check for uploaded file
-      const models = sequelize.models;
+      const { models } = sequelize;
       const fileEntity = await models.File.findByPk(product.entity_id);
 
       // If File has no file_name, force is_published to false
@@ -300,7 +300,7 @@ export default (sequelize) => {
   // Polymorphic association methods
   Product.prototype.getEntity = async function() {
     // Regular polymorphic association for all product types
-    const models = this.constructor.models;
+    const { models } = this.constructor;
     const ModelClass = models[this.product_type.charAt(0).toUpperCase() + this.product_type.slice(1)];
     if (!ModelClass) {
       throw new Error(`Model for product_type '${this.product_type}' not found`);
@@ -325,7 +325,7 @@ export default (sequelize) => {
 
   // Static method to create product with entity (for EntityService)
   Product.createWithEntity = async function(productData, entityData, transaction) {
-    const models = this.models;
+    const { models } = this;
 
     // Create the entity first
     const EntityModel = models[productData.product_type.charAt(0).toUpperCase() + productData.product_type.slice(1)];

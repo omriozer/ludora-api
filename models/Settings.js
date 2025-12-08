@@ -51,7 +51,7 @@ export default function(sequelize) {
     const settings = {};
 
     for (const config of configRecords) {
-      let value = config.value;
+      let { value } = config;
 
       // Cast values based on type hint, but preserve null values
       if (value !== null && value !== undefined) {

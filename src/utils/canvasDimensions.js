@@ -8,27 +8,27 @@ const CANVAS_DIMENSIONS = {
   'pdf-a4-portrait': {
     width: 800,
     height: 600,
-    aspectRatio: 4/3,
+    aspectRatio: 4 / 3,
     description: 'PDF Portrait A4'
   },
   'pdf-a4-landscape': {
     width: 800,
     height: 600,
-    aspectRatio: 4/3,
+    aspectRatio: 4 / 3,
     description: 'PDF Landscape A4'
   },
   // SVG Lesson Plan - 16:9 aspect ratio based on actual slide dimensions
   'svg-lessonplan': {
     width: 1920,
     height: 1080,
-    aspectRatio: 16/9,
+    aspectRatio: 16 / 9,
     description: 'SVG Lesson Plan Slides'
   },
   // Default fallback
   'default': {
     width: 800,
     height: 600,
-    aspectRatio: 4/3,
+    aspectRatio: 4 / 3,
     description: 'Default Canvas'
   }
 };

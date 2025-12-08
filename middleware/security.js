@@ -237,7 +237,7 @@ export function securityAuditLogger(req, res, next) {
 
 // Rate limiting bypass detection
 export function rateLimitBypassDetection(req, res, next) {
-  const headers = req.headers;
+  const { headers } = req;
   const suspiciousHeaders = [
     'x-forwarded-for',
     'x-real-ip',

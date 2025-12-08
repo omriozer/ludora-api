@@ -535,7 +535,7 @@ class SubscriptionPaymentStatusService {
 
       // Check the payment status of this new renewal charge
       const statusCode = latestCharge.status_code;
-      const status = latestCharge.status;
+      const { status } = latestCharge;
 
       if (statusCode === '000' || status === 'success') {
         return {
@@ -759,7 +759,7 @@ class SubscriptionPaymentStatusService {
         throw new Error(`Subscription ${subscriptionId} not found in database`);
       }
 
-      const transaction = subscription.transaction;
+      const { transaction } = subscription;
       if (!transaction || !transaction.payment_page_request_uid) {
         throw new Error(`No PayPlus page request UID found for subscription ${subscriptionId}`);
       }

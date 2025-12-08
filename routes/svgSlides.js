@@ -101,7 +101,7 @@ router.post(
       }
 
       const { lessonPlanId } = req.params;
-      const files = req.files;
+      const { files } = req;
       const userId = req.user.id;
 
       if (!files || files.length === 0) {

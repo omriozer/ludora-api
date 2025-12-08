@@ -73,7 +73,7 @@ class EmailService {
         }
       };
     } catch (error) {
-      
+
       // Log failed email
       await this.models.EmailLog.create({
         id: generateId(),
@@ -156,7 +156,7 @@ class EmailService {
     if (!template || !data) return template;
 
     let processed = template;
-    
+
     // Replace template variables like {{variable_name}}
     Object.keys(data).forEach(key => {
       const placeholder = `{{${key}}}`;
@@ -272,12 +272,12 @@ class EmailService {
           html_content: `
             <h2>Payment Confirmed</h2>
             <p>Hi {{buyer_name}},</p>
-            <p>Your payment of ${{amount}} has been successfully processed.</p>
+            <p>Your payment of ${{ amount }} has been successfully processed.</p>
             <p>Order Details:</p>
             <ul>
               <li>Transaction ID: {{transaction_uid}}</li>
               <li>Product: {{product_title}}</li>
-              <li>Amount: ${{amount}}</li>
+              <li>Amount: ${{ amount }}</li>
             </ul>
             <p>Thank you for your purchase!</p>
           `,
@@ -320,7 +320,7 @@ class EmailService {
       return {
         success: true,
         message: 'System email templates initialized',
-        data: { 
+        data: {
           initialized: createdTemplates.length,
           total: systemTemplates.length
         }

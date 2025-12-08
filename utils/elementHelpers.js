@@ -218,7 +218,7 @@ export function createUnifiedElementInfo(element, elementType, elementKey = null
 export function getElementShadow(element, elementType) {
   if (!element || !element.style || !element.style.shadow) return null;
 
-  const shadow = element.style.shadow;
+  const { shadow } = element.style;
 
   // Return null if shadow is disabled
   if (!shadow.enabled) return null;

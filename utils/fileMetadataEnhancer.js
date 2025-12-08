@@ -225,7 +225,7 @@ class FileMetadataEnhancer {
         assetType
       });
 
-      const buffer = file.buffer;
+      const { buffer } = file;
       const startTime = Date.now();
 
       // Calculate checksums (always done for integrity)

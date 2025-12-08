@@ -190,7 +190,7 @@ async function addMissingSettings() {
 
       // Validate value matches declared type
       const valueType = setting.value_type;
-      const value = setting.value;
+      const { value } = setting;
 
       if (valueType === 'string' && value !== null && typeof value !== 'string') {
         throw new Error(`Value for ${setting.key} should be string but got ${typeof value}`);

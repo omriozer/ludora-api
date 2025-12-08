@@ -39,11 +39,11 @@ class SubscriptionPaymentService {
       }
 
       // Get subscription plan details (already validated)
-      const subscriptionPlan = validation.subscriptionPlan;
+      const { subscriptionPlan } = validation;
 
       // Calculate pricing with discounts
       const pricingInfo = calcSubscriptionPlanPrice(subscriptionPlan);
-      const finalPrice = pricingInfo.finalPrice;
+      const { finalPrice } = pricingInfo;
 
       if (finalPrice === 0) {
         // Free subscription - create and activate immediately
@@ -204,7 +204,7 @@ class SubscriptionPaymentService {
       const webhookUrl = this.getWebhookUrl();
 
       // Log webhook URL for debugging
-      const ludlog = (await import('../lib/ludlog.js')).ludlog;
+      const { ludlog } = await import('../lib/ludlog.js');
       ludlog.payment('🔗 SubscriptionPaymentService: Using webhook URL:', {
         webhookUrl,
         environment,

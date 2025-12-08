@@ -1,4 +1,4 @@
-import { DataTypes, Op } from 'sequelize';
+import { DataTypes } from 'sequelize';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 
 export default function(sequelize) {
@@ -7,6 +7,16 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       primaryKey: true,
       allowNull: false,
+    },
+    user_id: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      references: {
+        model: 'user',
+        key: 'id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE'
+      }
     },
     subscription_id: {
       type: DataTypes.STRING,
@@ -31,7 +41,24 @@ export default function(sequelize) {
       allowNull: false,
       comment: 'ID of the specific product entity'
     },
-    usage: {
+    claimed_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: DataTypes.NOW,
+      comment: 'When the product was claimed via subscription'
+    },
+    month_year: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      comment: 'Format: YYYY-MM (e.g., 2025-11) for monthly allowance tracking'
+    },
+    status: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'active',
+      comment: 'Status: active, expired, cancelled'
+    },
+    usage_tracking: {
       type: DataTypes.JSONB,
       allowNull: false,
       defaultValue: {},
@@ -50,24 +77,6 @@ export default function(sequelize) {
   }, {
     tableName: 'subscription_purchases',
     timestamps: false,
-    indexes: [
-      {
-        fields: ['product_type', 'product_id'],
-        name: 'idx_subscription_purchase_product'
-      },
-      {
-        fields: ['subscription_id'],
-        name: 'idx_subscription_purchase_subscription'
-      },
-      {
-        fields: ['status'],
-        name: 'idx_subscription_purchase_status'
-      },
-      {
-        fields: ['claimed_at'],
-        name: 'idx_subscription_purchase_claimed_at'
-      },
-    ],
   });
 
   SubscriptionPurchase.associate = function(models) {
@@ -77,7 +86,7 @@ export default function(sequelize) {
       as: 'subscription'
     });
 
-    // Belongs to Product (correct association)
+    // Belongs to Product
     SubscriptionPurchase.belongsTo(models.Product, {
       foreignKey: 'product_id',
       as: 'product'
@@ -86,7 +95,7 @@ export default function(sequelize) {
 
   // Helper methods for usage tracking
   SubscriptionPurchase.prototype.recordUsage = async function(usageData = {}) {
-    const currentUsage = this.usage || {};
+    const currentUsage = this.usage_tracking || {};
 
     // Initialize usage fields if not present
     const updatedUsage = {
@@ -123,19 +132,14 @@ export default function(sequelize) {
     }
 
     return this.update({
-      usage: updatedUsage,
+      usage_tracking: updatedUsage,
       updated_at: new Date()
     });
   };
 
-  // Check if subscription purchase is still valid
-  SubscriptionPurchase.prototype.isValid = function() {
-    return this.status === 'active';
-  };
-
   // Get usage statistics
   SubscriptionPurchase.prototype.getUsageStats = function() {
-    const usage = this.usage || {};
+    const usage = this.usage_tracking || {};
     return {
       times_used: usage.times_used || 0,
       total_usage_minutes: usage.total_usage_minutes || 0,
@@ -146,23 +150,6 @@ export default function(sequelize) {
   };
 
   // Class methods for querying
-  SubscriptionPurchase.findBySubscriptionAndMonth = function(subscriptionId, monthYear, options = {}) {
-    // Parse monthYear to get date range
-    const [year, month] = monthYear.split('-').map(Number);
-    const startOfMonth = new Date(year, month - 1, 1); // Month is 0-indexed
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59); // Last day of month
-
-    return this.findAll({
-      where: {
-        subscription_id: subscriptionId,
-        created_at: {
-          [Op.between]: [startOfMonth, endOfMonth]
-        }
-      },
-      ...options
-    });
-  };
-
   SubscriptionPurchase.findByProduct = function(productType, productId, options = {}) {
     return this.findAll({
       where: {
@@ -171,13 +158,6 @@ export default function(sequelize) {
       },
       ...options
     });
-  };
-
-  // Generate month_year string from date
-  SubscriptionPurchase.getMonthYear = function(date = new Date()) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
   };
 
   return SubscriptionPurchase;

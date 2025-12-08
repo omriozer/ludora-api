@@ -45,6 +45,20 @@ class AccessControlIntegrator {
       // Get user's subscription allowances (if any)
       const allowances = await SubscriptionAllowanceService.calculateMonthlyAllowances(userId);
 
+      // TODO remove debug
+      ludlog.auth('🔍 getUserAccessContext - Raw allowances from SubscriptionAllowanceService:', {
+        userId,
+        hasAllowances: !!allowances,
+        allowancesData: allowances ? {
+          hasSubscription: !!allowances.subscription,
+          subscriptionId: allowances.subscription?.id,
+          subscriptionStatus: allowances.subscription?.status,
+          monthYear: allowances.monthYear,
+          allowanceKeys: Object.keys(allowances.allowances || {}),
+          allowances: allowances.allowances
+        } : null
+      });
+
       // Extract active subscription info
       const activeSubscriptions = allowances?.subscription ? [{
         id: allowances.subscription.id,
@@ -55,7 +69,7 @@ class AccessControlIntegrator {
         endDate: allowances.subscription.end_date
       }] : [];
 
-      return {
+      const userContext = {
         subscriptionAllowances: allowances ? {
           monthYear: allowances.monthYear,
           allowances: allowances.allowances,
@@ -65,6 +79,16 @@ class AccessControlIntegrator {
         activeSubscriptions,
         userRole: null // Could be enhanced to include user role if needed
       };
+
+      // TODO remove debug
+      ludlog.auth('🔍 getUserAccessContext - Formatted user context:', {
+        userId,
+        hasSubscriptionAllowances: !!userContext.subscriptionAllowances,
+        subscriptionAllowancesData: userContext.subscriptionAllowances,
+        activeSubscriptionsCount: activeSubscriptions.length
+      });
+
+      return userContext;
     } catch (error) {
       luderror.auth('Error getting user access context:', error);
       return {
@@ -209,12 +233,29 @@ class AccessControlIntegrator {
     const hasAccess = accessResult.hasAccess || false;
     const accessType = accessResult.accessType || 'none';
     const reason = accessResult.reason || 'no_access';
+    const isFree = productData.price === 0 || productData.is_free === true;
 
     // Determine UI display flags based on access type
     const uiFlags = this.determineUIFlags(accessResult, productData, userContext);
 
+    // UNIFIED SIMPLE LOGIC: Determine recommended action based on user requirements
+    // hasAccess ? 'access' : isFree ? 'addToLibrary' : canClaim ? 'claim' : 'purchase'
+    let recommendedAction;
+    if (hasAccess) {
+      recommendedAction = 'access';
+    } else if (isFree) {
+      recommendedAction = 'addToLibrary';
+    } else if (uiFlags.canClaim) {
+      recommendedAction = 'claim';
+    } else {
+      recommendedAction = 'purchase';
+    }
+
     // Build comprehensive access object
     const accessInfo = {
+      // SIMPLE UNIFIED ACTION (NEW - frontend can use this directly)
+      recommendedAction, // 'access' | 'addToLibrary' | 'claim' | 'purchase'
+
       // Core access status
       hasAccess,
       accessType,
@@ -385,32 +426,69 @@ class AccessControlIntegrator {
    * @returns {boolean} Whether user can claim this product
    */
   determineCanClaim(productData, userContext) {
+    // TODO remove debug
+    ludlog.auth('🔍 determineCanClaim - Checking claim eligibility:', {
+      productType: productData.product_type,
+      productId: productData.id,
+      hasUserContext: !!userContext,
+      hasSubscriptionAllowances: !!userContext?.subscriptionAllowances
+    });
+
     // No subscription allowances = can't claim
     if (!userContext?.subscriptionAllowances) {
+      // TODO remove debug
+      ludlog.auth('🔍 determineCanClaim - No subscription allowances, returning false');
       return false;
     }
 
     const productType = productData.product_type;
-    const allowances = userContext.subscriptionAllowances.allowances;
+    const { allowances } = userContext.subscriptionAllowances;
+
+    // TODO remove debug
+    ludlog.auth('🔍 determineCanClaim - Allowances check:', {
+      productType,
+      hasAllowances: !!allowances,
+      allowanceKeys: allowances ? Object.keys(allowances) : [],
+      hasProductTypeAllowance: !!(allowances && allowances[productType])
+    });
 
     // Check if this product type has allowances
     if (!allowances || !allowances[productType]) {
+      // TODO remove debug
+      ludlog.auth('🔍 determineCanClaim - Product type has no allowances, returning false');
       return false;
     }
 
     const typeAllowance = allowances[productType];
 
+    // TODO remove debug
+    ludlog.auth('🔍 determineCanClaim - Type allowance details:', {
+      productType,
+      typeAllowance,
+      remainingType: typeof typeAllowance.remaining,
+      isUnlimited: typeAllowance.remaining === 'unlimited',
+      remainingValue: typeAllowance.remaining
+    });
+
     // Can claim if:
     // 1. Allowance is unlimited, OR
     // 2. Remaining allowances > 0
     if (typeAllowance.remaining === 'unlimited') {
+      // TODO remove debug
+      ludlog.auth('🔍 determineCanClaim - Unlimited allowance, returning true');
       return true;
     }
 
     if (typeof typeAllowance.remaining === 'number' && typeAllowance.remaining > 0) {
+      // TODO remove debug
+      ludlog.auth('🔍 determineCanClaim - Has remaining allowances, returning true:', {
+        remaining: typeAllowance.remaining
+      });
       return true;
     }
 
+    // TODO remove debug
+    ludlog.auth('🔍 determineCanClaim - No remaining allowances, returning false');
     return false;
   }
 
@@ -427,7 +505,7 @@ class AccessControlIntegrator {
     }
 
     const productType = productData.product_type;
-    const allowances = userContext.subscriptionAllowances.allowances;
+    const { allowances } = userContext.subscriptionAllowances;
 
     if (!allowances || !allowances[productType]) {
       return 0;
@@ -449,7 +527,7 @@ class AccessControlIntegrator {
     }
 
     const productType = productData.product_type;
-    const allowances = userContext.subscriptionAllowances.allowances;
+    const { allowances } = userContext.subscriptionAllowances;
 
     if (!allowances || !allowances[productType]) {
       return null;
@@ -562,6 +640,9 @@ class AccessControlIntegrator {
    */
   formatNoAccess() {
     return {
+      // SIMPLE UNIFIED ACTION (default for non-authenticated users)
+      recommendedAction: 'purchase', // Default action for non-authenticated users
+
       hasAccess: false,
       accessType: 'none',
       reason: 'not_authenticated',
@@ -571,10 +652,15 @@ class AccessControlIntegrator {
       canPreview: false,
       canPlay: false,
       canCreateSessions: false,
+      canClaim: false, // CRITICAL FIX: Frontend expects this field
       showPurchaseButton: true,
       showSubscriptionPrompt: true,
       showFullContent: false,
       showWatermark: false,
+
+      // Subscription Allowance Info (for consistency with authenticated responses)
+      remainingAllowances: 0,
+      allowanceType: null,
 
       // Access Details
       isLifetimeAccess: false,

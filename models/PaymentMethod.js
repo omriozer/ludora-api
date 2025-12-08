@@ -239,7 +239,7 @@ export default function(sequelize) {
    * @param {Object} options - Transaction options
    */
   PaymentMethod.setAsDefault = async function(paymentMethodId, userId, options = {}) {
-    const transaction = options.transaction;
+    const { transaction } = options;
 
     // Remove default from all user's methods
     await this.update(

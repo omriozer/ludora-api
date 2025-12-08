@@ -52,7 +52,7 @@ async function validateSessionAccess(sessionId, userId, userRole, transaction = 
     throw new Error('Session not found');
   }
 
-  const lobby = session.lobby;
+  const { lobby } = session;
 
   // Admin bypass
   if (userRole === 'admin' || userRole === 'sysadmin') {
@@ -87,7 +87,7 @@ router.get('/game-sessions/:sessionId',
     const transaction = await models.sequelize.transaction();
     try {
       const { sessionId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Validate access and get session
       const { hasAccess } = await validateSessionAccess(
@@ -141,7 +141,7 @@ router.put('/game-sessions/:sessionId',
     try {
       const { sessionId } = req.validatedParams;
       const { session_settings } = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Validate access
       const { session, lobby, hasAccess } = await validateSessionAccess(
@@ -214,7 +214,7 @@ router.delete('/game-sessions/:sessionId',
     const transaction = await models.sequelize.transaction();
     try {
       const { sessionId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Close the session
       const finishedSession = await GameSessionService.finishSession(
@@ -265,7 +265,7 @@ router.get('/game-sessions/:sessionId/participants',
     const transaction = await models.sequelize.transaction();
     try {
       const { sessionId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Validate access
       const { session, hasAccess } = await validateSessionAccess(
@@ -320,7 +320,7 @@ router.post('/game-sessions/:sessionId/participants',
     try {
       const { sessionId } = req.validatedParams;
       const participantData = req.validatedData;
-      const user = req.user; // May be null for guest users
+      const { user } = req; // May be null for guest users
 
       const userId = user?.id || 'guest';
 
@@ -388,7 +388,7 @@ router.delete('/game-sessions/:sessionId/participants/:participantId',
     const transaction = await models.sequelize.transaction();
     try {
       const { sessionId, participantId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Remove participant using service
       const updatedSession = await GameSessionService.removeParticipant(
@@ -435,7 +435,7 @@ router.post('/game-sessions/:sessionId/participants/teacher-add',
     try {
       const { sessionId } = req.validatedParams;
       const participantData = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Validate access - only lobby owner/host can add participants
       const { session, lobby, hasAccess } = await validateSessionAccess(
@@ -508,7 +508,7 @@ router.delete('/game-sessions/:sessionId/participants/:participantId/teacher-rem
     const transaction = await models.sequelize.transaction();
     try {
       const { sessionId, participantId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Validate access - only lobby owner/host can remove participants
       const { session, lobby } = await validateSessionAccess(
@@ -582,7 +582,7 @@ router.get('/game-sessions/:sessionId/state',
     const transaction = await models.sequelize.transaction();
     try {
       const { sessionId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Validate access
       const { session, hasAccess } = await validateSessionAccess(
@@ -637,7 +637,7 @@ router.put('/game-sessions/:sessionId/state',
     try {
       const { sessionId } = req.validatedParams;
       const { current_state, auto_save, update_metadata } = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Update game state using service
       const updatedSession = await GameSessionService.updateGameState(
@@ -691,7 +691,7 @@ router.put('/game-sessions/:sessionId/finish',
     try {
       const { sessionId } = req.validatedParams;
       const { final_data, reason, save_results } = req.validatedData;
-      const user = req.user;
+      const { user } = req;
 
       // Finish session using service
       const finishedSession = await GameSessionService.finishSession(
@@ -743,7 +743,7 @@ router.put('/game-sessions/:sessionId/start',
     const transaction = await models.sequelize.transaction();
     try {
       const { sessionId } = req.validatedParams;
-      const user = req.user;
+      const { user } = req;
 
       // Start session using service
       const startedSession = await GameSessionService.startSession(
@@ -794,7 +794,7 @@ router.get('/game-sessions/my-active',
   async (req, res) => {
     const transaction = await models.sequelize.transaction();
     try {
-      const user = req.user;
+      const { user } = req;
 
       // Find sessions where user is a participant and session is active
       const activeSessions = await models.GameSession.findAll({

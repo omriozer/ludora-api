@@ -366,7 +366,7 @@ export default (sequelize) => {
 
   // Get all file entities with their configurations
   LessonPlan.prototype.getFilesWithEntities = async function() {
-    const models = this.constructor.models;
+    const { models } = this.constructor;
     const fileConfigs = this.getFiles();
 
     const filesWithEntities = await Promise.all(
@@ -385,7 +385,7 @@ export default (sequelize) => {
   // Static method to find lesson plan with curriculum item data
   // Curriculum items are accessed through Product -> CurriculumProduct
   LessonPlan.findWithCurriculumItems = async function(lessonPlanId) {
-    const models = this.models;
+    const { models } = this;
 
     // Find the lesson plan
     const lessonPlan = await this.findByPk(lessonPlanId);

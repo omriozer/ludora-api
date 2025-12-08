@@ -21,11 +21,11 @@ const access = promisify(fs.access);
 router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, res) => {
   try {
     const { videoId } = req.params;
-    
+
     // Construct the video file path
     // In a real application, you might store the actual file path in the database
     const videoPath = path.join(VIDEO_STORAGE_DIR, `${videoId}.mp4`);
-    
+
     // Check if the video file exists
     try {
       await access(videoPath, fs.constants.F_OK);
@@ -40,19 +40,19 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
     // Get file statistics
     const stats = await stat(videoPath);
     const fileSize = stats.size;
-    
+
     // Check if this is a range request
-    const range = req.headers.range;
-    
+    const { range } = req.headers;
+
     // Log access for analytics
-    
+
     if (range) {
       // Parse the range header
       // Format: "bytes=start-end" or "bytes=start-"
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      
+
       // Validate range
       if (start >= fileSize || end >= fileSize || start > end) {
         return res.status(416).set({
@@ -64,10 +64,10 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
       }
 
       const chunkSize = (end - start) + 1;
-      
+
       // Create a read stream for the specified range
       const stream = fs.createReadStream(videoPath, { start, end });
-      
+
       // Set partial content headers
       res.status(206).set({
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -78,23 +78,23 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
         'X-Access-Type': req.videoAccess.reason, // Custom header for debugging
         'X-Video-ID': videoId
       });
-      
+
       // Pipe the stream to the response
       stream.pipe(res);
-      
+
       // Handle stream errors
       stream.on('error', (error) => {
         if (!res.headersSent) {
           res.status(500).json({ error: 'Stream error', message: 'Failed to stream video content' });
         }
       });
-      
+
     } else {
       // No range header - send the entire file
-      
+
       // Create a read stream for the entire file
       const stream = fs.createReadStream(videoPath);
-      
+
       // Set headers for full content
       res.set({
         'Content-Length': fileSize,
@@ -104,10 +104,10 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
         'X-Access-Type': req.videoAccess.reason, // Custom header for debugging
         'X-Video-ID': videoId
       });
-      
+
       // Pipe the stream to the response
       stream.pipe(res);
-      
+
       // Handle stream errors
       stream.on('error', (error) => {
         if (!res.headersSent) {
@@ -115,9 +115,9 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
         }
       });
     }
-    
+
   } catch (error) {
-    
+
     if (!res.headersSent) {
       res.status(500).json({
         error: 'Internal server error',
@@ -134,17 +134,17 @@ router.get('/:videoId/stream', requireAuth, videoAccessMiddleware, async (req, r
 router.get('/:videoId/access', requireAuth, async (req, res) => {
   try {
     const { videoId } = req.params;
-    const user = req.user;
+    const { user } = req;
 
     const accessResult = await checkVideoAccess(user.id, videoId);
-    
+
     res.json({
       videoId: videoId,
       userId: user.id,
       userEmail: user.email,
       access: accessResult
     });
-    
+
   } catch (error) {
     res.status(500).json({
       error: 'Internal server error',
@@ -166,11 +166,11 @@ router.get('/:videoId/access', requireAuth, async (req, res) => {
 router.get('/:videoId/info', requireAuth, async (req, res) => {
   try {
     const { videoId } = req.params;
-    const user = req.user;
+    const { user } = req;
 
     // First check if user has access
     const accessResult = await checkVideoAccess(user.id, videoId);
-    
+
     if (!accessResult.hasAccess) {
       return res.status(403).json({
         error: 'Access denied',
@@ -180,11 +180,11 @@ router.get('/:videoId/info', requireAuth, async (req, res) => {
 
     // Get file info if it exists
     const videoPath = path.join(VIDEO_STORAGE_DIR, `${videoId}.mp4`);
-    
+
     try {
       await access(videoPath, fs.constants.F_OK);
       const stats = await stat(videoPath);
-      
+
       res.json({
         videoId: videoId,
         size: stats.size,
@@ -194,7 +194,7 @@ router.get('/:videoId/info', requireAuth, async (req, res) => {
         accessType: accessResult.reason,
         hasAccess: true
       });
-      
+
     } catch (error) {
       // File doesn't exist physically, but user has access to the video reference
       res.json({
@@ -206,9 +206,9 @@ router.get('/:videoId/info', requireAuth, async (req, res) => {
         message: 'Video reference found but file not available on storage'
       });
     }
-    
+
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to get video information'
     });
@@ -221,22 +221,22 @@ router.get('/:videoId/info', requireAuth, async (req, res) => {
  */
 router.get('/my-videos', requireAuth, async (req, res) => {
   try {
-    const user = req.user;
-    
+    const { user } = req;
+
     // This would typically involve querying the database for user's purchased products
     // and subscription access, then checking which videos they can access
-    
+
     // For now, we'll return a basic structure
     // In a real implementation, you'd query purchases and subscriptions
-    
+
     res.json({
       message: 'This endpoint would list all videos the user has access to',
       userId: user.id,
       implementation: 'TODO: Implement based on purchases and subscriptions'
     });
-    
+
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to list accessible videos'
     });
@@ -253,14 +253,14 @@ router.use((error, req, res, next) => {
       });
     }
   }
-  
+
   if (error.message === 'Only video files are allowed') {
     return res.status(400).json({
       error: 'Invalid file type',
       message: 'Only video files are allowed for upload'
     });
   }
-  
+
   next(error);
 });
 

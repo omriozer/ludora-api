@@ -147,7 +147,7 @@ function extractSvgDimensions(svgElement) {
   const width = parseFloat(svgElement.getAttribute('width')) || fallbackDimensions.width;
   const height = parseFloat(svgElement.getAttribute('height')) || fallbackDimensions.height;
 
-  let viewBox = svgElement.getAttribute('viewBox');
+  const viewBox = svgElement.getAttribute('viewBox');
   let viewBoxData = { x: 0, y: 0, width, height };
 
   if (viewBox) {
@@ -222,7 +222,7 @@ async function createSvgText(svgDoc, templateGroup, element, svgCoords, elementI
     return; // Skip empty content
   }
 
-  const style = elementInfo.style;
+  const { style } = elementInfo;
 
   // Handle multi-line text if content is long or contains line breaks
   if (elementInfo.content.length > 50 || elementInfo.content.includes('\n')) {
@@ -266,7 +266,7 @@ async function createSvgUrl(svgDoc, templateGroup, element, svgCoords, elementIn
     return; // Skip empty content
   }
 
-  const style = elementInfo.style;
+  const { style } = elementInfo;
 
   // Create text element for URL (SVG links are complex, just render as text for now)
   const textEl = svgDoc.createElement('text');
@@ -300,7 +300,7 @@ async function createSvgUrl(svgDoc, templateGroup, element, svgCoords, elementIn
  */
 async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementInfo) {
   try {
-    const style = elementInfo.style;
+    const { style } = elementInfo;
     const logoSize = style.size || 80;
 
     // Use AssetManager for logo loading (same as PDF)
@@ -395,7 +395,7 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
  * @param {Object} elementInfo - Element info from shared utilities
  */
 async function createSvgBox(svgDoc, templateGroup, element, svgCoords, elementInfo) {
-  const style = elementInfo.style;
+  const { style } = elementInfo;
   const rectEl = svgDoc.createElement('rect');
 
   // Position centered at coordinates
@@ -428,7 +428,7 @@ async function createSvgBox(svgDoc, templateGroup, element, svgCoords, elementIn
  * @param {Object} elementInfo - Element info from shared utilities
  */
 async function createSvgCircle(svgDoc, templateGroup, element, svgCoords, elementInfo) {
-  const style = elementInfo.style;
+  const { style } = elementInfo;
   const circleEl = svgDoc.createElement('circle');
 
   // Position centered at coordinates
@@ -460,7 +460,7 @@ async function createSvgCircle(svgDoc, templateGroup, element, svgCoords, elemen
  * @param {Object} elementInfo - Element info from shared utilities
  */
 async function createSvgLine(svgDoc, templateGroup, element, svgCoords, elementInfo) {
-  const style = elementInfo.style;
+  const { style } = elementInfo;
   const lineEl = svgDoc.createElement('line');
 
   // Calculate line endpoints using shared utility

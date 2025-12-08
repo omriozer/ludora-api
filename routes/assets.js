@@ -2066,7 +2066,7 @@ router.delete('/:entityType/:entityId', authenticateToken, async (req, res) => {
       }
 
       // Get metadata for response consistency
-      const databaseUpdated = deleteResult.databaseUpdated;
+      const { databaseUpdated } = deleteResult;
 
       // Both operations succeeded - commit transaction
       await transaction.commit();
@@ -2667,7 +2667,7 @@ router.use((error, _req, res, next) => {
 router.get('/template-preview/:fileId', authenticateToken, async (req, res) => {
   try {
     const { fileId } = req.params;
-    const user = req.user;
+    const { user } = req;
 
     // Get file entity
     const fileEntity = await FileModel.findByPk(fileId);

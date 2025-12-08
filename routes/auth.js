@@ -39,6 +39,32 @@ const verifyAdminPassword = (inputPassword) => {
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * /api/auth/register:
+ *   post:
+ *     summary: Register a new user account
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RegisterRequest'
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 // Register endpoint
 router.post('/register', rateLimiters.auth, validateBody(schemas.register), async (req, res) => {
   try {
@@ -90,6 +116,32 @@ router.post('/register', rateLimiters.auth, validateBody(schemas.register), asyn
   }
 });
 
+/**
+ * @openapi
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Refresh access token using refresh token cookie
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Refresh token missing or invalid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 // Refresh token endpoint
 router.post('/refresh', async (req, res) => {
   try {
@@ -120,6 +172,33 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/auth/logout:
+ *   post:
+ *     summary: Logout user and clear authentication cookies
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Logged out from teacher portal successfully"
+ *       500:
+ *         description: Logout failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 // Logout endpoint
 router.post('/logout', async (req, res) => {
   try {
@@ -172,6 +251,30 @@ router.post('/logout', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/auth/me:
+ *   get:
+ *     summary: Get current authenticated user or player information
+ *     tags: [Authentication]
+ *     security:
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: User or player information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/User'
+ *                 - $ref: '#/components/schemas/PlayerAuthResponse'
+ *       500:
+ *         description: Failed to fetch authentication information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 // Get current user or player info (unified endpoint)
 router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (req, res) => {
   try {
@@ -446,7 +549,7 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
 router.post('/custom-token', async (req, res) => {
   try {
     const { uid, claims } = req.body;
-    
+
     if (!uid) {
       return res.status(400).json({ error: 'UID is required' });
     }
@@ -473,7 +576,7 @@ router.post('/custom-token', async (req, res) => {
       ...claims,
       type: 'jwt'
     });
-    
+
     res.json({ customToken });
   } catch (error) {
     res.status(500).json({ error: 'Failed to create custom token' });
@@ -484,7 +587,7 @@ router.post('/custom-token', async (req, res) => {
 router.post('/set-claims', authenticateToken, async (req, res) => {
   try {
     const { uid, claims } = req.body;
-    
+
     if (!uid) {
       return res.status(400).json({ error: 'UID is required' });
     }
@@ -494,13 +597,52 @@ router.post('/set-claims', authenticateToken, async (req, res) => {
       targetUserId: uid,
       claims
     });
-    
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
+/**
+ * @openapi
+ * /api/auth/verify:
+ *   post:
+ *     summary: Verify Firebase ID token and establish session
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/FirebaseLoginRequest'
+ *     responses:
+ *       200:
+ *         description: Token verified successfully, session established
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                   example: true
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Invalid or expired token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid or expired token"
+ */
 // Verify ID token endpoint
 router.post('/verify', async (req, res) => {
   try {
@@ -717,7 +859,7 @@ router.post('/verify', async (req, res) => {
 router.post('/forgot-password', rateLimiters.auth, validateBody(schemas.passwordReset), async (req, res) => {
   try {
     const result = await authService.generatePasswordResetToken(req.body.email);
-    
+
     // Send password reset email
     try {
       await EmailService.sendPasswordResetEmail({
@@ -923,7 +1065,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
 // GET /auth/consent-status - Check student consent and teacher linking status
 router.get('/consent-status', authenticateToken, async (req, res) => {
   try {
-    const user = req.user;
+    const { user } = req;
 
     // Only applies to students
     if (!user || user.user_type !== 'student') {
@@ -994,7 +1136,7 @@ router.post('/link-teacher',
   rateLimiters.auth, // Add rate limiting for invitation code attempts
   async (req, res) => {
   try {
-    const user = req.user;
+    const { user } = req;
     const { invitation_code } = req.body;
 
     // Only students can link to teachers
@@ -1110,7 +1252,7 @@ router.post('/link-teacher',
 // POST /auth/revoke-consent - Revoke parent consent (admin/teacher only)
 router.post('/revoke-consent', authenticateToken, async (req, res) => {
   try {
-    const user = req.user;
+    const { user } = req;
     const { student_user_id, revocation_reason, notes } = req.body;
 
     // Only admins and teachers can revoke consent
@@ -1214,7 +1356,7 @@ router.post('/revoke-consent', authenticateToken, async (req, res) => {
 // POST /auth/unlink-student - Unlink student from teacher (teacher/admin only)
 router.post('/unlink-student', authenticateToken, async (req, res) => {
   try {
-    const user = req.user;
+    const { user } = req;
     const { student_user_id, auto_revoke_consent } = req.body;
 
     // Only admins and teachers can unlink students

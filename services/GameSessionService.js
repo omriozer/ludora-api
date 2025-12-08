@@ -106,7 +106,7 @@ class GameSessionService {
         throw new Error('Session not found');
       }
 
-      const lobby = session.lobby;
+      const { lobby } = session;
 
       // Check if session is joinable
       if (session.status === 'closed') {
@@ -195,7 +195,7 @@ class GameSessionService {
         throw new Error('Session not found');
       }
 
-      const lobby = session.lobby;
+      const { lobby } = session;
       const currentParticipants = session.participants || [];
 
       // Find participant to remove
@@ -263,7 +263,7 @@ class GameSessionService {
         throw new Error('Cannot update state: Session is not active');
       }
 
-      const lobby = session.lobby;
+      const { lobby } = session;
 
       // Check permissions (owner, host, or participant)
       const isParticipant = session.participants?.some(p => p.user_id === userId);
@@ -330,7 +330,7 @@ class GameSessionService {
         throw new Error('Session not found');
       }
 
-      const lobby = session.lobby;
+      const { lobby } = session;
 
       // Check permissions
       const canFinish =
@@ -564,7 +564,7 @@ class GameSessionService {
         throw new Error('Cannot start: Session is not pending');
       }
 
-      const lobby = session.lobby;
+      const { lobby } = session;
 
       // Check permissions
       const canStart =

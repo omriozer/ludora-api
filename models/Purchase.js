@@ -32,15 +32,15 @@ export default function(sequelize) {
     },
     // Payment information
     payment_amount: {
-      type: DataTypes.DECIMAL(10,2),
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
     },
     original_price: {
-      type: DataTypes.DECIMAL(10,2),
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
     },
     discount_amount: {
-      type: DataTypes.DECIMAL(10,2),
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       defaultValue: 0,
     },
