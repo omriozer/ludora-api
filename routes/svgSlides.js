@@ -6,6 +6,7 @@ import models from '../models/index.js';
 import DirectSlideService from '../services/DirectSlideService.js';
 import { checkLessonPlanAccess } from '../utils/lessonPlanPresentationHelper.js';
 import { mergeSvgTemplate } from '../utils/svgTemplateMerge.js';
+import { ludlog, luderror } from '../lib/ludlog.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -258,16 +259,34 @@ router.get(
       // Check if branding is enabled for this lesson plan
       const shouldApplyBranding = lessonPlan.add_branding === true;
 
+      ludlog.media(`🔍 Template loading for lesson plan ${lessonPlanId}:`, {
+        shouldApplyBranding,
+        brandingTemplateId: lessonPlan.branding_template_id,
+        watermarkTemplateId: lessonPlan.watermark_template_id,
+        hasBrandingSettings: !!lessonPlan.branding_settings
+      });
+
       // Get branding template (only if branding is enabled)
       if (shouldApplyBranding && lessonPlan.branding_template_id) {
         try {
           const brandingTemplate = await models.SystemTemplate.findByPk(lessonPlan.branding_template_id);
           if (brandingTemplate) {
             brandingTemplateSettings = brandingTemplate.template_data;
+            ludlog.media(`✅ Loaded branding template: ${brandingTemplate.template_name}`);
+          } else {
+            luderror.media(`❌ Branding template not found: ${lessonPlan.branding_template_id}`);
           }
         } catch (error) {
           // Template error - continue without branding elements
+          luderror.media(`❌ Error loading branding template:`, {
+            templateId: lessonPlan.branding_template_id,
+            error: error.message
+          });
         }
+      } else if (!shouldApplyBranding) {
+        ludlog.media('ℹ️  Branding disabled for this lesson plan (add_branding !== true)');
+      } else {
+        ludlog.media('ℹ️  No branding template ID set for this lesson plan');
       }
 
       // Use custom branding settings if available, otherwise use system template (only if branding is enabled)
@@ -281,10 +300,19 @@ router.get(
           const watermarkTemplate = await models.SystemTemplate.findByPk(lessonPlan.watermark_template_id);
           if (watermarkTemplate) {
             watermarkTemplateSettings = watermarkTemplate.template_data;
+            ludlog.media(`✅ Loaded watermark template: ${watermarkTemplate.template_name}`);
+          } else {
+            luderror.media(`❌ Watermark template not found: ${lessonPlan.watermark_template_id}`);
           }
         } catch (error) {
           // Template error - continue without watermark elements
+          luderror.media(`❌ Error loading watermark template:`, {
+            templateId: lessonPlan.watermark_template_id,
+            error: error.message
+          });
         }
+      } else {
+        ludlog.media('ℹ️  No watermark template ID set for this lesson plan');
       }
 
       // Prepare variables for template processing
@@ -306,8 +334,15 @@ router.get(
               brandingTemplateSettings,
               templateVariables
             );
+            ludlog.media(`✅ Branding template applied successfully to lesson plan ${lessonPlan.id}`);
           } catch (error) {
-            // Branding template processing failed - continue with original content
+            // Branding template processing failed - log error and continue with original content
+            luderror.media(`❌ Branding template merge failed for lesson plan ${lessonPlan.id}:`, {
+              error: error.message,
+              templateId: lessonPlan.branding_template_id,
+              hasTemplateSettings: !!brandingTemplateSettings,
+              contentLength: processedContent?.length
+            });
           }
         }
 
@@ -319,8 +354,15 @@ router.get(
               watermarkTemplateSettings,
               templateVariables
             );
+            ludlog.media(`✅ Watermark template applied successfully to lesson plan ${lessonPlan.id}`);
           } catch (error) {
-            // Watermark template processing failed - continue with branding-processed content
+            // Watermark template processing failed - log error and continue with branding-processed content
+            luderror.media(`❌ Watermark template merge failed for lesson plan ${lessonPlan.id}:`, {
+              error: error.message,
+              templateId: lessonPlan.watermark_template_id,
+              hasTemplateSettings: !!watermarkTemplateSettings,
+              contentLength: processedContent?.length
+            });
           }
         }
 
