@@ -85,7 +85,7 @@ import {
   notFoundHandler,
   requestIdMiddleware,
   requestLogger,
-  _healthCheckErrorHandler
+  healthCheckErrorHandler
 } from './middleware/errorHandler.js';
 import { rateLimiters } from './middleware/validation.js';
 import { ludlog, luderror } from './lib/ludlog.js';
