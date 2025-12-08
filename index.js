@@ -48,7 +48,7 @@ import cookie from 'cookie';
 
 // Initialize secrets service (validates critical secrets)
 import SecretsService from './services/SecretsService.js';
-const secretsService = new SecretsService();
+const _secretsService = new SecretsService();
 
 // Initialize Firebase (this must come before importing routes that use it)
 import './config/firebase.js';
@@ -85,7 +85,7 @@ import {
   notFoundHandler,
   requestIdMiddleware,
   requestLogger,
-  healthCheckErrorHandler
+  _healthCheckErrorHandler
 } from './middleware/errorHandler.js';
 import { rateLimiters } from './middleware/validation.js';
 import { ludlog, luderror } from './lib/ludlog.js';
@@ -120,6 +120,14 @@ import settingsRoutes from './routes/settings.js';
 import playersRoutes from './routes/players.js';
 import bundlesRoutes from './routes/bundles.js';
 import jobsRoutes from './routes/jobs.js';
+
+// Import OpenAPI documentation (development only)
+let swaggerUi, openApiSpecs;
+if (process.env.NODE_ENV !== 'production' && process.env.ENVIRONMENT !== 'production') {
+  swaggerUi = await import('swagger-ui-express');
+  const openApiModule = await import('./src/openapi/index.js');
+  openApiSpecs = openApiModule.specs;
+}
 
 // Import services and utilities for Socket.IO authentication
 import AuthService from './services/AuthService.js';
@@ -216,6 +224,21 @@ app.use(express.urlencoded({ extended: true, limit: '100mb' })); // Increased to
 
 // Cookie parsing middleware
 app.use(cookieParser());
+
+// OpenAPI/Swagger documentation (development only)
+if (swaggerUi && openApiSpecs) {
+  app.use('/api-docs', swaggerUi.default.serve, swaggerUi.default.setup(openApiSpecs, {
+    explorer: true,
+    customCssUrl: '/swagger-ui-custom.css'
+  }));
+
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(openApiSpecs);
+  });
+
+  ludlog.api('OpenAPI documentation available at /api-docs');
+}
 
 // API Routes (protected by frontend CORS)
 // Apply Hebrew-optimized compression for routes likely to contain Hebrew content
@@ -566,7 +589,7 @@ async function authenticateSocketWithPlayerTokens(socket) {
  * @param {string} requestedMode - Mode requested by client
  * @returns {Promise<boolean>} True if the requested mode matches settings
  */
-async function validateStudentsAccessMode(requestedMode) {
+async function _validateStudentsAccessMode(requestedMode) {
   try {
     const currentMode = await SettingsService.getStudentsAccessMode();
     return currentMode === requestedMode;
@@ -586,7 +609,7 @@ io.use(async (socket, next) => {
     const portalContext = parseSocketPortalContext(socket);
 
     // Also detect portal from headers for validation
-    const detectedPortal = detectSocketPortal(socket);
+    const _detectedPortal = detectSocketPortal(socket);
 
     // Initialize socket authentication context
     socket.portalContext = portalContext;
@@ -595,7 +618,7 @@ io.use(async (socket, next) => {
     socket.player = null;
 
     // Validate based on credential policy
-    const { credentialPolicy, portalType, studentsAccessMode } = portalContext;
+    const { credentialPolicy, portalType, studentsAccessMode: _studentsAccessMode } = portalContext;
 
     switch (credentialPolicy) {
       case SOCKET_CREDENTIAL_POLICIES.WITH_CREDENTIALS: {
@@ -603,9 +626,11 @@ io.use(async (socket, next) => {
         const userData = await authenticateSocketWithFirebase(socket, portalType);
 
         if (userData) {
-          socket.isAuthenticated = true;
-          socket.user = userData;
-          socket.authMethod = 'firebase';
+          Object.assign(socket, {
+            isAuthenticated: true,
+            user: userData,
+            authMethod: 'firebase'
+          });
           break;
         }
 
@@ -615,9 +640,11 @@ io.use(async (socket, next) => {
           const playerData = await authenticateSocketWithPlayerTokens(socket);
 
           if (playerData) {
-            socket.player = playerData;
-            socket.authMethod = 'student_access_token';
-            socket.isAuthenticated = true;
+            Object.assign(socket, {
+              player: playerData,
+              authMethod: 'student_access_token',
+              isAuthenticated: true
+            });
             break;
           }
         }
@@ -637,14 +664,17 @@ io.use(async (socket, next) => {
         const playerData = await authenticateSocketWithPlayerTokens(socket);
 
         if (playerData) {
-          socket.player = playerData;
-          socket.authMethod = 'student_access_token';
+          Object.assign(socket, {
+            player: playerData,
+            authMethod: 'student_access_token',
+            isAuthenticated: false
+          });
         } else {
-          socket.authMethod = 'anonymous';
+          Object.assign(socket, {
+            authMethod: 'anonymous',
+            isAuthenticated: false
+          });
         }
-
-        // Anonymous connections are allowed, mark as not authenticated but valid
-        socket.isAuthenticated = false;
         break;
       }
 
@@ -653,22 +683,28 @@ io.use(async (socket, next) => {
         const userData = await authenticateSocketWithFirebase(socket, portalType);
 
         if (userData) {
-          socket.isAuthenticated = true;
-          socket.user = userData;
-          socket.authMethod = 'firebase';
+          Object.assign(socket, {
+            isAuthenticated: true,
+            user: userData,
+            authMethod: 'firebase'
+          });
         } else {
           // Try player tokens
           const playerData = await authenticateSocketWithPlayerTokens(socket);
 
           if (playerData) {
-            socket.player = playerData;
-            socket.authMethod = 'student_access_token';
-            socket.isAuthenticated = true; // Player authentication succeeded!
+            Object.assign(socket, {
+              player: playerData,
+              authMethod: 'student_access_token',
+              isAuthenticated: true
+            });
           } else {
             // Allow anonymous for student portal
             if (portalType === SOCKET_PORTAL_TYPES.STUDENT) {
-              socket.authMethod = 'anonymous';
-              socket.isAuthenticated = false; // Anonymous connection
+              Object.assign(socket, {
+                authMethod: 'anonymous',
+                isAuthenticated: false
+              });
             } else {
               // Teacher portal requires authentication
               return next(new Error('Teacher portal requires authentication'));
@@ -686,9 +722,11 @@ io.use(async (socket, next) => {
           return next(new Error('Authentication required'));
         }
 
-        socket.isAuthenticated = true;
-        socket.user = userData;
-        socket.authMethod = 'firebase';
+        Object.assign(socket, {
+          isAuthenticated: true,
+          user: userData,
+          authMethod: 'firebase'
+        });
       }
     }
 
@@ -730,11 +768,11 @@ io.on('connection', (socket) => {
   });
 
   // Handle test messages (for debugging)
-  socket.on('test', (data) => {
+  socket.on('test', (_data) => {
     // Test handler - can be used for debugging socket connections
   });
 
-  socket.on('disconnect', (reason) => {
+  socket.on('disconnect', (_reason) => {
     // Client disconnected - cleanup is handled automatically by Socket.IO
   });
 
@@ -894,9 +932,11 @@ async function startServer() {
 
     // Start background services
     try {
-
+      // Future background services can be initialized here
+      ludlog.api('Background services section ready for future implementation');
     } catch (error) {
       // Don't fail server startup if background services fail
+      luderror.api('Failed to start background services:', error);
     }
 
     return server;
@@ -947,4 +987,3 @@ process.on('SIGINT', async () => {
     process.exit(0);
   });
 });
-

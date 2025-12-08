@@ -640,6 +640,78 @@ class AuthService {
 
 ## 6. REAL-TIME FEATURES
 
+### Socket.IO Race Condition Prevention (CRITICAL - Dec 2025)
+
+**🚨 CRITICAL: Always use atomic property updates in Socket.IO to prevent race conditions**
+
+```javascript
+// ❌ WRONG: Race condition prone pattern
+io.on('connection', (socket) => {
+  socket.isAuthenticated = false;
+  socket.user = null;
+  socket.authMethod = null;
+
+  // Authenticate later...
+  if (validToken) {
+    socket.isAuthenticated = true;  // Thread B might read here
+    socket.user = userData;          // Before this executes
+    socket.authMethod = 'firebase';  // Creating inconsistent state
+  }
+});
+
+// ✅ CORRECT: Atomic update pattern
+io.on('connection', (socket) => {
+  // Initialize with single assignment
+  Object.assign(socket, {
+    isAuthenticated: false,
+    user: null,
+    authMethod: null
+  });
+
+  // Authenticate with atomic update
+  if (validToken) {
+    Object.assign(socket, {
+      isAuthenticated: true,
+      user: userData,
+      authMethod: 'firebase'
+    });
+  }
+});
+
+// ✅ CORRECT: Authentication state management
+async function authenticateSocket(socket, token) {
+  try {
+    const userData = await verifyToken(token);
+
+    // Atomic state update - all or nothing
+    Object.assign(socket, {
+      isAuthenticated: true,
+      user: userData,
+      authMethod: 'firebase',
+      authenticatedAt: new Date()
+    });
+
+    socket.emit('authenticated', { success: true });
+  } catch (error) {
+    // Atomic failure state
+    Object.assign(socket, {
+      isAuthenticated: false,
+      user: null,
+      authMethod: null,
+      authError: error.message
+    });
+
+    socket.emit('authentication_failed', { error: error.message });
+  }
+}
+```
+
+**Production Impact of Race Conditions:**
+- Authentication bypasses or failures
+- Incorrect user data associations
+- WebSocket connection instability
+- Data leaks between sessions
+
 ### Server-Sent Events (SSE) Implementation
 ```javascript
 // ✅ CORRECT: SSE connection management
