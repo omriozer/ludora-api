@@ -122,6 +122,57 @@ export const schemas = {
     })
   }),
 
+  // Generic product creation schema - applies to all product types (file, lesson_plan, course, tool, bundle)
+  productCreate: Joi.object({
+    title: Joi.string().min(1).max(255).required(),
+    short_description: Joi.string().min(1).max(500).required(),
+    description: Joi.string().allow(null, '').max(10000),
+    category: Joi.string().allow(null, ''),
+    price: Joi.number().min(0).required(),
+    is_published: Joi.boolean().default(false),
+    product_type: Joi.string().valid('file', 'lesson_plan', 'game', 'workshop', 'course', 'tool', 'bundle').required(),
+    tags: Joi.array().items(Joi.string()).default([]),
+    target_audience: Joi.string().allow(null, ''),
+    access_days: Joi.number().integer().min(0).allow(null),
+    content_topic_id: Joi.string().allow(null, ''),
+    type_attributes: Joi.object().allow(null),
+
+    // Marketing video fields
+    marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null, ''),
+    marketing_video_id: Joi.string().allow(null, ''),
+    marketing_video_title: Joi.string().allow(null, ''),
+    marketing_video_duration: Joi.alternatives().try(
+      Joi.number().integer().min(1),
+      Joi.string().allow(''),
+      Joi.allow(null)
+    )
+  }).unknown(true), // Allow additional fields for product type-specific attributes
+
+  // Generic product update schema - applies to all product types (file, lesson_plan, course, tool, bundle)
+  productUpdate: Joi.object({
+    title: Joi.string().min(1).max(255),
+    short_description: Joi.string().min(1).max(500),
+    description: Joi.string().allow(null, '').max(10000),
+    category: Joi.string().allow(null, ''),
+    price: Joi.number().min(0),
+    is_published: Joi.boolean(),
+    tags: Joi.array().items(Joi.string()),
+    target_audience: Joi.string().allow(null, ''),
+    access_days: Joi.number().integer().min(0).allow(null),
+    content_topic_id: Joi.string().allow(null, ''),
+    type_attributes: Joi.object().allow(null),
+
+    // Marketing video fields
+    marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null, ''),
+    marketing_video_id: Joi.string().allow(null, ''),
+    marketing_video_title: Joi.string().allow(null, ''),
+    marketing_video_duration: Joi.alternatives().try(
+      Joi.number().integer().min(1),
+      Joi.string().allow(''),
+      Joi.allow(null)
+    )
+  }).min(1).unknown(true), // Allow additional fields and require at least one field for updates
+
   // Email
   sendEmail: Joi.object({
     to: Joi.alternatives().try(
@@ -283,7 +334,11 @@ export const schemas = {
     marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null),
     marketing_video_id: Joi.string().allow(null, ''),
     marketing_video_title: Joi.string().allow(null, ''),
-    marketing_video_duration: Joi.number().integer().min(1).allow(null),
+    marketing_video_duration: Joi.alternatives().try(
+      Joi.number().integer().min(1),
+      Joi.string().allow(''),
+      Joi.allow(null)
+    ),
     file_url: Joi.string().allow(null, ''),
     preview_file_url: Joi.string().allow(null, ''),
     file_type: Joi.string().allow(null, ''),
@@ -316,7 +371,11 @@ export const schemas = {
     marketing_video_type: Joi.string().valid('youtube', 'uploaded').allow(null),
     marketing_video_id: Joi.string().allow(null, ''),
     marketing_video_title: Joi.string().allow(null, ''),
-    marketing_video_duration: Joi.number().integer().min(1).allow(null),
+    marketing_video_duration: Joi.alternatives().try(
+      Joi.number().integer().min(1),
+      Joi.string().allow(''),
+      Joi.allow(null)
+    ),
     file_url: Joi.string().allow(null, ''),
     preview_file_url: Joi.string().allow(null, ''),
     file_type: Joi.string().allow(null, ''),
@@ -468,7 +527,7 @@ export const customValidators = {
       'attribute', 'gamecontenttag', 'contenttag', 'contenttopic',
       'school', 'classroom', 'studentinvitation', 'parentconsent',
       'classroommembership', 'curriculum', 'curriculumitem', 'curriculumproduct',
-      'lessonplan'
+      'lesson_plan'
     ];
 
     const entityType = req.params.type?.toLowerCase();

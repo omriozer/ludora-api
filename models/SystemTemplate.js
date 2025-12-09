@@ -223,179 +223,87 @@ export default function(sequelize) {
       throw new Error('Watermark template data must be a valid object');
     }
 
-    // Check for unified structure or legacy structure
-    const hasUnifiedStructure = data.elements && typeof data.elements === 'object';
-    const hasLegacyStructure = data.textElements || data.logoElements;
-
-    if (!hasUnifiedStructure && !hasLegacyStructure) {
-      throw new Error('Template must have unified structure (elements object) or legacy elements (textElements, logoElements)');
+    // Only support unified structure - must have elements object
+    if (!data.elements || typeof data.elements !== 'object') {
+      throw new Error('Watermark template must have unified structure (elements object)');
     }
 
     // CRITICAL FIX: Validate that watermark templates actually contain watermark elements
-    let totalElements = 0;
-
-    if (hasUnifiedStructure) {
-      // Count elements in unified structure
-      totalElements = Object.values(data.elements).reduce((sum, elementArray) => {
-        return sum + (Array.isArray(elementArray) ? elementArray.length : 0);
-      }, 0);
-    } else if (hasLegacyStructure) {
-      // Count elements in legacy structure
-      totalElements = (data.textElements?.length || 0) + (data.logoElements?.length || 0);
-    }
+    const totalElements = Object.values(data.elements).reduce((sum, elementArray) => {
+      return sum + (Array.isArray(elementArray) ? elementArray.length : 0);
+    }, 0);
 
     if (totalElements === 0) {
       throw new Error('Watermark template must contain at least one watermark element (text, logo, etc.). Empty watermark templates are not allowed.');
     }
 
     // Validate unified structure
-    if (hasUnifiedStructure) {
-      // Validate each element type array in the elements object
-      Object.entries(data.elements).forEach(([elementType, elementArray]) => {
-        if (!Array.isArray(elementArray)) {
-          throw new Error(`Element type ${elementType} must be an array`);
+    Object.entries(data.elements).forEach(([elementType, elementArray]) => {
+      if (!Array.isArray(elementArray)) {
+        throw new Error(`Element type ${elementType} must be an array`);
+      }
+
+      elementArray.forEach((element, index) => {
+        if (!element || typeof element !== 'object') {
+          throw new Error(`Element ${elementType}[${index}] must be an object`);
         }
 
-        elementArray.forEach((element, index) => {
-          if (!element || typeof element !== 'object') {
-            throw new Error(`Element ${elementType}[${index}] must be an object`);
-          }
-
-          // Validate required fields for all elements
-          if (!element.id || typeof element.id !== 'string') {
-            throw new Error(`Element ${elementType}[${index}] missing required 'id' string`);
-          }
-
-          if (!element.type || typeof element.type !== 'string') {
-            throw new Error(`Element ${elementType}[${index}] missing required 'type' string`);
-          }
-
-          if (typeof element.visible !== 'boolean') {
-            element.visible = true; // Default if missing
-          }
-
-          if (typeof element.deletable !== 'boolean') {
-            element.deletable = true; // Default if missing
-          }
-
-          if (!element.position || typeof element.position !== 'object') {
-            throw new Error(`Element ${elementType}[${index}] missing required 'position' object`);
-          }
-
-          if (typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
-            throw new Error(`Element ${elementType}[${index}] position must have numeric x and y values`);
-          }
-
-          if (!element.style || typeof element.style !== 'object') {
-            throw new Error(`Element ${elementType}[${index}] missing required 'style' object`);
-          }
-
-          // Validate element-type-specific properties for watermark templates
-          if (['watermark-text', 'free-text'].includes(elementType)) {
-            // Text-based watermark elements should have content
-            if (element.content !== undefined && typeof element.content !== 'string') {
-              throw new Error(`Watermark text element ${elementType}[${index}] content must be a string if provided`);
-            }
-          }
-
-          if (['watermark-logo', 'logo'].includes(elementType)) {
-            // Logo watermark elements should have size in style
-            if (element.style.size !== undefined && typeof element.style.size !== 'number') {
-              throw new Error(`Watermark logo element ${elementType}[${index}] style.size must be a number if provided`);
-            }
-          }
-
-          // Validate common style properties
-          if (element.style.opacity !== undefined && (typeof element.style.opacity !== 'number' || element.style.opacity < 0 || element.style.opacity > 100)) {
-            throw new Error(`Element ${elementType}[${index}] style.opacity must be a number between 0 and 100`);
-          }
-
-          if (element.style.rotation !== undefined && typeof element.style.rotation !== 'number') {
-            throw new Error(`Element ${elementType}[${index}] style.rotation must be a number`);
-          }
-        });
-      });
-
-      // Validate globalSettings if provided
-      if (data.globalSettings && typeof data.globalSettings !== 'object') {
-        throw new Error('Watermark template globalSettings must be an object');
-      }
-
-      return true; // Exit early if unified structure is valid
-    }
-
-    // Legacy structure validation (kept for backward compatibility)
-    // Validate textElements array
-    if (data.textElements) {
-      if (!Array.isArray(data.textElements)) {
-        throw new Error('Watermark template textElements must be an array');
-      }
-
-      data.textElements.forEach((element, index) => {
+        // Validate required fields for all elements
         if (!element.id || typeof element.id !== 'string') {
-          throw new Error(`Text element ${index} missing required string 'id'`);
+          throw new Error(`Element ${elementType}[${index}] missing required 'id' string`);
         }
 
-        if (!element.content || typeof element.content !== 'string') {
-          throw new Error(`Text element ${index} missing required string 'content'`);
-        }
-
-        if (!element.position || typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
-          throw new Error(`Text element ${index} position must have numeric x and y values`);
-        }
-
-        if (!element.style || typeof element.style !== 'object') {
-          throw new Error(`Text element ${index} missing required 'style' object`);
+        if (!element.type || typeof element.type !== 'string') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'type' string`);
         }
 
         if (typeof element.visible !== 'boolean') {
           element.visible = true; // Default if missing
         }
 
-        if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
-          element.pattern = 'single'; // Default if missing or invalid
-        }
-      });
-    }
-
-    // Validate logoElements array
-    if (data.logoElements) {
-      if (!Array.isArray(data.logoElements)) {
-        throw new Error('Watermark template logoElements must be an array');
-      }
-
-      data.logoElements.forEach((element, index) => {
-        if (!element.id || typeof element.id !== 'string') {
-          throw new Error(`Logo element ${index} missing required string 'id'`);
+        if (typeof element.deletable !== 'boolean') {
+          element.deletable = true; // Default if missing
         }
 
-        if (!element.source || !['system-logo', 'custom-url', 'uploaded-file'].includes(element.source)) {
-          throw new Error(`Logo element ${index} source must be 'system-logo', 'custom-url', or 'uploaded-file'`);
+        if (!element.position || typeof element.position !== 'object') {
+          throw new Error(`Element ${elementType}[${index}] missing required 'position' object`);
         }
 
-        if (element.source !== 'system-logo' && (!element.url || typeof element.url !== 'string')) {
-          throw new Error(`Logo element ${index} with source '${element.source}' must have a valid url string`);
-        }
-
-        if (!element.position || typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
-          throw new Error(`Logo element ${index} position must have numeric x and y values`);
+        if (typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
+          throw new Error(`Element ${elementType}[${index}] position must have numeric x and y values`);
         }
 
         if (!element.style || typeof element.style !== 'object') {
-          throw new Error(`Logo element ${index} missing required 'style' object`);
+          throw new Error(`Element ${elementType}[${index}] missing required 'style' object`);
         }
 
-        if (typeof element.visible !== 'boolean') {
-          element.visible = true; // Default if missing
+        // Validate element-type-specific properties for watermark templates
+        if (['watermark-text', 'free-text'].includes(elementType)) {
+          // Text-based watermark elements should have content
+          if (element.content !== undefined && typeof element.content !== 'string') {
+            throw new Error(`Watermark text element ${elementType}[${index}] content must be a string if provided`);
+          }
         }
 
-        if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
-          element.pattern = 'single'; // Default if missing or invalid
+        if (['watermark-logo', 'logo'].includes(elementType)) {
+          // Logo watermark elements should have size in style
+          if (element.style.size !== undefined && typeof element.style.size !== 'number') {
+            throw new Error(`Watermark logo element ${elementType}[${index}] style.size must be a number if provided`);
+          }
+        }
+
+        // Validate common style properties
+        if (element.style.opacity !== undefined && (typeof element.style.opacity !== 'number' || element.style.opacity < 0 || element.style.opacity > 100)) {
+          throw new Error(`Element ${elementType}[${index}] style.opacity must be a number between 0 and 100`);
+        }
+
+        if (element.style.rotation !== undefined && typeof element.style.rotation !== 'number') {
+          throw new Error(`Element ${elementType}[${index}] style.rotation must be a number`);
         }
       });
-    }
+    });
 
-    // Validate globalSettings
+    // Validate globalSettings if provided
     if (data.globalSettings && typeof data.globalSettings !== 'object') {
       throw new Error('Watermark template globalSettings must be an object');
     }

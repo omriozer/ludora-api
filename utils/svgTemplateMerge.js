@@ -222,13 +222,38 @@ async function createSvgText(svgDoc, templateGroup, element, svgCoords, elementI
     return; // Skip empty content
   }
 
-  const { style } = elementInfo;
+  const { style, shadowSettings } = elementInfo;
 
   // Handle multi-line text if content is long or contains line breaks
   if (elementInfo.content.length > 50 || elementInfo.content.includes('\n')) {
     await createMultiLineSvgText(svgDoc, templateGroup, elementInfo.content, svgCoords, style, elementInfo);
   } else {
-    // Single line text
+    // Render shadow text first if enabled
+    if (shadowSettings) {
+      const shadowTextEl = svgDoc.createElement('text');
+      shadowTextEl.setAttribute('x', svgCoords.x + shadowSettings.offsetX);
+      shadowTextEl.setAttribute('y', svgCoords.y + shadowSettings.offsetY);
+      shadowTextEl.setAttribute('text-anchor', 'middle');
+      shadowTextEl.setAttribute('dominant-baseline', 'middle');
+
+      // Apply shadow styling (same as main text but with shadow color/opacity)
+      applySvgTextStyle(shadowTextEl, {
+        ...style,
+        color: shadowSettings.color,
+        opacity: shadowSettings.opacity
+      });
+
+      // Apply rotation if needed
+      if (shouldApplyRotation(elementInfo.rotation)) {
+        const rotation = normalizeRotation(elementInfo.rotation);
+        shadowTextEl.setAttribute('transform', `rotate(${rotation} ${svgCoords.x} ${svgCoords.y})`);
+      }
+
+      shadowTextEl.textContent = elementInfo.content;
+      templateGroup.appendChild(shadowTextEl);
+    }
+
+    // Single line text (main text on top of shadow)
     const textEl = svgDoc.createElement('text');
 
     textEl.setAttribute('x', svgCoords.x);
@@ -266,9 +291,34 @@ async function createSvgUrl(svgDoc, templateGroup, element, svgCoords, elementIn
     return; // Skip empty content
   }
 
-  const { style } = elementInfo;
+  const { style, shadowSettings } = elementInfo;
 
-  // Create text element for URL (SVG links are complex, just render as text for now)
+  // Render shadow text first if enabled
+  if (shadowSettings) {
+    const shadowTextEl = svgDoc.createElement('text');
+    shadowTextEl.setAttribute('x', svgCoords.x + shadowSettings.offsetX);
+    shadowTextEl.setAttribute('y', svgCoords.y + shadowSettings.offsetY);
+    shadowTextEl.setAttribute('text-anchor', 'middle');
+    shadowTextEl.setAttribute('dominant-baseline', 'middle');
+
+    // Apply shadow styling
+    applySvgTextStyle(shadowTextEl, {
+      ...style,
+      color: shadowSettings.color,
+      opacity: shadowSettings.opacity
+    });
+
+    // Apply rotation if needed
+    if (shouldApplyRotation(elementInfo.rotation)) {
+      const rotation = normalizeRotation(elementInfo.rotation);
+      shadowTextEl.setAttribute('transform', `rotate(${rotation} ${svgCoords.x} ${svgCoords.y})`);
+    }
+
+    shadowTextEl.textContent = elementInfo.content;
+    templateGroup.appendChild(shadowTextEl);
+  }
+
+  // Create main text element for URL (SVG links are complex, just render as text for now)
   const textEl = svgDoc.createElement('text');
 
   textEl.setAttribute('x', svgCoords.x);
@@ -291,6 +341,82 @@ async function createSvgUrl(svgDoc, templateGroup, element, svgCoords, elementIn
 }
 
 /**
+ * Create SVG drop shadow filter for proper shadow rendering
+ * @param {Document} svgDoc - SVG document
+ * @param {Object} shadowSettings - Shadow configuration from element
+ * @param {number} _elementOpacity - Opacity of the main element (unused, kept for API compatibility)
+ * @returns {string} - Filter ID to reference in elements
+ */
+function createSvgDropShadowFilter(svgDoc, shadowSettings, _elementOpacity) {
+  // Generate unique filter ID based on shadow settings
+  const filterId = `shadow-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Get or create SVG defs section
+  let defs = svgDoc.getElementsByTagName('defs')[0];
+  if (!defs) {
+    defs = svgDoc.createElement('defs');
+    svgDoc.documentElement.insertBefore(defs, svgDoc.documentElement.firstChild);
+  }
+
+  // Create filter element
+  const filter = svgDoc.createElement('filter');
+  filter.setAttribute('id', filterId);
+  filter.setAttribute('x', '-50%');
+  filter.setAttribute('y', '-50%');
+  filter.setAttribute('width', '200%');
+  filter.setAttribute('height', '200%');
+
+  // feGaussianBlur: Create the blur for the shadow
+  const blur = svgDoc.createElement('feGaussianBlur');
+  blur.setAttribute('in', 'SourceAlpha');
+  blur.setAttribute('stdDeviation', shadowSettings.blur || 0);
+  blur.setAttribute('result', 'blur');
+
+  // feOffset: Offset the shadow by the specified amounts
+  const offset = svgDoc.createElement('feOffset');
+  offset.setAttribute('in', 'blur');
+  offset.setAttribute('dx', shadowSettings.offsetX || 0);
+  offset.setAttribute('dy', shadowSettings.offsetY || 0);
+  offset.setAttribute('result', 'offsetBlur');
+
+  // feFlood: Set the shadow color
+  const flood = svgDoc.createElement('feFlood');
+  flood.setAttribute('flood-color', shadowSettings.color || '#000000');
+  flood.setAttribute('flood-opacity', (shadowSettings.opacity || 50) / 100);
+  flood.setAttribute('result', 'shadowColor');
+
+  // feComposite: Combine the shadow color with the offset blur
+  const composite = svgDoc.createElement('feComposite');
+  composite.setAttribute('in', 'shadowColor');
+  composite.setAttribute('in2', 'offsetBlur');
+  composite.setAttribute('operator', 'in');
+  composite.setAttribute('result', 'shadow');
+
+  // feMerge: Layer the shadow behind the original graphic
+  const merge = svgDoc.createElement('feMerge');
+
+  const mergeShadow = svgDoc.createElement('feMergeNode');
+  mergeShadow.setAttribute('in', 'shadow');
+
+  const mergeOriginal = svgDoc.createElement('feMergeNode');
+  mergeOriginal.setAttribute('in', 'SourceGraphic');
+
+  merge.appendChild(mergeShadow);
+  merge.appendChild(mergeOriginal);
+
+  // Assemble the filter
+  filter.appendChild(blur);
+  filter.appendChild(offset);
+  filter.appendChild(flood);
+  filter.appendChild(composite);
+  filter.appendChild(merge);
+
+  defs.appendChild(filter);
+
+  return filterId;
+}
+
+/**
  * Create SVG logo element
  * @param {Document} svgDoc - SVG document
  * @param {Element} templateGroup - Template container group
@@ -300,7 +426,7 @@ async function createSvgUrl(svgDoc, templateGroup, element, svgCoords, elementIn
  */
 async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementInfo) {
   try {
-    const { style } = elementInfo;
+    const { style, shadowSettings } = elementInfo;
     const logoSize = style.size || 80;
 
     // Use AssetManager for logo loading (same as PDF)
@@ -312,7 +438,23 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
     // Handle logo rendering based on asset type
     if (logoAsset && !logoAsset.fallback && logoAsset.data) {
       try {
-        // Create SVG image element
+        // Convert logo data to data URL for SVG embedding
+        let dataUrl;
+        if (logoAsset.type === 'png') {
+          dataUrl = `data:image/png;base64,${logoAsset.data.toString('base64')}`;
+        } else if (logoAsset.type === 'jpeg') {
+          dataUrl = `data:image/jpeg;base64,${logoAsset.data.toString('base64')}`;
+        } else {
+          throw new Error(`Unsupported image format: ${logoAsset.type}`);
+        }
+
+        // Create SVG filter for proper drop shadow if shadow is enabled
+        let filterId = null;
+        if (shadowSettings) {
+          filterId = createSvgDropShadowFilter(svgDoc, shadowSettings, elementInfo.opacity);
+        }
+
+        // Create main SVG image element with shadow filter
         const imageEl = svgDoc.createElement('image');
 
         // Position centered at coordinates
@@ -322,14 +464,9 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
         imageEl.setAttribute('height', logoSize);
         imageEl.setAttribute('opacity', elementInfo.opacity);
 
-        // Convert logo data to data URL for SVG embedding
-        let dataUrl;
-        if (logoAsset.type === 'png') {
-          dataUrl = `data:image/png;base64,${logoAsset.data.toString('base64')}`;
-        } else if (logoAsset.type === 'jpeg') {
-          dataUrl = `data:image/jpeg;base64,${logoAsset.data.toString('base64')}`;
-        } else {
-          throw new Error(`Unsupported image format: ${logoAsset.type}`);
+        // Apply shadow filter if created
+        if (filterId) {
+          imageEl.setAttribute('filter', `url(#${filterId})`);
         }
 
         imageEl.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', dataUrl);
@@ -353,6 +490,20 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
       const logoText = logoAsset.text || 'LOGO';
       const fontSize = logoSize / 4;
 
+      // Use fallback color from AssetManager
+      const fallbackColor = rgbToHex(
+        logoAsset.color?.r || 0.2,
+        logoAsset.color?.g || 0.4,
+        logoAsset.color?.b || 0.8
+      );
+
+      // Create SVG filter for text shadow if enabled
+      let filterId = null;
+      if (shadowSettings) {
+        filterId = createSvgDropShadowFilter(svgDoc, shadowSettings, elementInfo.opacity);
+      }
+
+      // Render main fallback text with shadow filter
       const textEl = svgDoc.createElement('text');
       textEl.setAttribute('x', svgCoords.x);
       textEl.setAttribute('y', svgCoords.y);
@@ -362,14 +513,12 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
       textEl.setAttribute('font-size', fontSize);
       textEl.setAttribute('font-weight', 'bold');
       textEl.setAttribute('opacity', elementInfo.opacity);
-
-      // Use fallback color from AssetManager
-      const fallbackColor = rgbToHex(
-        logoAsset.color?.r || 0.2,
-        logoAsset.color?.g || 0.4,
-        logoAsset.color?.b || 0.8
-      );
       textEl.setAttribute('fill', fallbackColor);
+
+      // Apply shadow filter if created
+      if (filterId) {
+        textEl.setAttribute('filter', `url(#${filterId})`);
+      }
 
       // Apply rotation if needed
       if (shouldApplyRotation(elementInfo.rotation)) {
@@ -395,7 +544,30 @@ async function createSvgLogo(svgDoc, templateGroup, element, svgCoords, elementI
  * @param {Object} elementInfo - Element info from shared utilities
  */
 async function createSvgBox(svgDoc, templateGroup, element, svgCoords, elementInfo) {
-  const { style } = elementInfo;
+  const { style, shadowSettings } = elementInfo;
+
+  // Render shadow box first if enabled
+  if (shadowSettings) {
+    const shadowRectEl = svgDoc.createElement('rect');
+    shadowRectEl.setAttribute('x', svgCoords.x - (style.width / 2) + shadowSettings.offsetX);
+    shadowRectEl.setAttribute('y', svgCoords.y - (style.height / 2) + shadowSettings.offsetY);
+    shadowRectEl.setAttribute('width', style.width);
+    shadowRectEl.setAttribute('height', style.height);
+    shadowRectEl.setAttribute('fill', style.fillColor || 'none');
+    shadowRectEl.setAttribute('stroke', shadowSettings.color);
+    shadowRectEl.setAttribute('stroke-width', style.borderWidth || 2);
+    shadowRectEl.setAttribute('opacity', shadowSettings.opacity / 100);
+
+    // Apply rotation if needed
+    if (shouldApplyRotation(elementInfo.rotation)) {
+      const rotation = normalizeRotation(elementInfo.rotation);
+      shadowRectEl.setAttribute('transform', `rotate(${rotation} ${svgCoords.x} ${svgCoords.y})`);
+    }
+
+    templateGroup.appendChild(shadowRectEl);
+  }
+
+  // Create main box element
   const rectEl = svgDoc.createElement('rect');
 
   // Position centered at coordinates
@@ -428,7 +600,29 @@ async function createSvgBox(svgDoc, templateGroup, element, svgCoords, elementIn
  * @param {Object} elementInfo - Element info from shared utilities
  */
 async function createSvgCircle(svgDoc, templateGroup, element, svgCoords, elementInfo) {
-  const { style } = elementInfo;
+  const { style, shadowSettings } = elementInfo;
+
+  // Render shadow circle first if enabled
+  if (shadowSettings) {
+    const shadowCircleEl = svgDoc.createElement('circle');
+    shadowCircleEl.setAttribute('cx', svgCoords.x + shadowSettings.offsetX);
+    shadowCircleEl.setAttribute('cy', svgCoords.y + shadowSettings.offsetY);
+    shadowCircleEl.setAttribute('r', style.radius);
+    shadowCircleEl.setAttribute('fill', style.fillColor || 'none');
+    shadowCircleEl.setAttribute('stroke', shadowSettings.color);
+    shadowCircleEl.setAttribute('stroke-width', style.borderWidth || 2);
+    shadowCircleEl.setAttribute('opacity', shadowSettings.opacity / 100);
+
+    // Note: Circles don't typically need rotation, but SVG supports it if needed
+    if (shouldApplyRotation(elementInfo.rotation)) {
+      const rotation = normalizeRotation(elementInfo.rotation);
+      shadowCircleEl.setAttribute('transform', `rotate(${rotation} ${svgCoords.x} ${svgCoords.y})`);
+    }
+
+    templateGroup.appendChild(shadowCircleEl);
+  }
+
+  // Create main circle element
   const circleEl = svgDoc.createElement('circle');
 
   // Position centered at coordinates
@@ -460,8 +654,7 @@ async function createSvgCircle(svgDoc, templateGroup, element, svgCoords, elemen
  * @param {Object} elementInfo - Element info from shared utilities
  */
 async function createSvgLine(svgDoc, templateGroup, element, svgCoords, elementInfo) {
-  const { style } = elementInfo;
-  const lineEl = svgDoc.createElement('line');
+  const { style, shadowSettings } = elementInfo;
 
   // Calculate line endpoints using shared utility
   const endpoints = calculateLineEndpoints(
@@ -480,6 +673,28 @@ async function createSvgLine(svgDoc, templateGroup, element, svgCoords, elementI
     x: endpoints.end.x,
     y: svgCoords.y - (endpoints.end.y - svgCoords.originalPdfY) // Apply Y-flip for SVG
   };
+
+  // Render shadow line first if enabled
+  if (shadowSettings) {
+    const shadowLineEl = svgDoc.createElement('line');
+    shadowLineEl.setAttribute('x1', svgStart.x + shadowSettings.offsetX);
+    shadowLineEl.setAttribute('y1', svgStart.y + shadowSettings.offsetY);
+    shadowLineEl.setAttribute('x2', svgEnd.x + shadowSettings.offsetX);
+    shadowLineEl.setAttribute('y2', svgEnd.y + shadowSettings.offsetY);
+    shadowLineEl.setAttribute('stroke', shadowSettings.color);
+    shadowLineEl.setAttribute('stroke-width', style.thickness || 2);
+    shadowLineEl.setAttribute('opacity', shadowSettings.opacity / 100);
+
+    // Handle dotted line
+    if (element.type === 'dotted-line') {
+      shadowLineEl.setAttribute('stroke-dasharray', '3,3');
+    }
+
+    templateGroup.appendChild(shadowLineEl);
+  }
+
+  // Create main line element
+  const lineEl = svgDoc.createElement('line');
 
   // Set line coordinates
   lineEl.setAttribute('x1', svgStart.x);
@@ -510,6 +725,8 @@ async function createSvgLine(svgDoc, templateGroup, element, svgCoords, elementI
  * @param {Object} elementInfo - Element info from shared utilities
  */
 async function createMultiLineSvgText(svgDoc, templateGroup, content, svgCoords, style, elementInfo) {
+  const { shadowSettings } = elementInfo;
+
   // For SVG, we need a simple text width measurement function
   // This is an approximation since we don't have actual font metrics in SVG processing
   const approximateTextWidth = (text, fontSize) => {
@@ -525,7 +742,42 @@ async function createMultiLineSvgText(svgDoc, templateGroup, content, svgCoords,
     approximateTextWidth
   );
 
-  // Create SVG text element with multiple tspan elements for each line
+  // Render shadow text first if enabled
+  if (shadowSettings) {
+    const shadowTextEl = svgDoc.createElement('text');
+    shadowTextEl.setAttribute('x', svgCoords.x + shadowSettings.offsetX);
+    shadowTextEl.setAttribute('y', svgCoords.y - (textLayout.totalHeight / 2) + shadowSettings.offsetY);
+    shadowTextEl.setAttribute('text-anchor', 'middle');
+
+    // Apply shadow styling
+    applySvgTextStyle(shadowTextEl, {
+      ...style,
+      color: shadowSettings.color,
+      opacity: shadowSettings.opacity
+    });
+
+    // Apply rotation if needed
+    if (shouldApplyRotation(elementInfo.rotation)) {
+      const rotation = normalizeRotation(elementInfo.rotation);
+      shadowTextEl.setAttribute('transform', `rotate(${rotation} ${svgCoords.x} ${svgCoords.y})`);
+    }
+
+    // Add each line as a tspan element
+    for (let i = 0; i < textLayout.lines.length; i++) {
+      const line = textLayout.lines[i];
+      const tspanEl = svgDoc.createElement('tspan');
+
+      tspanEl.setAttribute('x', svgCoords.x + shadowSettings.offsetX);
+      tspanEl.setAttribute('dy', i === 0 ? '0.8em' : '1.2em');
+
+      tspanEl.textContent = line;
+      shadowTextEl.appendChild(tspanEl);
+    }
+
+    templateGroup.appendChild(shadowTextEl);
+  }
+
+  // Create main SVG text element with multiple tspan elements for each line
   const textEl = svgDoc.createElement('text');
   textEl.setAttribute('x', svgCoords.x);
   textEl.setAttribute('y', svgCoords.y - (textLayout.totalHeight / 2)); // Start from top of text block

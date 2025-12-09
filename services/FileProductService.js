@@ -243,7 +243,7 @@ class FileProductService extends BaseProductService {
       };
 
       // Remove fields that are definitely Product-only and don't belong in entity tables
-      const productOnlyFields = ['product_type', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'type_attributes', 'access_days'];
+      const productOnlyFields = ['product_type', 'short_description', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'type_attributes', 'access_days'];
       productOnlyFields.forEach(field => delete entityFields[field]);
 
       // File keeps title, description, and other shared fields since File model has them
@@ -255,6 +255,7 @@ class FileProductService extends BaseProductService {
       const productFields = {
         id: data.id || generateId(), // Use provided ID or generate new one
         title: data.title,
+        short_description: data.short_description,
         description: data.description,
         category: data.category,
         product_type: 'file',

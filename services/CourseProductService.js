@@ -249,7 +249,7 @@ class CourseProductService extends BaseProductService {
       };
 
       // Remove Product-only fields
-      const productOnlyFields = ['product_type', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'type_attributes', 'access_days'];
+      const productOnlyFields = ['product_type', 'short_description', 'is_published', 'price', 'category', 'image_url', 'has_image', 'image_filename', 'youtube_video_id', 'youtube_video_title', 'tags', 'target_audience', 'type_attributes', 'access_days'];
       productOnlyFields.forEach(field => delete entityFields[field]);
 
       // Course doesn't have title in entity table - it uses course-specific fields
@@ -260,6 +260,7 @@ class CourseProductService extends BaseProductService {
       const productFields = {
         id: data.id || generateId(),
         title: data.title,
+        short_description: data.short_description,
         description: data.description,
         category: data.category,
         product_type: 'course',

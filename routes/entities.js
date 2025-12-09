@@ -643,7 +643,7 @@ router.get('/curriculum/available-combinations', optionalAuth, async (_req, res)
  *         required: true
  *         schema:
  *           type: string
- *           enum: [product, game, file, workshop, course, tool, lessonplan, user, classroom, subscription, settings]
+ *           enum: [product, game, file, workshop, course, tool, lesson_plan, user, classroom, subscription, settings]
  *         description: Entity type to query
  *       - name: limit
  *         in: query
@@ -929,7 +929,7 @@ router.get('/:type/:id',
  *         required: true
  *         schema:
  *           type: string
- *           enum: [product, game, file, workshop, course, tool, lessonplan, classroom, settings]
+ *           enum: [product, game, file, workshop, course, tool, lesson_plan, classroom, settings]
  *         description: Entity type to create
  *     requestBody:
  *       required: true
@@ -971,7 +971,16 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
     case 'game':
       validationSchema = schemas.gameCreate;
       break;
+    case 'file':
+    case 'lesson_plan':
+    case 'course':
+    case 'tool':
+    case 'bundle':
+      // Use generic product creation schema for all other product types
+      validationSchema = schemas.productCreate;
+      break;
     default:
+      // Non-product entities use the permissive entity schema
       validationSchema = schemas.entityCreate;
   }
 
@@ -1041,7 +1050,7 @@ function sanitizeNumericFields(data, entityType) {
   // Common numeric fields that should be null instead of empty string
   const numericFields = {
     product: ['access_days', 'marketing_video_duration', 'total_duration_minutes'],
-    lessonplan: ['estimated_duration', 'total_slides'],
+    lesson_plan: ['estimated_duration', 'total_slides'],
     workshop: ['duration_minutes', 'max_participants'],
     course: ['total_modules', 'estimated_duration'],
     file: ['file_size'],
@@ -1090,7 +1099,16 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
     case 'game':
       validationSchema = schemas.gameUpdate;
       break;
+    case 'file':
+    case 'lesson_plan':
+    case 'course':
+    case 'tool':
+    case 'bundle':
+      // Use generic product update schema for all other product types
+      validationSchema = schemas.productUpdate;
+      break;
     default:
+      // Non-product entities use the permissive entity schema
       validationSchema = schemas.entityUpdate;
   }
 

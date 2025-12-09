@@ -128,7 +128,7 @@ async function checkContentCreatorPermissions(user, entityType) {
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 // POST /api/products - Create new product with unified endpoint
-router.post('/', authenticateToken, validateBody(schemas.entityCreate), async (req, res) => {
+router.post('/', authenticateToken, validateBody(schemas.productCreate), async (req, res) => {
   const { product_type, ...productData } = req.body;
 
 

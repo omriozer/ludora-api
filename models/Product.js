@@ -301,9 +301,19 @@ export default (sequelize) => {
   Product.prototype.getEntity = async function() {
     // Regular polymorphic association for all product types
     const { models } = this.constructor;
-    const ModelClass = models[this.product_type.charAt(0).toUpperCase() + this.product_type.slice(1)];
+
+    // Handle special cases for model names
+    let modelName;
+    if (this.product_type === 'lesson_plan') {
+      modelName = 'LessonPlan';
+    } else {
+      // Convert snake_case to PascalCase for other types
+      modelName = this.product_type.charAt(0).toUpperCase() + this.product_type.slice(1);
+    }
+
+    const ModelClass = models[modelName];
     if (!ModelClass) {
-      throw new Error(`Model for product_type '${this.product_type}' not found`);
+      throw new Error(`Model for product_type '${this.product_type}' not found (looking for ${modelName})`);
     }
     return await ModelClass.findByPk(this.entity_id);
   };

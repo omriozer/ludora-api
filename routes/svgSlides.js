@@ -384,6 +384,7 @@ router.get(
 
               return {
                 ...slide,
+                slide_number: slide.slide_order, // Add slide_number for frontend compatibility
                 content: processedContent,
                 access_type: 'preview',
                 is_placeholder: false
@@ -393,6 +394,7 @@ router.get(
               return {
                 id: `placeholder-${index}`,
                 slide_order: index + 1,
+                slide_number: index + 1, // Add slide_number for frontend compatibility
                 title: `Slide ${index + 1} (Preview Restricted)`,
                 filename: `slide-${index + 1}-placeholder.svg`,
                 content: getPlaceholderSlideContent(),
@@ -412,6 +414,7 @@ router.get(
 
             return {
               ...slide,
+              slide_number: slide.slide_order, // Add slide_number for frontend compatibility
               content: processedContent,
               access_type: 'preview',
               is_placeholder: false
@@ -426,6 +429,7 @@ router.get(
 
           return {
             ...slide,
+            slide_number: slide.slide_order, // Add slide_number for frontend compatibility
             content: processedContent,
             access_type: 'full',
             is_placeholder: false
@@ -495,11 +499,17 @@ router.get(
         });
       }
 
+      // Add slide_number for frontend compatibility
+      const slidesWithNumber = slidesResult.slides.map(slide => ({
+        ...slide,
+        slide_number: slide.slide_order
+      }));
+
       res.json({
         success: true,
         data: {
           lessonPlanId,
-          slides: slidesResult.slides,
+          slides: slidesWithNumber,
           totalSlides: slidesResult.totalSlides
         }
       });

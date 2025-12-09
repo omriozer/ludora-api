@@ -8,7 +8,7 @@ const router = express.Router();
 
 /**
  * Validate watermark template data structure
- * Supports unified structure (elements object) and legacy structure (textElements, logoElements)
+ * Only supports unified structure (elements object)
  * @param {Object} templateData - Watermark template data to validate
  * @throws {Error} If validation fails
  */
@@ -17,150 +17,74 @@ function validateWatermarkTemplateData(templateData) {
     throw new Error('Template data must be an object');
   }
 
-  // Check for unified structure or legacy structure
-  const hasUnifiedStructure = templateData.elements && typeof templateData.elements === 'object';
-  const hasLegacyStructure = templateData.textElements || templateData.logoElements;
-
-  if (!hasUnifiedStructure && !hasLegacyStructure) {
-    throw new Error('Template must have unified structure (elements object) or legacy elements (textElements, logoElements)');
+  // Check for unified structure only
+  if (!templateData.elements || typeof templateData.elements !== 'object') {
+    throw new Error('Template must have unified structure (elements object)');
   }
 
   // CRITICAL FIX: Validate that watermark templates actually contain watermark elements
-  let totalElements = 0;
-
-  if (hasUnifiedStructure) {
-    // Count elements in unified structure
-    totalElements = Object.values(templateData.elements).reduce((sum, elementArray) => {
-      return sum + (Array.isArray(elementArray) ? elementArray.length : 0);
-    }, 0);
-  } else if (hasLegacyStructure) {
-    // Count elements in legacy structure
-    totalElements = (templateData.textElements?.length || 0) + (templateData.logoElements?.length || 0);
-  }
+  const totalElements = Object.values(templateData.elements).reduce((sum, elementArray) => {
+    return sum + (Array.isArray(elementArray) ? elementArray.length : 0);
+  }, 0);
 
   if (totalElements === 0) {
     throw new Error('Watermark template must contain at least one watermark element (text, logo, etc.). Empty watermark templates are not allowed.');
   }
 
   // Validate unified structure
-  if (hasUnifiedStructure) {
-    Object.entries(templateData.elements).forEach(([elementType, elementArray]) => {
-      if (!Array.isArray(elementArray)) {
-        throw new Error(`Element type ${elementType} must be an array`);
+  Object.entries(templateData.elements).forEach(([elementType, elementArray]) => {
+    if (!Array.isArray(elementArray)) {
+      throw new Error(`Element type ${elementType} must be an array`);
+    }
+
+    elementArray.forEach((element, index) => {
+      if (!element || typeof element !== 'object') {
+        throw new Error(`Element ${elementType}[${index}] must be an object`);
       }
 
-      elementArray.forEach((element, index) => {
-        if (!element || typeof element !== 'object') {
-          throw new Error(`Element ${elementType}[${index}] must be an object`);
-        }
+      // Validate required fields
+      if (!element.id || typeof element.id !== 'string') {
+        throw new Error(`Element ${elementType}[${index}] missing required 'id' string`);
+      }
 
-        // Validate required fields
-        if (!element.id || typeof element.id !== 'string') {
-          throw new Error(`Element ${elementType}[${index}] missing required 'id' string`);
-        }
+      if (!element.type || typeof element.type !== 'string') {
+        throw new Error(`Element ${elementType}[${index}] missing required 'type' string`);
+      }
 
-        if (!element.type || typeof element.type !== 'string') {
-          throw new Error(`Element ${elementType}[${index}] missing required 'type' string`);
-        }
+      if (typeof element.visible !== 'boolean') {
+        element.visible = true; // Default if missing
+      }
 
-        if (typeof element.visible !== 'boolean') {
-          element.visible = true; // Default if missing
-        }
+      if (!element.position || typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
+        throw new Error(`Element ${elementType}[${index}] position must have numeric x and y values`);
+      }
 
-        if (!element.position || typeof element.position.x !== 'number' || typeof element.position.y !== 'number') {
-          throw new Error(`Element ${elementType}[${index}] position must have numeric x and y values`);
-        }
+      if (!element.style || typeof element.style !== 'object') {
+        throw new Error(`Element ${elementType}[${index}] missing required 'style' object`);
+      }
 
-        if (!element.style || typeof element.style !== 'object') {
-          throw new Error(`Element ${elementType}[${index}] missing required 'style' object`);
+      // Validate element-type-specific properties
+      if (['watermark-text', 'free-text'].includes(elementType)) {
+        if (!element.content || typeof element.content !== 'string') {
+          throw new Error(`Text element ${elementType}[${index}] must have string content`);
         }
+        if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
+          element.pattern = 'single'; // Default if missing or invalid
+        }
+      }
 
-        // Validate element-type-specific properties
-        if (['watermark-text', 'free-text'].includes(elementType)) {
-          if (!element.content || typeof element.content !== 'string') {
-            throw new Error(`Text element ${elementType}[${index}] must have string content`);
-          }
-          if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
-            element.pattern = 'single'; // Default if missing or invalid
-          }
+      if (['watermark-logo', 'logo'].includes(elementType)) {
+        if (element.source && !['system-logo', 'custom-url', 'uploaded-file'].includes(element.source)) {
+          throw new Error(`Logo element ${elementType}[${index}] source must be 'system-logo', 'custom-url', or 'uploaded-file'`);
         }
-
-        if (['watermark-logo', 'logo'].includes(elementType)) {
-          if (element.source && !['system-logo', 'custom-url', 'uploaded-file'].includes(element.source)) {
-            throw new Error(`Logo element ${elementType}[${index}] source must be 'system-logo', 'custom-url', or 'uploaded-file'`);
-          }
-          if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
-            element.pattern = 'single'; // Default if missing or invalid
-          }
+        if (!['single', 'grid', 'scattered'].includes(element.pattern)) {
+          element.pattern = 'single'; // Default if missing or invalid
         }
-      });
+      }
     });
+  });
 
-    // Validate globalSettings if present
-    if (templateData.globalSettings && typeof templateData.globalSettings !== 'object') {
-      throw new Error('globalSettings must be an object');
-    }
-
-    return; // Exit early if unified structure is valid
-  }
-
-  // Validate text elements
-  if (templateData.textElements) {
-    if (!Array.isArray(templateData.textElements)) {
-      throw new Error('textElements must be an array');
-    }
-
-    for (const [index, textEl] of templateData.textElements.entries()) {
-      if (!textEl.id || typeof textEl.id !== 'string') {
-        throw new Error(`Text element ${index} must have a string id`);
-      }
-      if (!textEl.content || typeof textEl.content !== 'string') {
-        throw new Error(`Text element ${index} must have string content`);
-      }
-      if (!textEl.position || typeof textEl.position.x !== 'number' || typeof textEl.position.y !== 'number') {
-        throw new Error(`Text element ${index} must have position with numeric x and y`);
-      }
-      if (!textEl.style || typeof textEl.style !== 'object') {
-        throw new Error(`Text element ${index} must have a style object`);
-      }
-      if (!['single', 'grid', 'scattered'].includes(textEl.pattern)) {
-        throw new Error(`Text element ${index} pattern must be 'single', 'grid', or 'scattered'`);
-      }
-      if (typeof textEl.visible !== 'boolean') {
-        throw new Error(`Text element ${index} visible must be boolean`);
-      }
-    }
-  }
-
-  // Validate logo elements
-  if (templateData.logoElements) {
-    if (!Array.isArray(templateData.logoElements)) {
-      throw new Error('logoElements must be an array');
-    }
-
-    for (const [index, logoEl] of templateData.logoElements.entries()) {
-      if (!logoEl.id || typeof logoEl.id !== 'string') {
-        throw new Error(`Logo element ${index} must have a string id`);
-      }
-      if (!logoEl.source || typeof logoEl.source !== 'string') {
-        throw new Error(`Logo element ${index} must have a string source`);
-      }
-      if (!logoEl.position || typeof logoEl.position.x !== 'number' || typeof logoEl.position.y !== 'number') {
-        throw new Error(`Logo element ${index} must have position with numeric x and y`);
-      }
-      if (!logoEl.style || typeof logoEl.style !== 'object') {
-        throw new Error(`Logo element ${index} must have a style object`);
-      }
-      if (!['single', 'grid', 'scattered'].includes(logoEl.pattern)) {
-        throw new Error(`Logo element ${index} pattern must be 'single', 'grid', or 'scattered'`);
-      }
-      if (typeof logoEl.visible !== 'boolean') {
-        throw new Error(`Logo element ${index} visible must be boolean`);
-      }
-    }
-  }
-
-  // Validate global settings if present
+  // Validate globalSettings if present
   if (templateData.globalSettings && typeof templateData.globalSettings !== 'object') {
     throw new Error('globalSettings must be an object');
   }
