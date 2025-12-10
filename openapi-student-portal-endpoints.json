@@ -1,0 +1,1081 @@
+{
+  "schemas": {
+    "Classroom": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "teacher_id",
+        "is_active"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "classroom_abc123",
+          "description": "Unique classroom identifier"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "example": "Advanced Mathematics",
+          "description": "Classroom name"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 1000,
+          "example": "Advanced mathematics class for grade 9 students",
+          "description": "Classroom description"
+        },
+        "teacher_id": {
+          "type": "string",
+          "example": "user_teacher456",
+          "description": "ID of the teacher who owns this classroom"
+        },
+        "teacher": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "first_name": {
+              "type": "string"
+            },
+            "last_name": {
+              "type": "string"
+            }
+          },
+          "description": "Teacher information (when included)"
+        },
+        "is_active": {
+          "type": "boolean",
+          "example": true,
+          "description": "Whether classroom is active and accepting students"
+        },
+        "max_students": {
+          "type": "integer",
+          "nullable": true,
+          "minimum": 1,
+          "maximum": 1000,
+          "example": 30,
+          "description": "Maximum number of students (null = no limit)"
+        },
+        "current_student_count": {
+          "type": "integer",
+          "minimum": 0,
+          "example": 24,
+          "description": "Current number of active students"
+        },
+        "pending_student_count": {
+          "type": "integer",
+          "minimum": 0,
+          "example": 3,
+          "description": "Number of students with pending approval"
+        },
+        "invitation_code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{6}$",
+          "example": "ABC123",
+          "description": "Teacher invitation code for student self-signup"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "example": "2025-01-15T10:00:00Z"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "example": "2025-01-15T14:30:00Z"
+        }
+      }
+    },
+    "ClassroomMembership": {
+      "type": "object",
+      "required": [
+        "id",
+        "classroom_id",
+        "student_id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "membership_abc123",
+          "description": "Unique membership identifier"
+        },
+        "classroom_id": {
+          "type": "string",
+          "example": "classroom_xyz789",
+          "description": "Associated classroom ID"
+        },
+        "student_id": {
+          "type": "string",
+          "example": "user_abc123",
+          "description": "Student identifier (user_id or player_id)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "active",
+            "denied",
+            "inactive"
+          ],
+          "example": "pending",
+          "description": "Membership approval status"
+        },
+        "request_message": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 500,
+          "example": "I would like to join this math class",
+          "description": "Student's request message"
+        },
+        "approval_message": {
+          "type": "string",
+          "nullable": true,
+          "maxLength": 500,
+          "example": "Welcome to the class!",
+          "description": "Teacher's approval/denial message"
+        },
+        "requested_at": {
+          "type": "string",
+          "format": "date-time",
+          "example": "2025-01-15T10:00:00Z",
+          "description": "When membership was requested"
+        },
+        "approved_at": {
+          "type": "string",
+          "format": "date-time",
+          "nullable": true,
+          "example": "2025-01-15T14:30:00Z",
+          "description": "When membership was approved/denied"
+        },
+        "approved_by": {
+          "type": "string",
+          "nullable": true,
+          "example": "user_teacher456",
+          "description": "Teacher who approved/denied the request"
+        },
+        "classroom": {
+          "$ref": "#/schemas/Classroom",
+          "nullable": true,
+          "description": "Associated classroom data (when included)"
+        },
+        "student": {
+          "type": "object",
+          "nullable": true,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string",
+              "enum": ["user", "player"]
+            }
+          },
+          "description": "Student information (when included)"
+        }
+      }
+    },
+    "ClassroomDiscoveryRequest": {
+      "type": "object",
+      "required": [
+        "teacher_invitation_code"
+      ],
+      "properties": {
+        "teacher_invitation_code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{6}$",
+          "example": "ABC123",
+          "description": "Teacher invitation code to discover their classrooms"
+        }
+      }
+    },
+    "ClassroomDiscoveryResponse": {
+      "type": "object",
+      "required": [
+        "success",
+        "teacher",
+        "classrooms"
+      ],
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "teacher": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "example": "user_teacher456"
+            },
+            "first_name": {
+              "type": "string",
+              "example": "Sarah"
+            },
+            "last_name": {
+              "type": "string",
+              "example": "Cohen"
+            },
+            "invitation_code": {
+              "type": "string",
+              "example": "ABC123"
+            }
+          },
+          "description": "Teacher information"
+        },
+        "classrooms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/Classroom"
+          },
+          "description": "List of active classrooms for this teacher"
+        }
+      }
+    },
+    "StudentMembershipRequest": {
+      "type": "object",
+      "required": [
+        "classroom_id"
+      ],
+      "properties": {
+        "classroom_id": {
+          "type": "string",
+          "example": "classroom_abc123",
+          "description": "Classroom to request membership in"
+        },
+        "request_message": {
+          "type": "string",
+          "maxLength": 500,
+          "example": "I would like to join this math class. I'm in grade 9.",
+          "description": "Optional message to teacher explaining request"
+        }
+      }
+    },
+    "StudentMembershipResponse": {
+      "type": "object",
+      "required": [
+        "success",
+        "message",
+        "membership"
+      ],
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Membership request sent successfully. Awaiting teacher approval."
+        },
+        "membership": {
+          "$ref": "#/schemas/ClassroomMembership"
+        },
+        "parent_consent_required": {
+          "type": "boolean",
+          "nullable": true,
+          "example": true,
+          "description": "Whether parent consent will be required if approved"
+        }
+      }
+    },
+    "TeacherApprovalRequest": {
+      "type": "object",
+      "required": [
+        "membership_id",
+        "action"
+      ],
+      "properties": {
+        "membership_id": {
+          "type": "string",
+          "example": "membership_abc123",
+          "description": "Membership request to approve/deny"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "deny"
+          ],
+          "example": "approve",
+          "description": "Action to take on the membership request"
+        },
+        "approval_message": {
+          "type": "string",
+          "maxLength": 500,
+          "example": "Welcome to our advanced mathematics class!",
+          "description": "Message to student about approval/denial"
+        }
+      }
+    },
+    "TeacherApprovalResponse": {
+      "type": "object",
+      "required": [
+        "success",
+        "message",
+        "membership"
+      ],
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Membership request approved successfully"
+        },
+        "membership": {
+          "$ref": "#/schemas/ClassroomMembership"
+        },
+        "parent_consent_created": {
+          "type": "boolean",
+          "nullable": true,
+          "example": true,
+          "description": "Whether parent consent was created for user students"
+        }
+      }
+    },
+    "PlayerMigrationRequest": {
+      "type": "object",
+      "required": [
+        "player_id",
+        "user_email"
+      ],
+      "properties": {
+        "player_id": {
+          "type": "string",
+          "pattern": "^player_[A-Z0-9]{6}$",
+          "example": "player_ABC123",
+          "description": "Player ID to migrate to user account"
+        },
+        "user_email": {
+          "type": "string",
+          "format": "email",
+          "example": "student@example.com",
+          "description": "Email of existing user account"
+        },
+        "confirmation_token": {
+          "type": "string",
+          "nullable": true,
+          "example": "token_xyz789",
+          "description": "Email confirmation token (required if email verification enabled)"
+        }
+      }
+    },
+    "PlayerMigrationResponse": {
+      "type": "object",
+      "required": [
+        "success",
+        "message"
+      ],
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "example": true
+        },
+        "message": {
+          "type": "string",
+          "example": "Player data successfully migrated to user account"
+        },
+        "migrated_data": {
+          "type": "object",
+          "properties": {
+            "classrooms_transferred": {
+              "type": "integer",
+              "example": 2,
+              "description": "Number of classroom memberships transferred"
+            },
+            "sessions_transferred": {
+              "type": "integer",
+              "example": 15,
+              "description": "Number of user sessions transferred"
+            },
+            "achievements_preserved": {
+              "type": "boolean",
+              "example": true,
+              "description": "Whether player achievements were preserved"
+            }
+          },
+          "description": "Summary of data migration"
+        },
+        "user": {
+          "$ref": "#/components/schemas/User",
+          "description": "Updated user account with migrated data"
+        }
+      }
+    },
+    "SettingsAccessRequest": {
+      "type": "object",
+      "properties": {
+        "student_access_mode": {
+          "type": "string",
+          "enum": [
+            "all",
+            "invite_only",
+            "auth_only"
+          ],
+          "nullable": true,
+          "example": "invite_only",
+          "description": "Override default student access mode for validation"
+        },
+        "access_context": {
+          "type": "object",
+          "properties": {
+            "has_invitation_code": {
+              "type": "boolean",
+              "example": true
+            },
+            "has_lobby_code": {
+              "type": "boolean",
+              "example": false
+            },
+            "is_authenticated": {
+              "type": "boolean",
+              "example": true
+            },
+            "user_role": {
+              "type": "string",
+              "enum": ["student", "teacher", "admin"],
+              "nullable": true,
+              "example": "student"
+            }
+          },
+          "description": "Context for access validation"
+        }
+      }
+    },
+    "SettingsAccessResponse": {
+      "type": "object",
+      "required": [
+        "access_allowed",
+        "access_mode",
+        "requirements"
+      ],
+      "properties": {
+        "access_allowed": {
+          "type": "boolean",
+          "example": true,
+          "description": "Whether student portal access is allowed"
+        },
+        "access_mode": {
+          "type": "string",
+          "enum": [
+            "all",
+            "invite_only",
+            "auth_only"
+          ],
+          "example": "invite_only",
+          "description": "Current student access mode setting"
+        },
+        "requirements": {
+          "type": "object",
+          "properties": {
+            "authentication_required": {
+              "type": "boolean",
+              "example": true,
+              "description": "Whether authentication is required"
+            },
+            "invitation_code_required": {
+              "type": "boolean",
+              "example": true,
+              "description": "Whether invitation code is required"
+            },
+            "parent_consent_required": {
+              "type": "boolean",
+              "example": true,
+              "description": "Whether parent consent is required"
+            }
+          },
+          "description": "Access requirements based on current settings"
+        },
+        "student_onboarding_enabled": {
+          "type": "boolean",
+          "example": true,
+          "description": "Whether student onboarding is enabled"
+        },
+        "teacher_onboarding_enabled": {
+          "type": "boolean",
+          "example": true,
+          "description": "Whether teacher onboarding is enabled"
+        }
+      }
+    },
+    "ClassroomListResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/Classroom"
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "example": 25
+            },
+            "page": {
+              "type": "integer",
+              "example": 1
+            },
+            "limit": {
+              "type": "integer",
+              "example": 20
+            },
+            "totalPages": {
+              "type": "integer",
+              "example": 2
+            }
+          }
+        }
+      }
+    },
+    "MembershipListResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/ClassroomMembership"
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "example": 45
+            },
+            "page": {
+              "type": "integer",
+              "example": 1
+            },
+            "limit": {
+              "type": "integer",
+              "example": 20
+            },
+            "totalPages": {
+              "type": "integer",
+              "example": 3
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/student-portal/classrooms/discover": {
+      "post": {
+        "tags": [
+          "Student Portal"
+        ],
+        "summary": "Discover teacher's classrooms",
+        "description": "Find all active classrooms for a teacher using their invitation code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/ClassroomDiscoveryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Teacher classrooms found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/schemas/ClassroomDiscoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid invitation code format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Teacher invitation code not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/student-portal/classrooms/{classroomId}/request-membership": {
+      "post": {
+        "tags": [
+          "Student Portal"
+        ],
+        "summary": "Request classroom membership",
+        "description": "Submit request to join a classroom as a student (requires authentication)",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classroomId",
+            "in": "path",
+            "required": true,
+            "description": "Classroom ID to request membership",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/StudentMembershipRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Membership request created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/schemas/StudentMembershipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or classroom at capacity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Student access not allowed based on settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Classroom not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Student already has pending/active membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (5 requests per hour per student)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teacher-portal/classroom-memberships/{membershipId}/approve": {
+      "post": {
+        "tags": [
+          "Teacher Portal"
+        ],
+        "summary": "Approve/deny classroom membership request",
+        "description": "Approve or deny a student's classroom membership request (teacher only)",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "membershipId",
+            "in": "path",
+            "required": true,
+            "description": "Membership request ID to approve/deny",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/TeacherApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Membership request processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/schemas/TeacherApprovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid action or membership already processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not authorized to approve this membership (not classroom teacher)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Membership request not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/student-portal/migrate-player": {
+      "post": {
+        "tags": [
+          "Student Portal"
+        ],
+        "summary": "Migrate anonymous player to user account",
+        "description": "Convert anonymous player data to authenticated user account",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/PlayerMigrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Player migration completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/schemas/PlayerMigrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid player ID or user email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Player migration not allowed (already migrated or email mismatch)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Player or user account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Player already migrated to a different user account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (3 attempts per day per user)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/student-portal/settings/validate-access": {
+      "post": {
+        "tags": [
+          "Student Portal"
+        ],
+        "summary": "Validate student portal access based on settings",
+        "description": "Check if student portal access is allowed based on current system settings and context",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/SettingsAccessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings access validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/schemas/SettingsAccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid validation request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Settings service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teacher-portal/classroom-memberships": {
+      "get": {
+        "tags": [
+          "Teacher Portal"
+        ],
+        "summary": "List classroom membership requests",
+        "description": "Get paginated list of membership requests for teacher's classrooms with filtering",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classroom_id",
+            "in": "query",
+            "description": "Filter by specific classroom",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by membership status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "active",
+                "denied",
+                "inactive"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Classroom memberships list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/schemas/MembershipListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Teacher role required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

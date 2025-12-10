@@ -121,6 +121,9 @@ import playersRoutes from './routes/players.js';
 import bundlesRoutes from './routes/bundles.js';
 import jobsRoutes from './routes/jobs.js';
 import curriculumLinkingRoutes from './routes/curriculum-linking.js';
+import seoRoutes from './routes/seo.js';
+import classroomsRoutes from './routes/classrooms.js';
+import studentPortalSettingsRoutes from './routes/studentPortalSettings.js';
 
 // Import OpenAPI documentation (development only)
 let swaggerUi, openApiSpecs;
@@ -278,6 +281,9 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/bundles', bundlesRoutes);
 app.use('/api/jobs', jobsRoutes);
 app.use('/api/curriculum-linking', curriculumLinkingRoutes);
+app.use('/api/seo', seoRoutes);
+app.use('/api/classrooms', classroomsRoutes);
+app.use('/api/student-portal/settings', studentPortalSettingsRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
@@ -362,7 +368,10 @@ app.get('/api', (req, res) => {
       'svg-slides': '/api/svg-slides',
       'system-templates': '/api/system-templates',
       jobs: '/api/jobs',
-      'curriculum-linking': '/api/curriculum-linking'
+      'curriculum-linking': '/api/curriculum-linking',
+      seo: '/api/seo',
+      classrooms: '/api/classrooms',
+      'student-portal-settings': '/api/student-portal/settings'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
   });

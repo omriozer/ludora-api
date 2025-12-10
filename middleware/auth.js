@@ -1,5 +1,6 @@
 import AuthService from '../services/AuthService.js';
 import PlayerService from '../services/PlayerService.js';
+import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import {
   logCookieConfig,
@@ -621,5 +622,157 @@ export async function authenticatePlayer(req, res, next) {
   } catch (error) {
     const playerError = createPlayerAuthError.serverError(error.message);
     res.status(playerError.statusCode).json(playerError.toJSON());
+  }
+}
+
+// =============================================
+// SETTINGS-BASED ACCESS CONTROL MIDDLEWARE
+// =============================================
+
+/**
+ * Middleware to enforce settings-based student access control
+ * Validates student access based on Settings.students_access mode:
+ * - 'all': Both Players and Users allowed
+ * - 'invite_only': Only Players allowed (no User registration)
+ * - 'auth_only': Only Users allowed (no anonymous Players)
+ */
+export async function validateStudentAccess(req, res, next) {
+  try {
+    // Get portal and determine if this is a student operation
+    const portal = detectPortal(req);
+    const { entityType } = req; // Set by authenticateUserOrPlayer middleware
+
+    // Only apply to student portal operations
+    if (portal !== 'student') {
+      return next();
+    }
+
+    // Get current students access setting
+    const studentsAccess = await SettingsService.get('students_access');
+
+    switch (studentsAccess) {
+      case 'all':
+        // Both Players and Users allowed
+        return next();
+
+      case 'invite_only':
+        // Only Players (anonymous) allowed
+        if (entityType === 'user') {
+          return res.status(403).json({
+            error: 'User registration disabled',
+            message: 'Student portal is in invitation-only mode. Only anonymous access is allowed.',
+            mode: 'invite_only',
+            allowed_entity_types: ['player'],
+            help: 'Contact your teacher for an invitation code to join anonymously.'
+          });
+        }
+        return next();
+
+      case 'auth_only':
+        // Only Users (authenticated) allowed
+        if (entityType === 'player') {
+          return res.status(403).json({
+            error: 'Anonymous access disabled',
+            message: 'Student portal requires authentication. Please register or sign in.',
+            mode: 'auth_only',
+            allowed_entity_types: ['user'],
+            help: 'You need to create an account and verify parent consent.'
+          });
+        }
+        return next();
+
+      default:
+        // Unknown mode - fail safe to most restrictive
+        return res.status(500).json({
+          error: 'Invalid access mode configuration',
+          message: 'Student portal access mode is not properly configured.',
+          configured_mode: studentsAccess
+        });
+    }
+  } catch (error) {
+    // If settings check fails, fail safe to blocking access
+    return res.status(500).json({
+      error: 'Access control check failed',
+      message: 'Unable to verify student access permissions.',
+      details: error.message
+    });
+  }
+}
+
+/**
+ * Middleware specifically for Player operations
+ * Blocks Player creation/login when students_access is 'auth_only'
+ */
+export async function validatePlayerAccess(req, res, next) {
+  try {
+    const studentsAccess = await SettingsService.get('students_access');
+
+    if (studentsAccess === 'auth_only') {
+      return res.status(403).json({
+        error: 'Anonymous player access disabled',
+        message: 'Player creation and login are disabled. Only authenticated users are allowed.',
+        mode: 'auth_only',
+        help: 'Students must register with email and parent consent.'
+      });
+    }
+
+    return next();
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Player access check failed',
+      details: error.message
+    });
+  }
+}
+
+/**
+ * Middleware specifically for User registration operations
+ * Blocks User registration when students_access is 'invite_only'
+ */
+export async function validateUserRegistration(req, res, next) {
+  try {
+    const studentsAccess = await SettingsService.get('students_access');
+
+    if (studentsAccess === 'invite_only') {
+      return res.status(403).json({
+        error: 'User registration disabled',
+        message: 'Student user registration is disabled. Only anonymous access via invitation codes is allowed.',
+        mode: 'invite_only',
+        help: 'Contact your teacher for an invitation code to join anonymously.'
+      });
+    }
+
+    return next();
+  } catch (error) {
+    return res.status(500).json({
+      error: 'User registration check failed',
+      details: error.message
+    });
+  }
+}
+
+/**
+ * Middleware for Player migration operations
+ * Blocks migration when students_access is 'invite_only'
+ */
+export async function validatePlayerMigration(req, res, next) {
+  try {
+    const studentsAccess = await SettingsService.get('students_access');
+
+    if (studentsAccess === 'invite_only') {
+      return res.status(403).json({
+        error: 'Player migration disabled',
+        message: 'Converting anonymous players to registered users is disabled in invitation-only mode.',
+        mode: 'invite_only',
+        help: 'Migration is only available in "all" or "auth_only" modes.'
+      });
+    }
+
+    return next();
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Migration access check failed',
+      details: error.message
+    });
   }
 }

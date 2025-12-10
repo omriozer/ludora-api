@@ -4,11 +4,10 @@ import { generateId } from './baseModel.js';
 export default function(sequelize) {
   const Player = sequelize.define('Player', {
     id: {
-      type: DataTypes.UUID,
+      type: DataTypes.STRING(13), // player_ + 6 chars = 13 total
       primaryKey: true,
       allowNull: false,
-      defaultValue: DataTypes.UUIDV4,
-      comment: 'Unique player identifier'
+      comment: 'Unique player identifier (format: player_XXXXXX)'
     },
     privacy_code: {
       type: DataTypes.STRING(8),
@@ -20,15 +19,6 @@ export default function(sequelize) {
       type: DataTypes.STRING(100),
       allowNull: false,
       comment: 'Display name shown in games and to teachers'
-    },
-    user_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      references: {
-        model: 'user',
-        key: 'id'
-      },
-      comment: 'Associated user account (null for anonymous players)'
     },
     teacher_id: {
       type: DataTypes.STRING,
@@ -89,10 +79,6 @@ export default function(sequelize) {
         name: 'idx_player_privacy_code'
       },
       {
-        fields: ['user_id'],
-        name: 'idx_player_user_id'
-      },
-      {
         fields: ['teacher_id'],
         name: 'idx_player_teacher_id'
       },
@@ -120,14 +106,6 @@ export default function(sequelize) {
   });
 
   Player.associate = function(models) {
-    // Player can be associated with a user account (for future user association)
-    Player.belongsTo(models.User, {
-      foreignKey: 'user_id',
-      as: 'user',
-      onDelete: 'SET NULL',
-      onUpdate: 'CASCADE'
-    });
-
     // Player belongs to a teacher (who manages them)
     Player.belongsTo(models.User, {
       foreignKey: 'teacher_id',
@@ -136,9 +114,11 @@ export default function(sequelize) {
       onUpdate: 'CASCADE'
     });
 
-    // Player can have multiple sessions
+    // Player can have multiple sessions (unified student_id approach)
+    // Note: Using student_id instead of player_id due to unified architecture
     Player.hasMany(models.UserSession, {
-      foreignKey: 'player_id',
+      foreignKey: 'student_id',
+      sourceKey: 'id',
       as: 'sessions'
     });
   };
@@ -172,17 +152,6 @@ export default function(sequelize) {
     return values;
   };
 
-  // Check if player has user association
-  Player.prototype.isAssociatedWithUser = function() {
-    return this.user_id !== null;
-  };
-
-  // Associate with user account
-  Player.prototype.associateWithUser = async function(userId) {
-    this.user_id = userId;
-    this.updated_at = new Date();
-    return await this.save();
-  };
 
   // Deactivate player (soft delete)
   Player.prototype.deactivate = async function() {
@@ -193,6 +162,17 @@ export default function(sequelize) {
   };
 
   // Class methods
+
+  // Generate unique player ID (format: player_XXXXXX)
+  Player.generatePlayerId = function() {
+    // Use chars excluding 0, O, I, 1 to avoid confusion
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let result = 'player_';
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
 
   // Generate unique privacy code (8 characters, excluding confusing chars)
   Player.generatePrivacyCode = function() {
@@ -241,26 +221,32 @@ export default function(sequelize) {
     });
   };
 
-  // Create player with unique privacy code
+  // Create player with unique ID and privacy code
   Player.createWithUniqueCode = async function(playerData, options = {}) {
+    let playerId;
     let privacyCode;
     let attempts = 0;
     const maxAttempts = 10;
 
-    // Generate unique privacy code
+    // Generate unique player ID and privacy code
     while (attempts < maxAttempts) {
+      playerId = this.generatePlayerId();
       privacyCode = this.generatePrivacyCode();
-      const existing = await this.findByPrivacyCode(privacyCode);
-      if (!existing) break;
+
+      const existingId = await this.findByPk(playerId);
+      const existingCode = await this.findByPrivacyCode(privacyCode);
+
+      if (!existingId && !existingCode) break;
       attempts++;
     }
 
     if (attempts >= maxAttempts) {
-      throw new Error('Failed to generate unique privacy code');
+      throw new Error('Failed to generate unique player ID and privacy code');
     }
 
     return await this.create({
       ...playerData,
+      id: playerId,
       privacy_code: privacyCode
     }, options);
   };
