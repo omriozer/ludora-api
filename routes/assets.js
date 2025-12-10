@@ -252,6 +252,8 @@ async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, 
                            originalError.message.includes('Unexpected token') ||
                            originalError.constructor.name === 'PDFError';
 
+  luderror('handlePdfProcessingFailure: isCorruptionError:', isCorruptionError);
+
   if (isCorruptionError) {
 
     // Log the corruption issue for monitoring
@@ -290,6 +292,7 @@ async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, 
 
       return pdfBuffer;
     } catch (validationError) {
+      luderror('handlePdfProcessingFailure: PDF validation failed:', validationError.message);
       throw new Error(`PDF file is invalid and cannot be served. Please re-upload a valid PDF file. Technical details: ${validationError.message}`);
     }
   }
@@ -316,6 +319,7 @@ async function handlePdfProcessingFailure(originalError, pdfBuffer, fileEntity, 
     // Access denial logging failed
   }
 
+  luderror('handlePdfProcessingFailure: Throwing final error for user without access');
   throw new Error(`Unable to process PDF for preview. This file requires full access to view. Processing failed with: ${originalError.message}`);
 }
 
@@ -405,18 +409,14 @@ async function checkUserAccess(user, fileEntity) {
     });
 
   if (!product) {
-
     return false;
   }
 
-  if (product.creator_user_id === user.id) {
-
-    return true;
-  }
+  // NOTE: Ownership does not grant access - only purchases, subscriptions, bundles, and lesson plan links do
 
   // Use AccessControlService to check if user has purchased access
   try {
-    const accessResult = await AccessControlService.checkAccess(user.id, 'file', product.entity_id);
+    const accessResult = await AccessControlService.checkAccess(user.id, 'file', product.id);
     return accessResult.hasAccess;
   } catch (error) {
     return false;
@@ -1214,14 +1214,10 @@ router.get('/download/lesson-plan-slide/:lessonPlanId/:slideId', optionalAuth, a
         });
 
         if (product) {
-          if (product.creator_user_id === req.user.id) {
-            hasAccess = true;
-          } else {
-            // Use AccessControlService to check purchase access
-            const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', product.entity_id);
-            hasAccess = accessResult.hasAccess;
-
-          }
+          // Use AccessControlService to check purchase access
+          // NOTE: Ownership does not grant access - only purchases, subscriptions, bundles, and lesson plan links do
+          const accessResult = await AccessControlService.checkAccess(req.user.id, 'lesson_plan', product.id);
+          hasAccess = accessResult.hasAccess;
         }
       } catch (accessError) {
         // SECURITY: Log access check failure and fail safe by denying access
@@ -1751,6 +1747,7 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
       isPreviewMode = true;
     } else {
       // User doesn't own content and preview is not allowed
+      luderror('Download logic: Access denied - no access and no preview allowed');
       return res.status(403).json(createErrorResponse(
         'Access denied',
         'You do not have permission to download this file',
@@ -1792,7 +1789,6 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
 
       if (needsPdfProcessing) {
         // PDF processing needed
-
         // Fetch settings and download PDF
         const [settings, pdfBuffer] = await Promise.all([
           SettingsService.getSettings(),
@@ -1853,7 +1849,6 @@ router.get('/download/:entityType/:entityId', authenticateToken, async (req, res
     }
 
   } catch (error) {
-
     if (!res.headersSent) {
       res.status(500).json(createErrorResponse(
         'Download failed',

@@ -260,38 +260,6 @@ export function generateHebrewSafeS3Key(filename) {
   return safeFilename;
 }
 
-/**
- * Hebrew filename metadata for logging and debugging
- * @param {string} filename - Filename to analyze
- * @returns {Object} Metadata about Hebrew filename
- */
-export function getHebrewFilenameMetadata(filename) {
-  if (!filename) {
-    return {
-      hasHebrew: false,
-      hebrewCharCount: 0,
-      rtlMarkers: 0,
-      normalizedLength: 0,
-      utf8ByteLength: 0
-    };
-  }
-
-  const hebrewMatches = filename.match(HEBREW_PATTERNS.HEBREW_LETTERS) || [];
-  const rtlMatches = filename.match(/[\u200E\u200F\u202A-\u202E]/g) || [];
-  const normalized = normalizeHebrewFilename(filename);
-
-  return {
-    hasHebrew: containsHebrew(filename),
-    hebrewCharCount: hebrewMatches.length,
-    rtlMarkers: rtlMatches.length,
-    normalizedLength: normalized.length,
-    utf8ByteLength: Buffer.byteLength(filename, 'utf8'),
-    normalized,
-    asciiFallback: generateHebrewAsciiFallback(filename),
-    s3Safe: generateHebrewSafeS3Key(filename)
-  };
-}
-
 export default {
   containsHebrew,
   normalizeHebrewFilename,
@@ -299,7 +267,6 @@ export default {
   generateHebrewContentDisposition,
   validateHebrewFilenameForS3,
   generateHebrewSafeS3Key,
-  getHebrewFilenameMetadata,
   HEBREW_PATTERNS,
   RTL_MARKERS
 };
