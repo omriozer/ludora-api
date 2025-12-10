@@ -85,7 +85,7 @@ import {
   notFoundHandler,
   requestIdMiddleware,
   requestLogger,
-  healthCheckErrorHandler
+  _healthCheckErrorHandler
 } from './middleware/errorHandler.js';
 import { rateLimiters } from './middleware/validation.js';
 import { ludlog, luderror } from './lib/ludlog.js';
@@ -120,6 +120,7 @@ import settingsRoutes from './routes/settings.js';
 import playersRoutes from './routes/players.js';
 import bundlesRoutes from './routes/bundles.js';
 import jobsRoutes from './routes/jobs.js';
+import curriculumLinkingRoutes from './routes/curriculum-linking.js';
 
 // Import OpenAPI documentation (development only)
 let swaggerUi, openApiSpecs;
@@ -276,6 +277,7 @@ app.use('/api/system-templates', systemTemplatesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/bundles', bundlesRoutes);
 app.use('/api/jobs', jobsRoutes);
+app.use('/api/curriculum-linking', curriculumLinkingRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
 app.use('/api/webhooks', webhookRoutes);
@@ -359,7 +361,8 @@ app.get('/api', (req, res) => {
       'edu-content': '/api/edu-content',
       'svg-slides': '/api/svg-slides',
       'system-templates': '/api/system-templates',
-      jobs: '/api/jobs'
+      jobs: '/api/jobs',
+      'curriculum-linking': '/api/curriculum-linking'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
   });

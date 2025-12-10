@@ -6,8 +6,7 @@ import {
   detectPortal,
   getPortalCookieNames,
   createPortalAccessTokenConfig,
-  createAccessTokenConfig,
-  createClearCookieConfig
+  createAccessTokenConfig
 } from '../utils/cookieConfig.js';
 import {
   PLAYER_AUTH_ERRORS,
@@ -33,7 +32,7 @@ export async function authenticateToken(req, res, next) {
     if (token) {
       try {
         const tokenData = await authService.verifyToken(token);
-        req.user = tokenData;
+        Object.assign(req, { user: tokenData });
 
         // ✅ FIX: Extend UserSession on every successful authentication, not just token refresh
         try {
@@ -81,7 +80,7 @@ export async function authenticateToken(req, res, next) {
 
       // Verify the new token and continue
       const newTokenData = await authService.verifyToken(refreshResult.accessToken);
-      req.user = newTokenData;
+      Object.assign(req, { user: newTokenData });
       next();
     } catch (refreshError) {
       return res.status(401).json({ error: 'Session expired, please login again' });
@@ -104,7 +103,7 @@ export async function optionalAuth(req, res, next) {
     if (token) {
       try {
         const tokenData = await authService.verifyToken(token);
-        req.user = tokenData;
+        Object.assign(req, { user: tokenData });
 
         // ✅ FIX: Extend UserSession on successful optional authentication
         try {
@@ -144,7 +143,7 @@ export function requireRole(requiredRole = 'user') {
       const user = req.user || await authService.getUserByToken(accessToken);
 
       authService.validatePermissions(user, requiredRole);
-      req.userRecord = user; // Attach full user record
+      Object.assign(req, { userRecord: user }); // Attach full user record
       next();
     } catch (error) {
       res.status(403).json({ error: error.message });
@@ -176,7 +175,7 @@ export function requireUserType(requiredUserType) {
         return res.status(403).json({ error: `${requiredUserType} user type required` });
       }
 
-      req.userRecord = user; // Attach full user record
+      Object.assign(req, { userRecord: user }); // Attach full user record
       next();
     } catch (error) {
       res.status(403).json({ error: error.message });
@@ -295,9 +294,11 @@ export async function authenticateUserOrPlayer(req, res, next) {
           // This is a player token, skip to player auth section
         } else {
           // This is a user token
-          req.user = tokenData;
-          req.entity = tokenData;
-          req.entityType = 'user';
+          Object.assign(req, {
+            user: tokenData,
+            entity: tokenData,
+            entityType: 'user'
+          });
 
           // ✅ FIX: Extend UserSession on successful unified authentication
           try {
@@ -337,9 +338,11 @@ export async function authenticateUserOrPlayer(req, res, next) {
         }
 
         const newTokenData = await authService.verifyToken(refreshResult.accessToken);
-        req.user = newTokenData;
-        req.entity = newTokenData;
-        req.entityType = 'user';
+        Object.assign(req, {
+          user: newTokenData,
+          entity: newTokenData,
+          entityType: 'user'
+        });
         return next();
       } catch (refreshError) {
         // User refresh failed, continue to player auth

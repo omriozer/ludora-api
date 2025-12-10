@@ -604,7 +604,7 @@ class AuthService {
       }
 
       // Development token support - ONLY in development environment
-      if (token.startsWith('token_') && process.env.ENVIRONMENT === 'development') {
+      if (token.startsWith('token_') && process.env.NODE_ENV === 'development') {
         // Extract user ID from token (format: token_<userId>)
         const userId = token.substring(6); // Remove 'token_' prefix
 
@@ -622,7 +622,7 @@ class AuthService {
       }
 
       // Reject development tokens in non-development environments
-      if (token.startsWith('token_') && process.env.ENVIRONMENT !== 'development') {
+      if (token.startsWith('token_') && process.env.NODE_ENV !== 'development') {
         throw new Error('Development tokens are not allowed in production environments');
       }
 

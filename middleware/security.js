@@ -95,7 +95,6 @@ export function securityHeaders() {
   });
 }
 
-import { createAuthCookieConfig } from '../utils/cookieConfig.js';
 
 // Secure cookie settings middleware
 export function secureCookies(req, res, next) {

@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
 import { luderror } from '../lib/ludlog.js';
+import { STUDY_SUBJECTS } from '../constants/info.js';
 
 export default function(sequelize) {
   const Curriculum = sequelize.define('Curriculum', {
@@ -259,13 +260,31 @@ export default function(sequelize) {
     });
   };
 
+  // Helper function to convert Hebrew display name to database key
+  Curriculum.getSubjectKeyFromDisplayName = function(displayName) {
+    if (!displayName || !displayName.trim()) return null;
+
+    // Find the key that maps to this display name
+    for (const [key, value] of Object.entries(STUDY_SUBJECTS)) {
+      if (value === displayName.trim()) {
+        return key;
+      }
+    }
+
+    // If no mapping found, assume it's already a key
+    return displayName.trim();
+  };
+
   // Helper method to find all curricula that overlap with a grade range
   Curriculum.findOverlappingGradeRange = function(gradeFrom, gradeTo, subject, options = {}) {
     const { Op } = this.sequelize.Sequelize;
 
+    // Convert Hebrew display name to database key if needed
+    const subjectKey = this.getSubjectKeyFromDisplayName(subject);
+
     return this.findAll({
       where: {
-        subject: subject,
+        subject: subjectKey,  // Use converted database key
         teacher_user_id: null,
         class_id: null,
         is_active: true,

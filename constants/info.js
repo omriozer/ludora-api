@@ -1,21 +1,21 @@
 import { LANGUAGES_STUDY_SUBJECTS } from "./langauages.js";
 
 export const STUDY_SUBJECTS = {
-    civics: 'אזרחות',
-    art: 'אמנות',
+    // civics: 'אזרחות',
+    // art: 'אמנות',
     english: 'אנגלית',
-    biology: 'ביולוגיה',
-    geography: 'גיאוגרפיה',
-    history: 'היסטוריה',
-    physical_education: 'חינוך גופני',
+    // biology: 'ביולוגיה',
+    // geography: 'גיאוגרפיה',
+    // history: 'היסטוריה',
+    // physical_education: 'חינוך גופני',
     calculation: 'חשבון',
-    chemistry: 'כימיה',
-    legacy: 'מורשת',
-    religion: 'מחשבת ישראל',
-    computers: 'מחשבים',
-    music: 'מוזיקה',
-    math: 'מתמטיקה',
-    bible_studies: 'תנ"ך',
+    // chemistry: 'כימיה',
+    // legacy: 'מורשת',
+    // religion: 'מחשבת ישראל',
+    // computers: 'מחשבים',
+    // music: 'מוזיקה',
+    // math: 'מתמטיקה',
+    // bible_studies: 'תנ"ך',
     ...LANGUAGES_STUDY_SUBJECTS
 };
 

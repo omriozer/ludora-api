@@ -68,7 +68,7 @@ export function authenticateSocketUser(socket, next) {
           socket.portal = portal;
           next();
         })
-        .catch(tokenError => {
+        .catch(() => {
           // Access token invalid, try refresh token
           if (refreshToken) {
             authService.refreshAccessToken(refreshToken)
@@ -82,7 +82,7 @@ export function authenticateSocketUser(socket, next) {
                 socket.portal = portal;
                 next();
               })
-              .catch(refreshError => {
+              .catch(() => {
                 // Both tokens failed, continue as guest
                 socket.authenticated = false;
                 socket.authType = 'guest';
@@ -110,7 +110,7 @@ export function authenticateSocketUser(socket, next) {
           socket.portal = portal;
           next();
         })
-        .catch(error => {
+        .catch(() => {
           socket.authenticated = false;
           socket.authType = 'guest';
           socket.portal = portal;

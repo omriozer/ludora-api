@@ -10,17 +10,8 @@
  */
 
 import models from '../models/index.js';
-import crypto from 'crypto';
 import { luderror } from '../lib/ludlog.js';
 
-/**
- * Generate MD5 hash for ETag
- * @param {string} data - Data to hash
- * @returns {string} MD5 hash
- */
-function generateHash(data) {
-  return crypto.createHash('md5').update(data).digest('hex');
-}
 
 /**
  * Generate ETag for Settings endpoint

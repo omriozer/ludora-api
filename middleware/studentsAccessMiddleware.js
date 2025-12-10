@@ -28,7 +28,7 @@ export async function checkStudentsAccess(req, res, next) {
   } catch (error) {
     luderror.api('Error in checkStudentsAccess middleware:', error);
     // Fallback to allow access to maintain functionality
-    return await validateAllAccess(req, res, next);
+    return validateAllAccess(req, res, next);
   }
 }
 

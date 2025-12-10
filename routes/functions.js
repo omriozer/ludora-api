@@ -7,6 +7,7 @@ import CouponCodeGenerator from '../utils/couponCodeGenerator.js';
 import models from '../models/index.js';
 import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import EntityService from '../services/EntityService.js';
+import { ludlog } from '../lib/ludlog.js';
 
 const router = express.Router();
 
@@ -86,6 +87,338 @@ router.post('/validateCouponStacking', authenticateToken, async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Apply a single coupon to cart and update Purchase records directly (SECURE VERSION)
+router.post('/applyCoupon', validateBody(schemas.applyCoupon), async (req, res) => {
+  const transaction = await models.sequelize.transaction();
+
+  try {
+    const { couponCode, userId, cartItems } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        error: 'User ID is required for cart operations',
+        code: 'USER_ID_REQUIRED'
+      });
+    }
+
+    // Find the coupon
+    const coupon = await models.Coupon.findOne({
+      where: {
+        code: couponCode.toUpperCase(),
+        is_active: true
+      },
+      transaction
+    });
+
+    if (!coupon) {
+      await transaction.rollback();
+      return res.status(404).json({
+        error: 'Coupon not found',
+        code: 'NOT_FOUND'
+      });
+    }
+
+    // Check if coupon is expired
+    if (coupon.valid_until && new Date(coupon.valid_until) < new Date()) {
+      await transaction.rollback();
+      return res.status(400).json({
+        error: 'Coupon has expired',
+        code: 'EXPIRED'
+      });
+    }
+
+    // Check usage limits
+    if (coupon.usage_limit && coupon.usage_count >= coupon.usage_limit) {
+      await transaction.rollback();
+      return res.status(400).json({
+        error: 'Coupon usage limit exceeded',
+        code: 'USAGE_LIMIT_EXCEEDED'
+      });
+    }
+
+    // Check user-specific usage limit
+    if (coupon.user_usage_limit) {
+      const userUsageCount = coupon.user_usage_tracking?.[userId] || 0;
+      if (userUsageCount >= coupon.user_usage_limit) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'User usage limit exceeded for this coupon',
+          code: 'USER_USAGE_LIMIT_EXCEEDED'
+        });
+      }
+    }
+
+    // SECURITY FIX: Get cart items directly from database (authoritative source)
+    const cartPurchases = await models.Purchase.findAll({
+      where: {
+        buyer_user_id: userId,
+        payment_status: 'cart'
+      },
+      transaction
+    });
+
+    if (!cartPurchases || cartPurchases.length === 0) {
+      await transaction.rollback();
+      return res.status(400).json({
+        error: 'No items found in cart',
+        code: 'EMPTY_CART'
+      });
+    }
+
+    // Calculate current cart total from database records (before coupon)
+    // FIXED: Use original_price if available (in case coupon was previously applied and removed)
+    const originalCartTotal = cartPurchases.reduce((total, purchase) => {
+      return total + parseFloat(purchase.original_price || purchase.payment_amount || 0);
+    }, 0);
+
+    // Build cart data for validation
+    const validationCartItems = cartPurchases.map(purchase => ({
+      id: purchase.id,
+      purchasable_type: purchase.purchasable_type,
+      purchasable_id: purchase.purchasable_id,
+      payment_amount: parseFloat(purchase.payment_amount || 0)
+    }));
+
+    // Get user object for validation
+    const user = await models.User.findByPk(userId, { transaction });
+    if (!user) {
+      await transaction.rollback();
+      return res.status(404).json({
+        error: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    // Get cart details for validation using the service method
+    const cartDetails = CouponValidationService.getCartDetails(validationCartItems);
+
+    // Check if coupon applies to cart
+    const isApplicable = await CouponValidationService.isCouponApplicableToCart(
+      coupon,
+      user,
+      cartDetails,
+      originalCartTotal
+    );
+
+    if (!isApplicable) {
+      await transaction.rollback();
+      return res.status(400).json({
+        error: 'Coupon is not applicable to this cart',
+        code: 'NOT_APPLICABLE'
+      });
+    }
+
+    // Calculate discount amount
+    let totalDiscountAmount = 0;
+    if (coupon.discount_type === 'percentage') {
+      totalDiscountAmount = (originalCartTotal * coupon.discount_value) / 100;
+      // Apply discount cap if set
+      if (coupon.max_discount_cap && totalDiscountAmount > coupon.max_discount_cap) {
+        totalDiscountAmount = coupon.max_discount_cap;
+      }
+    } else if (coupon.discount_type === 'fixed') {
+      totalDiscountAmount = Math.min(coupon.discount_value, originalCartTotal);
+    }
+
+    const finalCartTotal = Math.max(0, originalCartTotal - totalDiscountAmount);
+
+    // CRITICAL SECURITY FIX: Update Purchase records directly in database
+    const updatePromises = cartPurchases.map(async (purchase) => {
+      const purchaseOriginalAmount = parseFloat(purchase.payment_amount || 0);
+
+      // Calculate proportional discount for this purchase
+      const proportionalDiscount = originalCartTotal > 0
+        ? (purchaseOriginalAmount / originalCartTotal) * totalDiscountAmount
+        : 0;
+
+      const newPaymentAmount = Math.max(0, purchaseOriginalAmount - proportionalDiscount);
+
+      // Update Purchase record with coupon data
+      return purchase.update({
+        original_price: purchase.original_price || purchaseOriginalAmount, // Preserve original if not set
+        discount_amount: proportionalDiscount,
+        payment_amount: newPaymentAmount,
+        coupon_code: coupon.code,
+        metadata: {
+          ...purchase.metadata,
+          coupon_applied_at: new Date().toISOString(),
+          coupon_id: coupon.id,
+          coupon_discount_type: coupon.discount_type,
+          coupon_discount_value: coupon.discount_value,
+          proportional_discount: proportionalDiscount
+        },
+        updated_at: new Date()
+      }, { transaction });
+    });
+
+    await Promise.all(updatePromises);
+
+    // Log coupon application
+    ludlog.payments('Applying coupon to Purchase records', {
+      couponCode: coupon.code,
+      couponId: coupon.id,
+      userId,
+      totalDiscountAmount,
+      originalCartTotal,
+      finalCartTotal,
+      affectedPurchases: cartPurchases.length,
+      usageCountBefore: coupon.usage_count
+    });
+
+    // Update coupon usage counts
+    await CouponValidationService.incrementUserUsage(coupon.id, userId, transaction);
+
+    await models.Coupon.increment('usage_count', {
+      where: { id: coupon.id },
+      transaction
+    });
+
+    await transaction.commit();
+
+    ludlog.payments('Coupon applied successfully to Purchase records', {
+      couponCode: coupon.code,
+      userId,
+      finalCartTotal,
+      purchasesUpdated: cartPurchases.length
+    });
+
+    // Return success response with updated data
+    res.json({
+      success: true,
+      coupon: {
+        id: coupon.id,
+        code: coupon.code,
+        description: coupon.description,
+        discount_type: coupon.discount_type,
+        discount_value: coupon.discount_value,
+        usage_count: coupon.usage_count + 1
+      },
+      discount: {
+        amount: totalDiscountAmount,
+        percentage: coupon.discount_type === 'percentage' ? coupon.discount_value : (totalDiscountAmount / originalCartTotal) * 100
+      },
+      totals: {
+        original_amount: originalCartTotal,
+        discount_amount: totalDiscountAmount,
+        final_amount: finalCartTotal
+      },
+      affected_purchases: cartPurchases.length,
+      database_updated: true, // Indicates this is the secure version
+      free_checkout: finalCartTotal === 0
+    });
+  } catch (error) {
+    await transaction.rollback();
+    ludlog.payments('Error applying coupon to Purchase records:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove a coupon from cart and restore original Purchase pricing
+router.post('/removeCoupon', validateBody(schemas.removeCoupon), async (req, res) => {
+  const transaction = await models.sequelize.transaction();
+
+  try {
+    const { couponCode, userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        error: 'User ID is required for cart operations',
+        code: 'USER_ID_REQUIRED'
+      });
+    }
+
+    if (!couponCode) {
+      return res.status(400).json({
+        error: 'Coupon code is required',
+        code: 'COUPON_CODE_REQUIRED'
+      });
+    }
+
+    // Find all Purchase records with this coupon applied
+    const cartPurchasesWithCoupon = await models.Purchase.findAll({
+      where: {
+        buyer_user_id: userId,
+        payment_status: 'cart',
+        coupon_code: couponCode.toUpperCase()
+      },
+      transaction
+    });
+
+    if (!cartPurchasesWithCoupon || cartPurchasesWithCoupon.length === 0) {
+      await transaction.rollback();
+      return res.status(404).json({
+        error: 'No cart items found with this coupon',
+        code: 'COUPON_NOT_FOUND_IN_CART'
+      });
+    }
+
+    // Calculate totals before and after removal
+    let totalDiscountRemoved = 0;
+    let originalCartTotal = 0;
+
+    // Update each Purchase record to remove coupon
+    const updatePromises = cartPurchasesWithCoupon.map(async (purchase) => {
+      const originalPrice = purchase.original_price || purchase.payment_amount;
+      const discountAmount = parseFloat(purchase.discount_amount || 0);
+
+      totalDiscountRemoved += discountAmount;
+      originalCartTotal += originalPrice;
+
+      // Clear coupon data and restore original pricing
+      return purchase.update({
+        payment_amount: originalPrice, // Restore original price
+        discount_amount: 0,
+        coupon_code: null,
+        metadata: {
+          ...purchase.metadata,
+          // Remove coupon-related metadata
+          coupon_applied_at: undefined,
+          coupon_id: undefined,
+          coupon_discount_type: undefined,
+          coupon_discount_value: undefined,
+          proportional_discount: undefined,
+          coupon_removed_at: new Date().toISOString()
+        },
+        updated_at: new Date()
+      }, { transaction });
+    });
+
+    await Promise.all(updatePromises);
+
+    await transaction.commit();
+
+    ludlog.payments('Coupon removed successfully from Purchase records', {
+      couponCode: couponCode.toUpperCase(),
+      userId,
+      totalDiscountRemoved,
+      originalCartTotal,
+      purchasesUpdated: cartPurchasesWithCoupon.length
+    });
+
+    // Return success response
+    res.json({
+      success: true,
+      message: 'Coupon removed successfully',
+      removed_coupon: {
+        code: couponCode.toUpperCase(),
+        discount_removed: totalDiscountRemoved
+      },
+      totals: {
+        original_amount: originalCartTotal,
+        discount_removed: totalDiscountRemoved,
+        new_total: originalCartTotal
+      },
+      affected_purchases: cartPurchasesWithCoupon.length,
+      database_updated: true
+    });
+
+  } catch (error) {
+    await transaction.rollback();
+    ludlog.payments('Error removing coupon from Purchase records:', error);
     res.status(500).json({ error: error.message });
   }
 });

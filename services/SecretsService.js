@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 class SecretsService {
   constructor() {
-    this.environment = process.env.ENVIRONMENT || 'development';
+    this.environment = process.env.NODE_ENV || 'development';
     this.encryptionKey = process.env.ENCRYPTION_KEY;
     this.secrets = new Map();
 

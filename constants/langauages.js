@@ -18,5 +18,5 @@ export const LANGUAGES_OPTIONS = {
 
 export const LANGUAGES_STUDY_SUBJECTS = {
     hebrew_language: 'לשון והבעה',
-    ...OTHER_LANGUAGES
+    // ...OTHER_LANGUAGES
 };

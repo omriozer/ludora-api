@@ -218,6 +218,11 @@ export const schemas = {
     ).optional() // Alternative to purchaseIds for direct cart data
   }),
 
+  removeCoupon: Joi.object({
+    couponCode: Joi.string().min(1).max(50).required(),
+    userId: Joi.string().optional()
+  }),
+
   createPaymentPage: Joi.object({
     // Support multi-cart flow, single purchase flow, and legacy product-based flow
     purchaseId: Joi.string().optional(),

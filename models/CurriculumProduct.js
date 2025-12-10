@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { generateId } from './baseModel.js';
 
 export default (sequelize) => {
   const CurriculumProduct = sequelize.define('CurriculumProduct', {
@@ -6,6 +7,7 @@ export default (sequelize) => {
       type: DataTypes.STRING,
       primaryKey: true,
       allowNull: false,
+      defaultValue: () => generateId(),
       comment: 'Primary key for curriculum-product association'
     },
     curriculum_item_id: {

@@ -803,29 +803,7 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
     if (ALL_PRODUCT_TYPES.includes(entityType)) {
       const userId = req.user?.id || null;
 
-      // TODO remove debug - Add debugging for AccessControlIntegrator call
-      ludlog.auth('🔍 ENTITIES ROUTE: About to enrich products with access control:', {
-        entityType,
-        userId,
-        hasUser: !!req.user,
-        userEmail: req.user?.email || 'anonymous',
-        resultsCount: Array.isArray(results) ? results.length : 'single_item',
-        firstProductId: Array.isArray(results) ? results[0]?.id : results?.id
-      });
-
       const enrichedResults = await AccessControlIntegrator.enrichProductsWithAccess(results, userId);
-
-      // TODO remove debug - Log enrichment results
-      ludlog.auth('🔍 ENTITIES ROUTE: AccessControlIntegrator enrichment completed:', {
-        originalCount: Array.isArray(results) ? results.length : 'single_item',
-        enrichedCount: Array.isArray(enrichedResults) ? enrichedResults.length : 'single_item',
-        hasAccessField: Array.isArray(enrichedResults)
-          ? enrichedResults[0]?.access ? 'yes' : 'no'
-          : enrichedResults?.access ? 'yes' : 'no',
-        sampleAccessObject: Array.isArray(enrichedResults)
-          ? enrichedResults[0]?.access
-          : enrichedResults?.access
-      });
 
       return res.json(enrichedResults);
     }

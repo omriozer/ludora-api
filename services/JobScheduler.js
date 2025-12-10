@@ -107,7 +107,7 @@ class JobScheduler {
     try {
       // Create Redis connection
       const redisUrl = process.env.REDIS_URL || process.env.REDISTOGO_URL || 'redis://localhost:6379';
-      const environment = process.env.ENVIRONMENT || 'development';
+      const environment = process.env.NODE_ENV || 'development';
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
 
       // Development or staging should fail gracefully if Redis issues occur
@@ -265,7 +265,7 @@ class JobScheduler {
       ludlog.generic('JobScheduler initialized successfully with Redis-backed persistence');
 
     } catch (error) {
-      const environment = process.env.ENVIRONMENT || 'development';
+      const environment = process.env.NODE_ENV || 'development';
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
       const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
 
@@ -399,7 +399,7 @@ class JobScheduler {
    */
   async scheduleJob(type, data, options = {}) {
     if (!this.isInitialized) {
-      const environment = process.env.ENVIRONMENT || 'development';
+      const environment = process.env.NODE_ENV || 'development';
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
       const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
 
@@ -1130,7 +1130,7 @@ class JobScheduler {
 
   async processFileCleanupOrphaned(data) {
     const {
-      environment = process.env.ENVIRONMENT || 'development',
+      environment = process.env.NODE_ENV || 'development',
       batchSize = 100,
       maxFiles = 1000, // Max files to process in one job run
       checkThreshold = '24h',
@@ -1739,7 +1739,7 @@ class JobScheduler {
     const {
       daysOld = 30,
       batchSize = 1000,
-      environment = process.env.ENVIRONMENT || 'development'
+      environment = process.env.NODE_ENV || 'development'
     } = data;
 
     try {

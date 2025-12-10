@@ -214,8 +214,8 @@ class CouponValidationService {
    * Check if a coupon is applicable to a specific cart
    */
   async isCouponApplicableToCart(coupon, user, cartDetails, cartTotal) {
-    // Basic validation
-    this.validateCouponBasics(coupon);
+    // Basic validation - pass user ID for per-user limit checking
+    this.validateCouponBasics(coupon, user?.id);
 
     // Check minimum amount
     if (coupon.minimum_amount && cartTotal < coupon.minimum_amount) {
@@ -268,10 +268,18 @@ class CouponValidationService {
   /**
    * Basic coupon validation (expiry, usage limits)
    */
-  validateCouponBasics(coupon) {
-    // Check usage limit
+  validateCouponBasics(coupon, userId = null) {
+    // Check general usage limit
     if (coupon.usage_limit && coupon.usage_count >= coupon.usage_limit) {
       throw new Error('Coupon usage limit exceeded');
+    }
+
+    // Check per-user usage limit
+    if (coupon.user_usage_limit && userId) {
+      const userUsageCount = this.getUserUsageCount(coupon, userId);
+      if (userUsageCount >= coupon.user_usage_limit) {
+        throw new Error('User has reached maximum usage limit for this coupon');
+      }
     }
 
     // Check expiry
@@ -413,6 +421,74 @@ class CouponValidationService {
     }
 
     return segments;
+  }
+
+  /**
+   * Get current usage count for a specific user
+   */
+  getUserUsageCount(coupon, userId) {
+    if (!coupon.user_usage_tracking || !userId) {
+      return 0;
+    }
+    return coupon.user_usage_tracking[userId] || 0;
+  }
+
+  /**
+   * Increment user usage count for a coupon
+   * This should be called when a coupon is successfully applied
+   */
+  async incrementUserUsage(couponId, userId) {
+    try {
+      const coupon = await this.models.Coupon.findByPk(couponId);
+      if (!coupon || !userId) {
+        return false;
+      }
+
+      // Get current tracking data
+      const currentTracking = coupon.user_usage_tracking || {};
+      const currentUserCount = currentTracking[userId] || 0;
+
+      // Update the tracking data
+      const updatedTracking = {
+        ...currentTracking,
+        [userId]: currentUserCount + 1
+      };
+
+      // Update the coupon record
+      await coupon.update({
+        user_usage_tracking: updatedTracking,
+        usage_count: (coupon.usage_count || 0) + 1
+      });
+
+      return true;
+    } catch (error) {
+      luderror.payment('Error incrementing user usage count:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if user can use coupon based on per-user limits
+   */
+  canUserUseCoupon(coupon, userId) {
+    if (!coupon.user_usage_limit || !userId) {
+      return true; // No per-user limit set or no user ID
+    }
+
+    const userUsageCount = this.getUserUsageCount(coupon, userId);
+    return userUsageCount < coupon.user_usage_limit;
+  }
+
+  /**
+   * Get remaining uses for a user on a specific coupon
+   */
+  getUserRemainingUses(coupon, userId) {
+    if (!coupon.user_usage_limit || !userId) {
+      return null; // Unlimited
+    }
+
+    const userUsageCount = this.getUserUsageCount(coupon, userId);
+    return Math.max(0, coupon.user_usage_limit - userUsageCount);
   }
 }
 

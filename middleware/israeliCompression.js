@@ -60,19 +60,6 @@ const ISRAELI_COMPRESSION_SETTINGS = {
   }
 };
 
-// Israeli mobile connection speed patterns
-const ISRAELI_CONNECTION_PATTERNS = {
-  // Peak hours mobile usage (8 AM - 8 PM Israel time)
-  PEAK_MOBILE: {
-    threshold: 1024, // Compress smaller responses during peak mobile usage
-    aggressive: true
-  },
-  // Off-peak hours
-  OFF_PEAK: {
-    threshold: 2048,
-    aggressive: false
-  }
-};
 
 /**
  * Detect if user agent indicates mobile device

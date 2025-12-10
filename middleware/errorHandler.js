@@ -262,7 +262,7 @@ export function asyncHandler(fn) {
 }
 
 // Health check error handler
-export async function healthCheckErrorHandler(req, res) {
+export async function _healthCheckErrorHandler(req, res) {
   try {
     const health = {
       status: 'healthy',
@@ -328,7 +328,7 @@ export function requestLogger(req, res, next) {
 
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const logData = {
+    const _logData = {
       method: req.method,
       url: req.originalUrl,
       statusCode: res.statusCode,

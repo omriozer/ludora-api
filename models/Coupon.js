@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
 
 export default function(sequelize) {
@@ -18,6 +18,17 @@ export default function(sequelize) {
     minimum_amount: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     usage_limit: { type: DataTypes.INTEGER, allowNull: true },
     usage_count: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },
+    user_usage_limit: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Maximum number of times a single user can use this coupon. NULL = unlimited per user'
+    },
+    user_usage_tracking: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+      comment: 'Tracks usage count per user: {"user_123": 2, "user_456": 1}'
+    },
     valid_until: { type: DataTypes.DATE, allowNull: true },
     is_visible: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true },
     is_admin_only: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
@@ -125,6 +136,15 @@ export default function(sequelize) {
       {
         fields: ['is_active', 'visibility'],
         name: 'idx_coupon_active_visibility'
+      },
+      {
+        fields: ['user_usage_limit'],
+        name: 'idx_coupon_user_usage_limit',
+        where: {
+          user_usage_limit: {
+            [Op.ne]: null
+          }
+        }
       },
     ],
   });

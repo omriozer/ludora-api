@@ -11,8 +11,8 @@ import { generateHebrewSafeS3Key, getHebrewFilenameMetadata } from './hebrewFile
 /**
  * Construct S3 path for any asset
  *
- * Path format: {privacy}/{assetType}/{entityType}/{entityId}/{filename}
- * NOTE: Environment separation is now handled by separate S3 buckets
+ * Path format: {environment}/{privacy}/{assetType}/{entityType}/{entityId}/{filename}
+ * NOTE: Environment prefix added to match DirectSlideService pattern for consistency
  *
  * @param {string} entityType - Type of entity (workshop, course, file, tool, etc.)
  * @param {string} entityId - ID of the entity
@@ -22,14 +22,14 @@ import { generateHebrewSafeS3Key, getHebrewFilenameMetadata } from './hebrewFile
  *
  * @example
  * constructS3Path('file', 'test_file_001', 'document', 'sample.pdf')
- * // => "private/document/file/test_file_001/sample.pdf"
+ * // => "development/private/document/file/test_file_001/sample.pdf" (in dev)
  *
  * constructS3Path('workshop', 'abc123', 'marketing-video', 'video.mp4')
- * // => "public/marketing-video/workshop/abc123/video.mp4"
+ * // => "development/public/marketing-video/workshop/abc123/video.mp4" (in dev)
  */
 export function constructS3Path(entityType, entityId, assetType, filename) {
-  // NOTE: Environment separation is now handled by separate S3 buckets
-  // No need for environment prefix in the path
+  // Include environment prefix to match DirectSlideService pattern
+  const environment = process.env.NODE_ENV || 'development';
 
   // Determine privacy level based on asset type
   const privacy = (assetType === 'marketing-video' || assetType === 'image') ? 'public' : 'private';
@@ -37,12 +37,12 @@ export function constructS3Path(entityType, entityId, assetType, filename) {
   // Sanitize filename using Hebrew-aware utilities for Israeli users
   const sanitizedFilename = generateHebrewSafeS3Key(filename);
 
-  return `${privacy}/${assetType}/${entityType}/${entityId}/${sanitizedFilename}`;
+  return `${environment}/${privacy}/${assetType}/${entityType}/${entityId}/${sanitizedFilename}`;
 }
 
 /**
  * Parse S3 path to extract components
- * NOTE: Updated for separate bucket architecture (no environment prefix)
+ * NOTE: Updated to handle environment prefix in path structure
  *
  * @param {string} s3Path - S3 path to parse
  * @returns {Object} Parsed components
@@ -50,16 +50,17 @@ export function constructS3Path(entityType, entityId, assetType, filename) {
 export function parseS3Path(s3Path) {
   const parts = s3Path.split('/');
 
-  if (parts.length < 5) {
+  if (parts.length < 6) {
     throw new Error(`Invalid S3 path format: ${s3Path}`);
   }
 
   return {
-    privacy: parts[0],
-    assetType: parts[1],
-    entityType: parts[2],
-    entityId: parts[3],
-    filename: parts.slice(4).join('/') // Handle filenames with slashes
+    environment: parts[0],
+    privacy: parts[1],
+    assetType: parts[2],
+    entityType: parts[3],
+    entityId: parts[4],
+    filename: parts.slice(5).join('/') // Handle filenames with slashes
   };
 }
 

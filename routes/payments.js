@@ -5,12 +5,13 @@ import PaymentService from '../services/PaymentService.js';
 import PayplusService from '../services/PayplusService.js';
 import PaymentPollingService from '../services/PaymentPollingService.js';
 import models from '../models/index.js';
-import { luderror } from '../lib/ludlog.js';
+import { ludlog, luderror } from '../lib/ludlog.js';
 
 const router = express.Router();
 
 /**
  * Determines if PayPlus payment page should be opened based on cart contents
+ * UPDATED: Now supports coupon-adjusted pricing for free checkout logic
  *
  * PayPlus API supports different charge methods:
  * - 0: Card Check (J2) - validates card without charging
@@ -19,13 +20,23 @@ const router = express.Router();
  * - 3: Recurring Payments - subscription billing
  * - 4: Refund - immediate refund
  *
- * @param {Array} cartItems - Array of purchase objects in cart
- * @returns {boolean} Whether to proceed with PayPlus payment page creation
+ * @param {Array} cartItems - Array of purchase objects in cart (post-coupon amounts)
+ * @returns {Object} Result with shouldOpen flag and additional info for free checkout
  */
 function shouldOpenPayplusPage(cartItems) {
   if (!cartItems || !Array.isArray(cartItems) || cartItems.length === 0) {
-    return false;
+    return {
+      shouldOpen: false,
+      reason: 'empty_cart',
+      totalAmount: 0,
+      hasPaidItems: false
+    };
   }
+
+  // Calculate total amount from actual Purchase records (post-coupon)
+  const totalAmount = cartItems.reduce((total, item) => {
+    return total + parseFloat(item.payment_amount || 0);
+  }, 0);
 
   // Check if there is at least one paid item (payment_amount > 0)
   const hasPaidItems = cartItems.some(item => {
@@ -33,11 +44,31 @@ function shouldOpenPayplusPage(cartItems) {
     return amount > 0;
   });
 
-  if (!hasPaidItems) {
-    return false;
+  // If total is 0 or negative (free after coupons), no payment page needed
+  if (totalAmount <= 0) {
+    return {
+      shouldOpen: false,
+      reason: 'free_after_coupons',
+      totalAmount: totalAmount,
+      hasPaidItems: false
+    };
   }
 
-  return true;
+  if (!hasPaidItems) {
+    return {
+      shouldOpen: false,
+      reason: 'all_items_free',
+      totalAmount: totalAmount,
+      hasPaidItems: false
+    };
+  }
+
+  return {
+    shouldOpen: true,
+    reason: 'payment_required',
+    totalAmount: totalAmount,
+    hasPaidItems: true
+  };
 }
 
 // Purchase Management Routes
@@ -277,7 +308,7 @@ router.put('/purchases/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// PayPlus Payment Page Creation
+// PayPlus Payment Page Creation with Free Checkout Support
 router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => {
   try {
     const { cartItems, frontendOrigin = 'cart' } = req.body;
@@ -288,14 +319,95 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       return res.status(400).json({ error: 'cartItems are required and must be a non-empty array' });
     }
 
-    // Check if we should open PayPlus payment page
-    if (!shouldOpenPayplusPage(cartItems)) {
+    // SECURITY ENHANCEMENT: Get fresh cart data from database (post-coupon)
+    const freshCartPurchases = await models.Purchase.findAll({
+      where: {
+        buyer_user_id: userId,
+        payment_status: 'cart'
+      }
+    });
+
+    if (!freshCartPurchases || freshCartPurchases.length === 0) {
+      return res.status(400).json({
+        error: 'No items found in cart',
+        code: 'EMPTY_CART'
+      });
+    }
+
+    // Convert to array format for shouldOpenPayplusPage
+    const freshCartItems = freshCartPurchases.map(purchase => ({
+      id: purchase.id,
+      purchasable_type: purchase.purchasable_type,
+      purchasable_id: purchase.purchasable_id,
+      payment_amount: purchase.payment_amount,
+      original_price: purchase.original_price,
+      discount_amount: purchase.discount_amount,
+      coupon_code: purchase.coupon_code
+    }));
+
+    // Check if we should open PayPlus payment page (now includes free checkout logic)
+    const paymentDecision = shouldOpenPayplusPage(freshCartItems);
+
+    if (!paymentDecision.shouldOpen) {
+      // Handle free checkout logic
+      if (paymentDecision.reason === 'free_after_coupons') {
+        ludlog.payments('Processing free checkout after coupons', {
+          userId,
+          totalAmount: paymentDecision.totalAmount,
+          itemCount: freshCartPurchases.length,
+          reason: paymentDecision.reason
+        });
+
+        // Auto-complete all cart purchases as they're now free
+        const completionPromises = freshCartPurchases.map(async (purchase) => {
+          return purchase.update({
+            payment_status: 'completed',
+            payment_method: 'free_coupon',
+            metadata: {
+              ...purchase.metadata,
+              completed_via: 'coupon_free_checkout',
+              completed_at: new Date().toISOString(),
+              original_payment_amount: purchase.payment_amount
+            },
+            updated_at: new Date()
+          });
+        });
+
+        await Promise.all(completionPromises);
+
+        ludlog.payments('Free checkout completed successfully', {
+          userId,
+          completedPurchases: freshCartPurchases.length,
+          totalSaved: paymentDecision.totalAmount
+        });
+
+        return res.json({
+          success: true,
+          message: 'Free checkout completed - all items added to your library',
+          data: {
+            reason: paymentDecision.reason,
+            totalAmount: paymentDecision.totalAmount,
+            itemsCompleted: freshCartPurchases.length,
+            freeCheckout: true,
+            completedPurchases: freshCartPurchases.map(p => ({
+              id: p.id,
+              purchasable_type: p.purchasable_type,
+              coupon_code: p.coupon_code,
+              discount_amount: p.discount_amount,
+              original_price: p.original_price
+            }))
+          }
+        });
+      }
+
+      // Other reasons (all free items, empty cart, etc.)
       return res.json({
         success: false,
         message: 'No paid items found - PayPlus payment page not needed',
         data: {
-          reason: 'all_items_free',
-          cartItems: cartItems.length
+          reason: paymentDecision.reason,
+          totalAmount: paymentDecision.totalAmount,
+          cartItems: freshCartItems.length
         }
       });
     }
@@ -306,10 +418,18 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       return res.status(404).json({ error: 'User not found' });
     }
 
+    ludlog.payments('Creating PayPlus payment page with database-sourced cart', {
+      userId,
+      totalAmount: paymentDecision.totalAmount,
+      itemCount: freshCartItems.length,
+      hasCoupons: freshCartItems.some(item => item.coupon_code)
+    });
+
     // Use PayplusService to create payment page (environment auto-detected)
+    // SECURITY FIX: Use database-sourced cart items instead of frontend data
     const paymentResult = await PayplusService.openPayplusPage({
       frontendOrigin,
-      purchaseItems: cartItems,
+      purchaseItems: freshCartItems,  // Database-sourced with actual payment_amount
       customer: {
         customer_name: user.displayName || user.email,
         email: user.email,
@@ -323,14 +443,21 @@ router.post('/createPayplusPaymentPage', authenticateToken, async (req, res) => 
       amount: paymentResult.totalAmount,
       pageRequestUid: paymentResult.pageRequestUid,
       paymentPageLink: paymentResult.paymentPageLink,
-      purchaseItems: cartItems,
+      purchaseItems: freshCartItems,  // Database-sourced with coupon discounts applied
       metadata: {
         frontendOrigin,
         customerInfo: {
           name: user.displayName || user.email,
           email: user.email
         },
-        payplusResponse: paymentResult.data
+        payplusResponse: paymentResult.data,
+        couponInfo: freshCartItems.filter(item => item.coupon_code).map(item => ({
+          purchaseId: item.id,
+          couponCode: item.coupon_code,
+          discountAmount: item.discount_amount,
+          originalPrice: item.original_price,
+          finalPrice: item.payment_amount
+        }))
       }
     });
 
