@@ -1,0 +1,317 @@
+name: Documentation Validation
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'src/openapi/**'
+      - '.github/workflows/docs-validation.yml'
+      - 'scripts/docs-validation.js'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'docs/**'
+      - 'src/openapi/**'
+
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  validate-documentation:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate OpenAPI Specifications
+        run: |
+          echo "🔍 Validating OpenAPI specifications..."
+          npm run docs:validate:openapi
+
+      - name: Validate Markdown Structure
+        run: |
+          echo "📝 Validating Markdown files..."
+          npm run docs:validate:markdown
+
+      - name: Check Links
+        run: |
+          echo "🔗 Checking documentation links..."
+          npm run docs:check-links
+
+      - name: Validate Code Examples
+        run: |
+          echo "💻 Validating code examples..."
+          npm run docs:validate:examples
+
+      - name: Run Complete Documentation Validation
+        run: |
+          echo "🎯 Running comprehensive validation..."
+          npm run docs:validate
+
+      - name: Check Documentation Coverage
+        run: |
+          echo "📊 Checking API documentation coverage..."
+          npm run docs:coverage
+
+      # Generate validation report artifact
+      - name: Generate Validation Report
+        if: failure() || success()
+        run: |
+          mkdir -p docs-validation-report
+          echo "# Documentation Validation Report" > docs-validation-report/report.md
+          echo "Generated: $(date)" >> docs-validation-report/report.md
+          echo "" >> docs-validation-report/report.md
+
+          # Add validation results
+          echo "## Validation Results" >> docs-validation-report/report.md
+          npm run docs:validate 2>&1 | tail -20 >> docs-validation-report/report.md || true
+
+      - name: Upload Validation Report
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: docs-validation-report
+          path: docs-validation-report/
+          retention-days: 7
+
+  # Separate job for API endpoint coverage analysis
+  api-coverage-analysis:
+    name: API Documentation Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Analyze API Documentation Coverage
+        run: |
+          echo "📋 Analyzing API endpoint documentation coverage..."
+
+          # Count route definitions
+          ROUTE_COUNT=$(find src/routes -name "*.js" -exec grep -l "router\." {} \; | wc -l)
+          echo "Route files found: $ROUTE_COUNT"
+
+          # Count OpenAPI documented endpoints
+          OPENAPI_COUNT=$(find src/openapi/paths -name "*.js" -exec wc -l {} \; | awk '{sum += $1} END {print sum}')
+          echo "OpenAPI endpoints: $OPENAPI_COUNT"
+
+          # Calculate coverage percentage (rough estimate)
+          if [ $ROUTE_COUNT -gt 0 ]; then
+            COVERAGE=$((OPENAPI_COUNT * 100 / (ROUTE_COUNT * 5))) # Estimate ~5 endpoints per route file
+            echo "Estimated documentation coverage: $COVERAGE%"
+
+            if [ $COVERAGE -lt 80 ]; then
+              echo "⚠️ Warning: API documentation coverage below 80%"
+            else
+              echo "✅ Good API documentation coverage"
+            fi
+          fi
+
+      - name: Check for Undocumented Routes
+        run: |
+          echo "🔍 Checking for potentially undocumented routes..."
+
+          # Find route definitions that might not have OpenAPI docs
+          echo "## Route Files Analysis" > route-analysis.txt
+          find src/routes -name "*.js" -exec echo "File: {}" \; -exec grep -n "router\." {} \; >> route-analysis.txt || true
+
+          # Check if critical routes are documented
+          CRITICAL_ROUTES=("auth" "entities" "payments" "media" "access")
+
+          for route in "${CRITICAL_ROUTES[@]}"; do
+            if [ -f "src/openapi/paths/${route}.js" ]; then
+              echo "✅ ${route} endpoints documented"
+            else
+              echo "❌ ${route} endpoints missing OpenAPI documentation"
+            fi
+          done
+
+  # Link validation job (can run independently)
+  link-validation:
+    name: Link Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install link checking dependencies
+        run: |
+          npm install -g markdown-link-check
+
+      - name: Validate Internal Links
+        run: |
+          echo "🔗 Validating internal documentation links..."
+
+          # Check all markdown files for broken links
+          find docs -name "*.md" -print0 | xargs -0 -I {} markdown-link-check {} \
+            --config .github/markdown-link-check-config.json
+
+      - name: Check External Links (Non-blocking)
+        continue-on-error: true
+        run: |
+          echo "🌐 Checking external links (warnings only)..."
+
+          # Check external links but don't fail the build
+          find docs -name "*.md" -print0 | xargs -0 -I {} markdown-link-check {} \
+            --config .github/markdown-link-check-external.json
+
+  # Documentation freshness check
+  freshness-check:
+    name: Documentation Freshness
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Documentation Age
+        run: |
+          echo "📅 Checking documentation freshness..."
+
+          # Find documentation files older than 90 days
+          OLD_DOCS=$(find docs -name "*.md" -type f -mtime +90)
+
+          if [ -n "$OLD_DOCS" ]; then
+            echo "⚠️ Documentation files older than 90 days:"
+            echo "$OLD_DOCS"
+            echo "Consider reviewing these files for accuracy"
+          else
+            echo "✅ All documentation files are recent (< 90 days old)"
+          fi
+
+      - name: Check for TODO/FIXME in Documentation
+        run: |
+          echo "🔍 Checking for TODO/FIXME items in documentation..."
+
+          TODO_COUNT=$(grep -r -i "TODO\|FIXME" docs/ | wc -l)
+
+          if [ $TODO_COUNT -gt 0 ]; then
+            echo "📝 Found $TODO_COUNT TODO/FIXME items:"
+            grep -r -n -i "TODO\|FIXME" docs/ || true
+          else
+            echo "✅ No TODO/FIXME items found in documentation"
+          fi
+
+  # Security check for documentation
+  security-check:
+    name: Documentation Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for Sensitive Information
+        run: |
+          echo "🔒 Checking for sensitive information in documentation..."
+
+          # Check for potential secrets in documentation
+          SENSITIVE_PATTERNS=(
+            "password"
+            "api_key"
+            "secret"
+            "token"
+            "credentials"
+            "localhost"
+          )
+
+          FOUND_ISSUES=false
+
+          for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+            MATCHES=$(grep -r -i "$pattern" docs/ | grep -v "example\|placeholder\|your_" | head -5)
+
+            if [ -n "$MATCHES" ]; then
+              echo "⚠️ Found potential sensitive information ($pattern):"
+              echo "$MATCHES"
+              FOUND_ISSUES=true
+            fi
+          done
+
+          if [ "$FOUND_ISSUES" = false ]; then
+            echo "✅ No sensitive information found in documentation"
+          else
+            echo "⚠️ Please review the above findings and ensure no real secrets are exposed"
+          fi
+
+# Summary job that runs after all checks
+  validation-summary:
+    name: Validation Summary
+    runs-on: ubuntu-latest
+    needs: [validate-documentation, api-coverage-analysis, link-validation, freshness-check, security-check]
+    if: always()
+
+    steps:
+      - name: Validation Summary
+        run: |
+          echo "📊 Documentation Validation Summary"
+          echo "=================================="
+
+          # Check job statuses
+          if [ "${{ needs.validate-documentation.result }}" = "success" ]; then
+            echo "✅ Core documentation validation: PASSED"
+          else
+            echo "❌ Core documentation validation: FAILED"
+          fi
+
+          if [ "${{ needs.api-coverage-analysis.result }}" = "success" ]; then
+            echo "✅ API coverage analysis: PASSED"
+          else
+            echo "❌ API coverage analysis: FAILED"
+          fi
+
+          if [ "${{ needs.link-validation.result }}" = "success" ]; then
+            echo "✅ Link validation: PASSED"
+          else
+            echo "❌ Link validation: FAILED"
+          fi
+
+          if [ "${{ needs.freshness-check.result }}" = "success" ]; then
+            echo "✅ Freshness check: PASSED"
+          else
+            echo "⚠️ Freshness check: WARNINGS"
+          fi
+
+          if [ "${{ needs.security-check.result }}" = "success" ]; then
+            echo "✅ Security check: PASSED"
+          else
+            echo "⚠️ Security check: WARNINGS"
+          fi
+
+          # Overall status
+          if [ "${{ needs.validate-documentation.result }}" = "success" ] && [ "${{ needs.link-validation.result }}" = "success" ]; then
+            echo ""
+            echo "🎉 Documentation validation completed successfully!"
+            echo "All critical checks passed. Review any warnings above."
+          else
+            echo ""
+            echo "❌ Documentation validation failed!"
+            echo "Please review the errors and fix before merging."
+            exit 1
+          fi
