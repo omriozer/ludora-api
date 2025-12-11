@@ -20,7 +20,7 @@ module.exports = {
       // Step 1: Check current table structure
       const tableDescription = await queryInterface.describeTable('classroommembership');
 
-      // Step 2: Add status enum if not exists
+      // Step 2: Handle status field (could be varchar or enum)
       if (!tableDescription.status) {
         console.log('📝 Adding status enum column...');
         await queryInterface.addColumn('classroommembership', 'status', {
@@ -30,31 +30,47 @@ module.exports = {
           comment: 'Membership approval status'
         }, { transaction });
       } else {
-        console.log('⚠️ Status column already exists, checking enum values...');
+        console.log('⚠️ Status column already exists, checking if it needs conversion to enum...');
 
-        // Update enum type to include all required values
-        await queryInterface.sequelize.query(`
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'pending' AND enumtypid = (
-              SELECT oid FROM pg_type WHERE typname = 'enum_classroommembership_status'
-            )) THEN
-              ALTER TYPE enum_classroommembership_status ADD VALUE 'pending';
-            END IF;
+        // Check if status is already an enum or varchar
+        const statusColumn = tableDescription.status;
 
-            IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'denied' AND enumtypid = (
-              SELECT oid FROM pg_type WHERE typname = 'enum_classroommembership_status'
-            )) THEN
-              ALTER TYPE enum_classroommembership_status ADD VALUE 'denied';
-            END IF;
+        if (statusColumn.type === 'character varying') {
+          console.log('🔄 Converting varchar status column to enum...');
 
-            IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'inactive' AND enumtypid = (
-              SELECT oid FROM pg_type WHERE typname = 'enum_classroommembership_status'
-            )) THEN
-              ALTER TYPE enum_classroommembership_status ADD VALUE 'inactive';
-            END IF;
-          END $$;
-        `, { transaction });
+          // Step 1: Create the enum type
+          await queryInterface.sequelize.query(`
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_classroommembership_status') THEN
+                CREATE TYPE enum_classroommembership_status AS ENUM ('pending', 'active', 'denied', 'inactive');
+              END IF;
+            END $$;
+          `, { transaction });
+
+          // Step 2: Update existing values to match enum values
+          await queryInterface.sequelize.query(`
+            UPDATE classroommembership
+            SET status = CASE
+              WHEN status = 'active' OR status = 'approved' OR status IS NULL THEN 'active'
+              WHEN status = 'pending' OR status = 'requested' THEN 'pending'
+              WHEN status = 'denied' OR status = 'rejected' THEN 'denied'
+              WHEN status = 'inactive' OR status = 'removed' THEN 'inactive'
+              ELSE 'pending'
+            END
+          `, { transaction });
+
+          // Step 3: Convert the column type
+          await queryInterface.changeColumn('classroommembership', 'status', {
+            type: 'enum_classroommembership_status',
+            allowNull: false,
+            defaultValue: 'pending'
+          }, { transaction });
+
+          console.log('✅ Successfully converted status column to enum');
+        } else {
+          console.log('✅ Status column is already an enum type');
+        }
       }
 
       // Step 3: Add approval workflow timestamp fields
@@ -116,9 +132,17 @@ module.exports = {
       `, { transaction });
 
       // Set approved_at for active memberships that don't have it
+      // Note: joined_at is varchar, so we need to convert it to timestamp if possible
       await queryInterface.sequelize.query(`
         UPDATE classroommembership
-        SET approved_at = COALESCE(joined_at, created_at)
+        SET approved_at = CASE
+          WHEN joined_at IS NOT NULL AND joined_at != '' THEN
+            CASE
+              WHEN joined_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN joined_at::timestamp
+              ELSE created_at
+            END
+          ELSE created_at
+        END
         WHERE status = 'active' AND approved_at IS NULL
       `, { transaction });
 
