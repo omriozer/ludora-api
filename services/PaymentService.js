@@ -1,6 +1,7 @@
 import models from '../models/index.js';
 import { luderror } from '../lib/ludlog.js';
 import { TRANSACTION_TYPES } from '../constants/payplus.js';
+import { getEnv, isProd } from '../src/utils/environment.js';
 
 /**
  * PaymentService - Handles payment completion and transaction management
@@ -52,7 +53,7 @@ class PaymentService {
             couponCode: purchase.coupon_code,
             ...transactionData
           },
-          environment: process.env.NODE_ENV === 'production' ? 'production' : 'staging',
+          environment: isProd() ? 'production' : 'staging',
           created_at: new Date(),
           updated_at: new Date()
         });
@@ -181,8 +182,8 @@ class PaymentService {
 
     try {
       // Auto-detect environment for database storage
-      const nodeEnv = process.env.NODE_ENV || 'development';
-      const dbEnvironment = nodeEnv === 'production' ? 'production' : 'staging';
+      const nodeEnv = getEnv() || 'development';
+      const dbEnvironment = isProd() ? 'production' : 'staging';
 
       // All purchase transactions are one-time
       const transactionType = TRANSACTION_TYPES.ONE_TIME;
@@ -335,12 +336,12 @@ class PaymentService {
   static getPayPlusCredentials() {
     try {
       // Determine environment and API URL based on NODE_ENV
-      const nodeEnv = process.env.NODE_ENV || 'development';
-      const isProd = nodeEnv === 'production';
-      const normalizedEnv = isProd ? 'production' : 'staging';
+      const nodeEnv = getEnv() || 'development';
+      const isProduction = isProd();
+      const normalizedEnv = isProduction ? 'production' : 'staging';
 
       const credentials = {
-        payplusUrl: isProd
+        payplusUrl: isProduction
           ? 'https://restapi.payplus.co.il/api/v1.0/'
           : 'https://restapidev.payplus.co.il/api/v1.0/',
         payment_page_uid: process.env.PAYPLUS_PAYMENT_PAGE_UID,

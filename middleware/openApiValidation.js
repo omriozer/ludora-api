@@ -10,6 +10,7 @@
 import OpenApiValidator from 'express-openapi-validator';
 import { ludlog, luderror } from '../lib/ludlog.js';
 import { specs } from '../src/openapi/index.js';
+import { isProd, isDev } from '../src/utils/environment.js';
 
 /**
  * OpenAPI validation middleware configuration
@@ -79,7 +80,7 @@ export const openApiErrorHandler = (err, req, res, next) => {
     });
 
     // In production, log but don't expose schema violations to clients
-    if (process.env.NODE_ENV === 'production') {
+    if (isProd()) {
       return res.status(500).json({
         error: 'INTERNAL_SERVER_ERROR',
         message: 'An unexpected error occurred'
@@ -107,7 +108,7 @@ export const openApiErrorHandler = (err, req, res, next) => {
  * @param {Function} next - Express next middleware function
  */
 export const openApiValidationLogger = (req, res, next) => {
-  if (process.env.NODE_ENV === 'development') {
+  if (isDev()) {
     const originalJson = res.json.bind(res);
 
     res.json = (body) => {

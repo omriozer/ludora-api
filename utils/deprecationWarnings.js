@@ -8,8 +8,10 @@
  * This utility addresses Phase 2 requirement: "Add deprecation warnings for magic values"
  */
 
+import { isProd } from '../src/utils/environment.js';
+
 class DeprecationWarnings {
-  static isEnabled = process.env.NODE_ENV !== 'production' || process.env.SHOW_DEPRECATION_WARNINGS === 'true';
+  static isEnabled = !isProd() || process.env.SHOW_DEPRECATION_WARNINGS === 'true';
 
   /**
    * Issue a deprecation warning for the "HAS_IMAGE" magic value

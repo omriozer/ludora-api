@@ -1,4 +1,5 @@
 import swaggerJSDoc from 'swagger-jsdoc';
+import { isProd } from '../utils/environment.js';
 
 const options = {
   definition: {
@@ -10,10 +11,10 @@ const options = {
     },
     servers: [
       {
-        url: process.env.NODE_ENV === 'production'
+        url: isProd()
           ? 'https://ludora.app/api'
           : 'http://localhost:3000/api',
-        description: process.env.NODE_ENV === 'production' ? 'Production' : 'Development'
+        description: isProd() ? 'Production' : 'Development'
       }
     ],
     components: {

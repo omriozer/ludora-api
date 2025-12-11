@@ -5,6 +5,7 @@ import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { rateLimiters } from '../middleware/validation.js';
 import { ADVANCED_FEATURES_KEYS } from '../constants/settingsKeys.js';
+import { isDev } from '../src/utils/environment.js';
 
 const router = express.Router();
 
@@ -40,7 +41,7 @@ router.get('/widgets', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch available widgets',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: isDev() ? error.message : 'Internal server error'
     });
   }
 });
@@ -77,7 +78,7 @@ router.get('/config', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dashboard configuration',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: isDev() ? error.message : 'Internal server error'
     });
   }
 });
@@ -140,7 +141,7 @@ router.put('/config', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update dashboard configuration',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: isDev() ? error.message : 'Internal server error'
     });
   }
 });
@@ -214,7 +215,7 @@ router.post('/widgets', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to add widget',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: isDev() ? error.message : 'Internal server error'
     });
   }
 });
@@ -283,7 +284,7 @@ router.delete('/widgets/:widgetId', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to remove widget',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: isDev() ? error.message : 'Internal server error'
     });
   }
 });
@@ -361,7 +362,7 @@ router.put('/widgets/:widgetId', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update widget',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: isDev() ? error.message : 'Internal server error'
     });
   }
 });

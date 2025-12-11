@@ -4,6 +4,7 @@
  */
 
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { getEnv, isDev } from '../src/utils/environment.js';
 
 /**
  * Validate required environment variables
@@ -45,7 +46,7 @@ export function validateEnvironmentVariables() {
     ]
   };
 
-  const environment = process.env.NODE_ENV || 'development';
+  const environment = getEnv() || 'development';
   const requiredVars = criticalVars[environment] || criticalVars.development;
 
   // Check critical variables
@@ -119,7 +120,7 @@ export function validateEnvironmentOnStartup(exitOnError = true) {
   const results = validateEnvironmentVariables();
   const isValid = logEnvironmentValidation(results);
 
-  if (!isValid && exitOnError && process.env.NODE_ENV !== 'development') {
+  if (!isValid && exitOnError && !isDev()) {
     luderror.system('🛑 Critical environment variables missing. Server startup aborted.');
     luderror.system('Please set the required environment variables and restart the server.');
     process.exit(1);

@@ -1,6 +1,7 @@
 import models from '../models/index.js';
 import { luderror } from '../lib/ludlog.js';
 import { calcSubscriptionPlanPrice } from '../utils/purchasePricing.js';
+import { getEnv, isProd, isStaging } from '../src/utils/environment.js';
 
 /**
  * SubscriptionPaymentService - Dedicated service for subscription payments
@@ -25,8 +26,8 @@ class SubscriptionPaymentService {
 
     try {
       // Auto-detect environment from NODE_ENV
-      const nodeEnv = process.env.NODE_ENV || 'development';
-      const environment = nodeEnv === 'production' ? 'production' : 'staging';
+      const nodeEnv = getEnv() || 'development';
+      const environment = isProd() ? 'production' : 'staging';
 
       // Import services to avoid circular dependencies
       const SubscriptionService = (await import('./SubscriptionService.js')).default;
@@ -187,8 +188,8 @@ class SubscriptionPaymentService {
 
     try {
       // Auto-detect environment from NODE_ENV
-      const nodeEnv = process.env.NODE_ENV || 'development';
-      const environment = nodeEnv === 'production' ? 'production' : 'staging';
+      const nodeEnv = getEnv() || 'development';
+      const environment = isProd() ? 'production' : 'staging';
 
       // Import PaymentService to get credentials
       const PaymentService = (await import('./PaymentService.js')).default;
@@ -363,11 +364,11 @@ class SubscriptionPaymentService {
 
     // TESTING MODE: Use daily billing in staging for rapid subscription testing
     // This allows testing the full subscription lifecycle in 2-3 days instead of waiting a month
-    const nodeEnv = process.env.NODE_ENV || 'development';
-    const isStaging = nodeEnv !== 'production';
+    const nodeEnv = getEnv() || 'development';
+    const isStagingEnv = !isProd();
     const enableDailyTesting = process.env.ENABLE_DAILY_SUBSCRIPTION_TESTING === 'true';
 
-    if (isStaging && enableDailyTesting) {
+    if (isStagingEnv && enableDailyTesting) {
       // Override to daily billing for testing recurring webhooks
       return {
         recurringType: 0, // Daily
@@ -421,9 +422,9 @@ class SubscriptionPaymentService {
     if (!apiUrl) {
       luderror.payment('⚠️ WARNING: API_URL environment variable is not set! Using fallback for webhook URL.');
       // Fallback based on environment
-      if (process.env.NODE_ENV === 'staging') {
+      if (isStaging()) {
         return 'https://api-staging.ludora.app/api/webhooks/payplus';
-      } else if (process.env.NODE_ENV === 'production') {
+      } else if (isProd()) {
         return 'https://api.ludora.app/api/webhooks/payplus';
       } else {
         return 'http://localhost:3003/api/webhooks/payplus';
@@ -655,8 +656,8 @@ class SubscriptionPaymentService {
 
     try {
       // Auto-detect environment from NODE_ENV
-      const nodeEnv = process.env.NODE_ENV || 'development';
-      const environment = nodeEnv === 'production' ? 'production' : 'staging';
+      const nodeEnv = getEnv() || 'development';
+      const environment = isProd() ? 'production' : 'staging';
 
       // Import services to avoid circular dependencies
       const PaymentService = (await import('./PaymentService.js')).default;

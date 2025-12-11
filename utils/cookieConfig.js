@@ -3,13 +3,14 @@
  * Handles proper domain and sameSite settings for teacher/student portals
  */
 
+import { isDev, isStaging, isProd, getEnv } from '../src/utils/environment.js';
+
 /**
  * Get the appropriate cookie domain based on environment
  * @returns {string|undefined} Cookie domain or undefined for development
  */
 export function getCookieDomain() {
-  const environment = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
-
+  const environment = getEnv();
 
   switch (environment) {
     case 'production':
@@ -32,21 +33,20 @@ export function getCookieDomain() {
  * @returns {string} sameSite setting
  */
 export function getSameSitePolicy() {
-  const environment = process.env.ENVIRONMENT || 'development';
   const isSecure = getSecureSetting();
 
   // Development: always 'lax' (HTTP, localhost)
-  if (environment === 'development') {
+  if (isDev()) {
     return 'lax';
   }
 
   // Production: use 'none' for cross-subdomain (requires HTTPS)
-  if (environment === 'production') {
+  if (isProd()) {
     return 'none'; // Safe because production always has HTTPS
   }
 
   // Staging: coordinate with secure setting
-  if (environment === 'staging') {
+  if (isStaging()) {
     if (isSecure) {
       // HTTPS available - can use 'none' for cross-subdomain
       return 'none';
@@ -67,20 +67,18 @@ export function getSameSitePolicy() {
  * @returns {boolean} Whether to use secure cookies
  */
 export function getSecureSetting() {
-  const environment = process.env.ENVIRONMENT || 'development';
-
   // Development: always false (HTTP)
-  if (environment === 'development') {
+  if (isDev()) {
     return false;
   }
 
   // Production: always true (should have HTTPS)
-  if (environment === 'production') {
+  if (isProd()) {
     return true;
   }
 
   // Staging: Check if HTTPS is actually available via environment hints
-  if (environment === 'staging') {
+  if (isStaging()) {
     // If API_URL explicitly uses https, we can use secure cookies
     if (process.env.API_URL && process.env.API_URL.startsWith('https://')) {
       return true;

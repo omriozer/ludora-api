@@ -3,6 +3,7 @@ import { luderror } from '../lib/ludlog.js';
 import { calcFinalPurchasePrice } from '../utils/purchasePricing.js';
 import models from '../models/index.js';
 import { PAYPLUS_CHARGE_METHODS } from '../constants/payplus.js';
+import { getEnv, isStaging, isProd } from '../src/utils/environment.js';
 
 /**
  * PayplusService - Handles PayPlus payment page generation and configuration
@@ -20,9 +21,9 @@ class PayplusService {
     if (!apiUrl) {
       luderror.payment('⚠️ WARNING: API_URL environment variable is not set! Using fallback for webhook URL.');
       // Fallback based on environment
-      if (process.env.NODE_ENV === 'staging') {
+      if (isStaging()) {
         return 'https://api-staging.ludora.app/api/webhooks/payplus';
-      } else if (process.env.NODE_ENV === 'production') {
+      } else if (isProd()) {
         return 'https://api.ludora.app/api/webhooks/payplus';
       } else {
         return 'http://localhost:3003/api/webhooks/payplus';
@@ -68,7 +69,7 @@ class PayplusService {
       const webhookUrl = this.getWebhookUrl();
 
       // Log webhook URL for debugging
-      luderror.payment(`PayplusService: Using webhook URL: ${webhookUrl} for environment: ${process.env.NODE_ENV || 'development'}`);
+      luderror.payment(`PayplusService: Using webhook URL: ${webhookUrl} for environment: ${getEnv() || 'development'}`);
 
       // Build PayPlus request payload
       const paymentRequest = {
