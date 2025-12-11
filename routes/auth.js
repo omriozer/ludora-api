@@ -18,6 +18,7 @@ import {
 const authService = AuthService; // Use singleton instance
 import EmailService from '../services/EmailService.js';
 import SettingsService from '../services/SettingsService.js';
+import SubscriptionPermissionsService from '../services/SubscriptionPermissionsService.js';
 import { luderror, ludlog } from '../lib/ludlog.js';
 
 const verifyAdminPassword = (inputPassword) => {
@@ -393,12 +394,33 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         throw onboardingError;
       }
 
+      ludlog.auth('[AUTH-ME] Computing subscription permissions', { userId: user.id });
+      let subscriptionPermissions = null;
+      try {
+        // Get enriched subscription permissions with current usage
+        subscriptionPermissions = await SubscriptionPermissionsService.getEnrichedPermissions(user.id);
+        ludlog.auth('[AUTH-ME] Subscription permissions computed successfully', {
+          userId: user.id,
+          hasPermissions: !!subscriptionPermissions,
+          hasClassroomAccess: subscriptionPermissions?.classroom_management?.enabled || false
+        });
+      } catch (permissionsError) {
+        luderror.auth('[AUTH-ME] Failed to compute subscription permissions', {
+          userId: user.id,
+          email: user.email,
+          error: permissionsError.message,
+          stack: permissionsError.stack
+        });
+        // Continue without permissions - don't block user data fetch
+      }
+
       ludlog.auth('[AUTH-ME] User data fetch completed successfully', {
         userId: user.id,
         email: user.email,
         portal,
         userType: user.user_type,
-        onboardingCompleted
+        onboardingCompleted,
+        hasSubscriptionPermissions: !!subscriptionPermissions
       });
 
       // Return clean user data - all from database except computed fields
@@ -421,7 +443,9 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         linked_teacher_id: user.linked_teacher_id,
         created_at: user.created_at,
         updated_at: user.updated_at,
-        last_login: user.last_login
+        last_login: user.last_login,
+        // NEW: Explicit subscription permissions from backend
+        subscription_permissions: subscriptionPermissions
       });
     } else if (req.entityType === 'player' && req.player) {
       ludlog.auth('[AUTH-ME] Processing player authentication', {

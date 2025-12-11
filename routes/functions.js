@@ -587,31 +587,68 @@ router.post('/scheduleEmailProcessor', authenticateToken, async (req, res) => {
 
 router.post('/triggerEmailAutomation', authenticateToken, async (req, res) => {
   try {
-    const { automationId, userId, recipientEmail, data } = req.body;
+    const { triggerType, data } = req.body;
 
-    // Find automation template
+    // Validate required fields
+    if (!triggerType) {
+      return res.status(400).json({ error: 'triggerType is required' });
+    }
+
+    if (!data) {
+      return res.status(400).json({ error: 'data is required' });
+    }
+
+    // Extract recipient email from data (different trigger types have different email fields)
+    let recipientEmail;
+    if (triggerType === 'parent_consent_request') {
+      recipientEmail = data.parent_email;
+    } else if (triggerType === 'student_invitation') {
+      recipientEmail = data.student_email;
+    } else {
+      // Fallback for other trigger types
+      recipientEmail = data.recipient_email || data.email;
+    }
+
+    if (!recipientEmail) {
+      return res.status(400).json({
+        error: 'Recipient email is required in data object',
+        hint: 'Use parent_email for parent_consent_request, student_email for student_invitation'
+      });
+    }
+
+    // Find automation template by trigger_type
     const automation = await models.EmailTemplate.findOne({
-      where: { id: automationId, is_active: true }
+      where: { trigger_type: triggerType, is_active: true }
     });
 
     if (!automation) {
-      return res.status(404).json({ error: 'Email automation not found' });
+      return res.status(404).json({
+        error: `No active email template found for trigger type: ${triggerType}`,
+        availableTypes: ['parent_consent_request', 'student_invitation', 'registration_confirmation', 'payment_confirmation']
+      });
     }
 
     // Trigger the email using EmailService
     const result = await EmailService.processEmailTriggers({
       triggers: [{
-        type: automation.trigger_type,
+        type: triggerType,
         recipient: recipientEmail,
         data,
-        entityId: userId
+        entityId: data.userId || data.student_id
       }]
     });
 
     res.json({
       success: true,
-      message: 'Email automation triggered',
-      data: { automationId, triggered: true, result }
+      message: 'Email automation triggered successfully',
+      data: {
+        triggerType,
+        templateId: automation.id,
+        templateName: automation.name,
+        recipient: recipientEmail,
+        triggered: true,
+        result
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -622,6 +659,138 @@ router.post('/sendInvitationEmails', authenticateToken, async (req, res) => {
   try {
     const result = await EmailService.sendInvitationEmails(req.body);
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send example email with placeholder values
+router.post('/sendExampleEmail', authenticateToken, async (req, res) => {
+  try {
+    const { templateId } = req.body;
+
+    if (!templateId) {
+      return res.status(400).json({ error: 'templateId is required' });
+    }
+
+    // Find the email template
+    const template = await models.EmailTemplate.findByPk(templateId);
+
+    if (!template) {
+      return res.status(404).json({ error: 'Email template not found' });
+    }
+
+    // Get current user's email as recipient
+    const currentUser = req.user;
+    if (!currentUser || !currentUser.email) {
+      return res.status(400).json({ error: 'Current user email not found' });
+    }
+
+    // Generate placeholder values for all variables
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const nextYear = currentYear + 1;
+    const workshopDate = new Date();
+    workshopDate.setDate(currentDate.getDate() + 7); // 7 days from now
+
+    const placeholderData = {
+      // Names
+      student_name: 'ישראל ישראלי',
+      teacher_name: 'ישראלה ישראלית',
+      recipient_name: 'ישראל ישראלי',
+      buyer_name: 'ישראל ישראלי',
+      participant_name: 'ישראל ישראלי',
+      admin_name: currentUser.display_name || currentUser.email || 'מנהל מערכת',
+
+      // Contact Info
+      recipient_email: currentUser.email,
+      buyer_email: 'email@ludora.example',
+      participant_email: 'email@ludora.example',
+      buyer_phone: '054-1234567',
+      participant_phone: '054-1234567',
+
+      // Site/System
+      site_name: process.env.SITE_NAME || 'לודורא',
+      classroom_name: 'שם הכיתה',
+      classroom_grade: 'ו',
+      classroom_year: `${currentYear} - ${nextYear}`,
+
+      // Products & Content
+      product_title: 'שם מוצר',
+      product_type: 'קובץ',
+      workshop_title: 'הדרכה בתשלום',
+
+      // Dates & Numbers (Hebrew format)
+      current_date: currentDate.toLocaleDateString('he-IL'),
+      purchase_date: currentDate.toLocaleDateString('he-IL'),
+      workshop_date: workshopDate.toLocaleDateString('he-IL'),
+      access_until: 'גישה לכל החיים',
+      payment_amount: '99',
+      days_remaining: 'ללא הגבלה',
+      registered_participants_count: '76',
+      max_participants: '300',
+
+      // Links
+      consent_link: 'https://ludora.app',
+      privacy_policy_link: process.env.PRIVACY_POLICY_URL || 'https://ludora.app/privacy',
+      terms_of_service_link: process.env.TERMS_OF_SERVICE_URL || 'https://ludora.app/terms',
+      invitation_link: 'https://ludora.app',
+      zoom_link: 'https://zoom.us/j/1234567890?pwd=example123',
+      zoom_password: 'zoom123',
+      recording_url: 'https://ludora.app/recordings/example-recording',
+
+      // Optional Content
+      personal_message: 'היי, אנחנו צריכים אישור הורה כדי להירשם ללודורא, אני אשמח שתמלאו את הטופס בהקדם.'
+    };
+
+    // Process template with placeholder data
+    const processedSubject = EmailService.processEmailTemplate(template.subject, placeholderData);
+    const processedContent = EmailService.processEmailTemplate(template.html_content, placeholderData);
+
+    // Send the example email
+    const emailResult = await EmailService.sendEmail({
+      to: currentUser.email,
+      subject: `[דוגמה] ${processedSubject}`,
+      html: `
+        <div style="border: 3px solid #f39c12; border-radius: 8px; padding: 20px; margin: 20px 0; background-color: #fff3cd;">
+          <h2 style="color: #856404; margin-top: 0;">📧 זהו מייל דוגמה</h2>
+          <p style="color: #856404; font-weight: bold;">
+            זהו מייל דוגמה לתבנית "${template.name}".<br>
+            הנתונים הם פלייסהולדרים לצורך הדוגמה ולא נתונים אמיתיים.
+          </p>
+        </div>
+        ${processedContent}
+        <div style="border-top: 2px solid #e9ecef; margin-top: 30px; padding-top: 20px;">
+          <p style="font-size: 12px; color: #6c757d; text-align: center;">
+            מייל דוגמה נשלח מהמערכת • ${new Date().toLocaleString('he-IL')}
+          </p>
+        </div>
+      `,
+      templateId: template.id
+    });
+
+    ludlog.generic('Example email sent successfully', {
+      templateId: template.id,
+      templateName: template.name,
+      triggerType: template.trigger_type,
+      recipient: currentUser.email,
+      messageId: emailResult.data.messageId
+    });
+
+    res.json({
+      success: true,
+      message: 'Email example sent successfully',
+      data: {
+        templateId: template.id,
+        templateName: template.name,
+        triggerType: template.trigger_type,
+        recipient: currentUser.email,
+        subject: processedSubject,
+        sent: true,
+        messageId: emailResult.data.messageId,
+        placeholderValuesUsed: Object.keys(placeholderData).length
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
