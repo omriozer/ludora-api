@@ -12,6 +12,12 @@ class EmailService {
   // Initialize email transporter
   initializeTransporter() {
     try {
+      // Only create transporter if email credentials are available
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+        this.transporter = null;
+        return;
+      }
+
       // Configure based on environment variables
       const emailConfig = {
         host: process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -26,6 +32,7 @@ class EmailService {
       this.transporter = nodemailer.createTransport(emailConfig);
     } catch (error) {
       // Email transporter initialization failed
+      this.transporter = null;
     }
   }
 
