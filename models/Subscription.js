@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { isProd } from '../src/utils/environment.js';
 
 export default function(sequelize) {
   const Subscription = sequelize.define('Subscription', {
@@ -139,7 +140,7 @@ export default function(sequelize) {
       allowNull: false,
       validate: {
         // Allow 'daily' in staging/development for testing, only monthly/yearly in production
-        isIn: process.env.NODE_ENV === 'production'
+        isIn: isProd()
           ? [['monthly', 'yearly']]
           : [['monthly', 'yearly', 'daily']]
       }

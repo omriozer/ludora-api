@@ -2,11 +2,12 @@ import admin from 'firebase-admin';
 import dotenv from 'dotenv';
 import SecretsService from '../services/SecretsService.js';
 import { luderror } from '../lib/ludlog.js';
+import { isProd, getEnv } from '../src/utils/environment.js';
 
 try {
   // Load environment-specific .env file
-  const env = process.env.ENVIRONMENT || 'development';
-  const envFile = env === 'production' ? '.env' : `.env.${env}`;
+  const env = getEnv();
+  const envFile = isProd() ? '.env' : `.env.${env}`;
   dotenv.config({ path: envFile });
 
   // Get Firebase service account from secrets service (environment variable)

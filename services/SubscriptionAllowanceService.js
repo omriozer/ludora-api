@@ -2,6 +2,7 @@ import models from '../models/index.js';
 import { Op } from 'sequelize';
 import { ludlog, luderror } from '../lib/ludlog.js';
 import { generateId } from '../models/baseModel.js';
+import { isDev } from '../src/utils/environment.js';
 
 /**
  * SubscriptionAllowanceService
@@ -756,7 +757,7 @@ class SubscriptionAllowanceService {
         reason: 'An error occurred while claiming the product. Please try again.',
         step: 'database_error',
         // Include error details for debugging (these should be logged, not shown to user)
-        debugInfo: process.env.NODE_ENV === 'development' ? {
+        debugInfo: isDev() ? {
           errorType: error.name,
           errorMessage: error.message,
           sqlError: error.parent?.message

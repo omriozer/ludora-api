@@ -1,8 +1,9 @@
 import crypto from 'crypto';
+import { isDev, isStaging, getEnv } from '../src/utils/environment.js';
 
 class SecretsService {
   constructor() {
-    this.environment = process.env.NODE_ENV || 'development';
+    this.environment = getEnv() || 'development';
     this.encryptionKey = process.env.ENCRYPTION_KEY;
     this.secrets = new Map();
 
@@ -14,13 +15,13 @@ class SecretsService {
   loadSecrets() {
     try {
       // In development, load from environment variables
-      if (this.environment === 'development') {
+      if (isDev()) {
         this.loadFromEnvironment();
         return;
       }
 
       // In staging, load with relaxed validation for DATABASE_URL_SSL usage
-      if (this.environment === 'staging') {
+      if (isStaging()) {
         this.loadFromEnvironmentForStaging();
         return;
       }
@@ -299,7 +300,7 @@ class SecretsService {
     }
 
     // Check for development patterns in production
-    if (this.environment !== 'development') {
+    if (!isDev()) {
       const secrets = Array.from(this.secrets.entries());
       for (const [key, value] of secrets) {
         if (value.includes('dev') || value.includes('test') || value.includes('localhost')) {

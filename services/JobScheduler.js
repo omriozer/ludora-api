@@ -16,6 +16,7 @@
 import { Queue, Worker, QueueEvents } from 'bullmq';
 import Redis from 'ioredis';
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { isDev, isStaging, getEnv } from '../src/utils/environment.js';
 
 class JobScheduler {
   constructor() {
@@ -107,11 +108,11 @@ class JobScheduler {
     try {
       // Create Redis connection
       const redisUrl = process.env.REDIS_URL || process.env.REDISTOGO_URL || 'redis://localhost:6379';
-      const environment = process.env.NODE_ENV || 'development';
+      const environment = getEnv();
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
 
       // Development or staging should fail gracefully if Redis issues occur
-      const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
+      const shouldFailGracefully = isDev() || isStaging() || !hasRedisUrl;
 
       // In non-production environments without Redis, do a quick availability check first
       if (shouldFailGracefully) {
@@ -265,9 +266,9 @@ class JobScheduler {
       ludlog.generic('JobScheduler initialized successfully with Redis-backed persistence');
 
     } catch (error) {
-      const environment = process.env.NODE_ENV || 'development';
+      const environment = getEnv();
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
-      const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
+      const shouldFailGracefully = isDev() || isStaging() || !hasRedisUrl;
 
       if (shouldFailGracefully && (error.code === 'ECONNREFUSED' || error.message.includes('Redis connection timeout'))) {
         // Graceful failure in non-production environments without Redis
@@ -399,9 +400,9 @@ class JobScheduler {
    */
   async scheduleJob(type, data, options = {}) {
     if (!this.isInitialized) {
-      const environment = process.env.NODE_ENV || 'development';
+      const environment = getEnv();
       const hasRedisUrl = !!(process.env.REDIS_URL || process.env.REDISTOGO_URL);
-      const shouldFailGracefully = environment === 'development' || environment === 'staging' || !hasRedisUrl;
+      const shouldFailGracefully = isDev() || isStaging() || !hasRedisUrl;
 
       if (shouldFailGracefully && this.redisAvailable === false) {
         // Graceful failure in non-production environments without Redis - just log and return null
@@ -1130,7 +1131,7 @@ class JobScheduler {
 
   async processFileCleanupOrphaned(data) {
     const {
-      environment = process.env.NODE_ENV || 'development',
+      environment = getEnv(),
       batchSize = 100,
       maxFiles = 1000, // Max files to process in one job run
       checkThreshold = '24h',
@@ -1739,7 +1740,7 @@ class JobScheduler {
     const {
       daysOld = 30,
       batchSize = 1000,
-      environment = process.env.NODE_ENV || 'development'
+      environment = getEnv()
     } = data;
 
     try {

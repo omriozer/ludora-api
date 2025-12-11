@@ -1,11 +1,9 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import https from 'https';
-import { generateId } from '../models/baseModel.js';
 import models from '../models/index.js';
-import { constructS3Path } from '../utils/s3PathUtils.js';
 import { luderror } from '../lib/ludlog.js';
+import { getEnv } from '../src/utils/environment.js';
 
 /**
  * DirectSlideService - Handle SVG slides without Files table
@@ -90,7 +88,7 @@ class DirectSlideService {
       const filename = file.originalname;
 
       // Construct S3 path using lesson-plan structure
-      const s3Key = `${process.env.NODE_ENV || 'development'}/private/lesson-plan/${lessonPlanId}/${filename}`;
+      const s3Key = `${getEnv() || 'development'}/private/lesson-plan/${lessonPlanId}/${filename}`;
       logger?.info('S3 path constructed for direct slide upload', { s3Key, slideId });
 
       // Upload to S3 with transaction coordination

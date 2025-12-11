@@ -1,8 +1,9 @@
 import { Sequelize } from 'sequelize';
 import databaseConfig from '../config/database.js';
 import { luderror } from '../lib/ludlog.js';
+import { getEnv } from '../src/utils/environment.js';
 
-const env = process.env.ENVIRONMENT || 'development';
+const env = getEnv();
 const config = databaseConfig[env];
 
 // Initialize Sequelize

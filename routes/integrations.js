@@ -6,6 +6,7 @@ import EmailService from '../services/EmailService.js';
 import FileService from '../services/FileService.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
+import { getEnv } from '../src/utils/environment.js';
 
 const { sequelize } = models;
 
@@ -58,7 +59,7 @@ router.post('/uploadFile', authenticateToken, rateLimiters.upload, upload.single
     const fileName = `${audioFileId}.${fileExtension}`;
 
     // Use proper S3 path structure for AudioFile (System Layer)
-    const environment = process.env.NODE_ENV || 'development';
+    const environment = getEnv() || 'development';
     const s3Path = `${environment}/private/audio/audiofile/${audioFileId}/${fileName}`;
 
     // Upload to S3 first

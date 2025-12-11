@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { constructS3Path } from '../utils/s3PathUtils.js';
 import { createFileMetadataEnhancer } from '../utils/fileMetadataEnhancer.js';
+import { isDev } from '../src/utils/environment.js';
 
 class FileService {
   constructor() {
@@ -262,7 +263,7 @@ class FileService {
     // });
 
     // For development: could optionally trigger immediate analysis in non-blocking way
-    if (process.env.NODE_ENV === 'development') {
+    if (isDev()) {
       // Non-blocking analysis trigger for development (optional)
       setImmediate(() => {
         this._performDeferredAnalysis({ s3Key, entityType, entityId, assetType, filename, logger })

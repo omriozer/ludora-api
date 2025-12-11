@@ -1,5 +1,6 @@
 import { ValidationError, DatabaseError, ForeignKeyConstraintError, UniqueConstraintError } from 'sequelize';
 import { luderror } from '../lib/ludlog.js';
+import { isDev, isProd, getEnv } from '../src/utils/environment.js';
 
 // Custom error classes
 export class APIError extends Error {
@@ -72,7 +73,7 @@ export class ErrorLogger {
       statusCode: error.statusCode,
       code: error.code,
       timestamp: new Date().toISOString(),
-      environment: process.env.ENVIRONMENT || 'development'
+      environment: getEnv()
     };
 
     if (req) {
@@ -92,7 +93,7 @@ export class ErrorLogger {
     }
 
     // In production, you might want to send to external logging service
-    if (process.env.ENVIRONMENT === 'production') {
+    if (isProd()) {
       // TODO: Send to logging service like Winston, DataDog, Sentry, etc.
     }
   }
@@ -157,7 +158,7 @@ export function globalErrorHandler(error, req, res, _next) {
     code = 'DATABASE_ERROR';
 
     // Don't expose database details in production
-    if (process.env.ENVIRONMENT !== 'production') {
+    if (!isProd()) {
       details = { originalError: error.message };
     }
   } else if (error.name === 'JsonWebTokenError') {
@@ -214,17 +215,17 @@ export function globalErrorHandler(error, req, res, _next) {
   };
 
   // Add details for client errors (4xx) or in development for server errors
-  if (details && (statusCode < 500 || process.env.ENVIRONMENT === 'development')) {
+  if (details && (statusCode < 500 || isDev())) {
     errorResponse.error.details = details;
   }
 
   // Add stack trace ONLY in development AND only for debugging
-  if (process.env.ENVIRONMENT === 'development' && process.env.DEBUG_ERRORS === 'true') {
+  if (isDev() && process.env.DEBUG_ERRORS === 'true') {
     errorResponse.error.stack = error.stack;
   }
 
   // Never expose internal server errors details in production
-  if (process.env.ENVIRONMENT === 'production' && statusCode >= 500) {
+  if (isProd() && statusCode >= 500) {
     errorResponse.error.message = 'Internal server error';
     delete errorResponse.error.details;
   }
@@ -268,12 +269,12 @@ export async function _healthCheckErrorHandler(req, res) {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      environment: process.env.ENVIRONMENT || 'development',
+      environment: getEnv(),
       version: process.env.npm_package_version || '1.0.0'
     };
 
     // Only expose detailed service status in development
-    if (process.env.ENVIRONMENT === 'development') {
+    if (isDev()) {
       health.services = {
         database: 'checking...',
         email: process.env.EMAIL_HOST ? 'configured' : 'not_configured',

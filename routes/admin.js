@@ -8,6 +8,7 @@ import SubscriptionPaymentStatusService from '../services/SubscriptionPaymentSta
 import SubscriptionService from '../services/SubscriptionService.js';
 import models from '../models/index.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { getEnv } from '../src/utils/environment.js';
 
 const router = express.Router();
 
@@ -1109,7 +1110,7 @@ router.post('/users/:userId/subscription/create', async (req, res) => {
       // Prepare admin metadata - this follows the same pattern as regular subscription creation
       const adminMetadata = {
         source: 'admin_created_subscription',
-        environment: process.env.NODE_ENV || 'development',
+        environment: getEnv() || 'development',
         admin_created: true,
         created_by_admin: req.user.id,
         admin_creation_reason: reason,

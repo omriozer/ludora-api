@@ -5,6 +5,8 @@
  * and security settings to prevent payment fraud.
  */
 
+import { isDev, isProd, getEnv } from '../src/utils/environment.js';
+
 /**
  * Webhook signature configuration
  */
@@ -104,22 +106,22 @@ const securityRules = {
  * @returns {Object} Webhook configuration object
  */
 function getWebhookConfig() {
-  const environment = process.env.NODE_ENV || 'development';
+  const environment = getEnv();
 
   return {
     ...webhookConfig,
     environment,
 
     // In development, can optionally disable signature verification
-    enforceSignature: environment === 'production' ?
+    enforceSignature: isProd() ?
       true :
       webhookConfig.enforceSignature,
 
     // Enhanced logging in non-production environments
-    debugMode: environment !== 'production',
+    debugMode: !isProd(),
 
     // Adjusted rate limits for development
-    securityRateLimit: environment === 'development' ?
+    securityRateLimit: isDev() ?
       {
         ...webhookConfig.securityRateLimit,
         maxFailures: 20, // More lenient in development

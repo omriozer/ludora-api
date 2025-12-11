@@ -1,5 +1,6 @@
 import models from '../models/index.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { isProd } from '../src/utils/environment.js';
 
 /**
  * PlayerMigrationService
@@ -370,7 +371,7 @@ class PlayerMigrationService {
    * WARNING: This is a dangerous operation and should only be used in development
    */
   async rollbackMigration(playerId, userId, options = {}) {
-    if (process.env.NODE_ENV === 'production') {
+    if (isProd()) {
       throw new Error('Migration rollback is not allowed in production');
     }
 
