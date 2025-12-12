@@ -9,7 +9,8 @@
 export const ACCESS_CONTROL_KEYS = {
   STUDENTS_ACCESS: 'students_access',
   STUDENT_INVITATION_EXPIRY_DAYS: 'student_invitation_expiry_days',
-  PARENT_CONSENT_REQUIRED: 'parent_consent_required'
+  PARENT_CONSENT_REQUIRED: 'parent_consent_required',
+  TEACHER_CONSENT_VERIFICATION_ENABLED: 'teacher_consent_verification_enabled'
 };
 
 /**

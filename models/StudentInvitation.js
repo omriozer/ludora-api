@@ -6,7 +6,7 @@ export default function(sequelize) {
     ...baseFields,
     classroom_id: { type: DataTypes.STRING, allowNull: true },
     teacher_id: { type: DataTypes.STRING, allowNull: true },
-    student_user_id: { type: DataTypes.STRING, allowNull: true },
+    student_id: { type: DataTypes.STRING, allowNull: true },
     student_email: { type: DataTypes.STRING, allowNull: true },
     student_name: { type: DataTypes.STRING, allowNull: true },
     parent_email: { type: DataTypes.STRING, allowNull: true },
@@ -42,9 +42,9 @@ export default function(sequelize) {
     // Define associations here
     StudentInvitation.belongsTo(models.Classroom, { foreignKey: 'classroom_id' });
     StudentInvitation.belongsTo(models.User, { foreignKey: 'teacher_id', as: 'Teacher' });
-    StudentInvitation.belongsTo(models.User, { foreignKey: 'student_user_id', as: 'Student' });
+    StudentInvitation.belongsTo(models.User, { foreignKey: 'student_id', as: 'Student' });
     // Removed ParentConsent association - deprecated model
-    StudentInvitation.hasOne(models.ClassroomMembership, { foreignKey: 'student_user_id', sourceKey: 'student_user_id' });
+    StudentInvitation.hasOne(models.ClassroomMembership, { foreignKey: 'student_id', sourceKey: 'student_id' });
   };
 
   return StudentInvitation;

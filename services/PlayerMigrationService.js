@@ -132,7 +132,7 @@ class PlayerMigrationService {
     // Check if User is connected to this teacher via ClassroomMembership
     const membership = await this.models.ClassroomMembership.findOne({
       where: {
-        student_user_id: targetUserId,
+        student_id: targetUserId,
         teacher_id: teacherId,
         status: 'active'
       },
@@ -182,28 +182,28 @@ class PlayerMigrationService {
     results.gameSessionParticipants = gameSessionsResults;
     ludlog.auth(`🎮 GameSession participants migration: ${results.gameSessionParticipants} records updated`);
 
-    // 3. ClassroomMembership: student_user_id (if Player was in classrooms)
+    // 3. ClassroomMembership: student_id (if Player was in classrooms)
     const classroomResults = await this.models.ClassroomMembership.update(
       {
-        student_user_id: newUserId,
+        student_id: newUserId,
         migration_notes: `Migrated from player ${playerId} on ${new Date().toISOString()}`
       },
       {
-        where: { student_user_id: playerId },
+        where: { student_id: playerId },
         transaction
       }
     );
     results.classroomMemberships = classroomResults[0];
     ludlog.auth(`🏫 ClassroomMembership migration: ${results.classroomMemberships} records updated`);
 
-    // 4. ParentConsent: student_user_id (if Player had consent - unlikely but possible)
+    // 4. ParentConsent: student_id (if Player had consent - unlikely but possible)
     const consentResults = await this.models.ParentConsent.update(
       {
-        student_user_id: newUserId,
+        student_id: newUserId,
         migration_notes: `Migrated from player ${playerId} on ${new Date().toISOString()}`
       },
       {
-        where: { student_user_id: playerId },
+        where: { student_id: playerId },
         transaction
       }
     );

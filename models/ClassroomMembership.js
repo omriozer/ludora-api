@@ -1,18 +1,19 @@
 import { DataTypes } from 'sequelize';
 import { baseFields, baseOptions } from './baseModel.js';
+import { isPlayerId } from '../utils/studentUtils.js';
 
 export default function(sequelize) {
   const ClassroomMembership = sequelize.define('ClassroomMembership', {
     ...baseFields,
     classroom_id: {
       type: DataTypes.STRING,
-      allowNull: false,
-      comment: 'Classroom this membership belongs to'
+      allowNull: true,  // Allow NULL for teacher-student connections without specific classroom
+      comment: 'Classroom this membership belongs to (NULL for teacher-student connection without specific classroom)'
     },
-    student_user_id: {
+    student_id: {
       type: DataTypes.STRING,
       allowNull: false,
-      comment: 'Student User ID or Player ID (format: user_xxx or player_xxx)'
+      comment: 'Student ID - can be User ID or Player ID (format: user_xxx or player_xxx)'
     },
     teacher_id: {
       type: DataTypes.STRING,
@@ -73,7 +74,7 @@ export default function(sequelize) {
         name: 'idx_classroommembership_classroom'
       },
       {
-        fields: ['student_user_id'],
+        fields: ['student_id'],
         name: 'idx_classroommembership_student'
       },
       {
@@ -96,10 +97,11 @@ export default function(sequelize) {
         fields: ['requested_at'],
         name: 'idx_classroommembership_requested_at'
       },
+      // Basic unique constraint - complex constraints will be added in migration
       {
         unique: true,
-        fields: ['classroom_id', 'student_user_id'],
-        name: 'idx_classroommembership_unique_membership'
+        fields: ['teacher_id', 'student_id', 'classroom_id'],
+        name: 'idx_classroommembership_unique_full'
       },
     ],
   });
@@ -107,8 +109,10 @@ export default function(sequelize) {
   ClassroomMembership.associate = function(models) {
     // Define associations here
     ClassroomMembership.belongsTo(models.Classroom, { foreignKey: 'classroom_id' });
-    ClassroomMembership.belongsTo(models.User, { foreignKey: 'student_user_id', as: 'Student' });
+    // Note: student_id can be either User.id or Player.id - associations need dynamic handling
+    ClassroomMembership.belongsTo(models.User, { foreignKey: 'student_id', as: 'Student' });
     ClassroomMembership.belongsTo(models.User, { foreignKey: 'teacher_id', as: 'Teacher' });
+    // TODO: Add association for Player model when needed for Player students
   };
 
   // Instance methods for approval workflow
@@ -125,7 +129,7 @@ export default function(sequelize) {
 
   // Check if student is a Player (anonymous) or User (registered)
   ClassroomMembership.prototype.isPlayerStudent = function() {
-    return this.student_user_id && this.student_user_id.startsWith('player_');
+    return this.student_id && isPlayerId(this.student_id);
   };
 
   // Approve membership

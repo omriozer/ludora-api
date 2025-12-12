@@ -4,7 +4,7 @@ import { baseFields, baseOptions } from './baseModel.js';
 export default function(sequelize) {
   const ParentConsent = sequelize.define('ParentConsent', {
     ...baseFields,
-    student_user_id: {
+    student_id: {
       type: DataTypes.STRING,
       allowNull: false,
       unique: true,
@@ -79,7 +79,7 @@ export default function(sequelize) {
     tableName: 'parentconsent',
     indexes: [
       {
-        fields: ['student_user_id'],
+        fields: ['student_id'],
         unique: true,
         name: 'idx_parentconsent_student_unique'
       },
@@ -113,7 +113,7 @@ export default function(sequelize) {
   ParentConsent.associate = function(models) {
     // Define associations here
     ParentConsent.belongsTo(models.User, {
-      foreignKey: 'student_user_id',
+      foreignKey: 'student_id',
       as: 'Student',
       onDelete: 'CASCADE',
       onUpdate: 'CASCADE'

@@ -105,7 +105,7 @@ async function getGamesWithProducts(userId, userRole) {
         {
           model: models.User,
           as: 'creator',
-          attributes: ['id', 'full_name', 'email']
+          attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email']
         }
       ]
     });
@@ -141,7 +141,7 @@ router.get('/teacher/:code', checkStudentsAccess, requireStudentConsent, async (
         invitation_code: code,
         user_type: 'teacher'
       },
-      attributes: ['id', 'role', 'full_name', 'email']
+      attributes: ['id', 'role', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email']
     });
 
     if (!teacher) {
@@ -202,7 +202,7 @@ router.get('/', async (req, res) => {
             {
               model: models.User,
               as: 'creator',
-              attributes: ['id', 'full_name', 'email']
+              attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email']
             }
           ]
         });
@@ -270,7 +270,7 @@ router.get('/:id', async (req, res) => {
         {
           model: models.User,
           as: 'creator',
-          attributes: ['id', 'full_name', 'email']
+          attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email']
         }
       ]
     });
@@ -312,7 +312,7 @@ router.post('/', async (req, res) => {
         {
           model: models.User,
           as: 'creator',
-          attributes: ['id', 'full_name', 'email']
+          attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email']
         }
       ]
     });
@@ -370,7 +370,7 @@ router.put('/:id', async (req, res) => {
         {
           model: models.User,
           as: 'creator',
-          attributes: ['id', 'full_name', 'email']
+          attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email']
         }
       ]
     });

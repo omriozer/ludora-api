@@ -1,10 +1,10 @@
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { admin } from '../config/firebase.js';
 import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { isDev } from '../src/utils/environment.js';
 
 class AuthService {
   constructor() {
@@ -210,6 +210,9 @@ class AuthService {
         id: user.id,
         email: user.email,
         full_name: user.full_name,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        profile_image_url: user.profile_image_url,
         role: user.role,
         is_verified: user.is_verified
       }
@@ -562,6 +565,9 @@ class AuthService {
           id: user.id,
           email: user.email,
           full_name: user.full_name,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          profile_image_url: user.profile_image_url,
           role: user.role,
           is_verified: user.is_verified
         }
@@ -604,7 +610,7 @@ class AuthService {
       }
 
       // Development token support - ONLY in development environment
-      if (token.startsWith('token_') && process.env.NODE_ENV === 'development') {
+      if (token.startsWith('token_') && isDev()) {
         // Extract user ID from token (format: token_<userId>)
         const userId = token.substring(6); // Remove 'token_' prefix
 
@@ -622,7 +628,7 @@ class AuthService {
       }
 
       // Reject development tokens in non-development environments
-      if (token.startsWith('token_') && process.env.NODE_ENV !== 'development') {
+      if (token.startsWith('token_') && !isDev()) {
         throw new Error('Development tokens are not allowed in production environments');
       }
 
@@ -741,6 +747,9 @@ class AuthService {
                 id: decodedToken.uid,
                 email: decodedToken.email,
                 full_name: decodedToken.name || decodedToken.email.split('@')[0],
+                first_name: decodedToken.given_name || null,
+                last_name: decodedToken.family_name || null,
+                profile_image_url: decodedToken.picture || decodedToken.photoURL || null,
                 is_verified: decodedToken.email_verified,
                 is_active: true,
                 role: 'user',
@@ -770,6 +779,46 @@ class AuthService {
             }
           } else {
             ludlog.auth('Existing user found', { id: user?.id });
+
+            // Update existing user with latest profile information from Firebase
+            const updateData = {};
+            let needsUpdate = false;
+
+            // Update profile image if not set or if Firebase has a different one
+            if (decodedToken.picture || decodedToken.photoURL) {
+              const newImageUrl = decodedToken.picture || decodedToken.photoURL;
+              if (user.profile_image_url !== newImageUrl) {
+                updateData.profile_image_url = newImageUrl;
+                needsUpdate = true;
+              }
+            }
+
+            // Update first_name if not set or if Firebase has a different one
+            if (decodedToken.given_name && user.first_name !== decodedToken.given_name) {
+              updateData.first_name = decodedToken.given_name;
+              needsUpdate = true;
+            }
+
+            // Update last_name if not set or if Firebase has a different one
+            if (decodedToken.family_name && user.last_name !== decodedToken.family_name) {
+              updateData.last_name = decodedToken.family_name;
+              needsUpdate = true;
+            }
+
+            // Update full_name if Firebase has a more complete name
+            if (decodedToken.name && user.full_name !== decodedToken.name) {
+              updateData.full_name = decodedToken.name;
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+              updateData.updated_at = new Date();
+              await user.update(updateData);
+              ludlog.auth('Updated existing user profile from Firebase', {
+                userId: user.id,
+                updatedFields: Object.keys(updateData)
+              });
+            }
           }
 
           ludlog.auth('Building userData object', { hasUser: !!user, userId: user?.id });
@@ -777,6 +826,9 @@ class AuthService {
             id: decodedToken.uid,
             email: decodedToken.email,
             full_name: decodedToken.name || decodedToken.email.split('@')[0],
+            first_name: decodedToken.given_name || null,
+            last_name: decodedToken.family_name || null,
+            profile_image_url: decodedToken.picture || decodedToken.photoURL || null,
             role: 'user',
             is_verified: decodedToken.email_verified,
             is_active: true

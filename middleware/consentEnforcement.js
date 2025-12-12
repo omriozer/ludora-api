@@ -61,7 +61,7 @@ export const requireStudentConsent = async (req, res, next) => {
     let parentConsent;
     try {
       parentConsent = await models.ParentConsent.findOne({
-        where: { student_user_id: user.id }
+        where: { student_id: user.id }
       });
     } catch (dbError) {
       luderror.auth('Database error checking parent consent:', {

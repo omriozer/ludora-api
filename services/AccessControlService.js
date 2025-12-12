@@ -484,7 +484,7 @@ class AccessControlService {
       // Method 2: Check classroom memberships
       const memberships = await this.models.ClassroomMembership.findAll({
         where: {
-          student_user_id: studentUserId,
+          student_id: studentUserId,
           status: 'active',
           teacher_id: { [Op.not]: null }
         },

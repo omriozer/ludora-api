@@ -282,6 +282,9 @@ async function getFullProduct(product, userId = null, includeGameDetails = false
     creator: {
       id: creator.id,
       full_name: creator.full_name,
+      first_name: creator.first_name,
+      last_name: creator.last_name,
+      profile_image_url: creator.profile_image_url,
       email: creator.email,
       is_content_creator: !!creator.content_creator_agreement_sign_date
     },
@@ -430,6 +433,9 @@ router.get('/products/list', optionalAuth, async (req, res) => {
         creator: {
           id: creator.id,
           full_name: creator.full_name,
+          first_name: creator.first_name,
+          last_name: creator.last_name,
+          profile_image_url: creator.profile_image_url,
           email: creator.email,
           is_content_creator: !!creator.content_creator_agreement_sign_date
         },

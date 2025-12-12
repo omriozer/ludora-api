@@ -1,8 +1,9 @@
 // Ludora API Server - Enhanced Security Version
 import dotenv from 'dotenv';
+import { isDev, isProd, getEnv } from './src/utils/environment.js';
 
 // Load environment files with proper cascading: base .env first, then environment-specific overrides
-const env = process.env.ENVIRONMENT || 'production';
+const env = getEnv();
 
 // For cloud deployments (Heroku, etc.), .env files might not exist but environment variables are set
 // This is normal and expected behavior
@@ -17,7 +18,7 @@ if (baseResult.error) {
 }
 
 // Load environment-specific .env file (overrides) - only if not production
-if (env !== 'production') {
+if (!isProd()) {
   const envFile = `.env.${env}`;
   const envResult = dotenv.config({ path: envFile });
   if (envResult.error) {
@@ -121,13 +122,13 @@ import playersRoutes from './routes/players.js';
 import bundlesRoutes from './routes/bundles.js';
 import jobsRoutes from './routes/jobs.js';
 import curriculumLinkingRoutes from './routes/curriculum-linking.js';
-import seoRoutes from './routes/seo.js';
 import classroomsRoutes from './routes/classrooms.js';
+import studentsRoutes from './routes/students.js';
 import studentPortalSettingsRoutes from './routes/studentPortalSettings.js';
 
 // Import OpenAPI documentation (development only)
 let swaggerUi, openApiSpecs;
-if (process.env.NODE_ENV !== 'production' && process.env.ENVIRONMENT !== 'production') {
+if (!isProd()) {
   swaggerUi = await import('swagger-ui-express');
   const openApiModule = await import('./src/openapi/index.js');
   openApiSpecs = openApiModule.specs;
@@ -165,7 +166,7 @@ app.set('trust proxy', true);
 const httpServer = createServer(app);
 
 // 1. HTTPS Enforcement (must be first in production)
-if (process.env.ENVIRONMENT === 'production') {
+if (isProd()) {
   app.use(enforceHTTPS);
 }
 
@@ -185,7 +186,7 @@ app.use(rateLimitBypassDetection);
 app.use(requestIdMiddleware);
 
 // 7. Request logging
-if (process.env.ENVIRONMENT !== 'test') {
+if (getEnv() !== 'test') {
   app.use(requestLogger);
 }
 
@@ -194,7 +195,7 @@ app.use(dynamicCors);
 
 // 9. Rate limiting (global with enhanced security)
 // Temporarily disabled in development for testing
-if (process.env.ENVIRONMENT !== 'development') {
+if (!isDev()) {
   app.use(rateLimiters.general);
 }
 
@@ -281,8 +282,8 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/bundles', bundlesRoutes);
 app.use('/api/jobs', jobsRoutes);
 app.use('/api/curriculum-linking', curriculumLinkingRoutes);
-app.use('/api/seo', seoRoutes);
 app.use('/api/classrooms', classroomsRoutes);
+app.use('/api/students', studentsRoutes);
 app.use('/api/student-portal/settings', studentPortalSettingsRoutes);
 
 // Webhook Routes (separate CORS policy for external providers)
@@ -369,7 +370,6 @@ app.get('/api', (req, res) => {
       'system-templates': '/api/system-templates',
       jobs: '/api/jobs',
       'curriculum-linking': '/api/curriculum-linking',
-      seo: '/api/seo',
       classrooms: '/api/classrooms',
       'student-portal-settings': '/api/student-portal/settings'
     },

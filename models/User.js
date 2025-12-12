@@ -20,6 +20,21 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: true,
     },
+    first_name: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: 'First name from Firebase (given_name)'
+    },
+    last_name: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: 'Last name from Firebase (family_name)'
+    },
+    profile_image_url: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Google profile picture URL from Firebase authentication'
+    },
     disabled: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -179,6 +194,14 @@ export default function(sequelize) {
         fields: ['linked_teacher_id'],
         name: 'idx_user_linked_teacher'
       },
+      {
+        fields: ['first_name'],
+        name: 'idx_user_first_name'
+      },
+      {
+        fields: ['last_name'],
+        name: 'idx_user_last_name'
+      },
     ],
   });
 
@@ -188,7 +211,7 @@ export default function(sequelize) {
     User.hasMany(models.Subscription, { foreignKey: 'user_id', as: 'subscriptions' });
     User.hasMany(models.Classroom, { foreignKey: 'teacher_id' });
     User.hasMany(models.StudentInvitation, { foreignKey: 'teacher_id' });
-    User.hasMany(models.ClassroomMembership, { foreignKey: 'student_user_id' });
+    User.hasMany(models.ClassroomMembership, { foreignKey: 'student_id' });
     User.hasMany(models.RefreshToken, { foreignKey: 'user_id', as: 'refreshTokens' });
 
     // School associations
@@ -209,7 +232,7 @@ export default function(sequelize) {
 
     // Parent consent association (students can have one parent consent record)
     User.hasOne(models.ParentConsent, {
-      foreignKey: 'student_user_id',
+      foreignKey: 'student_id',
       as: 'ParentConsent',
       onDelete: 'CASCADE',
       onUpdate: 'CASCADE'

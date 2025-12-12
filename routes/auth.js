@@ -14,12 +14,162 @@ import {
   createPortalRefreshTokenConfig,
   createPortalClearCookieConfig
 } from '../utils/cookieConfig.js';
+import { isProd } from '../src/utils/environment.js';
 
 const authService = AuthService; // Use singleton instance
 import EmailService from '../services/EmailService.js';
 import SettingsService from '../services/SettingsService.js';
 import SubscriptionPermissionsService from '../services/SubscriptionPermissionsService.js';
 import { luderror, ludlog } from '../lib/ludlog.js';
+
+// =============================================
+// TEACHER CONNECTION VALIDATION HELPERS
+// =============================================
+
+/**
+ * Check if a student has an existing active classroom membership
+ * @param {string} studentId - Student user/player ID
+ * @returns {Promise<boolean>} - True if has active membership
+ */
+const checkExistingMembership = async (studentId) => {
+  if (!studentId) return false;
+
+  const membership = await models.ClassroomMembership.findOne({
+    where: {
+      student_id: studentId,
+      status: 'active'
+    }
+  });
+
+  return !!membership;
+};
+
+/**
+ * Create classroom membership if needed during login
+ * @param {string} studentId - Student user/player ID
+ * @param {string} teacherId - Teacher user ID
+ * @param {object} transaction - Optional Sequelize transaction
+ * @returns {Promise<object>} - Created or existing membership
+ */
+const createMembershipIfNeeded = async (studentId, teacherId, transaction = null) => {
+  if (!studentId || !teacherId) {
+    throw new Error('Student ID and Teacher ID are required');
+  }
+
+  try {
+    // Check if membership already exists
+    const existingMembership = await models.ClassroomMembership.findOne({
+      where: {
+        student_id: studentId,
+        teacher_id: teacherId
+      },
+      transaction
+    });
+
+    if (existingMembership) {
+      ludlog.auth('Existing membership found during login:', {
+        membershipId: existingMembership.id,
+        studentId,
+        teacherId,
+        status: existingMembership.status
+      });
+      return existingMembership;
+    }
+
+    // Validate teacher has active subscription with classroom benefits
+    const hasClassroomBenefits = await validateTeacherSubscription(teacherId);
+    if (!hasClassroomBenefits) {
+      throw new Error('Teacher does not have active subscription with classroom benefits');
+    }
+
+    // Create new membership
+    const membership = await models.ClassroomMembership.create({
+      teacher_id: teacherId,
+      student_id: studentId,
+      classroom_id: null, // General teacher connection, no specific classroom
+      status: 'active',
+      requested_at: new Date(),
+      approved_at: new Date(),
+      request_message: 'Auto-created during login flow with teacher connection',
+      approval_message: 'Automatic approval for invitation-based teacher connection'
+    }, { transaction });
+
+    ludlog.auth('New membership auto-created during login:', {
+      membershipId: membership.id,
+      studentId,
+      teacherId,
+      status: membership.status
+    });
+
+    return membership;
+  } catch (error) {
+    luderror.auth('Failed to create membership during login:', {
+      studentId,
+      teacherId,
+      error: error.message
+    });
+    throw error;
+  }
+};
+
+/**
+ * Validate teacher has active subscription with classroom benefits
+ * @param {string} teacherId - Teacher user ID
+ * @returns {Promise<boolean>} - True if has valid subscription
+ */
+const validateTeacherSubscription = async (teacherId) => {
+  try {
+    const teacher = await models.User.findByPk(teacherId);
+    if (!teacher || teacher.user_type !== 'teacher') {
+      ludlog.auth('Teacher validation failed - not found or not teacher:', {
+        teacherId,
+        found: !!teacher,
+        userType: teacher?.user_type
+      });
+      return false;
+    }
+
+    // Check for active subscription with classroom benefits
+    const activeSubscription = await models.SubscriptionHistory.findOne({
+      where: {
+        user_id: teacherId,
+        status: 'active',
+        end_date: { [models.sequelize.Op.gt]: new Date() } // Not expired
+      },
+      include: [{
+        model: models.SubscriptionPlan,
+        where: {
+          is_active: true
+        }
+      }]
+    });
+
+    if (!activeSubscription) {
+      ludlog.auth('No active subscription found for teacher:', { teacherId });
+      return false;
+    }
+
+    // Check if plan includes classroom benefits
+    const benefits = activeSubscription.SubscriptionPlan?.benefits;
+    const hasClassroomBenefits = benefits?.classroom_management?.enabled === true;
+
+    ludlog.auth('Teacher subscription validation result:', {
+      teacherId,
+      hasActiveSubscription: true,
+      hasClassroomBenefits,
+      subscriptionId: activeSubscription.id,
+      planId: activeSubscription.subscription_plan_id
+    });
+
+    return hasClassroomBenefits;
+  } catch (error) {
+    luderror.auth('Error validating teacher subscription:', {
+      teacherId,
+      error: error.message
+    });
+    return false;
+  }
+};
 
 const verifyAdminPassword = (inputPassword) => {
   if (!process.env.ADMIN_PASSWORD) {
@@ -429,6 +579,9 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         id: user.id,
         email: user.email,
         full_name: user.full_name,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        profile_image_url: user.profile_image_url,
         phone: user.phone,
         education_level: user.education_level,
         specializations: user.specializations,
@@ -548,6 +701,9 @@ router.put('/update-profile', authenticateToken, async (req, res) => {
       id: user.id,
       email: user.email,
       full_name: user.full_name,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      profile_image_url: user.profile_image_url,
       phone: user.phone,
       education_level: user.education_level,
       specializations: user.specializations,
@@ -673,10 +829,11 @@ router.post('/verify', async (req, res) => {
     ludlog.auth('[AUTH-VERIFY] Starting token verification process', {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      hasIdToken: !!req.body.idToken
+      hasIdToken: !!req.body.idToken,
+      hasTeacherId: !!req.body.teacher_id
     });
 
-    const { idToken } = req.body;
+    const { idToken, teacher_id } = req.body;
 
     if (!idToken) {
       luderror.auth('[AUTH-VERIFY] Missing idToken in request body', {
@@ -721,6 +878,74 @@ router.post('/verify', async (req, res) => {
       portal
     });
 
+    // NEW: Teacher connection validation for student portal
+    if (portal === 'student') {
+      ludlog.auth('[AUTH-VERIFY] Student portal login - checking teacher connection requirement', {
+        userId: user.id,
+        email: user.email,
+        teacherIdProvided: !!teacher_id,
+        currentUserType: user.user_type
+      });
+
+      // Check if user has existing membership or teacher_id provided
+      const hasExistingMembership = await checkExistingMembership(user.id);
+      const teacherIdProvided = !!teacher_id;
+
+      ludlog.auth('[AUTH-VERIFY] Teacher connection validation check:', {
+        userId: user.id,
+        hasExistingMembership,
+        teacherIdProvided,
+        teacherId: teacher_id
+      });
+
+      // Validation logic: Need teacher_id OR existing membership
+      if (!teacherIdProvided && !hasExistingMembership) {
+        luderror.auth('[AUTH-VERIFY] Teacher connection required - login denied', {
+          userId: user.id,
+          email: user.email,
+          hasExistingMembership,
+          teacherIdProvided,
+          portal
+        });
+
+        return res.status(403).json({
+          error: 'Teacher connection required',
+          code: 'TEACHER_CONNECTION_REQUIRED',
+          message: 'You must connect to a teacher to access the student portal. Please use an invitation code or contact your teacher.'
+        });
+      }
+
+      // Create membership if teacher_id provided and no existing membership
+      let membershipCreated = null;
+      if (teacherIdProvided && !hasExistingMembership) {
+        ludlog.auth('[AUTH-VERIFY] Creating new teacher connection during login', {
+          userId: user.id,
+          teacherId: teacher_id
+        });
+
+        try {
+          membershipCreated = await createMembershipIfNeeded(user.id, teacher_id);
+          ludlog.auth('[AUTH-VERIFY] Teacher connection created successfully during login', {
+            userId: user.id,
+            teacherId: teacher_id,
+            membershipId: membershipCreated.id
+          });
+        } catch (membershipError) {
+          luderror.auth('[AUTH-VERIFY] Failed to create teacher connection during login', {
+            userId: user.id,
+            teacherId: teacher_id,
+            error: membershipError.message
+          });
+
+          return res.status(400).json({
+            error: 'Failed to connect to teacher',
+            code: 'TEACHER_CONNECTION_FAILED',
+            message: membershipError.message
+          });
+        }
+      }
+    }
+
     // Auto-assign user_type='student' for Firebase users on student portal (if currently null)
     if (portal === 'student' && user.user_type === null) {
       ludlog.auth('[AUTH-VERIFY] Auto-assigning student user_type', {
@@ -751,18 +976,61 @@ router.post('/verify', async (req, res) => {
       // Log the auto-assignment for visibility
       luderror.auth(`[Auto-Assignment] User ${user.id} (${user.email}) assigned user_type='student' on student portal login`);
     } else {
-      ludlog.auth('[AUTH-VERIFY] Updating last login only', {
+      ludlog.auth('[AUTH-VERIFY] Updating last login and syncing Google profile data', {
         userId: user.id,
         currentUserType: user.user_type,
         portal
       });
 
       try {
-        // Update last login only (like loginWithEmailPassword does)
-        await user.update({ last_login: new Date() });
-        ludlog.auth('[AUTH-VERIFY] Last login update successful', { userId: user.id });
+        // Prepare update data - sync profile info from Google if available
+        const updateData = { last_login: new Date() };
+
+        // Sync profile data from Google token if available and different
+        if (tokenData.name && tokenData.name !== user.full_name) {
+          updateData.full_name = tokenData.name;
+          ludlog.auth('[AUTH-VERIFY] Updating full_name from Google', {
+            userId: user.id,
+            oldName: user.full_name,
+            newName: tokenData.name
+          });
+        }
+
+        if (tokenData.first_name && tokenData.first_name !== user.first_name) {
+          updateData.first_name = tokenData.first_name;
+          ludlog.auth('[AUTH-VERIFY] Updating first_name from Google', {
+            userId: user.id,
+            oldFirstName: user.first_name,
+            newFirstName: tokenData.first_name
+          });
+        }
+
+        if (tokenData.last_name && tokenData.last_name !== user.last_name) {
+          updateData.last_name = tokenData.last_name;
+          ludlog.auth('[AUTH-VERIFY] Updating last_name from Google', {
+            userId: user.id,
+            oldLastName: user.last_name,
+            newLastName: tokenData.last_name
+          });
+        }
+
+        if (tokenData.profile_image_url && tokenData.profile_image_url !== user.profile_image_url) {
+          updateData.profile_image_url = tokenData.profile_image_url;
+          ludlog.auth('[AUTH-VERIFY] Updating profile image from Google', {
+            userId: user.id,
+            oldImage: user.profile_image_url,
+            newImage: tokenData.profile_image_url
+          });
+        }
+
+        // Update user with synced data
+        await user.update(updateData);
+        ludlog.auth('[AUTH-VERIFY] User profile sync from Google completed', {
+          userId: user.id,
+          updatedFields: Object.keys(updateData)
+        });
       } catch (updateError) {
-        luderror.auth('[AUTH-VERIFY] Failed to update last login', {
+        luderror.auth('[AUTH-VERIFY] Failed to update user profile from Google', {
           userId: user.id,
           email: user.email,
           error: updateError.message,
@@ -854,11 +1122,27 @@ router.post('/verify', async (req, res) => {
     res.json({
       valid: true,
       user: {
-        id: tokenData.id,
-        email: tokenData.email,
-        full_name: tokenData.name,
-        role: tokenData.role,
-        is_verified: tokenData.email_verified
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        display_name: user.display_name,
+        profile_image_url: user.profile_image_url,
+        role: user.role,
+        user_type: user.user_type,
+        is_verified: user.is_verified,
+        phone: user.phone,
+        education_level: user.education_level,
+        specializations: user.specializations,
+        content_creator_agreement_sign_date: user.content_creator_agreement_sign_date,
+        is_active: user.is_active,
+        birth_date: user.birth_date,
+        invitation_code: user.invitation_code,
+        linked_teacher_id: user.linked_teacher_id,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        last_login: user.last_login
       }
     });
   } catch (error) {
@@ -1063,7 +1347,7 @@ router.post('/validate-admin-password', rateLimiters.auth, async (req, res) => {
     // Set token as httpOnly cookie for security (prevents XSS attacks)
     res.cookie('anonymous_admin_token', anonymousAdminToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isProd(),
       sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: '/'
@@ -1105,7 +1389,7 @@ router.get('/consent-status', authenticateToken, async (req, res) => {
 
     // Check if student has parent consent
     const parentConsent = await models.ParentConsent.findOne({
-      where: { student_user_id: user.id }
+      where: { student_id: user.id }
     });
 
     // Check if consent exists AND is active (not revoked)
@@ -1277,7 +1561,7 @@ router.post('/link-teacher',
 router.post('/revoke-consent', authenticateToken, async (req, res) => {
   try {
     const { user } = req;
-    const { student_user_id, revocation_reason, notes } = req.body;
+    const { student_id, revocation_reason, notes } = req.body;
 
     // Only admins and teachers can revoke consent
     if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
@@ -1287,9 +1571,9 @@ router.post('/revoke-consent', authenticateToken, async (req, res) => {
     }
 
     // Validate required fields
-    if (!student_user_id || !revocation_reason) {
+    if (!student_id || !revocation_reason) {
       return res.status(400).json({
-        error: 'student_user_id and revocation_reason are required'
+        error: 'student_id and revocation_reason are required'
       });
     }
 
@@ -1303,7 +1587,7 @@ router.post('/revoke-consent', authenticateToken, async (req, res) => {
 
     // Find the student
     const student = await models.User.findOne({
-      where: { id: student_user_id, user_type: 'student' }
+      where: { id: student_id, user_type: 'student' }
     });
 
     if (!student) {
@@ -1321,7 +1605,7 @@ router.post('/revoke-consent', authenticateToken, async (req, res) => {
 
     // Find active parent consent
     const parentConsent = await models.ParentConsent.findOne({
-      where: { student_user_id: student_user_id }
+      where: { student_id: student_id }
     });
 
     if (!parentConsent) {
@@ -1346,7 +1630,7 @@ router.post('/revoke-consent', authenticateToken, async (req, res) => {
     await parentConsent.revokeConsent(user.id, revocation_reason, auditData);
 
     ludlog.auth('Parent consent revoked:', {
-      studentId: student_user_id,
+      studentId: student_id,
       studentEmail: student.email,
       revokedBy: user.id,
       revokerEmail: user.email,
@@ -1381,7 +1665,7 @@ router.post('/revoke-consent', authenticateToken, async (req, res) => {
 router.post('/unlink-student', authenticateToken, async (req, res) => {
   try {
     const { user } = req;
-    const { student_user_id, auto_revoke_consent } = req.body;
+    const { student_id, auto_revoke_consent } = req.body;
 
     // Only admins and teachers can unlink students
     if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
@@ -1391,15 +1675,15 @@ router.post('/unlink-student', authenticateToken, async (req, res) => {
     }
 
     // Validate required fields
-    if (!student_user_id) {
+    if (!student_id) {
       return res.status(400).json({
-        error: 'student_user_id is required'
+        error: 'student_id is required'
       });
     }
 
     // Find the student
     const student = await models.User.findOne({
-      where: { id: student_user_id, user_type: 'student' }
+      where: { id: student_id, user_type: 'student' }
     });
 
     if (!student) {
@@ -1434,7 +1718,7 @@ router.post('/unlink-student', authenticateToken, async (req, res) => {
       // Optionally revoke parent consent when unlinking
       if (auto_revoke_consent) {
         const parentConsent = await models.ParentConsent.findOne({
-          where: { student_user_id: student_user_id }
+          where: { student_id: student_id }
         });
 
         if (parentConsent && parentConsent.isActive()) {
@@ -1450,7 +1734,7 @@ router.post('/unlink-student', authenticateToken, async (req, res) => {
       await transaction.commit();
 
       ludlog.auth('Student unlinked from teacher:', {
-        studentId: student_user_id,
+        studentId: student_id,
         studentEmail: student.email,
         previousTeacherId: previousTeacherId,
         unlinkedBy: user.id,
@@ -1478,6 +1762,157 @@ router.post('/unlink-student', authenticateToken, async (req, res) => {
     luderror.auth('Error unlinking student:', error);
     res.status(500).json({
       error: 'Failed to unlink student',
+      message: error.message
+    });
+  }
+});
+
+// POST /auth/mark-consent - Mark parent consent as accepted by teacher (teacher/admin only)
+router.post('/mark-consent', authenticateToken, async (req, res) => {
+  try {
+    const { user } = req;
+    const { student_id } = req.body;
+
+    // Only admins and teachers can mark parent consent
+    if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
+      return res.status(403).json({
+        error: 'Only admins and teachers can mark parent consent as accepted'
+      });
+    }
+
+    // Check if teacher consent verification is enabled
+    const settings = await SettingsService.getSettings();
+    const teacherConsentVerificationEnabled = settings?.teacher_consent_verification_enabled;
+
+    if (!teacherConsentVerificationEnabled) {
+      return res.status(403).json({
+        error: 'Teacher consent verification is not enabled',
+        code: 'FEATURE_DISABLED'
+      });
+    }
+
+    // Validate required fields
+    if (!student_id) {
+      return res.status(400).json({
+        error: 'student_id is required'
+      });
+    }
+
+    // Find the student
+    const student = await models.User.findOne({
+      where: { id: student_id, user_type: 'student' }
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        error: 'Student not found'
+      });
+    }
+
+    // If teacher is making the request, verify they are linked to this student
+    if (user.user_type === 'teacher' && student.linked_teacher_id !== user.id) {
+      return res.status(403).json({
+        error: 'You can only mark consent for students linked to you'
+      });
+    }
+
+    // Check if parent consent already exists
+    let parentConsent = await models.ParentConsent.findOne({
+      where: { student_id: student_id }
+    });
+
+    if (parentConsent && parentConsent.isActive()) {
+      return res.status(400).json({
+        error: 'Parent consent already exists and is active',
+        code: 'CONSENT_ALREADY_EXISTS'
+      });
+    }
+
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Prepare teacher approval data
+      const teacherApprovalData = {
+        teacher_id: user.id,
+        approved_at: new Date().toISOString(),
+        teacher_name: user.full_name,
+        approval_method: 'teacher_verification'
+      };
+
+      // Create or update parent consent record
+      if (parentConsent) {
+        // Update existing revoked consent with teacher verification
+        await parentConsent.update({
+          consent_given_at: new Date(),
+          consent_revoked_at: null,
+          revoked_by: null,
+          revocation_reason: null,
+          revocation_notes: null,
+          consent_method: 'teacher_verification',
+          teacher_approval_data: teacherApprovalData,
+          // Keep original parent fields as null for teacher verification
+          parent_email: null,
+          parent_name: null
+        }, { transaction });
+      } else {
+        // Create new parent consent record with teacher verification
+        parentConsent = await models.ParentConsent.create({
+          student_id: student_id,
+          consent_given_at: new Date(),
+          consent_method: 'teacher_verification',
+          teacher_approval_data: teacherApprovalData,
+          given_by_teacher_id: user.id,
+          // Leave parent fields null for teacher verification
+          parent_email: null,
+          parent_name: null,
+          consent_metadata: {
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            approval_timestamp: new Date().toISOString(),
+            teacher_verification: true
+          }
+        }, { transaction });
+      }
+
+      await transaction.commit();
+
+      ludlog.auth('Parent consent marked as accepted by teacher:', {
+        studentId: student_id,
+        studentEmail: student.email,
+        markedBy: user.id,
+        teacherEmail: user.email,
+        teacherName: user.full_name,
+        consentId: parentConsent.id,
+        ip: req.ip
+      });
+
+      res.json({
+        message: 'Parent consent marked as accepted successfully',
+        student: {
+          id: student.id,
+          email: student.email
+        },
+        consent: {
+          id: parentConsent.id,
+          consent_given_at: parentConsent.consent_given_at,
+          consent_method: 'teacher_verification',
+          given_by_teacher: {
+            id: user.id,
+            name: user.full_name,
+            email: user.email
+          }
+        }
+      });
+
+    } catch (updateError) {
+      await transaction.rollback();
+      throw updateError;
+    }
+
+  } catch (error) {
+    luderror.auth('Error marking parent consent:', error);
+    res.status(500).json({
+      error: 'Failed to mark parent consent as accepted',
       message: error.message
     });
   }

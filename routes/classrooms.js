@@ -6,6 +6,7 @@ import { checkStudentsAccess } from '../middleware/studentsAccessMiddleware.js';
 import models from '../models/index.js';
 import SettingsService from '../services/SettingsService.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { isPlayerId } from '../utils/studentUtils.js';
 
 const router = express.Router();
 
@@ -184,7 +185,7 @@ router.post('/discover', checkStudentsAccess, rateLimiters.auth, async (req, res
         user_type: 'teacher',
         is_active: true
       },
-      attributes: ['id', 'full_name', 'email', 'invitation_code']
+      attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email', 'invitation_code']
     });
 
     if (!teacher) {
@@ -237,12 +238,10 @@ router.post('/discover', checkStudentsAccess, rateLimiters.auth, async (req, res
       });
 
       // Check if current student has any existing membership request
-      // Note: Using student_user_id for now until migration completes
-      // TODO: Change to student_id after unified migration
       const existingMembership = await models.ClassroomMembership.findOne({
         where: {
           classroom_id: classroom.id,
-          student_user_id: studentId // Will be student_id after migration
+          student_id: studentId
         },
         attributes: ['status']
       });
@@ -278,6 +277,9 @@ router.post('/discover', checkStudentsAccess, rateLimiters.auth, async (req, res
       teacher: {
         id: teacher.id,
         full_name: teacher.full_name,
+        first_name: teacher.first_name,
+        last_name: teacher.last_name,
+        profile_image_url: teacher.profile_image_url,
         email: teacher.email,
         invitation_code: teacher.invitation_code
       },
@@ -467,7 +469,7 @@ router.post('/request-membership', checkStudentsAccess, rateLimiters.auth, async
       include: [{
         model: models.User,
         as: 'Teacher',
-        attributes: ['id', 'full_name', 'email']
+        attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email']
       }]
     });
 
@@ -492,12 +494,10 @@ router.post('/request-membership', checkStudentsAccess, rateLimiters.auth, async
     });
 
     // Check if student already has a membership in this classroom
-    // Note: Using student_user_id for now until migration completes
-    // TODO: Change to student_id after unified migration
     const existingMembership = await models.ClassroomMembership.findOne({
       where: {
         classroom_id: classroom_id,
-        student_user_id: studentId // Will be student_id after migration
+        student_id: studentId
       }
     });
 
@@ -582,11 +582,9 @@ router.post('/request-membership', checkStudentsAccess, rateLimiters.auth, async
         });
       } else {
         // Create new membership request
-        // Note: Using student_user_id for now until migration completes
-        // TODO: Change to student_id after unified migration
         membership = await models.ClassroomMembership.create({
           classroom_id: classroom_id,
-          student_user_id: studentId, // Will be student_id after migration
+          student_id: studentId,
           teacher_id: classroom.teacher_id,
           status: 'pending',
           requested_at: new Date(),
@@ -619,7 +617,7 @@ router.post('/request-membership', checkStudentsAccess, rateLimiters.auth, async
         membership: {
           id: membership.id,
           classroom_id: membership.classroom_id,
-          student_id: membership.student_user_id, // Will be student_id after migration
+          student_id: membership.student_id,
           status: membership.status,
           requested_at: membership.requested_at,
           request_message: membership.request_message,
@@ -824,7 +822,7 @@ router.post('/membership/:membershipId/approve', authenticateToken, rateLimiters
           model: models.User,
           as: 'Student',
           required: false, // Left join in case it's a player
-          attributes: ['id', 'full_name', 'email', 'user_type']
+          attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email', 'user_type']
         }
       ]
     });
@@ -846,7 +844,7 @@ router.post('/membership/:membershipId/approve', authenticateToken, rateLimiters
       teacherId: teacher.id,
       membershipId,
       classroomId: membership.classroom_id,
-      studentId: membership.student_user_id, // Will be student_id after migration
+      studentId: membership.student_id,
       currentStatus: membership.status
     });
 
@@ -892,12 +890,12 @@ router.post('/membership/:membershipId/approve', authenticateToken, rateLimiters
         entity_type: 'user'
       };
     } else {
-      // Check if it's a Player (student_user_id starts with 'player_')
-      if (membership.student_user_id.startsWith('player_')) {
+      // Check if it's a Player (student_id starts with 'player_')
+      if (isPlayerId(membership.student_id)) {
         isPlayer = true;
 
         // Fetch player information
-        const player = await models.Player.findByPk(membership.student_user_id);
+        const player = await models.Player.findByPk(membership.student_id);
 
         if (player) {
           studentInfo = {
@@ -908,7 +906,7 @@ router.post('/membership/:membershipId/approve', authenticateToken, rateLimiters
         } else {
           // Player not found, might have been deleted
           studentInfo = {
-            id: membership.student_user_id,
+            id: membership.student_id,
             display_name: membership.student_display_name || 'Unknown Student',
             entity_type: 'player'
           };
@@ -964,7 +962,7 @@ router.post('/membership/:membershipId/approve', authenticateToken, rateLimiters
         membership: {
           id: updatedMembership.id,
           classroom_id: updatedMembership.classroom_id,
-          student_id: updatedMembership.student_user_id, // Will be student_id after migration
+          student_id: updatedMembership.student_id,
           status: updatedMembership.status,
           approved_at: updatedMembership.approved_at,
           approval_message: updatedMembership.approval_message,
@@ -1189,7 +1187,7 @@ router.get('/membership/pending', authenticateToken, addETagSupport('classroom-p
           model: models.User,
           as: 'Student',
           required: false, // Left join for players
-          attributes: ['id', 'full_name', 'email', 'user_type']
+          attributes: ['id', 'full_name', 'first_name', 'last_name', 'profile_image_url', 'email', 'user_type']
         }
       ],
       order: [['requested_at', 'ASC']], // Oldest requests first
@@ -1218,8 +1216,8 @@ router.get('/membership/pending', authenticateToken, addETagSupport('classroom-p
         };
       } else {
         // Check if it's a Player
-        if (request.student_user_id.startsWith('player_')) {
-          const player = await models.Player.findByPk(request.student_user_id);
+        if (request.student_id.startsWith('player_')) {
+          const player = await models.Player.findByPk(request.student_id);
 
           if (player) {
             studentInfo = {
@@ -1231,7 +1229,7 @@ router.get('/membership/pending', authenticateToken, addETagSupport('classroom-p
           } else {
             // Player not found
             studentInfo = {
-              id: request.student_user_id,
+              id: request.student_id,
               display_name: request.student_display_name || 'Unknown Student',
               entity_type: 'player',
               email: null
@@ -1240,7 +1238,7 @@ router.get('/membership/pending', authenticateToken, addETagSupport('classroom-p
         } else {
           // Unknown student type
           studentInfo = {
-            id: request.student_user_id,
+            id: request.student_id,
             display_name: request.student_display_name || 'Unknown Student',
             entity_type: 'unknown',
             email: null
@@ -1251,7 +1249,7 @@ router.get('/membership/pending', authenticateToken, addETagSupport('classroom-p
       return {
         id: request.id,
         classroom_id: request.classroom_id,
-        student_id: request.student_user_id, // Will be student_id after migration
+        student_id: request.student_id,
         status: request.status,
         requested_at: request.requested_at,
         request_message: request.request_message,
@@ -1519,13 +1517,13 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
     // Check if user already has conflicting classroom memberships
     const existingUserMemberships = await models.ClassroomMembership.findAll({
       where: {
-        student_user_id: user.id // Will be student_id after migration
+        student_id: user.id
       }
     });
 
     const playerMemberships = await models.ClassroomMembership.findAll({
       where: {
-        student_user_id: player_id // Will be student_id after migration
+        student_id: player_id
       }
     });
 
@@ -1604,10 +1602,10 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
 
       // Migrate classroom memberships
       const membershipUpdateCount = await models.ClassroomMembership.update({
-        student_user_id: user.id // Will be student_id after migration
+        student_id: user.id
       }, {
         where: {
-          student_user_id: player_id // Will be student_id after migration
+          student_id: player_id
         },
         transaction
       });
@@ -1646,10 +1644,10 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
 
       // Migrate user sessions
       const sessionUpdateCount = await models.UserSession.update({
-        student_id: user.id // Will be student_id after migration
+        student_id: user.id
       }, {
         where: {
-          student_id: player_id // Will be student_id after migration
+          student_id: player_id
         },
         transaction
       });
