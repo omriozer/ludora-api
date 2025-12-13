@@ -11,108 +11,93 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging on player table
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 120000;'); // 2 minutes for index creation
 
-    try {
-      console.log('🔄 Adding Player table indexes...');
+    console.log('🔄 Adding Player table indexes using CONCURRENTLY...');
 
-      // Player teacher management index (for teachers viewing their players)
+    const indexes = [
+      { name: 'idx_player_teacher_active', columns: 'teacher_id, is_active', description: 'Player teacher management index' },
+      { name: 'idx_player_online', columns: 'is_online', description: 'Player online status index' },
+      { name: 'idx_player_last_seen', columns: 'last_seen', description: 'Player last seen index' },
+      { name: 'idx_player_teacher_online', columns: 'teacher_id, is_online', description: 'Teacher + online status compound index' },
+      { name: 'idx_player_display_name', columns: 'display_name', description: 'Player display name index' }
+    ];
+
+    let createdCount = 0;
+    for (const index of indexes) {
       try {
-        await queryInterface.addIndex('player', {
-          fields: ['teacher_id', 'is_active'],
-          name: 'idx_player_teacher_active'
-        }, { transaction });
-        console.log('✅ Created idx_player_teacher_active');
+        // Check if index already exists
+        const [indexExists] = await queryInterface.sequelize.query(`
+          SELECT indexname FROM pg_indexes
+          WHERE tablename = 'player'
+          AND indexname = '${index.name}'
+        `);
+
+        if (indexExists.length > 0) {
+          console.log(`⚠️ Index ${index.name} already exists, skipping`);
+          continue;
+        }
+
+        console.log(`Creating ${index.name} (${index.description})...`);
+
+        // Use CONCURRENTLY to prevent table locks
+        await queryInterface.sequelize.query(`
+          CREATE INDEX CONCURRENTLY "${index.name}" ON "player" (${index.columns});
+        `);
+
+        console.log(`✅ Created ${index.name}`);
+        createdCount++;
       } catch (error) {
-        console.log('⚠️ Index idx_player_teacher_active may already exist');
+        console.log(`⚠️ Failed to create ${index.name}:`, error.message);
+        // Continue with other indexes instead of failing completely
       }
-
-      // Player online status index (for real-time features)
-      try {
-        await queryInterface.addIndex('player', {
-          fields: ['is_online'],
-          name: 'idx_player_online'
-        }, { transaction });
-        console.log('✅ Created idx_player_online');
-      } catch (error) {
-        console.log('⚠️ Index idx_player_online may already exist');
-      }
-
-      // Player last seen index (for activity tracking)
-      try {
-        await queryInterface.addIndex('player', {
-          fields: ['last_seen'],
-          name: 'idx_player_last_seen'
-        }, { transaction });
-        console.log('✅ Created idx_player_last_seen');
-      } catch (error) {
-        console.log('⚠️ Index idx_player_last_seen may already exist');
-      }
-
-      // Teacher + online status compound index (for teacher dashboard)
-      try {
-        await queryInterface.addIndex('player', {
-          fields: ['teacher_id', 'is_online'],
-          name: 'idx_player_teacher_online'
-        }, { transaction });
-        console.log('✅ Created idx_player_teacher_online');
-      } catch (error) {
-        console.log('⚠️ Index idx_player_teacher_online may already exist');
-      }
-
-      // Player display name index (for search functionality)
-      try {
-        await queryInterface.addIndex('player', {
-          fields: ['display_name'],
-          name: 'idx_player_display_name'
-        }, { transaction });
-        console.log('✅ Created idx_player_display_name');
-      } catch (error) {
-        console.log('⚠️ Index idx_player_display_name may already exist');
-      }
-
-      console.log('✅ Player table indexes completed successfully (5 indexes)');
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ Player indexes migration failed:', error);
-      throw error;
     }
+
+    console.log(`✅ Player table indexes completed. Created ${createdCount} new indexes.`);
   },
 
   async down(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging during rollback
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
 
-    try {
-      console.log('🔄 Rolling back Player table indexes...');
+    console.log('🔄 Rolling back Player table indexes...');
 
-      const indexesToRemove = [
-        'idx_player_teacher_active',
-        'idx_player_online',
-        'idx_player_last_seen',
-        'idx_player_teacher_online',
-        'idx_player_display_name'
-      ];
+    const indexesToRemove = [
+      'idx_player_teacher_active',
+      'idx_player_online',
+      'idx_player_last_seen',
+      'idx_player_teacher_online',
+      'idx_player_display_name'
+    ];
 
-      let removedCount = 0;
-      for (const indexName of indexesToRemove) {
-        try {
-          await queryInterface.removeIndex('player', indexName, { transaction });
-          console.log(`✅ Removed index ${indexName}`);
-          removedCount++;
-        } catch (error) {
-          console.log(`⚠️ Index ${indexName} may not exist:`, error.message);
+    let removedCount = 0;
+    for (const indexName of indexesToRemove) {
+      try {
+        // Check if index exists before trying to remove it
+        const [indexExists] = await queryInterface.sequelize.query(`
+          SELECT indexname FROM pg_indexes
+          WHERE tablename = 'player'
+          AND indexname = '${indexName}'
+        `);
+
+        if (indexExists.length === 0) {
+          console.log(`⚠️ Index ${indexName} does not exist, skipping`);
+          continue;
         }
+
+        // Drop index using raw SQL for better control
+        await queryInterface.sequelize.query(`DROP INDEX IF EXISTS "${indexName}";`);
+        console.log(`✅ Removed index ${indexName}`);
+        removedCount++;
+      } catch (error) {
+        console.log(`⚠️ Failed to remove ${indexName}:`, error.message);
+        // Continue with other indexes instead of failing completely
       }
-
-      console.log(`✅ Player indexes rollback completed. Removed ${removedCount} indexes.`);
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ Player indexes rollback failed:', error);
-      throw error;
     }
+
+    console.log(`✅ Player indexes rollback completed. Removed ${removedCount} indexes.`);
   }
 };

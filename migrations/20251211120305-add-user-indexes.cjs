@@ -12,96 +12,91 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging on large user table
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 120000;'); // 2 minutes for index creation
 
-    try {
-      console.log('🔄 Adding User table indexes...');
+    console.log('🔄 Adding User table indexes using CONCURRENTLY...');
 
-      // User type index (for student/teacher filtering)
+    const indexes = [
+      { name: 'idx_user_type', column: 'user_type', description: 'User type index (for student/teacher filtering)' },
+      { name: 'idx_user_verified', column: 'is_verified', description: 'User verification status index' },
+      { name: 'idx_user_active', column: 'is_active', description: 'User active status index' },
+      { name: 'idx_user_invitation_code', column: 'invitation_code', description: 'Teacher invitation code index' }
+    ];
+
+    let createdCount = 0;
+    for (const index of indexes) {
       try {
-        await queryInterface.addIndex('user', {
-          fields: ['user_type'],
-          name: 'idx_user_type'
-        }, { transaction });
-        console.log('✅ Created idx_user_type');
+        // Check if index already exists
+        const [indexExists] = await queryInterface.sequelize.query(`
+          SELECT indexname FROM pg_indexes
+          WHERE tablename = 'user'
+          AND indexname = '${index.name}'
+        `);
+
+        if (indexExists.length > 0) {
+          console.log(`⚠️ Index ${index.name} already exists, skipping`);
+          continue;
+        }
+
+        console.log(`Creating ${index.name} (${index.description})...`);
+
+        // Use CONCURRENTLY to prevent table locks
+        await queryInterface.sequelize.query(`
+          CREATE INDEX CONCURRENTLY "${index.name}" ON "user" (${index.column});
+        `);
+
+        console.log(`✅ Created ${index.name}`);
+        createdCount++;
       } catch (error) {
-        console.log('⚠️ Index idx_user_type may already exist');
+        console.log(`⚠️ Failed to create ${index.name}:`, error.message);
+        // Continue with other indexes instead of failing completely
       }
-
-      // User verification status index
-      try {
-        await queryInterface.addIndex('user', {
-          fields: ['is_verified'],
-          name: 'idx_user_verified'
-        }, { transaction });
-        console.log('✅ Created idx_user_verified');
-      } catch (error) {
-        console.log('⚠️ Index idx_user_verified may already exist');
-      }
-
-      // User active status index
-      try {
-        await queryInterface.addIndex('user', {
-          fields: ['is_active'],
-          name: 'idx_user_active'
-        }, { transaction });
-        console.log('✅ Created idx_user_active');
-      } catch (error) {
-        console.log('⚠️ Index idx_user_active may already exist');
-      }
-
-      // Teacher invitation code index
-      try {
-        await queryInterface.addIndex('user', {
-          fields: ['invitation_code'],
-          name: 'idx_user_invitation_code'
-        }, { transaction });
-        console.log('✅ Created idx_user_invitation_code');
-      } catch (error) {
-        console.log('⚠️ Index idx_user_invitation_code may already exist');
-      }
-
-      console.log('✅ User table indexes completed successfully (4 indexes)');
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ User indexes migration failed:', error);
-      throw error;
     }
+
+    console.log(`✅ User table indexes completed. Created ${createdCount} new indexes.`);
   },
 
   async down(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging during rollback
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
 
-    try {
-      console.log('🔄 Rolling back User table indexes...');
+    console.log('🔄 Rolling back User table indexes...');
 
-      const indexesToRemove = [
-        'idx_user_type',
-        'idx_user_verified',
-        'idx_user_active',
-        'idx_user_invitation_code'
-      ];
+    const indexesToRemove = [
+      'idx_user_type',
+      'idx_user_verified',
+      'idx_user_active',
+      'idx_user_invitation_code'
+    ];
 
-      let removedCount = 0;
-      for (const indexName of indexesToRemove) {
-        try {
-          await queryInterface.removeIndex('user', indexName, { transaction });
-          console.log(`✅ Removed index ${indexName}`);
-          removedCount++;
-        } catch (error) {
-          console.log(`⚠️ Index ${indexName} may not exist:`, error.message);
+    let removedCount = 0;
+    for (const indexName of indexesToRemove) {
+      try {
+        // Check if index exists before trying to remove it
+        const [indexExists] = await queryInterface.sequelize.query(`
+          SELECT indexname FROM pg_indexes
+          WHERE tablename = 'user'
+          AND indexname = '${indexName}'
+        `);
+
+        if (indexExists.length === 0) {
+          console.log(`⚠️ Index ${indexName} does not exist, skipping`);
+          continue;
         }
+
+        // Drop index using raw SQL for better control
+        await queryInterface.sequelize.query(`DROP INDEX IF EXISTS "${indexName}";`);
+        console.log(`✅ Removed index ${indexName}`);
+        removedCount++;
+      } catch (error) {
+        console.log(`⚠️ Failed to remove ${indexName}:`, error.message);
+        // Continue with other indexes instead of failing completely
       }
-
-      console.log(`✅ User indexes rollback completed. Removed ${removedCount} indexes.`);
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ User indexes rollback failed:', error);
-      throw error;
     }
+
+    console.log(`✅ User indexes rollback completed. Removed ${removedCount} indexes.`);
   }
 };
