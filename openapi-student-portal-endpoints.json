@@ -114,7 +114,7 @@
         "student_id": {
           "type": "string",
           "example": "user_abc123",
-          "description": "Student identifier (user_id or player_id)"
+          "description": "Student identifier (user_id)"
         },
         "status": {
           "type": "string",
@@ -177,7 +177,7 @@
             },
             "entityType": {
               "type": "string",
-              "enum": ["user", "player"]
+              "enum": ["user"]
             }
           },
           "description": "Student information (when included)"
@@ -340,75 +340,6 @@
           "nullable": true,
           "example": true,
           "description": "Whether parent consent was created for user students"
-        }
-      }
-    },
-    "PlayerMigrationRequest": {
-      "type": "object",
-      "required": [
-        "player_id",
-        "user_email"
-      ],
-      "properties": {
-        "player_id": {
-          "type": "string",
-          "pattern": "^player_[A-Z0-9]{6}$",
-          "example": "player_ABC123",
-          "description": "Player ID to migrate to user account"
-        },
-        "user_email": {
-          "type": "string",
-          "format": "email",
-          "example": "student@example.com",
-          "description": "Email of existing user account"
-        },
-        "confirmation_token": {
-          "type": "string",
-          "nullable": true,
-          "example": "token_xyz789",
-          "description": "Email confirmation token (required if email verification enabled)"
-        }
-      }
-    },
-    "PlayerMigrationResponse": {
-      "type": "object",
-      "required": [
-        "success",
-        "message"
-      ],
-      "properties": {
-        "success": {
-          "type": "boolean",
-          "example": true
-        },
-        "message": {
-          "type": "string",
-          "example": "Player data successfully migrated to user account"
-        },
-        "migrated_data": {
-          "type": "object",
-          "properties": {
-            "classrooms_transferred": {
-              "type": "integer",
-              "example": 2,
-              "description": "Number of classroom memberships transferred"
-            },
-            "sessions_transferred": {
-              "type": "integer",
-              "example": 15,
-              "description": "Number of user sessions transferred"
-            },
-            "achievements_preserved": {
-              "type": "boolean",
-              "example": true,
-              "description": "Whether player achievements were preserved"
-            }
-          },
-          "description": "Summary of data migration"
-        },
-        "user": {
-          "$ref": "#/components/schemas/User",
-          "description": "Updated user account with migrated data"
         }
       }
     },
@@ -828,102 +759,6 @@
           },
           "429": {
             "description": "Rate limit exceeded",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/student-portal/migrate-player": {
-      "post": {
-        "tags": [
-          "Student Portal"
-        ],
-        "summary": "Migrate anonymous player to user account",
-        "description": "Convert anonymous player data to authenticated user account",
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/schemas/PlayerMigrationRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Player migration completed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/schemas/PlayerMigrationResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid player ID or user email",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Player migration not allowed (already migrated or email mismatch)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Player or user account not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Player already migrated to a different user account",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limit exceeded (3 attempts per day per user)",
             "content": {
               "application/json": {
                 "schema": {

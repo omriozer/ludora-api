@@ -51,62 +51,6 @@
           }
         }
       },
-      "PlayerAuthResponse": {
-        "type": "object",
-        "required": [
-          "entityType",
-          "id",
-          "privacy_code",
-          "display_name"
-        ],
-        "properties": {
-          "entityType": {
-            "type": "string",
-            "enum": [
-              "player"
-            ],
-            "example": "player"
-          },
-          "id": {
-            "type": "string",
-            "example": "player_abc123"
-          },
-          "privacy_code": {
-            "type": "string",
-            "example": "PLAY1234"
-          },
-          "display_name": {
-            "type": "string",
-            "example": "Player 123"
-          },
-          "teacher_id": {
-            "type": "string",
-            "nullable": true,
-            "example": "user_teacher456"
-          },
-          "teacher": {
-            "type": "object",
-            "nullable": true
-          },
-          "achievements": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "preferences": {
-            "type": "object"
-          },
-          "is_online": {
-            "type": "boolean",
-            "example": true
-          },
-          "sessionType": {
-            "type": "string",
-            "example": "anonymous"
-          }
-        }
-      },
       "FirebaseLoginRequest": {
         "type": "object",
         "required": [
@@ -1956,37 +1900,6 @@
           },
           "429": {
             "description": "Rate limit exceeded",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/auth/player": {
-      "post": {
-        "tags": [
-          "Authentication"
-        ],
-        "summary": "Create anonymous player session",
-        "description": "Generate anonymous player for student portal game access",
-        "responses": {
-          "201": {
-            "description": "Player session created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlayerAuthResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {

@@ -39,26 +39,24 @@ export default function(sequelize) {
           }
 
           for (const participant of value) {
-            if (!participant?.id || !participant?.display_name || !participant?.type) {
-              throw new Error('Each participant must have id, display_name, and type');
+            if (!participant?.id || !participant?.display_name || !participant?.user_id) {
+              throw new Error('Each participant must have id, display_name, and user_id');
             }
 
-            if (!['user', 'player'].includes(participant.type)) {
+            // All participants are now unified under User model
+            // type can be 'user' or 'player' for backward compatibility but both use user_id
+            if (participant.type && !['user', 'player'].includes(participant.type)) {
               throw new Error('Participant type must be "user" or "player"');
             }
 
-            // Type-specific validation
-            if (participant.type === 'user' && !participant.user_id) {
-              throw new Error('User participants must have user_id');
-            }
-
-            if (participant.type === 'player' && (!participant.player_id || !participant.privacy_code)) {
-              throw new Error('Player participants must have player_id and privacy_code');
+            // All participants require user_id in unified system
+            if (!participant.user_id) {
+              throw new Error('All participants must have user_id (unified User system)');
             }
           }
         }
       },
-      comment: 'Array of participant objects: {id, display_name, type: "user"|"player", user_id?, player_id?, privacy_code?}'
+      comment: 'Array of participant objects: {id, display_name, user_id, type?: "user"|"player"} - unified User system'
     },
     current_state: {
       type: DataTypes.JSONB,
@@ -151,18 +149,33 @@ export default function(sequelize) {
 
   GameSession.prototype.findParticipant = function(type, id) {
     return this.getParticipants().find(p => {
-      if (type === 'user') return p.type === 'user' && p.user_id === id;
-      if (type === 'player') return p.type === 'player' && p.player_id === id;
+      // Unified system: all participants use user_id regardless of type
+      if (type === 'user' || type === 'player') {
+        return p.user_id === id;
+      }
       return false;
     });
   };
 
+  // Backward compatibility method
+  GameSession.prototype.findParticipantByUserId = function(userId) {
+    return this.getParticipants().find(p => p.user_id === userId);
+  };
+
   GameSession.prototype.removeParticipantByType = function(type, id) {
     this.participants = this.getParticipants().filter(p => {
-      if (type === 'user') return !(p.type === 'user' && p.user_id === id);
-      if (type === 'player') return !(p.type === 'player' && p.player_id === id);
+      // Unified system: all participants use user_id regardless of type
+      if (type === 'user' || type === 'player') {
+        return !(p.user_id === id);
+      }
       return true;
     });
+    return this.save();
+  };
+
+  // Backward compatibility method
+  GameSession.prototype.removeParticipantByUserId = function(userId) {
+    this.participants = this.getParticipants().filter(p => p.user_id !== userId);
     return this.save();
   };
 

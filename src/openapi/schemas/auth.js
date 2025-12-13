@@ -21,24 +21,28 @@
  *           type: string
  *           example: "+972501234567"
  *
- *     PlayerAuthResponse:
+ *     StudentAuthResponse:
  *       type: object
- *       required: [entityType, id, privacy_code, display_name]
+ *       required: [entityType, id, user_type, display_name]
  *       properties:
  *         entityType:
  *           type: string
- *           enum: [player]
- *           example: "player"
+ *           enum: [user]
+ *           example: "user"
  *         id:
  *           type: string
- *           example: "player_abc123"
+ *           example: "user_abc123"
+ *         user_type:
+ *           type: string
+ *           enum: [player]
+ *           example: "player"
  *         privacy_code:
  *           type: string
- *           example: "PLAY1234"
+ *           example: "STUD1234"
  *         display_name:
  *           type: string
- *           example: "Player 123"
- *         teacher_id:
+ *           example: "Sarah"
+ *         linked_teacher_id:
  *           type: string
  *           nullable: true
  *           example: "user_teacher456"
@@ -49,14 +53,14 @@
  *           type: array
  *           items:
  *             type: string
- *         preferences:
+ *         user_settings:
  *           type: object
- *         is_online:
+ *         is_active:
  *           type: boolean
  *           example: true
  *         sessionType:
  *           type: string
- *           example: "anonymous"
+ *           example: "privacy_code"
  *
  *     FirebaseLoginRequest:
  *       type: object

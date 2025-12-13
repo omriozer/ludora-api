@@ -252,10 +252,10 @@ export default {
   '/auth/me': {
     get: {
       tags: ['Authentication'],
-      summary: 'Get current authenticated user or player information',
+      summary: 'Get current authenticated user or student information',
       description: `
         Retrieve comprehensive information about the currently authenticated entity.
-        Supports both user accounts (teachers/students) and game players.
+        Supports both user accounts (teachers/students) and game students.
 
         **User Authentication:**
         - Complete user profile data
@@ -263,10 +263,10 @@ export default {
         - Portal-specific information
         - Automatic student user type assignment for student portal
 
-        **Player Authentication:**
-        - Player session information
+        **Student Authentication:**
+        - Student session information
         - Teacher association data
-        - Game-specific player data
+        - Game-specific student data
 
         Features:
         - ETag support for efficient caching
@@ -274,10 +274,10 @@ export default {
         - Portal-aware data processing
         - Settings-cached computation for performance
       `,
-      security: [{ bearerAuth: [] }, { playerAuth: [] }],
+      security: [{ bearerAuth: [] }, { studentAuth: [] }],
       responses: {
         200: {
-          description: 'User or player information retrieved successfully',
+          description: 'User or student information retrieved successfully',
           content: {
             'application/json': {
               schema: {
@@ -309,17 +309,18 @@ export default {
                   },
                   {
                     type: 'object',
-                    description: 'Player authentication response',
+                    description: 'Student authentication response',
                     properties: {
-                      entityType: { type: 'string', example: 'player' },
+                      entityType: { type: 'string', example: 'user' },
                       id: { type: 'string' },
+                      user_type: { type: 'string', example: 'player' },
                       privacy_code: { type: 'string' },
                       display_name: { type: 'string' },
-                      teacher_id: { type: 'string', nullable: true },
+                      linked_teacher_id: { type: 'string', nullable: true },
                       teacher: { $ref: '#/components/schemas/User', nullable: true },
                       achievements: { type: 'object' },
-                      preferences: { type: 'object' },
-                      is_online: { type: 'boolean' },
+                      user_settings: { type: 'object' },
+                      is_active: { type: 'boolean' },
                       sessionType: { type: 'string' }
                     }
                   }

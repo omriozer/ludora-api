@@ -78,13 +78,11 @@ class GameSessionService {
    * Add participant to an existing session
    * @param {string} sessionId - Session ID
    * @param {Object} participantData - Participant information
-   * @param {string} participantData.user_id - User ID (for authenticated users)
-   * @param {string} participantData.player_id - Player ID (for authenticated players - NEW AUTH MODEL)
-   * @param {string} participantData.teacher_id - Teacher ID reference (NEW AUTH MODEL)
+   * @param {string} participantData.user_id - User ID (unified system - all participants are Users)
    * @param {string} participantData.guest_token - Guest token (for guest users)
    * @param {string} participantData.display_name - Display name
    * @param {string} participantData.team_assignment - Team assignment (optional)
-   * @param {string} userId - User/Player ID making the request
+   * @param {string} userId - User ID making the request
    * @param {Object|null} transaction - Optional database transaction
    * @returns {Promise<Object>} Updated session
    */
@@ -114,9 +112,8 @@ class GameSessionService {
       }
 
       // Check lobby settings
-      // NEW AUTH MODEL: Players with player_id are considered authenticated (not guests)
-      const isAuthenticatedPlayer = !!participantData.player_id;
-      if (!lobby.settings.allow_guest_users && !participantData.user_id && !isAuthenticatedPlayer) {
+      // Unified system: Only authenticated users (with user_id) or guest users allowed
+      if (!lobby.settings.allow_guest_users && !participantData.user_id) {
         throw new Error('Guest users are not allowed in this lobby');
       }
 
@@ -127,9 +124,8 @@ class GameSessionService {
       }
 
       // Check if participant already exists
-      // NEW AUTH MODEL: Check by player_id first, then user_id, then guest_token
+      // Unified system: Check by user_id or guest_token
       const existingParticipant = currentParticipants.find(p =>
-        (participantData.player_id && p.player_id === participantData.player_id) ||
         (p.user_id && p.user_id === participantData.user_id) ||
         (p.guest_token && p.guest_token === participantData.guest_token)
       );
@@ -138,17 +134,13 @@ class GameSessionService {
         throw new Error('Participant already in session');
       }
 
-      // Format new participant
-      // NEW AUTH MODEL: Include player_id and teacher_id
+      // Format new participant (unified User system)
       const newParticipant = {
         id: `part_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        player_id: participantData.player_id || null, // NEW: Reference to Player entity
         user_id: participantData.user_id || null,
-        teacher_id: participantData.teacher_id || null, // NEW: Teacher reference from player
         guest_token: participantData.guest_token || null,
         display_name: participantData.display_name,
-        isAuthedUser: !!participantData.user_id,
-        isAuthedPlayer: !!participantData.player_id, // NEW: Flag for authenticated players
+        type: participantData.user_id ? 'user' : 'guest', // For backward compatibility
         team_assignment: participantData.team_assignment || null,
         joined_at: new Date().toISOString(),
         is_online: true
@@ -509,9 +501,8 @@ class GameSessionService {
       }
 
       // Check if guest users are allowed
-      // NEW AUTH MODEL: Players with player_id are considered authenticated (not guests)
-      const isAuthenticatedPlayer = !!participant.player_id;
-      if (!participant.user_id && !isAuthenticatedPlayer && !lobbySettings.allow_guest_users) {
+      // Unified system: Only authenticated users (with user_id) or guest users allowed
+      if (!participant.user_id && !lobbySettings.allow_guest_users) {
         throw new Error('Guest users are not allowed in this lobby');
       }
 
@@ -520,16 +511,13 @@ class GameSessionService {
         throw new Error(`Cannot exceed maximum of ${lobbySettings.max_players} players`);
       }
 
-      // NEW AUTH MODEL: Include player_id and teacher_id in formatted participant
+      // Unified User system: All participants use user_id
       const formattedParticipant = {
         id: `part_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        player_id: participant.player_id || null, // NEW: Reference to Player entity
         user_id: participant.user_id || null,
-        teacher_id: participant.teacher_id || null, // NEW: Teacher reference from player
         guest_token: participant.guest_token || null,
         display_name: participant.display_name,
-        isAuthedUser: !!participant.user_id,
-        isAuthedPlayer: !!participant.player_id, // NEW: Flag for authenticated players
+        type: participant.user_id ? 'user' : 'guest', // For backward compatibility
         team_assignment: participant.team_assignment || null,
         joined_at: new Date().toISOString(),
         is_online: true

@@ -10,21 +10,12 @@ export default function(sequelize) {
     },
     user_id: {
       type: DataTypes.STRING,
-      allowNull: true, // Now nullable to support player sessions
+      allowNull: false, // Required for unified User system
       references: {
         model: 'user',
         key: 'id'
       },
-      comment: 'ID of the user this session belongs to (null for player sessions)'
-    },
-    player_id: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      references: {
-        model: 'player',
-        key: 'id'
-      },
-      comment: 'ID of the player this session belongs to (null for user sessions)'
+      comment: 'ID of the user this session belongs to (unified system for all user types)'
     },
     expires_at: {
       type: DataTypes.DATE,
@@ -107,10 +98,6 @@ export default function(sequelize) {
         name: 'idx_user_session_portal_user'
       },
       {
-        fields: ['portal', 'player_id'],
-        name: 'idx_user_session_portal_player'
-      },
-      {
         fields: ['portal', 'is_active'],
         name: 'idx_user_session_portal_active'
       }
@@ -118,18 +105,10 @@ export default function(sequelize) {
   });
 
   UserSession.associate = function(models) {
-    // Each session can belong to a user (nullable)
+    // Each session belongs to a user (required for unified system)
     UserSession.belongsTo(models.User, {
       foreignKey: 'user_id',
-      as: 'user',
-      onDelete: 'CASCADE',
-      onUpdate: 'CASCADE'
-    });
-
-    // Each session can belong to a player (nullable)
-    UserSession.belongsTo(models.Player, {
-      foreignKey: 'player_id',
-      as: 'player',
+      as: 'User',
       onDelete: 'CASCADE',
       onUpdate: 'CASCADE'
     });
@@ -137,10 +116,8 @@ export default function(sequelize) {
     // A user can have multiple sessions
     models.User.hasMany(UserSession, {
       foreignKey: 'user_id',
-      as: 'sessions'
+      as: 'UserSessions'
     });
-
-    // A player can have multiple sessions (defined in Player model)
   };
 
   // Instance methods
@@ -197,36 +174,14 @@ export default function(sequelize) {
     return values;
   };
 
-  // Check if this is a user session
-  UserSession.prototype.isUserSession = function() {
-    return this.user_id !== null && this.player_id === null;
+  // Get the user ID (unified system)
+  UserSession.prototype.getUserId = function() {
+    return this.user_id;
   };
 
-  // Check if this is a player session
-  UserSession.prototype.isPlayerSession = function() {
-    return this.player_id !== null && this.user_id === null;
-  };
-
-  // Get session type
-  UserSession.prototype.getSessionType = function() {
-    if (this.isUserSession()) return 'user';
-    if (this.isPlayerSession()) return 'player';
-    return 'unknown';
-  };
-
-  // Get the entity ID (user_id or player_id)
-  UserSession.prototype.getEntityId = function() {
-    return this.user_id || this.player_id;
-  };
-
-  // Get session entity with associations
-  UserSession.prototype.getEntity = async function() {
-    if (this.isUserSession()) {
-      return await this.getUser();
-    } else if (this.isPlayerSession()) {
-      return await this.getPlayer();
-    }
-    return null;
+  // Get session entity (always a User in unified system)
+  UserSession.prototype.getUser = async function() {
+    return await this.User || await this.constructor.sequelize.models.User.findByPk(this.user_id);
   };
 
   // Class methods
@@ -241,7 +196,7 @@ export default function(sequelize) {
   };
 
   // Find all active sessions for a user
-  UserSession.findUserActiveSessions = async function(userId) {
+  UserSession.findActiveSessions = async function(userId) {
     const now = new Date();
     return await this.findAll({
       where: {
@@ -253,6 +208,9 @@ export default function(sequelize) {
       order: [['last_accessed_at', 'DESC']]
     });
   };
+
+  // Backward compatibility alias
+  UserSession.findUserActiveSessions = UserSession.findActiveSessions;
 
   // Cleanup expired sessions with grace period for recently accessed sessions
   UserSession.cleanupExpired = async function() {
@@ -274,7 +232,7 @@ export default function(sequelize) {
   };
 
   // Invalidate all sessions for a user
-  UserSession.invalidateUserSessions = async function(userId, exceptSessionId = null) {
+  UserSession.invalidateSessions = async function(userId, exceptSessionId = null) {
     const where = {
       user_id: userId,
       is_active: true,
@@ -297,50 +255,15 @@ export default function(sequelize) {
     return updatedCount;
   };
 
-  // Find all active sessions for a player
-  UserSession.findPlayerActiveSessions = async function(playerId) {
-    const now = new Date();
-    return await this.findAll({
-      where: {
-        player_id: playerId,
-        is_active: true,
-        expires_at: { [Op.gt]: now },
-        invalidated_at: null
-      },
-      order: [['last_accessed_at', 'DESC']]
-    });
-  };
+  // Backward compatibility alias
+  UserSession.invalidateUserSessions = UserSession.invalidateSessions;
 
-  // Invalidate all sessions for a player
-  UserSession.invalidatePlayerSessions = async function(playerId, exceptSessionId = null) {
-    const where = {
-      player_id: playerId,
-      is_active: true,
-      invalidated_at: null
-    };
 
-    if (exceptSessionId) {
-      where.id = { [Op.ne]: exceptSessionId };
-    }
-
-    const [updatedCount] = await this.update(
-      {
-        is_active: false,
-        invalidated_at: new Date(),
-        updated_at: new Date()
-      },
-      { where }
-    );
-
-    return updatedCount;
-  };
-
-  // Create user session
-  UserSession.createUserSession = async function(sessionId, userId, expiresAt, metadata = {}, portal = 'teacher') {
+  // Create session (unified for all user types)
+  UserSession.createSession = async function(sessionId, userId, expiresAt, metadata = {}, portal = 'teacher') {
     return await this.create({
       id: sessionId,
       user_id: userId,
-      player_id: null,
       portal: portal,
       expires_at: expiresAt,
       metadata: metadata,
@@ -351,21 +274,9 @@ export default function(sequelize) {
     });
   };
 
-  // Create player session
-  UserSession.createPlayerSession = async function(sessionId, playerId, expiresAt, metadata = {}, portal = 'student') {
-    return await this.create({
-      id: sessionId,
-      user_id: null,
-      player_id: playerId,
-      portal: portal,
-      expires_at: expiresAt,
-      metadata: metadata,
-      is_active: true,
-      last_accessed_at: new Date(),
-      created_at: new Date(),
-      updated_at: new Date()
-    });
-  };
+  // Backward compatibility alias
+  UserSession.createUserSession = UserSession.createSession;
+
 
   // Deployment-safe session extension - called during server startup
   // ✅ FIX: Extended ALL active sessions to prevent deployment logouts
@@ -416,20 +327,8 @@ export default function(sequelize) {
     });
   };
 
-  // Find active sessions for a player in a specific portal
-  UserSession.findPlayerActiveSessionsByPortal = async function(playerId, portal) {
-    const now = new Date();
-    return await this.findAll({
-      where: {
-        player_id: playerId,
-        portal: portal,
-        is_active: true,
-        expires_at: { [Op.gt]: now },
-        invalidated_at: null
-      },
-      order: [['last_accessed_at', 'DESC']]
-    });
-  };
+  // REMOVED: findPlayerActiveSessionsByPortal - use findUserActiveSessionsByPortal instead
+  // Players are now users with user_type: 'player'
 
   // Invalidate all sessions for a user in a specific portal
   UserSession.invalidateUserSessionsByPortal = async function(userId, portal, exceptSessionId = null) {
@@ -480,32 +379,27 @@ export default function(sequelize) {
     return this.getPortal() === portal;
   };
 
-  // Find session with entity (user or player) included
+  // Find session with user included (unified system)
   UserSession.findSessionWithEntity = async function(sessionId) {
     return await this.findByPk(sessionId, {
       include: [
-        { model: sequelize.models.User, as: 'user' },
-        { model: sequelize.models.Player, as: 'player' }
+        { model: sequelize.models.User, as: 'User' }
       ]
     });
   };
 
-  // Find active sessions for entity (user or player)
+  // Find active sessions for entity (unified User system)
   UserSession.findEntityActiveSessions = async function(entityType, entityId) {
-    if (entityType === 'user') {
-      return await this.findUserActiveSessions(entityId);
-    } else if (entityType === 'player') {
-      return await this.findPlayerActiveSessions(entityId);
+    if (entityType === 'user' || entityType === 'player') {
+      return await this.findActiveSessions(entityId);
     }
     return [];
   };
 
-  // Invalidate all sessions for entity (user or player)
+  // Invalidate all sessions for entity (unified User system)
   UserSession.invalidateEntitySessions = async function(entityType, entityId, exceptSessionId = null) {
-    if (entityType === 'user') {
-      return await this.invalidateUserSessions(entityId, exceptSessionId);
-    } else if (entityType === 'player') {
-      return await this.invalidatePlayerSessions(entityId, exceptSessionId);
+    if (entityType === 'user' || entityType === 'player') {
+      return await this.invalidateSessions(entityId, exceptSessionId);
     }
     return 0;
   };

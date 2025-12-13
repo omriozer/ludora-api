@@ -118,7 +118,6 @@ import svgSlidesRoutes from './routes/svgSlides.js';
 import systemTemplatesRoutes from './routes/system-templates.js';
 import eduContentRoutes from './routes/eduContent.js';
 import settingsRoutes from './routes/settings.js';
-import playersRoutes from './routes/players.js';
 import bundlesRoutes from './routes/bundles.js';
 import jobsRoutes from './routes/jobs.js';
 import curriculumLinkingRoutes from './routes/curriculum-linking.js';
@@ -136,13 +135,12 @@ if (!isProd()) {
 
 // Import services and utilities for Socket.IO authentication
 import AuthService from './services/AuthService.js';
-import PlayerService from './services/PlayerService.js';
 import SettingsService from './services/SettingsService.js';
 import { getPortalCookieNames } from './utils/cookieConfig.js';
+import models from './models/index.js';
 
 // Initialize services for Socket.IO authentication
 const socketAuthService = AuthService; // Use singleton instance
-const socketPlayerService = new PlayerService();
 
 // Socket.IO Portal Authentication Constants
 const SOCKET_PORTAL_TYPES = {
@@ -254,7 +252,6 @@ app.use('/api/dashboard', hebrewContentCompressionMiddleware);
 // REMOVED: All Israeli dashboard endpoints - middleware deleted
 
 app.use('/api/auth', authRoutes);
-app.use('/api/players', playersRoutes);
 app.use('/api/entities', entityRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/functions', functionRoutes);
@@ -348,7 +345,6 @@ app.get('/api', (req, res) => {
     timestamp: new Date().toISOString(),
     endpoints: {
       auth: '/api/auth',
-      players: '/api/players',
       entities: '/api/entities',
       products: '/api/products',
       functions: '/api/functions',
@@ -371,6 +367,7 @@ app.get('/api', (req, res) => {
       jobs: '/api/jobs',
       'curriculum-linking': '/api/curriculum-linking',
       classrooms: '/api/classrooms',
+      students: '/api/students',
       'student-portal-settings': '/api/student-portal/settings'
     },
     documentation: process.env.API_DOCS_URL || 'No documentation URL configured'
@@ -522,40 +519,46 @@ async function authenticateSocketWithFirebase(socket, portalType) {
 }
 
 /**
- * Attempt to authenticate socket using player tokens (NEW SYSTEM)
+ * Attempt to authenticate socket using student tokens (Unified User System)
  * @param {Object} socket - Socket.IO socket object
- * @returns {Promise<Object|null>} Player data or null if not authenticated
+ * @returns {Promise<Object|null>} Student user data or null if not authenticated
  */
-async function authenticateSocketWithPlayerTokens(socket) {
+async function authenticateSocketWithStudentTokens(socket) {
   try {
     // Parse cookies from handshake headers
     const cookieHeader = socket.handshake.headers.cookie || '';
     const cookies = cookie.parse(cookieHeader);
-    const playerAccessToken = cookies.student_access_token;
-    const playerRefreshToken = cookies.student_refresh_token;
+    const studentAccessToken = cookies.student_access_token;
+    const studentRefreshToken = cookies.student_refresh_token;
 
     // Try access token first
-    if (playerAccessToken) {
+    if (studentAccessToken) {
       try {
-        const tokenData = await socketAuthService.verifyToken(playerAccessToken);
+        const tokenData = await socketAuthService.verifyToken(studentAccessToken);
 
-        if (tokenData.type === 'player') {
-          // Get full player data
-          const player = await socketPlayerService.getPlayer(tokenData.id, true);
-          if (player) {
-            return {
-              player: {
-                id: player.id,
-                display_name: player.display_name,
-                teacher_id: player.teacher_id,
-                teacher: player.teacher,
-                achievements: player.achievements,
-                preferences: player.preferences,
-                is_online: player.is_online
-              },
-              sessionType: 'player_token'
-            };
+        // Get full student user data using unified User system
+        const studentUser = await models.User.findOne({
+          where: {
+            id: tokenData.id,
+            user_type: 'player',
+            is_active: true
           }
+        });
+
+        if (studentUser) {
+          return {
+            user: {
+              id: studentUser.id,
+              display_name: studentUser.first_name || studentUser.full_name,
+              user_type: studentUser.user_type,
+              linked_teacher_id: studentUser.linked_teacher_id,
+              teacher: studentUser.LinkedTeacher,
+              achievements: studentUser.getAchievements(),
+              preferences: studentUser.user_settings,
+              is_active: studentUser.is_active
+            },
+            sessionType: 'student_token'
+          };
         }
       } catch (tokenError) {
         // Access token invalid, try refresh token
@@ -563,30 +566,36 @@ async function authenticateSocketWithPlayerTokens(socket) {
     }
 
     // Try refresh token if access token failed
-    if (playerRefreshToken) {
+    if (studentRefreshToken) {
       try {
         const jwt = await import('jsonwebtoken');
-        const refreshPayload = jwt.default.verify(playerRefreshToken, process.env.JWT_SECRET);
+        const refreshPayload = jwt.default.verify(studentRefreshToken, process.env.JWT_SECRET);
 
-        if (refreshPayload.type === 'player') {
-          const player = await socketPlayerService.getPlayer(refreshPayload.id, true);
-          if (player) {
-            return {
-              player: {
-                id: player.id,
-                display_name: player.display_name,
-                teacher_id: player.teacher_id,
-                teacher: player.teacher,
-                achievements: player.achievements,
-                preferences: player.preferences,
-                is_online: player.is_online
-              },
-              sessionType: 'player_token'
-            };
+        const studentUser = await models.User.findOne({
+          where: {
+            id: refreshPayload.id,
+            user_type: 'player',
+            is_active: true
           }
+        });
+
+        if (studentUser) {
+          return {
+            user: {
+              id: studentUser.id,
+              display_name: studentUser.first_name || studentUser.full_name,
+              user_type: studentUser.user_type,
+              linked_teacher_id: studentUser.linked_teacher_id,
+              teacher: studentUser.LinkedTeacher,
+              achievements: studentUser.getAchievements(),
+              preferences: studentUser.user_settings,
+              is_active: studentUser.is_active
+            },
+            sessionType: 'student_token'
+          };
         }
       } catch (refreshError) {
-        // Player refresh token authentication failed
+        // Student refresh token authentication failed
       }
     }
 
@@ -627,7 +636,7 @@ io.use(async (socket, next) => {
     socket.portalContext = portalContext;
     socket.isAuthenticated = false;
     socket.user = null;
-    socket.player = null;
+    socket.studentUser = null;
 
     // Validate based on credential policy
     const { credentialPolicy, portalType, studentsAccessMode: _studentsAccessMode } = portalContext;
@@ -646,14 +655,14 @@ io.use(async (socket, next) => {
           break;
         }
 
-        // For student portal, also try player token authentication (aligned with HTTP auth)
+        // For student portal, also try student token authentication (aligned with HTTP auth)
         // This aligns WebSocket auth with authenticateUserOrPlayer middleware behavior
         if (portalType === SOCKET_PORTAL_TYPES.STUDENT) {
-          const playerData = await authenticateSocketWithPlayerTokens(socket);
+          const studentData = await authenticateSocketWithStudentTokens(socket);
 
-          if (playerData) {
+          if (studentData) {
             Object.assign(socket, {
-              player: playerData,
+              studentUser: studentData,
               authMethod: 'student_access_token',
               isAuthenticated: true
             });
@@ -672,12 +681,12 @@ io.use(async (socket, next) => {
           return next(new Error('Teacher portal requires authentication'));
         }
 
-        // For student portal, allow anonymous but check for optional player tokens
-        const playerData = await authenticateSocketWithPlayerTokens(socket);
+        // For student portal, allow anonymous but check for optional student tokens
+        const studentData = await authenticateSocketWithStudentTokens(socket);
 
-        if (playerData) {
+        if (studentData) {
           Object.assign(socket, {
-            player: playerData,
+            studentUser: studentData,
             authMethod: 'student_access_token',
             isAuthenticated: false
           });
@@ -701,12 +710,12 @@ io.use(async (socket, next) => {
             authMethod: 'firebase'
           });
         } else {
-          // Try player tokens
-          const playerData = await authenticateSocketWithPlayerTokens(socket);
+          // Try student tokens
+          const studentData = await authenticateSocketWithStudentTokens(socket);
 
-          if (playerData) {
+          if (studentData) {
             Object.assign(socket, {
-              player: playerData,
+              studentUser: studentData,
               authMethod: 'student_access_token',
               isAuthenticated: true
             });

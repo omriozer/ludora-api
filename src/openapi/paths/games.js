@@ -111,7 +111,7 @@ export default {
   '/games': {
     get: {
       tags: ['Games'],
-      summary: 'Get games for authenticated user or player',
+      summary: 'Get games for authenticated user or student',
       description: `
         Get games based on the authenticated entity type:
 
@@ -128,11 +128,11 @@ export default {
         - Product ownership integration
         - Complete game data with creator information
         - Lobby information for active game sessions
-        - Dual authentication support (users and players)
+        - Dual authentication support (users and students)
 
         Returns games sorted by creation date (newest first).
       `,
-      security: [{ bearerAuth: [] }, { playerAuth: [] }],
+      security: [{ bearerAuth: [] }, { studentAuth: [] }],
       responses: {
         200: {
           description: 'Games retrieved successfully',
@@ -181,7 +181,7 @@ export default {
       summary: 'Create new game',
       description: `
         **TEACHER ONLY**: Create a new game using the ProductServiceRouter.
-        Only authenticated users (teachers) can create games, not players.
+        Only authenticated users (teachers) can create games, not students.
 
         Features:
         - Automatic Product record creation for ownership tracking
@@ -268,7 +268,7 @@ export default {
         },
         401: { $ref: '#/components/responses/UnauthorizedError' },
         403: {
-          description: 'Access denied - players cannot create games',
+          description: 'Access denied - students cannot create games',
           content: {
             'application/json': {
               schema: {
@@ -294,14 +294,14 @@ export default {
 
         **Access Control:**
         - **Users (Teachers)**: Must own the game via Product ownership or be admin
-        - **Players (Students)**: Can access any game (no ownership restrictions)
+        - **Students**: Can access any game (no ownership restrictions)
 
         Returns:
         - Complete game entity data
         - Associated product information (if exists)
         - Creator information for attribution
       `,
-      security: [{ bearerAuth: [] }, { playerAuth: [] }],
+      security: [{ bearerAuth: [] }, { studentAuth: [] }],
       parameters: [
         {
           name: 'id',
@@ -576,7 +576,7 @@ export default {
 
         Returns comprehensive content data for game content management.
       `,
-      security: [{ bearerAuth: [] }, { playerAuth: [] }],
+      security: [{ bearerAuth: [] }, { studentAuth: [] }],
       parameters: [
         {
           name: 'gameId',
@@ -1003,7 +1003,7 @@ export default {
         - Game analysis and optimization
         - Educational effectiveness tracking
       `,
-      security: [{ bearerAuth: [] }, { playerAuth: [] }],
+      security: [{ bearerAuth: [] }, { studentAuth: [] }],
       parameters: [
         {
           name: 'gameId',

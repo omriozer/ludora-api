@@ -466,19 +466,20 @@ class AccessControlService {
     try {
       const teacherIds = new Set();
 
-      // Method 1: Check if student is a Player with teacher_id
-      const playerRecord = await this.models.Player.findOne({
+      // Method 1: Check if student user has a linked teacher (Unified User System)
+      const studentUser = await this.models.User.findOne({
         where: {
-          user_id: studentUserId,
+          id: studentUserId,
+          user_type: 'player',
           is_active: true,
-          teacher_id: { [Op.not]: null }
+          linked_teacher_id: { [Op.not]: null }
         },
-        attributes: ['teacher_id']
+        attributes: ['linked_teacher_id']
       });
 
-      if (playerRecord?.teacher_id) {
-        teacherIds.add(playerRecord.teacher_id);
-        ludlog.auth(`📋 Found teacher via Player relationship: ${playerRecord.teacher_id}`);
+      if (studentUser?.linked_teacher_id) {
+        teacherIds.add(studentUser.linked_teacher_id);
+        ludlog.auth(`📋 Found teacher via User linked_teacher_id: ${studentUser.linked_teacher_id}`);
       }
 
       // Method 2: Check classroom memberships

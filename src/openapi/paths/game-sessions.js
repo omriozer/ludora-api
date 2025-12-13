@@ -410,7 +410,7 @@ export default {
                 },
                 player_id: {
                   type: 'string',
-                  description: 'Authenticated player ID for student players',
+                  description: 'Authenticated student user ID',
                   nullable: true,
                   example: 'player_456def'
                 },
@@ -651,7 +651,7 @@ export default {
                 },
                 player_id: {
                   type: 'string',
-                  description: 'Student player ID (if using player system)',
+                  description: 'Student user ID (if authenticated)',
                   nullable: true
                 },
                 team_assignment: {

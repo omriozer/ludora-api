@@ -406,19 +406,17 @@ router.post('/logout', async (req, res) => {
  * @openapi
  * /api/auth/me:
  *   get:
- *     summary: Get current authenticated user or player information
+ *     summary: Get current authenticated user information
  *     tags: [Authentication]
  *     security:
  *       - cookieAuth: []
  *     responses:
  *       200:
- *         description: User or player information retrieved successfully
+ *         description: User information retrieved successfully
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/User'
- *                 - $ref: '#/components/schemas/PlayerAuthResponse'
+ *               $ref: '#/components/schemas/User'
  *       500:
  *         description: Failed to fetch authentication information
  *         content:
@@ -426,22 +424,22 @@ router.post('/logout', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-// Get current user or player info (unified endpoint)
+// Get current user info (unified endpoint for all user types)
 router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (req, res) => {
   try {
-    ludlog.auth('[AUTH-ME] Starting user/player info fetch', {
+    ludlog.auth('[AUTH-ME] Starting user info fetch', {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
       entityType: req.entityType,
-      hasUser: !!req.user,
-      hasPlayer: !!req.player
+      hasUser: !!req.user
     });
 
-    // Check if authenticated as user or player
+    // Unified system: all authenticated entities are users
     if (req.entityType === 'user' && req.user) {
       ludlog.auth('[AUTH-ME] Processing user authentication', {
         userId: req.user.id,
-        email: req.user.email
+        email: req.user.email,
+        userType: req.user.user_type || 'unknown'
       });
 
       // Return user data
@@ -564,18 +562,27 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         // Continue without permissions - don't block user data fetch
       }
 
+      // For students (users with user_type='player'), include privacy code and teacher info
+      let privacyCode = null;
+      let achievements = null;
+      if (user.user_type === 'player') {
+        privacyCode = user.getPrivacyCode();
+        achievements = user.getAchievements();
+      }
+
       ludlog.auth('[AUTH-ME] User data fetch completed successfully', {
         userId: user.id,
         email: user.email,
         portal,
         userType: user.user_type,
         onboardingCompleted,
-        hasSubscriptionPermissions: !!subscriptionPermissions
+        hasSubscriptionPermissions: !!subscriptionPermissions,
+        isStudent: user.user_type === 'player'
       });
 
-      // Return clean user data - all from database except computed fields
+      // Return unified user data - works for all user types including students
       return res.json({
-        entityType: 'user',
+        entityType: 'user', // Unified: all authenticated entities are users
         id: user.id,
         email: user.email,
         full_name: user.full_name,
@@ -597,35 +604,17 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
         created_at: user.created_at,
         updated_at: user.updated_at,
         last_login: user.last_login,
+        // Unified: Include student-specific fields for users with user_type='player'
+        privacy_code: privacyCode,
+        achievements: achievements,
         // NEW: Explicit subscription permissions from backend
         subscription_permissions: subscriptionPermissions
-      });
-    } else if (req.entityType === 'player' && req.player) {
-      ludlog.auth('[AUTH-ME] Processing player authentication', {
-        playerId: req.player.id,
-        privacyCode: req.player.privacy_code,
-        teacherId: req.player.teacher_id
-      });
-
-      // Return player data
-      return res.json({
-        entityType: 'player',
-        id: req.player.id,
-        privacy_code: req.player.privacy_code,
-        display_name: req.player.display_name,
-        teacher_id: req.player.teacher_id,
-        teacher: req.player.teacher,
-        achievements: req.player.achievements,
-        preferences: req.player.preferences,
-        is_online: req.player.is_online,
-        sessionType: req.player.sessionType
       });
     } else {
       luderror.auth('[AUTH-ME] No valid authentication found', {
         ip: req.ip,
         entityType: req.entityType,
         hasUser: !!req.user,
-        hasPlayer: !!req.player,
         cookies: Object.keys(req.cookies),
         userAgent: req.get('User-Agent')
       });
@@ -637,7 +626,6 @@ router.get('/me', authenticateUserOrPlayer, addETagSupport('auth-me'), async (re
       userAgent: req.get('User-Agent'),
       entityType: req.entityType,
       hasUser: !!req.user,
-      hasPlayer: !!req.player,
       error: error.message,
       stack: error.stack,
       portal: detectPortal(req)

@@ -1,55 +1,56 @@
 import models from '../models/index.js';
 
 /**
- * Student utility functions for handling unified Player/User system
- * Players are anonymous students with privacy codes
- * Users are authenticated students with Firebase/Google accounts
- * Both are functionally equivalent but use different authentication methods
+ * Student utility functions for unified User system
+ * All students are now Users with user_type: 'player'
+ * This maintains backward compatibility while using the unified system
  */
 
 /**
- * Check if an ID belongs to a Player (anonymous student)
- * Player IDs always start with "player_"
+ * Check if an ID belongs to a Player (legacy function for compatibility)
+ * In the unified system, this is determined by user_type, not ID format
  * @param {string} id - The ID to check
- * @returns {boolean} True if the ID is for a Player
+ * @returns {boolean} Always returns false in unified system (kept for compatibility)
  */
 export function isPlayerId(id) {
-  if (!id || typeof id !== 'string') {
-    return false;
-  }
-  return id.startsWith('player_');
+  // In unified system, we don't distinguish by ID format
+  // All students are users with user_type: 'player'
+  return false;
 }
 
 /**
- * Get the student entity (Player or User) by ID
- * Automatically detects the type based on ID format and queries appropriate model
+ * Get the student entity by ID
+ * In unified system, all students are Users with user_type: 'player'
  * @param {string} studentId - The student ID to look up
  * @param {Object} options - Sequelize query options (transaction, include, etc.)
- * @returns {Promise<Object|null>} The Player or User entity, or null if not found
+ * @returns {Promise<Object|null>} The User entity, or null if not found
  */
 export async function getStudentById(studentId, options = {}) {
   if (!studentId) {
     return null;
   }
 
-  if (isPlayerId(studentId)) {
-    return await models.Player.findByPk(studentId, options);
-  } else {
-    return await models.User.findByPk(studentId, options);
-  }
+  return await models.User.findOne({
+    where: {
+      id: studentId,
+      user_type: 'player'
+    },
+    ...options
+  });
 }
 
 /**
- * Get the student entity type based on ID
+ * Get the student entity type (legacy function for compatibility)
+ * In unified system, all students are 'player' type users
  * @param {string} studentId - The student ID to analyze
- * @returns {string} 'player' or 'user'
+ * @returns {string} Always returns 'player' in unified system
  */
 export function getStudentEntityType(studentId) {
-  return isPlayerId(studentId) ? 'player' : 'user';
+  return 'player';
 }
 
 /**
- * Get display name for any student (Player or User)
+ * Get display name for any student
  * @param {string} studentId - The student ID
  * @returns {Promise<string|null>} Display name or null if not found
  */
@@ -59,7 +60,7 @@ export async function getStudentDisplayName(studentId, options = {}) {
     return null;
   }
 
-  return student.display_name || student.name || student.email?.split('@')[0] || 'Student';
+  return student.first_name || student.full_name || student.email?.split('@')[0] || 'Student';
 }
 
 /**
@@ -145,14 +146,15 @@ export async function getStudentTeachers(studentId, options = {}) {
  * @returns {Promise<boolean>} True if valid teacher
  */
 export async function isValidTeacherId(teacherId) {
-  if (!teacherId || isPlayerId(teacherId)) {
-    return false; // Teachers are always Users, never Players
+  if (!teacherId) {
+    return false;
   }
 
   const teacher = await models.User.findOne({
     where: {
       id: teacherId,
-      user_type: 'teacher'
+      user_type: 'teacher',
+      is_active: true
     }
   });
 
