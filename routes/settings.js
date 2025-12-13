@@ -7,6 +7,7 @@ import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/in
 import { GAME_TYPES } from '../config/gameTypes.js';
 import { LANGUAGES_OPTIONS } from '../constants/langauages.js';
 import { ACCESS_CONTROL_KEYS, ALL_SETTINGS_KEYS_ARRAY } from '../constants/settingsKeys.js';
+import { SYSADMIN_FORBIDDEN_ACTIONS } from '../constants/adminAccess.js';
 
 const router = express.Router();
 
@@ -33,7 +34,8 @@ router.get('/', optionalAuth, addETagSupport('settings'), async (req, res) => {
       audiance_targets: AUDIANCE_TARGETS,
       school_grades: SCHOOL_GRADES,
       game_types: GAME_TYPES,
-      languade_options: LANGUAGES_OPTIONS
+      languade_options: LANGUAGES_OPTIONS,
+      sysadmin_forbidden_actions: SYSADMIN_FORBIDDEN_ACTIONS
     };
 
     res.json(enhancedSettings);

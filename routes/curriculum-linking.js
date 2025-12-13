@@ -5,6 +5,7 @@ import { rateLimiters, validateBody } from '../middleware/validation.js';
 import models from '../models/index.js';
 import Joi from 'joi';
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const router = express.Router();
 
@@ -67,7 +68,7 @@ router.get('/suggestions/:productId',
 
       // Verify product exists and user has access
       // Admin users can access orphaned products (null creator_user_id)
-      const whereClause = req.user.role === 'admin'
+      const whereClause = haveAdminAccess(req.user.role, 'curriculum_access', req)
         ? { id: productId }
         : { id: productId, creator_user_id: userId };
 
@@ -80,7 +81,7 @@ router.get('/suggestions/:productId',
           productId,
           userId,
           userRole: req.user.role,
-          isAdminAccess: req.user.role === 'admin'
+          isAdminAccess: haveAdminAccess(req.user.role, 'curriculum_access', req)
         });
         return res.status(404).json({
           error: {
@@ -98,7 +99,7 @@ router.get('/suggestions/:productId',
         userRole: req.user.role,
         productCreatorId: product.creator_user_id,
         isOrphanedProduct: product.creator_user_id === null,
-        isAdminAccessToOrphaned: req.user.role === 'admin' && product.creator_user_id === null
+        isAdminAccessToOrphaned: haveAdminAccess(req.user.role, 'curriculum_access', req) && product.creator_user_id === null
       });
 
       ludlog.api('Product found for curriculum suggestions:', {
@@ -188,7 +189,7 @@ router.get('/existing/:productId',
 
       // Verify product exists and user has access
       // Admin users can access orphaned products (null creator_user_id)
-      const whereClause = req.user.role === 'admin'
+      const whereClause = haveAdminAccess(req.user.role, 'curriculum_access', req)
         ? { id: productId }
         : { id: productId, creator_user_id: userId };
 
@@ -201,7 +202,7 @@ router.get('/existing/:productId',
           productId,
           userId,
           userRole: req.user.role,
-          isAdminAccess: req.user.role === 'admin'
+          isAdminAccess: haveAdminAccess(req.user.role, 'curriculum_access', req)
         });
         return res.status(404).json({
           error: {
@@ -219,7 +220,7 @@ router.get('/existing/:productId',
         userRole: req.user.role,
         productCreatorId: product.creator_user_id,
         isOrphanedProduct: product.creator_user_id === null,
-        isAdminAccessToOrphaned: req.user.role === 'admin' && product.creator_user_id === null
+        isAdminAccessToOrphaned: haveAdminAccess(req.user.role, 'curriculum_access', req) && product.creator_user_id === null
       });
 
       const existingLinks = await CurriculumLinkingService.getExistingLinks(productId);
@@ -280,7 +281,7 @@ router.post('/apply',
 
       // Verify product exists and user has access
       // Admin users can access orphaned products (null creator_user_id)
-      const whereClause = req.user.role === 'admin'
+      const whereClause = haveAdminAccess(req.user.role, 'curriculum_access', req)
         ? { id: productId }
         : { id: productId, creator_user_id: userId };
 
@@ -293,7 +294,7 @@ router.post('/apply',
           productId,
           userId,
           userRole: req.user.role,
-          isAdminAccess: req.user.role === 'admin'
+          isAdminAccess: haveAdminAccess(req.user.role, 'curriculum_access', req)
         });
         return res.status(404).json({
           error: {
@@ -311,7 +312,7 @@ router.post('/apply',
         userRole: req.user.role,
         productCreatorId: product.creator_user_id,
         isOrphanedProduct: product.creator_user_id === null,
-        isAdminAccessToOrphaned: req.user.role === 'admin' && product.creator_user_id === null
+        isAdminAccessToOrphaned: haveAdminAccess(req.user.role, 'curriculum_access', req) && product.creator_user_id === null
       });
 
       ludlog.api('Product verified for curriculum linking:', {
@@ -423,7 +424,7 @@ router.delete('/:curriculumProductId',
 
       // Verify the curriculum link exists and user has access to the product
       // Admin users can access links for orphaned products (null creator_user_id)
-      const productWhereClause = req.user.role === 'admin'
+      const productWhereClause = haveAdminAccess(req.user.role, 'curriculum_access', req)
         ? {} // No creator restriction for admins
         : { creator_user_id: userId };
 
@@ -448,7 +449,7 @@ router.delete('/:curriculumProductId',
           curriculumProductId,
           userId,
           userRole: req.user.role,
-          isAdminAccess: req.user.role === 'admin'
+          isAdminAccess: haveAdminAccess(req.user.role, 'curriculum_access', req)
         });
         return res.status(404).json({
           error: {
@@ -467,7 +468,7 @@ router.delete('/:curriculumProductId',
         productTitle: link.Product?.title,
         productCreatorId: link.Product?.creator_user_id,
         isOrphanedProduct: link.Product?.creator_user_id === null,
-        isAdminAccessToOrphaned: req.user.role === 'admin' && link.Product?.creator_user_id === null,
+        isAdminAccessToOrphaned: haveAdminAccess(req.user.role, 'curriculum_access', req) && link.Product?.creator_user_id === null,
         curriculumItemId: link.curriculum_item_id,
         curriculumItemName: link.CurriculumItem?.name,
         curriculumId: link.CurriculumItem?.curriculum_id
@@ -829,7 +830,7 @@ router.post('/bulk',
           if (operation.type === 'apply') {
             // Verify product ownership
             // Admin users can access orphaned products (null creator_user_id)
-            const whereClause = req.user.role === 'admin'
+            const whereClause = haveAdminAccess(req.user.role, 'curriculum_access', req)
               ? { id: operation.productId }
               : { id: operation.productId, creator_user_id: userId };
 
@@ -843,7 +844,7 @@ router.post('/bulk',
                 userRole: req.user.role,
                 productId: operation.productId,
                 operationIndex: i,
-                isAdminAccess: req.user.role === 'admin'
+                isAdminAccess: haveAdminAccess(req.user.role, 'curriculum_access', req)
               });
 
               results.errors.push({
@@ -860,7 +861,7 @@ router.post('/bulk',
               userRole: req.user.role,
               productCreatorId: product.creator_user_id,
               isOrphanedProduct: product.creator_user_id === null,
-              isAdminAccessToOrphaned: req.user.role === 'admin' && product.creator_user_id === null,
+              isAdminAccessToOrphaned: haveAdminAccess(req.user.role, 'curriculum_access', req) && product.creator_user_id === null,
               operationIndex: i
             });
 
@@ -892,7 +893,7 @@ router.post('/bulk',
           } else if (operation.type === 'remove') {
             // Verify link ownership
             // Admin users can access links for orphaned products (null creator_user_id)
-            const productWhereClause = req.user.role === 'admin'
+            const productWhereClause = haveAdminAccess(req.user.role, 'curriculum_access', req)
               ? {} // No creator restriction for admins
               : { creator_user_id: userId };
 
@@ -912,7 +913,7 @@ router.post('/bulk',
                 userRole: req.user.role,
                 curriculumProductId: operation.curriculumProductId,
                 operationIndex: i,
-                isAdminAccess: req.user.role === 'admin'
+                isAdminAccess: haveAdminAccess(req.user.role, 'curriculum_access', req)
               });
 
               results.errors.push({
@@ -929,7 +930,7 @@ router.post('/bulk',
               userRole: req.user.role,
               productCreatorId: link.Product?.creator_user_id,
               isOrphanedProduct: link.Product?.creator_user_id === null,
-              isAdminAccessToOrphaned: req.user.role === 'admin' && link.Product?.creator_user_id === null,
+              isAdminAccessToOrphaned: haveAdminAccess(req.user.role, 'curriculum_access', req) && link.Product?.creator_user_id === null,
               operationIndex: i
             });
 

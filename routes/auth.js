@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { admin } from '../config/firebase.js';
-import { authenticateToken, authenticateUserOrPlayer, requireAdmin } from '../middleware/auth.js';
+import { authenticateToken, authenticateUserOrPlayer, requireAdminAccess } from '../middleware/auth.js';
 import { addETagSupport } from '../middleware/etagMiddleware.js';
 import { validateBody, rateLimiters, schemas } from '../middleware/validation.js';
 import AuthService from '../services/AuthService.js';
@@ -1203,7 +1203,7 @@ router.post('/reset-password', rateLimiters.auth, validateBody(schemas.newPasswo
 // =============================================
 
 // Get session statistics (admin only)
-router.get('/sessions/stats', authenticateToken, requireAdmin, async (_req, res) => {
+router.get('/sessions/stats', authenticateToken, requireAdminAccess('session_stats'), async (_req, res) => {
   try {
     const stats = authService.getSessionStats();
     res.json({
@@ -1217,7 +1217,7 @@ router.get('/sessions/stats', authenticateToken, requireAdmin, async (_req, res)
 });
 
 // Get user sessions (admin only)
-router.get('/sessions/user/:userId', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/sessions/user/:userId', authenticateToken, requireAdminAccess('session_user_details'), async (req, res) => {
   try {
     const { userId } = req.params;
     const userSessions = authService.getUserSessions(userId);
@@ -1234,7 +1234,7 @@ router.get('/sessions/user/:userId', authenticateToken, requireAdmin, async (req
 });
 
 // Invalidate user sessions (admin only)
-router.post('/sessions/invalidate/:userId', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/sessions/invalidate/:userId', authenticateToken, requireAdminAccess('session_invalidate'), async (req, res) => {
   try {
     const { userId } = req.params;
     const invalidatedCount = authService.invalidateUserSessions(userId);
@@ -1250,7 +1250,7 @@ router.post('/sessions/invalidate/:userId', authenticateToken, requireAdmin, asy
 });
 
 // Force cleanup of expired sessions (admin only)
-router.post('/sessions/cleanup', authenticateToken, requireAdmin, async (_req, res) => {
+router.post('/sessions/cleanup', authenticateToken, requireAdminAccess('session_cleanup'), async (_req, res) => {
   try {
     authService.cleanupExpiredSessions();
     await authService.cleanupExpiredTokens();
@@ -1564,7 +1564,7 @@ router.post('/revoke-consent', authenticateToken, async (req, res) => {
     const { student_id, revocation_reason, notes } = req.body;
 
     // Only admins and teachers can revoke consent
-    if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
+    if (!user || (!user.haveAdminAccess('parent_consent_revoke') && user.user_type !== 'teacher')) {
       return res.status(403).json({
         error: 'Only admins and teachers can revoke parent consent'
       });
@@ -1668,7 +1668,7 @@ router.post('/unlink-student', authenticateToken, async (req, res) => {
     const { student_id, auto_revoke_consent } = req.body;
 
     // Only admins and teachers can unlink students
-    if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
+    if (!user || (!user.haveAdminAccess('student_unlink') && user.user_type !== 'teacher')) {
       return res.status(403).json({
         error: 'Only admins and teachers can unlink students'
       });
@@ -1774,7 +1774,7 @@ router.post('/mark-consent', authenticateToken, async (req, res) => {
     const { student_id } = req.body;
 
     // Only admins and teachers can mark parent consent
-    if (!user || (!user.isAdmin && user.user_type !== 'teacher')) {
+    if (!user || (!user.haveAdminAccess('parent_consent_mark') && user.user_type !== 'teacher')) {
       return res.status(403).json({
         error: 'Only admins and teachers can mark parent consent as accepted'
       });

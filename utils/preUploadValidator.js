@@ -8,6 +8,7 @@
 
 import db from '../models/index.js';
 import { createErrorResponse } from './fileOperationLogger.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 /**
  * File type mappings and validation rules
@@ -380,7 +381,7 @@ class PreUploadValidator {
   async validateUploadPermission(user, entityType, entityId, entity = null) {
     try {
       // Admin users can upload to anything
-      if (user.role === 'admin' || user.role === 'sysadmin') {
+      if (haveAdminAccess(user.role, 'upload_permission')) {
         this.logger?.info('Admin upload permission granted', {
           userId: user.id,
           userRole: user.role,

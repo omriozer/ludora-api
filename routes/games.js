@@ -8,6 +8,7 @@ import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import GameContentService from '../services/GameContentService.js';
 import GameLobbyService from '../services/GameLobbyService.js';
 import { luderror } from '../lib/ludlog.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 const { Game, sequelize } = models;
 
 const router = express.Router();
@@ -15,7 +16,7 @@ const router = express.Router();
 // Helper function to check game ownership via Product table
 async function validateGameOwnership(gameId, userId, userRole) {
   // Admin users can access any game
-  if (userRole === 'admin' || userRole === 'sysadmin') {
+  if (haveAdminAccess(userRole, 'game_ownership_bypass')) {
     return true;
   }
 
@@ -42,7 +43,7 @@ async function validateGameOwnership(gameId, userId, userRole) {
 
 // Helper function to get user's games based on Product ownership
 async function getUserGames(userId, userRole) {
-  if (userRole === 'admin' || userRole === 'sysadmin') {
+  if (haveAdminAccess(userRole, 'all_games_access')) {
     // Admin users see all games
     return await models.Game.findAll({
       order: [['created_at', 'DESC']]

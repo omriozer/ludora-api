@@ -1,8 +1,9 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { authenticateToken, requireAdminAccess } from '../middleware/auth.js';
 import models from '../models/index.js';
 import { luderror } from '../lib/ludlog.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const router = express.Router();
 
@@ -98,7 +99,7 @@ function validateWatermarkTemplateData(templateData) {
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { type, format, include_inactive } = req.query;
-    const isAdmin = req.user.role === 'admin' || req.user.role === 'sysadmin';
+    const isAdmin = haveAdminAccess(req.user.role, 'system_templates_access');
 
     // Build where clause
     const whereClause = {};
@@ -267,7 +268,7 @@ router.get('/default/:templateType', authenticateToken, async (req, res) => {
  * Create a new system template (Admin only)
  * POST /api/system-templates
  */
-router.post('/', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/', authenticateToken, requireAdminAccess('system_template_create'), async (req, res) => {
   try {
     const { name, description, template_type, target_format, template_data, is_default } = req.body;
     const createdBy = req.user.email;
@@ -365,7 +366,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
  * Update a system template (Admin only)
  * PUT /api/system-templates/:id
  */
-router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
+router.put('/:id', authenticateToken, requireAdminAccess('system_template_update'), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, target_format, template_data, is_default } = req.body;
@@ -453,7 +454,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
  * Delete a system template (Admin only)
  * DELETE /api/system-templates/:id
  */
-router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdminAccess('system_template_delete'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -520,7 +521,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
  * Set template as default (Admin only)
  * POST /api/system-templates/:id/set-default
  */
-router.post('/:id/set-default', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/:id/set-default', authenticateToken, requireAdminAccess('system_template_set_default'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -547,7 +548,7 @@ router.post('/:id/set-default', authenticateToken, requireAdmin, async (req, res
  * Duplicate a template (Admin only)
  * POST /api/system-templates/:id/duplicate
  */
-router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/:id/duplicate', authenticateToken, requireAdminAccess('system_template_duplicate'), async (req, res) => {
   try {
     const { id } = req.params;
     const { name } = req.body;
@@ -587,7 +588,7 @@ router.post('/:id/duplicate', authenticateToken, requireAdmin, async (req, res) 
  * Save file branding configuration as a new template (Admin only)
  * POST /api/system-templates/save-from-file/:fileId
  */
-router.post('/save-from-file/:fileId', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/save-from-file/:fileId', authenticateToken, requireAdminAccess('system_template_create'), async (req, res) => {
   try {
     const { fileId } = req.params;
     const { name, description, target_format } = req.body;
@@ -797,7 +798,7 @@ router.post('/test-variables', authenticateToken, async (req, res) => {
  * Get watermark template usage statistics
  * GET /api/system-templates/:id/usage
  */
-router.get('/:id/usage', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/:id/usage', authenticateToken, requireAdminAccess('system_template_usage_stats'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -862,7 +863,7 @@ router.get('/:id/usage', authenticateToken, requireAdmin, async (req, res) => {
  * Export watermark template for backup/sharing
  * GET /api/system-templates/:id/export
  */
-router.get('/:id/export', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/:id/export', authenticateToken, requireAdminAccess('system_template_export'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -905,7 +906,7 @@ router.get('/:id/export', authenticateToken, requireAdmin, async (req, res) => {
  * Import watermark template from exported file
  * POST /api/system-templates/import
  */
-router.post('/import', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/import', authenticateToken, requireAdminAccess('system_template_import'), async (req, res) => {
   try {
     const { template_data: importData, new_name } = req.body;
     const createdBy = req.user.email;

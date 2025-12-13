@@ -25,6 +25,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { checkStudentsAccess, checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
 import { luderror } from '../lib/ludlog.js';
 import { requireStudentConsent } from '../middleware/consentEnforcement.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const router = express.Router();
 
@@ -43,7 +44,7 @@ const lobbyRateLimit = rateLimit({
 async function validateGameOwnership(gameId, userId, userRole = null) {
 
   // Admin/sysadmin bypass - they can do anything an owner can
-  if (userRole === 'admin' || userRole === 'sysadmin') {
+  if (haveAdminAccess(userRole, 'game_lobby_access')) {
 
     return true;
   }
@@ -242,8 +243,7 @@ router.get('/game-lobbies/:lobbyId',
       const hasAccess =
         lobby.owner.id === user.id ||
         lobby.host.id === user.id ||
-        user.role === 'admin' ||
-        user.role === 'sysadmin' ||
+        haveAdminAccess(user.role, 'game_lobby_access') ||
         await validateGameOwnership(lobby.game_id, user.id, user.role);
 
       if (!hasAccess) {
@@ -297,8 +297,7 @@ router.put('/game-lobbies/:lobbyId',
       const canUpdate =
         currentLobby.owner_user_id === user.id ||
         currentLobby.host_user_id === user.id ||
-        user.role === 'admin' ||
-        user.role === 'sysadmin';
+        haveAdminAccess(user.role, 'game_lobby_access');
 
       if (!canUpdate) {
         await transaction.rollback();
@@ -886,8 +885,7 @@ router.get('/game-lobbies/:lobbyId/sessions',
       const hasAccess =
         lobby.owner_user_id === user.id ||
         lobby.host_user_id === user.id ||
-        user.role === 'admin' ||
-        user.role === 'sysadmin';
+        haveAdminAccess(user.role, 'game_lobby_access');
 
       if (!hasAccess) {
         await transaction.rollback();

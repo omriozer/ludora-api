@@ -1,6 +1,7 @@
 import models from '../models/index.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
 import { BadRequestError } from '../middleware/errorHandler.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 /**
  * BundleValidationService
@@ -84,7 +85,7 @@ class BundleValidationService {
       }
 
       // Ownership validation (content creators can only bundle own products)
-      const isAdmin = ['admin', 'sysadmin'].includes(userRole);
+      const isAdmin = haveAdminAccess(userRole, 'bundle_others_products');
       if (!isAdmin) {
         const otherProducts = products.filter(p => {
           // Product without creator = Ludora product (allowed)
@@ -230,7 +231,7 @@ class BundleValidationService {
    */
   async getAvailableProductsForBundling(userId, productType, userRole = null) {
     try {
-      const isAdmin = ['admin', 'sysadmin'].includes(userRole);
+      const isAdmin = haveAdminAccess(userRole, 'bundle_others_products');
 
       const whereClause = {
         product_type: productType,

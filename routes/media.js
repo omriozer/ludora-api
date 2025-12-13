@@ -6,6 +6,7 @@ import { generateIsraeliCacheHeaders, applyIsraeliCaching } from '../middleware/
 import { generateHebrewContentDisposition } from '../utils/hebrewFilenameUtils.js';
 import AccessControlService from '../services/AccessControlService.js';
 import { requireStudentConsent } from '../middleware/consentEnforcement.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const router = express.Router();
 const authService = AuthService; // Use singleton instance
@@ -50,7 +51,7 @@ function encodeContentDisposition(disposition, filename) {
  */
 async function checkVideoAccess(user, entityType, entityId) {
   // Admin bypass
-  if (user.role === 'admin' || user.role === 'sysadmin') {
+  if (haveAdminAccess(user.role, 'video_access')) {
     return true;
   }
 

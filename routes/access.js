@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 import AccessControlService from '../services/AccessControlService.js';
 import models from '../models/index.js';
 import { requireStudentConsent } from '../middleware/consentEnforcement.js';
@@ -75,7 +76,7 @@ router.get('/my-purchases', authenticateToken, async (req, res) => {
 router.get('/entity/:entityType/:entityId/users', authenticateToken, async (req, res) => {
   const { entityType, entityId } = req.params;
 
-  if (!req.user.isAdmin) {
+  if (!haveAdminAccess(req.user.role, 'entity_users_access')) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
@@ -91,7 +92,7 @@ router.get('/entity/:entityType/:entityId/users', authenticateToken, async (req,
 router.get('/entity/:entityType/:entityId/stats', authenticateToken, async (req, res) => {
   const { entityType, entityId } = req.params;
 
-  if (!req.user.isAdmin) {
+  if (!haveAdminAccess(req.user.role, 'entity_stats_access')) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
@@ -107,7 +108,7 @@ router.get('/entity/:entityType/:entityId/stats', authenticateToken, async (req,
 router.post('/grant', authenticateToken, async (req, res) => {
   const { userEmail, entityType, entityId, accessDays, isLifetimeAccess, price } = req.body;
 
-  if (!req.user.isAdmin) {
+  if (!haveAdminAccess(req.user.role, 'access_grant')) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 

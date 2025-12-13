@@ -1,12 +1,13 @@
 import express from 'express';
 import multer from 'multer';
 import { body, param, validationResult } from 'express-validator';
-import { authenticateToken, requireRole, requireTeacher, requireAdmin, optionalAuth } from '../middleware/auth.js';
+import { authenticateToken, requireTeacher, requireAdminAccess, optionalAuth } from '../middleware/auth.js';
 import models from '../models/index.js';
 import DirectSlideService from '../services/DirectSlideService.js';
 import { checkLessonPlanAccess } from '../utils/lessonPlanPresentationHelper.js';
 import { mergeSvgTemplate } from '../utils/svgTemplateMerge.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -15,7 +16,7 @@ const router = express.Router();
 // Custom middleware to allow both admin role and teacher user_type
 function requireAdminOrTeacher(req, res, next) {
   // Check if user is admin (by role)
-  if (req.user && req.user.role === 'admin') {
+  if (req.user && haveAdminAccess(req.user.role, 'svg_slides_access')) {
     return next();
   }
 

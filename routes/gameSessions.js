@@ -18,6 +18,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { checkStudentsLobbyAccess } from '../middleware/studentsAccessMiddleware.js';
 import { luderror } from '../lib/ludlog.js';
 import { requireStudentConsent } from '../middleware/consentEnforcement.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ async function validateSessionAccess(sessionId, userId, userRole, transaction = 
   const { lobby } = session;
 
   // Admin bypass
-  if (userRole === 'admin' || userRole === 'sysadmin') {
+  if (haveAdminAccess(userRole, 'session_access')) {
     return { session, lobby, hasAccess: true };
   }
 
@@ -155,8 +156,7 @@ router.put('/game-sessions/:sessionId',
       const canUpdate =
         lobby.owner_user_id === user.id ||
         lobby.host_user_id === user.id ||
-        user.role === 'admin' ||
-        user.role === 'sysadmin';
+        haveAdminAccess(user.role, 'session_update', req);
 
       if (!canUpdate) {
         await transaction.rollback();
@@ -448,8 +448,7 @@ router.post('/game-sessions/:sessionId/participants/teacher-add',
       const canAddParticipants =
         lobby.owner_user_id === user.id ||
         lobby.host_user_id === user.id ||
-        user.role === 'admin' ||
-        user.role === 'sysadmin';
+        haveAdminAccess(user.role, 'participant_add', req);
 
       if (!canAddParticipants) {
         await transaction.rollback();
@@ -521,8 +520,7 @@ router.delete('/game-sessions/:sessionId/participants/:participantId/teacher-rem
       const canRemoveParticipants =
         lobby.owner_user_id === user.id ||
         lobby.host_user_id === user.id ||
-        user.role === 'admin' ||
-        user.role === 'sysadmin';
+        haveAdminAccess(user.role, 'participant_remove', req);
 
       if (!canRemoveParticipants) {
         await transaction.rollback();

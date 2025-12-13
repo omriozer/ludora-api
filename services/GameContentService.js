@@ -8,6 +8,7 @@
 import models from '../models/index.js';
 import { luderror } from '../lib/ludlog.js';
 import { generateId } from '../models/baseModel.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const { Game, EduContent, EduContentUse } = models;
 
@@ -573,8 +574,7 @@ class GameContentService {
     }
 
     // Admin users can access any game
-    if (userRole === 'admin' || userRole === 'sysadmin') {
-
+    if (haveAdminAccess(userRole, 'game_ownership_bypass')) {
       return;
     }
 

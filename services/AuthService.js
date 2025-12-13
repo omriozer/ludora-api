@@ -5,6 +5,7 @@ import models from '../models/index.js';
 import { generateId } from '../models/baseModel.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
 import { isDev } from '../src/utils/environment.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 class AuthService {
   constructor() {
@@ -883,7 +884,7 @@ class AuthService {
     try {
       // Verify admin user (admin or sysadmin can set claims)
       const adminUser = await models.User.findByPk(adminUserId);
-      if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'sysadmin')) {
+      if (!adminUser || !haveAdminAccess(adminUser.role, 'custom_claims_set')) {
         throw new Error('Admin access required');
       }
 

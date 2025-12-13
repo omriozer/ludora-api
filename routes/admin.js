@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { authenticateToken, requireAdminAccess } from '../middleware/auth.js';
 import BulkSubscriptionPollingService from '../services/BulkSubscriptionPollingService.js';
 import SubscriptionAllowanceService from '../services/SubscriptionAllowanceService.js';
 import SubscriptionPlanChangeService from '../services/SubscriptionPlanChangeService.js';
@@ -13,7 +13,7 @@ import { getEnv } from '../src/utils/environment.js';
 const router = express.Router();
 
 // Apply admin authentication to all routes
-router.use(authenticateToken, requireAdmin);
+router.use(authenticateToken, requireAdminAccess('admin_panel_access'));
 
 /**
  * GET /api/admin/subscriptions/audit

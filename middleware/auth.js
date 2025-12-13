@@ -2,6 +2,7 @@ import AuthService from '../services/AuthService.js';
 import PlayerService from '../services/PlayerService.js';
 import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 import {
   logCookieConfig,
   detectPortal,
@@ -129,34 +130,30 @@ export async function optionalAuth(req, res, next) {
   }
 }
 
-// Role-based access control
-export function requireRole(requiredRole = 'user') {
+// Legacy requireRole function removed - use requireAdminAccess for admin permissions
+// or requireUserType for user type checking
+
+// Legacy requireAdmin and requireSysadmin exports removed - use requireAdminAccess instead
+
+// Centralized admin access control middleware
+export function requireAdminAccess(action) {
   return async (req, res, next) => {
     try {
       if (!req.user) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      // Get user from database for fresh role information
-      const portal = detectPortal(req);
-      const cookieNames = getPortalCookieNames(portal);
-      const accessToken = req.cookies[cookieNames.accessToken];
-      const user = req.user || await authService.getUserByToken(accessToken);
+      // Use centralized access control
+      if (!haveAdminAccess(req.user.role, action)) {
+        return res.status(403).json({ error: `Admin access required for action: ${action}` });
+      }
 
-      authService.validatePermissions(user, requiredRole);
-      Object.assign(req, { userRecord: user }); // Attach full user record
       next();
     } catch (error) {
       res.status(403).json({ error: error.message });
     }
   };
 }
-
-// Admin role check middleware
-export const requireAdmin = requireRole('admin');
-
-// Sysadmin role check middleware
-export const requireSysadmin = requireRole('sysadmin');
 
 // User type check middleware (for teacher, student, parent, headmaster)
 export function requireUserType(requiredUserType) {
@@ -201,7 +198,7 @@ export function requireOwnership(getResourceOwnerId) {
       const resourceOwnerId = await getResourceOwnerId(req);
 
       // Admin and sysadmin can access any resource
-      if (req.user.role === 'admin' || req.user.role === 'sysadmin') {
+      if (haveAdminAccess(req.user.role, 'resource_ownership_access')) {
         return next();
       }
 

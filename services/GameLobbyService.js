@@ -7,6 +7,7 @@ import { Op } from 'sequelize';
 import { luderror } from '../lib/ludlog.js';
 import { generateId } from '../models/baseModel.js';
 import LobbySocketService from './LobbySocketService.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 /**
  * GameLobbyService - Manages lobby creation, expiration, and participant management
@@ -912,8 +913,8 @@ class GameLobbyService {
    * @returns {boolean} Whether user can access lobby
    */
   static validateLobbyAccess(lobby, userId, userRole) {
-    // Admin/sysadmin bypass
-    if (userRole === 'admin' || userRole === 'sysadmin') {
+    // Admin bypass
+    if (haveAdminAccess(userRole, 'lobby_access')) {
       return true;
     }
 

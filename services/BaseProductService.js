@@ -3,6 +3,7 @@ import { generateId } from '../models/baseModel.js';
 import { Op } from 'sequelize';
 import { NotFoundError, BadRequestError } from '../middleware/errorHandler.js';
 import { ludlog } from '../lib/ludlog.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 /**
  * BaseProductService - Shared CRUD patterns for all product types
@@ -218,7 +219,7 @@ class BaseProductService {
       }
 
       // Admin users can access all entities
-      if (userRole === 'admin') {
+      if (haveAdminAccess(userRole, 'entity_ownership_bypass')) {
         return true;
       }
 

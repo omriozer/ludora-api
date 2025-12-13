@@ -6,6 +6,7 @@ import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { CONTENT_CREATOR_KEYS } from '../constants/settingsKeys.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ const router = express.Router();
 // Helper function to check content creator permissions (copied from entities.js)
 async function checkContentCreatorPermissions(user, entityType) {
   // Admins and sysadmins always have permission
-  if (user.role === 'admin' || user.role === 'sysadmin') {
+  if (haveAdminAccess(user.role, 'content_creator_permission')) {
     return { allowed: true };
   }
 
@@ -163,7 +164,7 @@ router.post('/', authenticateToken, validateBody(schemas.productCreate), async (
 
     // Only admins and sysadmins can create products without creator (Ludora products)
     if (req.body.is_ludora_creator === true) {
-      if (user.role === 'admin' || user.role === 'sysadmin') {
+      if (haveAdminAccess(user.role, 'ludora_creator_access')) {
         createdBy = null; // Don't set creator_user_id - will default to Ludora
       }
       // If non-admin tries to set is_ludora_creator, ignore it and use their ID

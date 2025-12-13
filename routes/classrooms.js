@@ -7,6 +7,7 @@ import models from '../models/index.js';
 import SettingsService from '../services/SettingsService.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
 import { isPlayerId } from '../utils/studentUtils.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 const router = express.Router();
 
@@ -1714,7 +1715,7 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
 async function checkPlayerMigrationPermission(user, player) {
   try {
     // Admin users can migrate any player
-    if (user.role === 'admin') {
+    if (haveAdminAccess(user.role, 'player_migration_access')) {
       return { allowed: true, reason: 'Admin privileges' };
     }
 

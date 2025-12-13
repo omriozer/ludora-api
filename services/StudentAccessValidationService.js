@@ -1,5 +1,6 @@
 import SettingsService from './SettingsService.js';
 import { ACCESS_CONTROL_KEYS, SYSTEM_KEYS, STUDENTS_ACCESS_MODES } from '../constants/settingsKeys.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
 
 /**
@@ -153,7 +154,7 @@ class StudentAccessValidationService {
     } = context || {};
 
     // Admin/teacher always have access
-    if (user_role === 'admin' || user_role === 'teacher') {
+    if (haveAdminAccess(user_role, 'student_portal_access') || user_role === 'teacher') {
       return true;
     }
 

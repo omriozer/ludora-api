@@ -1,6 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { rateLimiters } from '../middleware/validation.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 import SubscriptionService from '../services/SubscriptionService.js';
 import SubscriptionPaymentService from '../services/SubscriptionPaymentService.js';
 import SubscriptionPaymentStatusService from '../services/SubscriptionPaymentStatusService.js';
@@ -1080,7 +1081,7 @@ router.get('/benefits/analytics', authenticateToken, async (req, res) => {
     const { startDate, endDate, productType, userId } = req.query;
 
     // Only admins can view analytics
-    if (req.user.role !== 'admin' && req.user.role !== 'sysadmin') {
+    if (!haveAdminAccess(req.user.role, 'subscription_analytics')) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

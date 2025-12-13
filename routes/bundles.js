@@ -3,6 +3,7 @@ import BundleValidationService from '../services/BundleValidationService.js';
 import BundlePurchaseService from '../services/BundlePurchaseService.js';
 import ProductServiceRouter from '../services/ProductServiceRouter.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 import { ludlog, luderror } from '../lib/ludlog.js';
 import models from '../models/index.js';
 
@@ -269,7 +270,7 @@ router.get('/purchase/:id', authenticateToken, async (req, res, next) => {
       return res.status(404).json({ error: 'Purchase not found' });
     }
 
-    if (purchase.buyer_user_id !== userId && !['admin', 'sysadmin'].includes(req.user.role)) {
+    if (purchase.buyer_user_id !== userId && !haveAdminAccess(req.user.role, 'purchase_access')) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

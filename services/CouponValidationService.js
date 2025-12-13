@@ -1,6 +1,7 @@
 import models from '../models/index.js';
 import { Op, col } from 'sequelize';
 import { luderror } from '../lib/ludlog.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 /**
  * CouponValidationService - Advanced coupon validation and recommendation engine
@@ -411,7 +412,7 @@ class CouponValidationService {
     }
 
     // Check admin/VIP status
-    if (user.role === 'admin' || user.role === 'sysadmin') {
+    if (haveAdminAccess(user.role, 'coupon_vip_status')) {
       segments.push('vip', 'admin');
     }
 

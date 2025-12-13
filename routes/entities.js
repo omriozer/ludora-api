@@ -12,6 +12,7 @@ import AccessControlIntegrator from '../services/AccessControlIntegrator.js';
 import models, { sequelize } from '../models/index.js';
 import { ALL_PRODUCT_TYPES } from '../constants/productTypes.js';
 import { getFileTypesForFrontend } from '../constants/fileTypes.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 // Note: No longer importing deprecated helper functions since we use SystemTemplate now
 import { STUDY_SUBJECTS, AUDIANCE_TARGETS, SCHOOL_GRADES } from '../constants/info.js';
 import { CONTENT_CREATOR_KEYS } from '../constants/settingsKeys.js';
@@ -150,7 +151,7 @@ function getDefaultStudyTopicsForSubject(subject, gradeFrom, gradeTo) {
 // Helper function to check content creator permissions
 async function checkContentCreatorPermissions(user, entityType, entityData = {}) {
   // Admins and sysadmins always have permission
-  if (user.role === 'admin' || user.role === 'sysadmin') {
+  if (haveAdminAccess(user.role, 'content_creator_permission')) {
     return { allowed: true };
   }
 
@@ -505,7 +506,7 @@ router.post('/user/:id/generate-invitation-code', authenticateToken, async (req,
     }
 
     // Check if user is trying to generate code for themselves or if admin
-    if (userId !== requestingUserId && requestingUser.role !== 'admin' && requestingUser.role !== 'sysadmin') {
+    if (userId !== requestingUserId && !haveAdminAccess(requestingUser.role, 'invitation_code_generate')) {
       return res.status(403).json({ error: 'You can only generate invitation codes for yourself' });
     }
 
@@ -694,7 +695,7 @@ router.get('/:type', optionalAuth, customValidators.validateEntityType, validate
     if (entityType === 'curriculum') {
       // Non-admin users should only see active curricula
       const user = req.user ? await models.User.findOne({ where: { id: req.user.id } }) : null;
-      const isAdmin = user && (user.role === 'admin' || user.role === 'sysadmin');
+      const isAdmin = user && haveAdminAccess(user.role, 'curriculum_access');
 
       if (!isAdmin) {
         // Add is_active=true filter for non-admin users
@@ -993,7 +994,7 @@ router.post('/:type', authenticateToken, customValidators.validateEntityType, (r
 
     // Only admins and sysadmins can create products without creator (Ludora products)
     if (req.body.is_ludora_creator === true) {
-      if (user.role === 'admin' || user.role === 'sysadmin') {
+      if (haveAdminAccess(user.role, 'ludora_creator_access')) {
         createdBy = null; // Don't set creator_user_id - will default to Ludora
       }
       // If non-admin tries to set is_ludora_creator, ignore it and use their ID
@@ -1116,7 +1117,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
       try {
         // Get user information to verify admin access
         const user = await models.User.findOne({ where: { id: req.user.id } });
-        if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
+        if (!user || !haveAdminAccess(user.role, 'settings_update')) {
           return res.status(403).json({ error: 'Only admins can update settings' });
         }
 
@@ -1148,7 +1149,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
       if (req.body.hasOwnProperty('is_ludora_creator')) {
         const user = await models.User.findOne({ where: { id: req.user.id } });
 
-        if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
+        if (!user || !haveAdminAccess(user.role, 'ludora_creator_status_change')) {
           // Non-admin trying to change Ludora creator status - ignore it
           delete req.body.is_ludora_creator;
         } else {
@@ -1162,7 +1163,7 @@ router.put('/:type/:id', authenticateToken, customValidators.validateEntityType,
       if (req.body.hasOwnProperty('creator_user_id')) {
         const user = await models.User.findOne({ where: { id: req.user.id } });
 
-        if (!user || (user.role !== 'admin' && user.role !== 'sysadmin')) {
+        if (!user || !haveAdminAccess(user.role, 'creator_user_id_change')) {
           // Non-admin trying to change creator_user_id - remove it from update
           delete req.body.creator_user_id;
           // Non-admin user tried to change creator_user_id - ignored
@@ -1407,7 +1408,7 @@ router.post('/curriculum/create-range', authenticateToken, validateBody(
     }
 
     // Only admins can create system curricula
-    if (user.role !== 'admin' && user.role !== 'sysadmin') {
+    if (!haveAdminAccess(user.role, 'system_curriculum_create')) {
       return res.status(403).json({ error: 'Only admins can create system curricula' });
     }
 
@@ -1534,7 +1535,7 @@ router.post('/curriculum/copy-to-class', authenticateToken, validateBody(schemas
     }
 
     // Verify the user owns this classroom (unless admin)
-    if (user.role !== 'admin' && user.role !== 'sysadmin' && classroom.teacher_id !== userId) {
+    if (!haveAdminAccess(user.role, 'curriculum_copy_access') && classroom.teacher_id !== userId) {
       return res.status(403).json({ error: 'You can only copy curricula to your own classrooms' });
     }
 
@@ -1675,7 +1676,7 @@ router.put('/curriculum/:id/cascade-update', authenticateToken, validateBody(
     }
 
     // Only admins can perform cascade updates
-    if (user.role !== 'admin' && user.role !== 'sysadmin') {
+    if (!haveAdminAccess(user.role, 'cascade_update')) {
       return res.status(403).json({ error: 'Only admins can perform cascade updates' });
     }
 
@@ -1830,7 +1831,7 @@ router.get('/curriculum/:id/copy-status', authenticateToken, async (req, res) =>
     };
 
     // If not admin, only show copies for this user's classes
-    if (user.role !== 'admin' && user.role !== 'sysadmin') {
+    if (!haveAdminAccess(user.role, 'curriculum_view_all')) {
       whereClause.teacher_user_id = userId;
     }
 
@@ -2538,13 +2539,13 @@ router.put('/user/:id/reset-onboarding', authenticateToken, async (req, res) => 
     }
 
     // Only admins can reset onboarding
-    if (requestingUser.role !== 'admin' && requestingUser.role !== 'sysadmin') {
+    if (!haveAdminAccess(requestingUser.role, 'onboarding_reset')) {
       return res.status(403).json({ error: 'Only admins can reset user onboarding' });
     }
 
     // Prevent non-admins from resetting their own onboarding
     // Admins can reset their own onboarding for testing purposes
-    if (userId === requestingUserId && requestingUser.role !== 'admin' && requestingUser.role !== 'sysadmin') {
+    if (userId === requestingUserId && !haveAdminAccess(requestingUser.role, 'onboarding_self_reset')) {
       return res.status(400).json({ error: 'Cannot reset your own onboarding status' });
     }
 

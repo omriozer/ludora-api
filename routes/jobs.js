@@ -15,7 +15,7 @@
 
 import express from 'express';
 import jobScheduler from '../services/JobScheduler.js';
-import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { authenticateToken, requireAdminAccess } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validation.js';
 import Joi from 'joi';
 import ludlog, { luderror } from '../lib/ludlog.js';
@@ -67,7 +67,7 @@ const scheduleRecurringJobSchema = Joi.object({
  * GET /api/jobs/stats
  * Get comprehensive job system statistics
  */
-router.get('/stats', authenticateToken, requireRole(['admin', 'sysadmin']), async (req, res) => {
+router.get('/stats', authenticateToken, requireAdminAccess('job_stats'), async (req, res) => {
   try {
     ludlog.generic('Job stats requested', { userId: req.user.id, role: req.user.role });
 
@@ -108,7 +108,7 @@ router.get('/stats', authenticateToken, requireRole(['admin', 'sysadmin']), asyn
  * GET /api/jobs/health
  * Health check for job system
  */
-router.get('/health', authenticateToken, requireRole(['admin', 'sysadmin']), async (req, res) => {
+router.get('/health', authenticateToken, requireAdminAccess('job_health'), async (req, res) => {
   try {
     const isHealthy = jobScheduler.isInitialized && !jobScheduler.isShuttingDown;
 
@@ -153,7 +153,7 @@ router.get('/health', authenticateToken, requireRole(['admin', 'sysadmin']), asy
  */
 router.post('/schedule',
   authenticateToken,
-  requireRole(['admin', 'sysadmin']),
+  requireAdminAccess('job_schedule'),
   validateBody(scheduleJobSchema),
   async (req, res) => {
     try {
@@ -205,7 +205,7 @@ router.post('/schedule',
  */
 router.post('/schedule-recurring',
   authenticateToken,
-  requireRole(['admin', 'sysadmin']),
+  requireAdminAccess('job_schedule_recurring'),
   validateBody(scheduleRecurringJobSchema),
   async (req, res) => {
     try {
@@ -262,7 +262,7 @@ router.post('/schedule-recurring',
  */
 router.post('/initialize',
   authenticateToken,
-  requireRole(['sysadmin']),
+  requireAdminAccess('job_initialize'),
   async (req, res) => {
     try {
       ludlog.generic('Manual job scheduler initialization requested', {
@@ -304,7 +304,7 @@ router.post('/initialize',
  * GET /api/jobs/types
  * Get available job types and their configurations
  */
-router.get('/types', authenticateToken, requireRole(['admin', 'sysadmin']), async (req, res) => {
+router.get('/types', authenticateToken, requireAdminAccess('job_types'), async (req, res) => {
   try {
     res.json({
       status: 'success',
@@ -326,7 +326,7 @@ router.get('/types', authenticateToken, requireRole(['admin', 'sysadmin']), asyn
  * GET /api/jobs/info
  * Get general information about the job scheduler system
  */
-router.get('/info', authenticateToken, requireRole(['admin', 'sysadmin']), async (req, res) => {
+router.get('/info', authenticateToken, requireAdminAccess('job_info'), async (req, res) => {
   try {
     res.json({
       status: 'success',
