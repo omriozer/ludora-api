@@ -894,17 +894,22 @@ router.post('/membership/:membershipId/approve', authenticateToken, rateLimiters
       if (isPlayerId(membership.student_id)) {
         isPlayer = true;
 
-        // Fetch player information
-        const player = await models.Player.findByPk(membership.student_id);
+        // Fetch student user information (unified User system with user_type='player')
+        const studentUser = await models.User.findOne({
+          where: {
+            id: membership.student_id,
+            user_type: 'player'
+          }
+        });
 
-        if (player) {
+        if (studentUser) {
           studentInfo = {
-            id: player.id,
-            display_name: membership.student_display_name || player.display_name || 'Anonymous Student',
+            id: studentUser.id,
+            display_name: membership.student_display_name || studentUser.first_name || studentUser.full_name || 'Anonymous Student',
             entity_type: 'player'
           };
         } else {
-          // Player not found, might have been deleted
+          // Student user not found, might have been deleted
           studentInfo = {
             id: membership.student_id,
             display_name: membership.student_display_name || 'Unknown Student',
@@ -1215,19 +1220,24 @@ router.get('/membership/pending', authenticateToken, addETagSupport('classroom-p
           email: request.Student.email
         };
       } else {
-        // Check if it's a Player
+        // Check if it's a student user (user_type='player')
         if (request.student_id.startsWith('player_')) {
-          const player = await models.Player.findByPk(request.student_id);
+          const studentUser = await models.User.findOne({
+            where: {
+              id: request.student_id,
+              user_type: 'player'
+            }
+          });
 
-          if (player) {
+          if (studentUser) {
             studentInfo = {
-              id: player.id,
-              display_name: request.student_display_name || player.display_name || 'Anonymous Student',
+              id: studentUser.id,
+              display_name: request.student_display_name || studentUser.first_name || studentUser.full_name || 'Anonymous Student',
               entity_type: 'player',
-              email: null // Players don't have email
+              email: studentUser.email || null // Students may have email in unified system
             };
           } else {
-            // Player not found
+            // Student user not found
             studentInfo = {
               id: request.student_id,
               display_name: request.student_display_name || 'Unknown Student',
@@ -1467,36 +1477,41 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
       }
     });
 
-    // Find the player to migrate
-    const player = await models.Player.findByPk(player_id);
+    // Find the student user to migrate (unified User system with user_type='player')
+    const studentUser = await models.User.findOne({
+      where: {
+        id: player_id,
+        user_type: 'player'
+      }
+    });
 
-    if (!player) {
-      ludlog.auth('[PLAYER-MIGRATE] Player not found', {
+    if (!studentUser) {
+      ludlog.auth('[PLAYER-MIGRATE] Student user not found', {
         userId: user.id,
         playerId: player_id,
         ip: req.ip
       });
 
       return res.status(404).json({
-        error: 'Player not found',
+        error: 'Student user not found',
         code: 'PLAYER_NOT_FOUND'
       });
     }
 
-    ludlog.auth('[PLAYER-MIGRATE] Player found', {
+    ludlog.auth('[PLAYER-MIGRATE] Student user found', {
       userId: user.id,
       playerId: player_id,
-      playerDisplayName: player.display_name,
-      playerTeacherId: player.teacher_id
+      playerDisplayName: studentUser.first_name || studentUser.full_name,
+      playerTeacherId: studentUser.linked_teacher_id
     });
 
-    // Check authorization: User can migrate a player if:
-    // 1. User is a student without linked teacher (can link to any orphaned player)
-    // 2. User is a student with linked teacher matching player's teacher
-    // 3. User is a teacher who owns the player
-    // 4. User is an admin (can migrate any player)
+    // Check authorization: User can migrate a student user if:
+    // 1. User is a student without linked teacher (can link to any orphaned student)
+    // 2. User is a student with linked teacher matching student's linked teacher
+    // 3. User is a teacher who owns the student
+    // 4. User is an admin (can migrate any student)
 
-    const canMigrate = await checkPlayerMigrationPermission(user, player);
+    const canMigrate = await checkPlayerMigrationPermission(user, studentUser);
 
     if (!canMigrate.allowed) {
       ludlog.auth('[PLAYER-MIGRATE] Migration permission denied', {
@@ -1505,7 +1520,7 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
         reason: canMigrate.reason,
         userType: user.user_type,
         userLinkedTeacher: user.linked_teacher_id,
-        playerTeacher: player.teacher_id
+        playerTeacher: studentUser.linked_teacher_id
       });
 
       return res.status(403).json({
@@ -1562,34 +1577,35 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
         data_preserved: {}
       };
 
-      // Update user profile with player data if requested and not already set
+      // Update user profile with student user data if requested and not already set
       const userUpdates = {};
 
-      if (preserve_display_name && !user.full_name && player.display_name) {
-        userUpdates.full_name = player.display_name;
+      if (preserve_display_name && !user.full_name && (studentUser.first_name || studentUser.full_name)) {
+        userUpdates.full_name = studentUser.first_name || studentUser.full_name;
         migrationData.data_preserved.display_name = true;
       } else {
         migrationData.data_preserved.display_name = false;
       }
 
       // Merge achievements if requested
-      if (preserve_achievements && player.achievements && player.achievements.length > 0) {
-        const existingAchievements = user.achievements || [];
-        const mergedAchievements = [...existingAchievements, ...player.achievements];
+      if (preserve_achievements && studentUser.getAchievements() && studentUser.getAchievements().length > 0) {
+        const existingAchievements = user.getAchievements() || [];
+        const studentAchievements = studentUser.getAchievements();
+        const mergedAchievements = [...existingAchievements, ...studentAchievements];
         // Remove duplicates based on achievement type/id
         const uniqueAchievements = mergedAchievements.filter((achievement, index, self) =>
           index === self.findIndex(a => a.type === achievement.type && a.id === achievement.id)
         );
-        userUpdates.achievements = uniqueAchievements;
+        userUpdates.user_settings = { ...user.user_settings, achievements: uniqueAchievements };
         migrationData.data_preserved.achievements = true;
       } else {
         migrationData.data_preserved.achievements = false;
       }
 
       // Merge preferences if requested
-      if (preserve_preferences && player.preferences && Object.keys(player.preferences).length > 0) {
-        const existingPreferences = user.preferences || {};
-        userUpdates.preferences = { ...existingPreferences, ...player.preferences };
+      if (preserve_preferences && studentUser.user_settings && Object.keys(studentUser.user_settings).length > 0) {
+        const existingPreferences = user.user_settings || {};
+        userUpdates.user_settings = { ...existingPreferences, ...studentUser.user_settings };
         migrationData.data_preserved.preferences = true;
       } else {
         migrationData.data_preserved.preferences = false;
@@ -1652,10 +1668,9 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
         transaction
       });
 
-      // Deactivate the player account (soft delete)
-      await player.update({
+      // Deactivate the student user account (soft delete)
+      await studentUser.update({
         is_active: false,
-        is_online: false,
         updated_at: new Date()
       }, { transaction });
 
@@ -1709,50 +1724,50 @@ router.post('/migrate-player', authenticateToken, rateLimiters.auth, async (req,
 });
 
 /**
- * Helper function to check if a user can migrate a specific player
+ * Helper function to check if a user can migrate a specific student user
  */
-async function checkPlayerMigrationPermission(user, player) {
+async function checkPlayerMigrationPermission(user, studentUser) {
   try {
-    // Admin users can migrate any player
+    // Admin users can migrate any student user
     if (user.role === 'admin') {
       return { allowed: true, reason: 'Admin privileges' };
     }
 
-    // Teachers can migrate players they own
-    if (user.user_type === 'teacher' && player.teacher_id === user.id) {
-      return { allowed: true, reason: 'Teacher owns player' };
+    // Teachers can migrate student users they own (via linked_teacher_id)
+    if (user.user_type === 'teacher' && studentUser.linked_teacher_id === user.id) {
+      return { allowed: true, reason: 'Teacher owns student user' };
     }
 
-    // Students can migrate players under specific conditions
+    // Students can migrate student users under specific conditions
     if (user.user_type === 'student') {
-      // Student without linked teacher can migrate orphaned players (no teacher)
-      if (!user.linked_teacher_id && !player.teacher_id) {
-        return { allowed: true, reason: 'Orphaned player migration' };
+      // Student without linked teacher can migrate orphaned student users (no linked teacher)
+      if (!user.linked_teacher_id && !studentUser.linked_teacher_id) {
+        return { allowed: true, reason: 'Orphaned student user migration' };
       }
 
-      // Student with linked teacher can migrate players from same teacher
-      if (user.linked_teacher_id && player.teacher_id === user.linked_teacher_id) {
+      // Student with linked teacher can migrate student users from same teacher
+      if (user.linked_teacher_id && studentUser.linked_teacher_id === user.linked_teacher_id) {
         return { allowed: true, reason: 'Same teacher context' };
       }
 
-      // Student can migrate their own previously created players (edge case)
+      // Student can migrate their own previously created student accounts (edge case)
       // This would require additional tracking, for now we'll be restrictive
       return {
         allowed: false,
-        reason: 'Students can only migrate players from their linked teacher'
+        reason: 'Students can only migrate student users from their linked teacher'
       };
     }
 
     // Other user types not allowed
     return {
       allowed: false,
-      reason: 'Insufficient permissions for player migration'
+      reason: 'Insufficient permissions for student user migration'
     };
 
   } catch (error) {
     luderror.auth('[MIGRATION-PERMISSION-CHECK] Permission check failed', {
       userId: user.id,
-      playerId: player.id,
+      studentUserId: studentUser.id,
       error: error.message
     });
 

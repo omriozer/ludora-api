@@ -1030,29 +1030,34 @@ class JobScheduler {
         });
       }
 
-      // Player-specific cleanup (safety net from PlayerService)
+      // Student user cleanup (safety net for inactive accounts)
       if (playerCleanup || type === 'player_safety_net') {
-        ludlog.generic('Running player safety net cleanup...');
+        ludlog.generic('Running student account safety net cleanup...');
 
-        // Clean expired player sessions with batch limit
+        // Clean expired student sessions with batch limit
         deletedPlayerSessions = await models.UserSession.destroy({
           where: {
-            player_id: { [models.Sequelize.Op.ne]: null }, // Only player sessions
+            user_id: {
+              [models.Sequelize.Op.in]: models.sequelize.literal(`(
+                SELECT id FROM "Users" WHERE user_type = 'player'
+              )`)
+            }, // Only sessions for student users
             expires_at: { [models.Sequelize.Op.lt]: new Date() }
           },
-          limit: Math.floor(batchSize / 2) // Use half batch size for player sessions
+          limit: Math.floor(batchSize / 2) // Use half batch size for student sessions
         });
 
-        // Clean inactive players (365 days) with smaller batch limit
+        // Clean inactive student users (365 days) with smaller batch limit
         const inactiveCutoff = new Date();
         inactiveCutoff.setDate(inactiveCutoff.getDate() - 365);
 
-        deletedInactivePlayers = await models.Player.destroy({
+        deletedInactivePlayers = await models.User.destroy({
           where: {
-            last_seen: { [models.Sequelize.Op.lt]: inactiveCutoff },
+            user_type: 'player',
+            last_login_at: { [models.Sequelize.Op.lt]: inactiveCutoff },
             is_active: false
           },
-          limit: Math.floor(batchSize / 10) // Use smaller batch for player deletion
+          limit: Math.floor(batchSize / 10) // Use smaller batch for student deletion
         });
 
         ludlog.generic('Player safety net cleanup completed', {

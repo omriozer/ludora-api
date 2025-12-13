@@ -2,15 +2,14 @@
 // Integrates with existing Ludora authentication system
 
 import AuthService from '../services/AuthService.js';
-import PlayerService from '../services/PlayerService.js';
 import {
   detectPortalFromOrigin,
   getPortalCookieNames
 } from '../utils/cookieConfig.js';
 import { luderror } from '../lib/ludlog.js';
+import models from '../models/index.js';
 
 const authService = AuthService; // Use singleton instance
-const playerService = new PlayerService();
 
 /**
  * Parse cookies from Socket.IO handshake headers
@@ -142,20 +141,20 @@ export function authenticateSocketPlayer(socket, next) {
       return next();
     }
 
-    // Validate player session
-    playerService.validateSession(playerSession)
-      .then(sessionData => {
-        if (!sessionData) {
+    // Validate player session using auth service
+    authService.verifyToken(playerSession)
+      .then(tokenData => {
+        if (!tokenData || tokenData.type !== 'player') {
           socket.playerAuthenticated = false;
           socket.authType = 'guest';
           return next();
         }
 
-        // Get full player data
-        return playerService.getPlayer(sessionData.playerId, true);
+        // Get full player data from User model
+        return models.User.findByPk(tokenData.id);
       })
       .then(player => {
-        if (!player) {
+        if (!player || player.user_type !== 'player' || !player.is_active) {
           socket.playerAuthenticated = false;
           socket.authType = 'guest';
           return next();
@@ -165,12 +164,12 @@ export function authenticateSocketPlayer(socket, next) {
         socket.authType = 'player';
         socket.player = {
           id: player.id,
-          privacy_code: player.privacy_code,
-          display_name: player.display_name,
-          teacher_id: player.teacher_id,
-          teacher: player.teacher,
-          achievements: player.achievements,
-          preferences: player.preferences,
+          privacy_code: player.getPrivacyCode(),
+          display_name: player.first_name || player.full_name,
+          teacher_id: player.linked_teacher_id,
+          teacher: player.LinkedTeacher,
+          achievements: player.getAchievements(),
+          preferences: player.user_settings,
           is_online: player.is_online
         };
 

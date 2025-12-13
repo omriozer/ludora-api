@@ -1,5 +1,4 @@
 import AuthService from '../services/AuthService.js';
-import PlayerService from '../services/PlayerService.js';
 import SettingsService from '../services/SettingsService.js';
 import models from '../models/index.js';
 import {
@@ -9,14 +8,8 @@ import {
   createPortalAccessTokenConfig,
   createAccessTokenConfig
 } from '../utils/cookieConfig.js';
-import {
-  PLAYER_AUTH_ERRORS,
-  createPlayerAuthError,
-  getPlayerAuthErrorCode
-} from '../utils/playerAuthErrors.js';
 
 const authService = AuthService; // Use singleton instance
-const playerService = new PlayerService();
 
 // Middleware to verify tokens
 export async function authenticateToken(req, res, next) {
@@ -270,19 +263,19 @@ export function validateApiKey(req, res, next) {
 }
 
 // =============================================
-// UNIFIED AUTHENTICATION MIDDLEWARE (USERS & PLAYERS)
+// UNIFIED AUTHENTICATION MIDDLEWARE (UNIFIED USER SYSTEM)
 // =============================================
 
-// Unified middleware to authenticate both users and players
-// This middleware tries user authentication first, then player authentication
-// Sets req.entity (unified) and req.entityType ('user' | 'player')
+// Unified middleware to authenticate all users (including students with user_type='player')
+// All authentication goes through the standard User model and portal-specific tokens
+// Sets req.user (always User entity) and req.entity for backward compatibility
 export async function authenticateUserOrPlayer(req, res, next) {
   try {
     // Detect portal and get appropriate cookie names
     const portal = detectPortal(req);
     const cookieNames = getPortalCookieNames(portal);
 
-    // Try user authentication first
+    // Use standard user authentication (works for all user types)
     const userToken = req.cookies[cookieNames.accessToken];
     const userRefreshToken = req.cookies[cookieNames.refreshToken];
 
@@ -290,33 +283,28 @@ export async function authenticateUserOrPlayer(req, res, next) {
       try {
         const tokenData = await authService.verifyToken(userToken);
 
-        // Check if this is actually a player token
-        if (tokenData.type === 'player') {
-          // This is a player token, skip to player auth section
-        } else {
-          // This is a user token
-          Object.assign(req, {
-            user: tokenData,
-            entity: tokenData,
-            entityType: 'user'
-          });
+        // All authenticated entities are Users in the unified system
+        Object.assign(req, {
+          user: tokenData,
+          entity: tokenData,
+          entityType: 'user' // Unified: all authenticated users are 'user' type
+        });
 
-          // ✅ FIX: Extend UserSession on successful unified authentication
-          try {
-            if (tokenData.id) {
-              const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(tokenData.id, portal);
-              if (activeSessions.length > 0) {
-                await activeSessions[0].updateLastAccessed();
-              }
+        // Extend UserSession on successful unified authentication
+        try {
+          if (tokenData.id) {
+            const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(tokenData.id, portal);
+            if (activeSessions.length > 0) {
+              await activeSessions[0].updateLastAccessed();
             }
-          } catch (sessionError) {
-            // Continue anyway - token validation succeeded
           }
-
-          return next();
+        } catch (sessionError) {
+          // Continue anyway - token validation succeeded
         }
+
+        return next();
       } catch (tokenError) {
-        // User token invalid, fall through to player auth
+        // Access token invalid, fall through to refresh token logic
       }
     }
 
@@ -327,7 +315,7 @@ export async function authenticateUserOrPlayer(req, res, next) {
         const accessConfig = createPortalAccessTokenConfig(portal);
         res.cookie(cookieNames.accessToken, refreshResult.accessToken, accessConfig);
 
-        // ✅ FIX: Extend UserSession after successful token refresh
+        // Extend UserSession after successful token refresh
         try {
           const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(refreshResult.user.id, portal);
           if (activeSessions.length > 0) {
@@ -342,105 +330,11 @@ export async function authenticateUserOrPlayer(req, res, next) {
         Object.assign(req, {
           user: newTokenData,
           entity: newTokenData,
-          entityType: 'user'
+          entityType: 'user' // Unified: all authenticated users are 'user' type
         });
         return next();
       } catch (refreshError) {
-        // User refresh failed, continue to player auth
-      }
-    }
-
-    // Try player authentication
-    const playerAccessToken = req.cookies.student_access_token;
-    const playerRefreshToken = req.cookies.student_refresh_token;
-
-    if (playerAccessToken) {
-      try {
-        const tokenData = await authService.verifyToken(playerAccessToken);
-        if (tokenData.type === 'player') {
-          const player = await playerService.getPlayer(tokenData.id, true);
-          if (player) {
-            req.player = {
-              id: player.id,
-              privacy_code: player.privacy_code,
-              display_name: player.display_name,
-              teacher_id: player.teacher_id,
-              teacher: player.teacher,
-              achievements: player.achievements,
-              preferences: player.preferences,
-              is_online: player.is_online,
-              sessionType: 'player'
-            };
-            req.entity = req.player;
-            req.entityType = 'player';
-
-            // ✅ FIX: Extend PlayerSession on successful unified player authentication
-            try {
-              const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
-              if (activeSessions.length > 0) {
-                await activeSessions[0].updateLastAccessed();
-              }
-            } catch (sessionError) {
-              // Continue anyway - token validation succeeded
-            }
-
-            return next();
-          }
-        }
-      } catch (tokenError) {
-        // Player token invalid, try refresh
-      }
-    }
-
-    // Try player refresh if we have refresh token but access failed
-    if (!req.player && playerRefreshToken) {
-      try {
-        const jwt = await import('jsonwebtoken');
-        const refreshPayload = jwt.default.verify(playerRefreshToken, process.env.JWT_SECRET);
-
-        if (refreshPayload.type === 'player') {
-          const player = await playerService.getPlayer(refreshPayload.id, true);
-          if (player) {
-            const playerTokenData = {
-              id: player.id,
-              privacy_code: player.privacy_code,
-              display_name: player.display_name,
-              type: 'player'
-            };
-            const newAccessToken = authService.createAccessToken(playerTokenData);
-
-            const playerAccessConfig = createAccessTokenConfig();
-            res.cookie('student_access_token', newAccessToken, playerAccessConfig);
-
-            // ✅ FIX: Extend PlayerSession after successful token refresh
-            try {
-              const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
-              if (activeSessions.length > 0) {
-                // Extend the most recently accessed session
-                await activeSessions[0].updateLastAccessed();
-              }
-            } catch (sessionError) {
-              // Continue anyway - token refresh succeeded, session extension is non-critical
-            }
-
-            req.player = {
-              id: player.id,
-              privacy_code: player.privacy_code,
-              display_name: player.display_name,
-              teacher_id: player.teacher_id,
-              teacher: player.teacher,
-              achievements: player.achievements,
-              preferences: player.preferences,
-              is_online: player.is_online,
-              sessionType: 'player'
-            };
-            req.entity = req.player;
-            req.entityType = 'player';
-            return next();
-          }
-        }
-      } catch (refreshError) {
-        // Both user and player auth failed
+        // Refresh failed - no valid authentication
       }
     }
 
@@ -454,175 +348,58 @@ export async function authenticateUserOrPlayer(req, res, next) {
 // Optional unified authentication - continues if no auth provided
 export async function optionalUserOrPlayer(req, res, next) {
   try {
-    // Try the unified authentication, but don't fail if no auth found
-    await authenticateUserOrPlayer(req, res, () => {
-      // Success - authenticated as user or player
-      next();
-    });
+    // Detect portal and get appropriate cookie names
+    const portal = detectPortal(req);
+    const cookieNames = getPortalCookieNames(portal);
+
+    // Get portal-specific token
+    const token = req.cookies[cookieNames.accessToken];
+
+    if (token) {
+      try {
+        const tokenData = await authService.verifyToken(token);
+        Object.assign(req, {
+          user: tokenData,
+          entity: tokenData,
+          entityType: 'user' // Unified: all authenticated users are 'user' type
+        });
+
+        // Extend UserSession on successful optional authentication
+        try {
+          if (tokenData.id) {
+            const activeSessions = await models.UserSession.findUserActiveSessionsByPortal(tokenData.id, portal);
+            if (activeSessions.length > 0) {
+              await activeSessions[0].updateLastAccessed();
+            }
+          }
+        } catch (sessionError) {
+          // Continue anyway - this is optional auth
+        }
+      } catch (error) {
+        // Continue without authentication if token is invalid
+        req.entity = null;
+        req.entityType = null;
+      }
+    } else {
+      // No token provided - continue without auth
+      req.entity = null;
+      req.entityType = null;
+    }
+
+    next();
   } catch (error) {
-    // No authentication or failed - continue without auth
+    // Continue without authentication if any error occurs
     req.entity = null;
     req.entityType = null;
     next();
   }
 }
 
-// Middleware to authenticate players using dual token system with automatic refresh
-// COOKIE PERSISTENCE FIX: Enhanced with specific error types for better debugging
+// Legacy compatibility function - redirects to unified authentication
+// Students now authenticate as regular users through the unified system
 export async function authenticatePlayer(req, res, next) {
-  try {
-    // Get player-specific tokens
-    const accessToken = req.cookies.student_access_token;
-    const refreshToken = req.cookies.student_refresh_token;
-
-    // Try to authenticate with access token first (if present)
-    if (accessToken) {
-      try {
-        const tokenData = await authService.verifyToken(accessToken);
-
-        // Verify this is a player token
-        if (tokenData.type !== 'player') {
-          const error = createPlayerAuthError.tokenInvalid('Not a player token');
-          return res.status(error.statusCode).json(error.toJSON());
-        }
-
-        // Get full player data
-        const player = await playerService.getPlayer(tokenData.id, true);
-        if (!player) {
-          const error = createPlayerAuthError.playerNotFound(tokenData.id);
-          return res.status(error.statusCode).json(error.toJSON());
-        }
-
-        // Check if player is active
-        if (player.is_active === false) {
-          const error = createPlayerAuthError.playerInactive();
-          return res.status(error.statusCode).json(error.toJSON());
-        }
-
-        // Set player data on request object
-        req.player = {
-          id: player.id,
-          privacy_code: player.privacy_code,
-          display_name: player.display_name,
-          teacher_id: player.teacher_id,
-          teacher: player.teacher,
-          achievements: player.achievements,
-          preferences: player.preferences,
-          is_online: player.is_online,
-          sessionType: 'player'
-        };
-
-        // Also set as unified entity
-        req.entity = req.player;
-        req.entityType = 'player';
-
-        // ✅ FIX: Extend PlayerSession on successful token validation
-        try {
-          const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
-          if (activeSessions.length > 0) {
-            await activeSessions[0].updateLastAccessed();
-          }
-        } catch (sessionError) {
-          // Continue anyway - token validation succeeded
-        }
-
-        return next();
-      } catch (tokenError) {
-        // Access token is invalid/expired, fall through to refresh token logic below
-        // Debug logging removed for production security
-      }
-    }
-
-    // If access token is missing or invalid, try to refresh using refresh token
-    if (!refreshToken) {
-      const error = createPlayerAuthError.tokenMissing();
-      return res.status(error.statusCode).json(error.toJSON());
-    }
-
-    try {
-      // Verify player refresh token (using custom player token format)
-      const jwt = await import('jsonwebtoken');
-      let refreshPayload;
-      try {
-        refreshPayload = jwt.default.verify(refreshToken, process.env.JWT_SECRET);
-      } catch (tokenError) {
-        const errorCode = getPlayerAuthErrorCode(tokenError);
-        const error = errorCode === PLAYER_AUTH_ERRORS.TOKEN_EXPIRED
-          ? createPlayerAuthError.tokenExpired()
-          : createPlayerAuthError.tokenInvalid('Invalid refresh token');
-        return res.status(error.statusCode).json(error.toJSON());
-      }
-
-      // Verify this is a player token
-      if (refreshPayload.type !== 'player') {
-        const error = createPlayerAuthError.tokenInvalid('Refresh token is not a player token');
-        return res.status(error.statusCode).json(error.toJSON());
-      }
-
-      // Get player data to ensure player still exists and is active
-      const player = await playerService.getPlayer(refreshPayload.id, true);
-      if (!player) {
-        const error = createPlayerAuthError.playerNotFound(refreshPayload.id);
-        return res.status(error.statusCode).json(error.toJSON());
-      }
-
-      // Check if player is active
-      if (player.is_active === false) {
-        const error = createPlayerAuthError.playerInactive();
-        return res.status(error.statusCode).json(error.toJSON());
-      }
-
-      // Generate new access token
-      const playerTokenData = {
-        id: player.id,
-        privacy_code: player.privacy_code,
-        display_name: player.display_name,
-        type: 'player'
-      };
-      const newAccessToken = authService.createAccessToken(playerTokenData);
-
-      // Set new player access token cookie
-      const playerAccessConfig = createAccessTokenConfig();
-      logCookieConfig('Player Auth Middleware - Refresh', playerAccessConfig);
-      res.cookie('student_access_token', newAccessToken, playerAccessConfig);
-
-      // ✅ FIX: Extend PlayerSession after successful token refresh
-      try {
-        const activeSessions = await models.UserSession.findPlayerActiveSessionsByPortal(player.id, 'student');
-        if (activeSessions.length > 0) {
-          // Extend the most recently accessed session
-          await activeSessions[0].updateLastAccessed();
-        }
-      } catch (sessionError) {
-        // Continue anyway - token refresh succeeded, session extension is non-critical
-      }
-
-      // Set player data on request object
-      req.player = {
-        id: player.id,
-        privacy_code: player.privacy_code,
-        display_name: player.display_name,
-        teacher_id: player.teacher_id,
-        teacher: player.teacher,
-        achievements: player.achievements,
-        preferences: player.preferences,
-        is_online: player.is_online,
-        sessionType: 'player'
-      };
-
-      // Also set as unified entity
-      req.entity = req.player;
-      req.entityType = 'player';
-
-      next();
-    } catch (refreshError) {
-      const error = createPlayerAuthError.refreshFailed(refreshError.message);
-      return res.status(error.statusCode).json(error.toJSON());
-    }
-  } catch (error) {
-    const playerError = createPlayerAuthError.serverError(error.message);
-    res.status(playerError.statusCode).json(playerError.toJSON());
-  }
+  // Redirect to unified authentication - all students are users with user_type='player'
+  return await authenticateToken(req, res, next);
 }
 
 // =============================================
@@ -632,15 +409,14 @@ export async function authenticatePlayer(req, res, next) {
 /**
  * Middleware to enforce settings-based student access control
  * Validates student access based on Settings.students_access mode:
- * - 'all': Both Players and Users allowed
- * - 'invite_only': Only Players allowed (no User registration)
- * - 'auth_only': Only Users allowed (no anonymous Players)
+ * - 'all': All authenticated users allowed (includes students with user_type='player')
+ * - 'invite_only': Only admins allowed (privacy code authentication disabled)
+ * - 'auth_only': Only authenticated users allowed (same as 'all' in unified system)
  */
 export async function validateStudentAccess(req, res, next) {
   try {
     // Get portal and determine if this is a student operation
     const portal = detectPortal(req);
-    const { entityType } = req; // Set by authenticateUserOrPlayer middleware
 
     // Only apply to student portal operations
     if (portal !== 'student') {
@@ -652,31 +428,18 @@ export async function validateStudentAccess(req, res, next) {
 
     switch (studentsAccess) {
       case 'all':
-        // Both Players and Users allowed
+      case 'auth_only':
+        // All authenticated users allowed (unified system)
         return next();
 
       case 'invite_only':
-        // Only Players (anonymous) allowed
-        if (entityType === 'user') {
+        // Only admin users allowed (privacy code authentication disabled)
+        if (!req.user || req.user.role !== 'admin') {
           return res.status(403).json({
-            error: 'User registration disabled',
-            message: 'Student portal is in invitation-only mode. Only anonymous access is allowed.',
+            error: 'Student access restricted',
+            message: 'Student portal is in invitation-only mode. Only administrators can access.',
             mode: 'invite_only',
-            allowed_entity_types: ['player'],
-            help: 'Contact your teacher for an invitation code to join anonymously.'
-          });
-        }
-        return next();
-
-      case 'auth_only':
-        // Only Users (authenticated) allowed
-        if (entityType === 'player') {
-          return res.status(403).json({
-            error: 'Anonymous access disabled',
-            message: 'Student portal requires authentication. Please register or sign in.',
-            mode: 'auth_only',
-            allowed_entity_types: ['user'],
-            help: 'You need to create an account and verify parent consent.'
+            help: 'Contact your administrator for access.'
           });
         }
         return next();
@@ -700,26 +463,26 @@ export async function validateStudentAccess(req, res, next) {
 }
 
 /**
- * Middleware specifically for Player operations
- * Blocks Player creation/login when students_access is 'auth_only'
+ * Middleware specifically for student privacy code authentication
+ * Controls when students can authenticate using privacy codes
  */
-export async function validatePlayerAccess(req, res, next) {
+export async function validateStudentPrivacyCodeAccess(req, res, next) {
   try {
     const studentsAccess = await SettingsService.get('students_access');
 
-    if (studentsAccess === 'auth_only') {
+    if (studentsAccess === 'invite_only') {
       return res.status(403).json({
-        error: 'Anonymous player access disabled',
-        message: 'Player creation and login are disabled. Only authenticated users are allowed.',
-        mode: 'auth_only',
-        help: 'Students must register with email and parent consent.'
+        error: 'Privacy code authentication disabled',
+        message: 'Student privacy code authentication is disabled. Only administrators can access the student portal.',
+        mode: 'invite_only',
+        help: 'Contact your administrator for access.'
       });
     }
 
     return next();
   } catch (error) {
     return res.status(500).json({
-      error: 'Player access check failed',
+      error: 'Student access check failed',
       details: error.message
     });
   }
@@ -727,7 +490,7 @@ export async function validatePlayerAccess(req, res, next) {
 
 /**
  * Middleware specifically for User registration operations
- * Blocks User registration when students_access is 'invite_only'
+ * Controls when new users can register in the system
  */
 export async function validateUserRegistration(req, res, next) {
   try {
@@ -736,9 +499,9 @@ export async function validateUserRegistration(req, res, next) {
     if (studentsAccess === 'invite_only') {
       return res.status(403).json({
         error: 'User registration disabled',
-        message: 'Student user registration is disabled. Only anonymous access via invitation codes is allowed.',
+        message: 'New user registration is disabled. Only existing users can access the system.',
         mode: 'invite_only',
-        help: 'Contact your teacher for an invitation code to join anonymously.'
+        help: 'Contact your administrator for access.'
       });
     }
 
@@ -746,32 +509,6 @@ export async function validateUserRegistration(req, res, next) {
   } catch (error) {
     return res.status(500).json({
       error: 'User registration check failed',
-      details: error.message
-    });
-  }
-}
-
-/**
- * Middleware for Player migration operations
- * Blocks migration when students_access is 'invite_only'
- */
-export async function validatePlayerMigration(req, res, next) {
-  try {
-    const studentsAccess = await SettingsService.get('students_access');
-
-    if (studentsAccess === 'invite_only') {
-      return res.status(403).json({
-        error: 'Player migration disabled',
-        message: 'Converting anonymous players to registered users is disabled in invitation-only mode.',
-        mode: 'invite_only',
-        help: 'Migration is only available in "all" or "auth_only" modes.'
-      });
-    }
-
-    return next();
-  } catch (error) {
-    return res.status(500).json({
-      error: 'Migration access check failed',
       details: error.message
     });
   }

@@ -98,7 +98,7 @@
  *           example: "anonymous"
  *         display_name:
  *           type: string
- *           example: "Player 1"
+ *           example: "Sarah"
  *         status:
  *           type: string
  *           enum: [connected, disconnected, finished]

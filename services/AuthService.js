@@ -638,20 +638,18 @@ class AuthService {
           const payload = this.verifyJWTToken(token);
 
           if (payload.type === 'player') {
-            // Handle player token - look up in Player table
-            const PlayerService = await import('../services/PlayerService.js');
-            const playerService = new PlayerService.default();
-            const player = await playerService.getPlayer(payload.id, true);
+            // Handle student token - look up in User table with user_type='player'
+            const studentUser = await models.User.findByPk(payload.id);
 
-            if (!player) {
-              throw new Error('Player not found or inactive');
+            if (!studentUser || studentUser.user_type !== 'player' || !studentUser.is_active) {
+              throw new Error('Student not found or inactive');
             }
 
             return {
-              id: player.id,
-              privacy_code: player.privacy_code,
-              display_name: player.display_name,
-              type: 'player'
+              id: studentUser.id,
+              privacy_code: studentUser.getPrivacyCode(),
+              display_name: studentUser.first_name || studentUser.full_name,
+              type: 'player' // Keep 'player' for backward compatibility with existing tokens
             };
           } else {
             // Handle user token - look up in User table

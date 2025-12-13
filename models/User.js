@@ -1,6 +1,11 @@
 import { DataTypes } from 'sequelize';
 import SettingsService from '../services/SettingsService.js';
-import { haveAdminAccess } from '../constants/adminAccess.js';
+
+// Simple admin access check function
+function haveAdminAccess(role, action, req = null) {
+  // Allow all actions for admin and sysadmin roles
+  return role === 'admin' || role === 'sysadmin';
+}
 
 export default function(sequelize) {
   const User = sequelize.define('User', {
@@ -354,6 +359,19 @@ export default function(sequelize) {
     return await this.save();
   };
 
+  User.prototype.updateLastSeen = async function() {
+    this.last_login = new Date();
+    this.updated_at = new Date();
+    return await this.save();
+  };
+
+  User.prototype.deactivate = async function() {
+    this.is_active = false;
+    this.is_online = false;
+    this.updated_at = new Date();
+    return await this.save();
+  };
+
   // New centralized admin access method
   User.prototype.haveAdminAccess = function(action, req = null) {
     return haveAdminAccess(this.role, action, req);
@@ -403,6 +421,77 @@ export default function(sequelize) {
     const hasRequiredFields = !!(this.birth_date && this.education_level && this.user_type === 'teacher');
 
     return hasRequiredFields;
+  };
+
+  // Static methods for player functionality
+
+  // Generate unique privacy code (8 characters, excluding confusing chars)
+  User.generatePrivacyCode = function() {
+    // Use chars excluding 0, O, I, 1 to avoid confusion
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
+  // Find player user by privacy code
+  User.findByPrivacyCode = async function(privacyCode, options = {}) {
+    return await this.findOne({
+      where: {
+        user_type: 'player',
+        is_active: true,
+        user_settings: {
+          privacy_code: privacyCode.toUpperCase()
+        }
+      },
+      ...options
+    });
+  };
+
+  // Find player users by teacher
+  User.findPlayersByTeacher = async function(teacherId, options = {}) {
+    return await this.findAll({
+      where: {
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_active: true
+      },
+      order: [['last_login', 'DESC']],
+      ...options
+    });
+  };
+
+  // Find online player users by teacher
+  User.findOnlinePlayersByTeacher = async function(teacherId, options = {}) {
+    return await this.findAll({
+      where: {
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_online: true,
+        is_active: true
+      },
+      order: [['last_login', 'DESC']],
+      ...options
+    });
+  };
+
+  // Set all users offline (for server restart scenarios)
+  User.setAllOffline = async function() {
+    const [updatedCount] = await this.update(
+      {
+        is_online: false,
+        updated_at: new Date()
+      },
+      {
+        where: {
+          is_online: true
+        }
+      }
+    );
+
+    return updatedCount;
   };
 
   return User;

@@ -11,7 +11,6 @@ import {
 } from '../utils/studentUtils.js';
 import { ACCESS_CONTROL_KEYS } from '../constants/settingsKeys.js';
 import AuthService from '../services/AuthService.js';
-import PlayerService from '../services/PlayerService.js';
 import { generateId } from '../models/baseModel.js';
 import {
   createAccessTokenConfig,
@@ -22,7 +21,6 @@ import {
 
 const router = express.Router();
 const authService = AuthService;
-const playerService = new PlayerService();
 
 // ========================================
 // TEACHER CONNECTION VALIDATION HELPERS
@@ -223,7 +221,7 @@ const studentLoginSchema = Joi.object({
   // Firebase authentication
   idToken: Joi.string().optional(),
 
-  // Player authentication
+  // Student privacy code authentication
   privacy_code: Joi.string().min(3).max(20).trim().optional(),
 
   // Teacher connection for new students
@@ -235,7 +233,8 @@ const studentLoginSchema = Joi.object({
 
 /**
  * Unified Student Portal Login Endpoint
- * Handles both Firebase (User) and Player (privacy_code) authentication
+ * Handles both Firebase and privacy code authentication for student Users
+ * All authenticated students are Users with user_type='player'
  * Validates teacher connection requirement during login
  */
 router.post('/login',
@@ -261,28 +260,28 @@ router.post('/login',
         ...sessionMetadata
       };
 
-      let authResult = null;
-      let studentId = null;
-      let studentType = null;
+      let student = null;
 
-      // Authenticate using Firebase or Player service
+      // Unified User authentication for all students
       if (idToken) {
-        // Firebase authentication (User)
+        // Firebase authentication - get User from token
         ludlog.auth('[STUDENT-LOGIN] Attempting Firebase authentication');
 
         try {
           const tokenData = await authService.verifyToken(idToken);
 
-          // Create session for the user
-          const sessionId = await authService.createSession(tokenData.id, sessionMeta);
+          // Get full User record from database
+          student = await models.User.findByPk(tokenData.id);
+          if (!student || !student.is_active) {
+            return res.status(401).json({ error: 'User not found or inactive' });
+          }
 
-          authResult = {
-            success: true,
-            user: tokenData,
-            sessionId: sessionId
-          };
-          studentId = authResult.user.id;
-          studentType = 'user';
+          // Auto-assign user_type='player' for students on student portal (if currently null)
+          if (!student.user_type) {
+            await student.update({ user_type: 'player' });
+            student.user_type = 'player'; // Update local object
+          }
+
         } catch (firebaseError) {
           luderror.auth('[STUDENT-LOGIN] Firebase authentication failed', {
             hasTeacherId: !!teacher_id,
@@ -293,29 +292,31 @@ router.post('/login',
         }
 
       } else if (privacy_code) {
-        // Player authentication (Player)
-        ludlog.auth('[STUDENT-LOGIN] Attempting Player authentication');
+        // Privacy code authentication - find User by privacy code
+        ludlog.auth('[STUDENT-LOGIN] Attempting privacy code authentication');
 
-        const playerResult = await playerService.authenticatePlayer(privacy_code, sessionMeta);
-        if (!playerResult.success) {
-          luderror.auth('[STUDENT-LOGIN] Player authentication failed', {
+        student = await models.User.findByPrivacyCode(privacy_code.toUpperCase());
+        if (!student || !student.is_active || student.user_type !== 'player') {
+          luderror.auth('[STUDENT-LOGIN] Privacy code authentication failed', {
             hasTeacherId: !!teacher_id,
-            ip: req.ip
+            ip: req.ip,
+            found: !!student,
+            active: student?.is_active,
+            userType: student?.user_type
           });
           return res.status(401).json({ error: 'Invalid privacy code' });
         }
 
-        authResult = playerResult;
-        studentId = authResult.player.id;
-        studentType = 'player';
       } else {
         return res.status(400).json({ error: 'Either idToken or privacy_code required' });
       }
 
+      const studentId = student.id;
+
       // Teacher connection validation for all student logins
       ludlog.auth('[STUDENT-LOGIN] Student authenticated successfully - checking teacher connection requirement', {
         studentId,
-        studentType,
+        userType: student.user_type,
         teacherIdProvided: !!teacher_id
       });
 
@@ -325,7 +326,7 @@ router.post('/login',
 
       ludlog.auth('[STUDENT-LOGIN] Teacher connection validation check:', {
         studentId,
-        studentType,
+        userType: student.user_type,
         hasExistingMembership,
         teacherIdProvided,
         teacherId: teacher_id
@@ -335,7 +336,7 @@ router.post('/login',
       if (!teacherIdProvided && !hasExistingMembership) {
         luderror.auth('[STUDENT-LOGIN] Teacher connection required - login denied', {
           studentId,
-          studentType,
+          userType: student.user_type,
           hasExistingMembership,
           teacherIdProvided,
           ip: req.ip
@@ -344,8 +345,7 @@ router.post('/login',
         return res.status(403).json({
           error: 'Teacher connection required',
           code: 'TEACHER_CONNECTION_REQUIRED',
-          message: 'Students must connect to a teacher to access the portal. Please use an invitation code or contact your teacher.',
-          studentType
+          message: 'Students must connect to a teacher to access the portal. Please use an invitation code or contact your teacher.'
         });
       }
 
@@ -354,7 +354,7 @@ router.post('/login',
       if (teacherIdProvided && !hasExistingMembership) {
         ludlog.auth('[STUDENT-LOGIN] Creating new teacher connection during student login', {
           studentId,
-          studentType,
+          userType: student.user_type,
           teacherId: teacher_id
         });
 
@@ -362,7 +362,7 @@ router.post('/login',
           allMemberships = await createMembershipIfNeeded(studentId, teacher_id);
           ludlog.auth('[STUDENT-LOGIN] Teacher connection created successfully during student login', {
             studentId,
-            studentType,
+            userType: student.user_type,
             teacherId: teacher_id,
             membershipCount: allMemberships.length,
             memberships: allMemberships.map(m => ({
@@ -374,7 +374,7 @@ router.post('/login',
         } catch (membershipError) {
           luderror.auth('[STUDENT-LOGIN] Failed to create teacher connection during student login', {
             studentId,
-            studentType,
+            userType: student.user_type,
             teacherId: teacher_id,
             error: membershipError.message
           });
@@ -382,108 +382,67 @@ router.post('/login',
           return res.status(400).json({
             error: 'Failed to connect to teacher',
             code: 'TEACHER_CONNECTION_FAILED',
-            message: membershipError.message,
-            studentType
+            message: membershipError.message
           });
         }
       }
 
-      // Generate appropriate tokens based on student type
-      if (studentType === 'user') {
-        // Firebase User - use AuthService for session management
-        const sessionId = await authService.createSession(studentId, sessionMeta);
+      // Generate unified tokens for authenticated student User
+      // Create session and get portal-specific tokens through AuthService
+      ludlog.auth('[STUDENT-LOGIN] Creating session and tokens for authenticated student', {
+        studentId,
+        userType: student.user_type
+      });
 
-        // Set session cookie
-        const sessionConfig = createAccessTokenConfig();
-        sessionConfig.maxAge = 24 * 60 * 60 * 1000; // 24 hours
-        logCookieConfig('Student Login (User) - Session', sessionConfig);
-        res.cookie('student_session', sessionId, sessionConfig);
+      // Create session for the student user
+      const sessionId = await authService.createSession(studentId, sessionMeta, 'student');
 
-        // Return user data
-        res.status(200).json({
-          success: true,
-          student: {
-            id: authResult.user.id,
-            email: authResult.user.email,
-            full_name: authResult.user.full_name,
-            display_name: authResult.user.display_name || authResult.user.full_name,
-            user_type: authResult.user.user_type,
-            is_verified: authResult.user.is_verified,
-            type: 'user'
-          },
-          teacherConnectionCreated: allMemberships.length > 0,
-          memberships: allMemberships.map(m => ({
-            id: m.id,
-            classroom_id: m.classroom_id,
-            status: m.status,
-            teacher_id: m.teacher_id,
-            created_at: m.created_at
-          }))
-        });
+      // Generate token pair through AuthService (same as regular users)
+      const tokenResult = await authService.generateTokenPair(student, sessionMeta);
 
-      } else if (studentType === 'player') {
-        // Player - generate JWT tokens
-        const playerTokenData = {
-          id: authResult.player.id,
-          privacy_code: authResult.player.privacy_code,
-          display_name: authResult.player.display_name,
-          type: 'player'
-        };
+      // Set student portal cookies (use student-specific cookie names for portal isolation)
+      const accessConfig = createAccessTokenConfig();
+      logCookieConfig('Student Login - Access Token', accessConfig);
+      res.cookie('student_access_token', tokenResult.accessToken, accessConfig);
 
-        // Generate player access token
-        const accessToken = authService.createAccessToken(playerTokenData);
+      const refreshConfig = createRefreshTokenConfig();
+      logCookieConfig('Student Login - Refresh Token', refreshConfig);
+      res.cookie('student_refresh_token', tokenResult.refreshToken, refreshConfig);
 
-        // Create player-specific refresh token
-        const jwt = await import('jsonwebtoken');
-        const refreshTokenId = generateId();
-        const refreshPayload = {
-          id: authResult.player.id,
-          type: 'player',
-          tokenId: refreshTokenId,
-          entityType: 'player'
-        };
-        const refreshToken = jwt.default.sign(refreshPayload, process.env.JWT_SECRET, {
-          expiresIn: '7d',
-          issuer: 'ludora-api',
-          audience: 'ludora-student-portal'
-        });
+      // Legacy session cookie for compatibility
+      const sessionConfig = createAccessTokenConfig();
+      sessionConfig.maxAge = 24 * 60 * 60 * 1000; // 24 hours
+      res.cookie('student_session', sessionId, sessionConfig);
 
-        // Set player tokens as httpOnly cookies
-        const playerAccessConfig = createAccessTokenConfig();
-        logCookieConfig('Student Login (Player) - Access Token', playerAccessConfig);
-        res.cookie('student_access_token', accessToken, playerAccessConfig);
-
-        const playerRefreshConfig = createRefreshTokenConfig();
-        logCookieConfig('Student Login (Player) - Refresh Token', playerRefreshConfig);
-        res.cookie('student_refresh_token', refreshToken, playerRefreshConfig);
-
-        // Legacy session for compatibility
-        const playerSessionConfig = createAccessTokenConfig();
-        playerSessionConfig.maxAge = 24 * 60 * 60 * 1000;
-        res.cookie('student_session', authResult.sessionId, playerSessionConfig);
-
-        // Return player data
-        res.status(200).json({
-          success: true,
-          student: {
-            id: authResult.player.id,
-            display_name: authResult.player.display_name,
-            teacher: authResult.player.teacher,
-            achievements: authResult.player.achievements,
-            preferences: authResult.player.preferences,
-            is_online: authResult.player.is_online,
-            type: 'player'
-          },
-          teacherConnectionCreated: allMemberships.length > 0,
-          memberships: allMemberships.map(m => ({
-            id: m.id,
-            classroom_id: m.classroom_id,
-            status: m.status,
-            teacher_id: m.teacher_id,
-            created_at: m.created_at
-          }))
-        });
-      }
+      // Return unified student user data
+      res.status(200).json({
+        success: true,
+        student: {
+          id: student.id,
+          email: student.email,
+          full_name: student.full_name,
+          first_name: student.first_name,
+          display_name: student.first_name || student.full_name,
+          user_type: student.user_type,
+          is_verified: student.is_verified,
+          is_active: student.is_active,
+          linked_teacher_id: student.linked_teacher_id,
+          // Include student-specific fields for user_type='player'
+          privacy_code: student.user_type === 'player' ? student.getPrivacyCode() : null,
+          achievements: student.user_type === 'player' ? student.getAchievements() : null,
+          is_online: student.is_online,
+          created_at: student.created_at,
+          type: 'user' // Unified: all authenticated students are Users
+        },
+        teacherConnectionCreated: allMemberships.length > 0,
+        memberships: allMemberships.map(m => ({
+          id: m.id,
+          classroom_id: m.classroom_id,
+          status: m.status,
+          teacher_id: m.teacher_id,
+          created_at: m.created_at
+        }))
+      });
 
     } catch (error) {
       luderror.auth('Student login error:', error);
@@ -874,5 +833,529 @@ router.post('/join-classroom',
     }
   }
 );
+
+// =============================================
+// TEACHER STUDENT MANAGEMENT ROUTES
+// =============================================
+
+// Validation schemas for teacher student management routes
+const teacherManagementSchemas = {
+  createStudent: Joi.object({
+    display_name: Joi.string().min(1).max(100).trim().required()
+      .messages({
+        'string.min': 'Display name must not be empty',
+        'string.max': 'Display name must be at most 100 characters',
+        'any.required': 'Display name is required'
+      }),
+    metadata: Joi.object().optional()
+  }),
+  updateStudent: Joi.object({
+    display_name: Joi.string().min(1).max(100).trim().optional(),
+    preferences: Joi.object().optional(),
+    achievements: Joi.array().optional()
+  }).min(1),
+};
+
+// Create a new student (teacher only)
+router.post('/teacher/create', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const { display_name, metadata = {} } = req.body;
+
+    // Validate input
+    const { error } = teacherManagementSchemas.createStudent.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+
+    // Generate unique privacy code
+    const privacy_code = models.User.generatePrivacyCode();
+
+    // Create student user
+    const student = await models.User.create({
+      id: generateId(),
+      first_name: display_name,
+      full_name: display_name,
+      user_type: 'player',
+      linked_teacher_id: teacherId,
+      is_active: true,
+      is_verified: false,
+      user_settings: {
+        privacy_code,
+        ...metadata,
+        created_by: teacherId,
+        creation_context: 'teacher_dashboard'
+      },
+      created_at: new Date(),
+      updated_at: new Date()
+    });
+
+    res.status(201).json({
+      success: true,
+      student: {
+        id: student.id,
+        privacy_code: student.getPrivacyCode(),
+        display_name: student.first_name,
+        teacher_id: student.linked_teacher_id,
+        is_online: student.is_online,
+        created_at: student.created_at
+      }
+    });
+
+  } catch (error) {
+    luderror.api('Create student error:', error);
+    res.status(400).json({ error: error.message || 'Failed to create student' });
+  }
+});
+
+// Get all students for current teacher
+router.get('/teacher/list', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const {
+      online_only = false,
+      limit = 50,
+      offset = 0
+    } = req.query;
+
+    const whereClause = {
+      user_type: 'player',
+      linked_teacher_id: teacherId,
+      is_active: true
+    };
+
+    if (online_only === 'true') {
+      whereClause.is_online = true;
+    }
+
+    const students = await models.User.findAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['created_at', 'DESC']],
+      include: [{
+        model: models.User,
+        as: 'LinkedTeacher',
+        attributes: ['id', 'full_name', 'email']
+      }]
+    });
+
+    const studentsData = students.map(student => ({
+      id: student.id,
+      privacy_code: student.getPrivacyCode(),
+      display_name: student.first_name || student.full_name,
+      teacher_id: student.linked_teacher_id,
+      achievements: student.getAchievements(),
+      preferences: student.user_settings,
+      is_online: student.is_online,
+      last_seen: student.last_login_at,
+      created_at: student.created_at,
+      updated_at: student.updated_at
+    }));
+
+    res.json({
+      students: studentsData,
+      count: studentsData.length,
+      teacher_id: teacherId
+    });
+  } catch (error) {
+    luderror.api('Get teacher students error:', error);
+    res.status(500).json({ error: 'Failed to retrieve students' });
+  }
+});
+
+// Get specific student by ID (teacher only)
+router.get('/teacher/:studentId', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const { studentId } = req.params;
+
+    const student = await models.User.findOne({
+      where: {
+        id: studentId,
+        user_type: 'player',
+        is_active: true
+      },
+      include: [{
+        model: models.User,
+        as: 'LinkedTeacher',
+        attributes: ['id', 'full_name', 'email']
+      }]
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Verify teacher ownership
+    if (student.linked_teacher_id !== teacherId) {
+      return res.status(403).json({ error: 'Access denied: You do not own this student' });
+    }
+
+    // Include privacy code for teacher
+    res.json({
+      id: student.id,
+      privacy_code: student.getPrivacyCode(),
+      display_name: student.first_name || student.full_name,
+      teacher_id: student.linked_teacher_id,
+      teacher: student.LinkedTeacher,
+      achievements: student.getAchievements(),
+      preferences: student.user_settings,
+      is_online: student.is_online,
+      last_seen: student.last_login_at,
+      created_at: student.created_at,
+      updated_at: student.updated_at
+    });
+  } catch (error) {
+    luderror.api('Get student error:', error);
+    res.status(500).json({ error: 'Failed to retrieve student' });
+  }
+});
+
+// Update student (teacher only)
+router.put('/teacher/:studentId', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const { studentId } = req.params;
+
+    // Validate input
+    const { error } = teacherManagementSchemas.updateStudent.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+
+    const student = await models.User.findOne({
+      where: {
+        id: studentId,
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_active: true
+      }
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const updateData = {};
+
+    if (req.body.display_name) {
+      updateData.first_name = req.body.display_name;
+      updateData.full_name = req.body.display_name;
+    }
+
+    if (req.body.preferences || req.body.achievements) {
+      updateData.user_settings = {
+        ...student.user_settings,
+        ...(req.body.preferences && { preferences: req.body.preferences }),
+        ...(req.body.achievements && { achievements: req.body.achievements })
+      };
+    }
+
+    updateData.updated_at = new Date();
+
+    await student.update(updateData);
+
+    // Include privacy code for teacher
+    res.json({
+      id: student.id,
+      privacy_code: student.getPrivacyCode(),
+      display_name: student.first_name,
+      teacher_id: student.linked_teacher_id,
+      achievements: student.getAchievements(),
+      preferences: student.user_settings,
+      is_online: student.is_online,
+      last_seen: student.last_login_at,
+      updated_at: student.updated_at
+    });
+
+  } catch (error) {
+    luderror.api('Update student error:', error);
+    res.status(400).json({ error: error.message || 'Failed to update student' });
+  }
+});
+
+// Regenerate privacy code for student (teacher only)
+router.post('/teacher/:studentId/regenerate-code', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const { studentId } = req.params;
+
+    const student = await models.User.findOne({
+      where: {
+        id: studentId,
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_active: true
+      }
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Generate new privacy code
+    const newPrivacyCode = models.User.generatePrivacyCode();
+
+    await student.update({
+      user_settings: {
+        ...student.user_settings,
+        privacy_code: newPrivacyCode
+      },
+      updated_at: new Date()
+    });
+
+    res.json({
+      success: true,
+      student_id: student.id,
+      new_privacy_code: newPrivacyCode
+    });
+
+  } catch (error) {
+    luderror.api('Regenerate privacy code error:', error);
+    res.status(400).json({ error: error.message || 'Failed to regenerate privacy code' });
+  }
+});
+
+// Deactivate student (teacher only)
+router.delete('/teacher/:studentId', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const { studentId } = req.params;
+
+    const student = await models.User.findOne({
+      where: {
+        id: studentId,
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_active: true
+      }
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    await student.update({
+      is_active: false,
+      updated_at: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'Student deactivated successfully',
+      student_id: studentId
+    });
+
+  } catch (error) {
+    luderror.api('Deactivate student error:', error);
+    res.status(400).json({ error: error.message || 'Failed to deactivate student' });
+  }
+});
+
+// Get online students for teacher
+router.get('/teacher/online/list', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+
+    const onlineStudents = await models.User.findAll({
+      where: {
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_active: true,
+        is_online: true
+      },
+      order: [['last_login_at', 'DESC']]
+    });
+
+    const studentsData = onlineStudents.map(student => ({
+      id: student.id,
+      privacy_code: student.getPrivacyCode(),
+      display_name: student.first_name || student.full_name,
+      teacher_id: student.linked_teacher_id,
+      is_online: student.is_online,
+      last_seen: student.last_login_at
+    }));
+
+    res.json({
+      online_students: studentsData,
+      count: studentsData.length,
+      teacher_id: teacherId,
+      timestamp: new Date()
+    });
+  } catch (error) {
+    luderror.api('Get online students error:', error);
+    res.status(500).json({ error: 'Failed to retrieve online students' });
+  }
+});
+
+// Get student statistics for teacher
+router.get('/teacher/stats/overview', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+
+    const [totalStudents, activeStudents, onlineStudents] = await Promise.all([
+      models.User.count({
+        where: {
+          user_type: 'player',
+          linked_teacher_id: teacherId
+        }
+      }),
+      models.User.count({
+        where: {
+          user_type: 'player',
+          linked_teacher_id: teacherId,
+          is_active: true
+        }
+      }),
+      models.User.count({
+        where: {
+          user_type: 'player',
+          linked_teacher_id: teacherId,
+          is_active: true,
+          is_online: true
+        }
+      })
+    ]);
+
+    const stats = {
+      total_students: totalStudents,
+      active_students: activeStudents,
+      online_students: onlineStudents,
+      inactive_students: totalStudents - activeStudents
+    };
+
+    res.json({
+      message: 'Student statistics retrieved successfully',
+      teacher_id: teacherId,
+      stats
+    });
+  } catch (error) {
+    luderror.api('Get student stats error:', error);
+    res.status(500).json({ error: 'Failed to retrieve student statistics' });
+  }
+});
+
+// =============================================
+// STUDENT SESSION MANAGEMENT (TEACHER ADMIN)
+// =============================================
+
+// Get student sessions (teacher only)
+router.get('/teacher/:studentId/sessions', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const { studentId } = req.params;
+
+    // Verify student ownership
+    const student = await models.User.findOne({
+      where: {
+        id: studentId,
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_active: true
+      }
+    });
+
+    if (!student) {
+      return res.status(403).json({ error: 'Access denied: You do not own this student' });
+    }
+
+    const sessions = await authService.getUserSessions(studentId);
+
+    res.json({
+      message: `Sessions for student ${studentId} retrieved successfully`,
+      student_id: studentId,
+      sessions,
+      count: sessions.length
+    });
+  } catch (error) {
+    luderror.auth('Get student sessions error:', error);
+    res.status(500).json({ error: 'Failed to retrieve student sessions' });
+  }
+});
+
+// Invalidate student sessions (teacher only)
+router.post('/teacher/:studentId/logout', authenticateUserOrPlayer, async (req, res) => {
+  try {
+    // Only allow teachers
+    if (req.entityType !== 'user' || req.user?.role !== 'teacher') {
+      return res.status(403).json({ error: 'Teacher access required' });
+    }
+
+    const teacherId = req.user.id;
+    const { studentId } = req.params;
+
+    // Verify student ownership
+    const student = await models.User.findOne({
+      where: {
+        id: studentId,
+        user_type: 'player',
+        linked_teacher_id: teacherId,
+        is_active: true
+      }
+    });
+
+    if (!student) {
+      return res.status(403).json({ error: 'Access denied: You do not own this student' });
+    }
+
+    await authService.invalidateUserSessions(studentId);
+
+    res.json({
+      success: true,
+      message: `Student ${studentId} logged out successfully`,
+      student_id: studentId
+    });
+
+  } catch (error) {
+    luderror.auth('Logout student error:', error);
+    res.status(500).json({ error: 'Failed to logout student' });
+  }
+});
 
 export default router;
