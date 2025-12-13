@@ -57,6 +57,12 @@ const createMembershipIfNeeded = async (studentId, teacherId, transaction = null
   }
 
   try {
+    // Get the student record first (needed for invitation checks)
+    const student = await models.User.findByPk(studentId, { transaction });
+    if (!student) {
+      throw new Error('Student not found');
+    }
+
     // Get ALL existing memberships for this teacher+student pair
     const existingMemberships = await models.ClassroomMembership.findAll({
       where: {
@@ -89,25 +95,95 @@ const createMembershipIfNeeded = async (studentId, teacherId, transaction = null
       throw new Error('Teacher does not have active subscription with classroom benefits');
     }
 
+    // Check if there's a pending invitation for this student from this teacher
+    // This includes both student-specific invitations and general teacher invitations
+    const pendingInvitation = await models.StudentInvitation.findOne({
+      where: {
+        teacher_id: teacherId,
+        status: 'pending',
+        [models.Sequelize.Op.or]: [
+          // Student-specific invitations
+          { student_id: studentId },
+          { student_email: student.email },
+          // General teacher invitations (no specific student)
+          {
+            student_id: null,
+            student_email: null
+          }
+        ]
+      },
+      order: [
+        // Prioritize student-specific invitations over general ones
+        // First by student_id match, then by email match, then general invitations
+        [models.Sequelize.literal('CASE WHEN student_id IS NOT NULL THEN 1 WHEN student_email IS NOT NULL THEN 2 ELSE 3 END'), 'ASC'],
+        ['created_at', 'DESC'] // Most recent first within each category
+      ],
+      transaction
+    });
+
+    // Determine membership status based on invitation existence
+    const hasInvitation = !!pendingInvitation;
+
+    let invitationType = 'none';
+    if (hasInvitation) {
+      if (pendingInvitation.student_id === studentId) {
+        invitationType = 'student_specific_by_id';
+      } else if (pendingInvitation.student_email === student.email) {
+        invitationType = 'student_specific_by_email';
+      } else {
+        invitationType = 'general_teacher_invitation';
+      }
+    }
+
+    ludlog.auth('[STUDENT-LOGIN] Teacher invitation check result:', {
+      studentId,
+      teacherId,
+      hasInvitation,
+      invitationType,
+      invitationId: pendingInvitation?.id || null
+    });
+
+    const membershipStatus = hasInvitation ? 'active' : 'pending';
+    const approvalData = hasInvitation ? {
+      approved_at: new Date(),
+      approval_message: `Auto-approved: Found ${invitationType.replace(/_/g, ' ')} from teacher`
+    } : {
+      approved_at: null,
+      approval_message: null
+    };
+
     // Create new general membership
     const membership = await models.ClassroomMembership.create({
       id: generateId(),
       teacher_id: teacherId,
       student_id: studentId,
       classroom_id: null, // General teacher connection, no specific classroom
-      status: 'active',
+      status: membershipStatus,
       requested_at: new Date(),
-      approved_at: new Date(),
-      request_message: 'Auto-created during student login flow with teacher connection',
-      approval_message: 'Automatic approval for invitation-based teacher connection'
+      ...approvalData,
+      request_message: hasInvitation
+        ? `Auto-created during student login flow - approved based on ${invitationType.replace(/_/g, ' ')}`
+        : 'Auto-created during student login flow - no prior invitation, pending teacher approval'
     }, { transaction });
+
+    // If invitation exists, mark it as used
+    if (pendingInvitation) {
+      await pendingInvitation.update({
+        status: 'used',
+        used_at: new Date()
+      }, { transaction });
+    }
 
     ludlog.auth('New general membership auto-created during student login:', {
       membershipId: membership.id,
       studentId: studentId,
       teacherId,
       status: membership.status,
-      classroom_id: membership.classroom_id
+      classroom_id: membership.classroom_id,
+      approved: membership.status === 'active',
+      invitationFound: hasInvitation,
+      invitationType: invitationType,
+      approvalMessage: membership.approval_message
     });
 
     // Return as array for consistency with existing memberships case
