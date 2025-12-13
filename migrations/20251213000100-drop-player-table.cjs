@@ -6,7 +6,23 @@ module.exports = {
     const transaction = await queryInterface.sequelize.transaction();
 
     try {
-      // Drop the player table completely
+      // First, remove the foreign key constraint from user_session
+      try {
+        await queryInterface.removeConstraint('user_session', 'user_session_player_id_fkey', { transaction });
+      } catch (error) {
+        // Constraint might not exist or have different name, continue
+        console.log('Constraint removal warning:', error.message);
+      }
+
+      // Also remove player_id column from user_session since it's no longer needed
+      try {
+        await queryInterface.removeColumn('user_session', 'player_id', { transaction });
+      } catch (error) {
+        // Column might not exist, continue
+        console.log('Column removal warning:', error.message);
+      }
+
+      // Now drop the player table
       await queryInterface.dropTable('player', { transaction });
 
       await transaction.commit();
