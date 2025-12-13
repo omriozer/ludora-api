@@ -5,6 +5,10 @@ module.exports = {
   async up(queryInterface, Sequelize) {
     console.log('🔄 Adding user profile fields to User table...');
 
+    // Set timeouts to prevent hanging on large user table
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
+
     // Check if columns already exist
     const tableDescription = await queryInterface.describeTable('user');
 
@@ -78,6 +82,10 @@ module.exports = {
 
   async down(queryInterface, Sequelize) {
     console.log('🔄 Rolling back user profile fields...');
+
+    // Set timeouts to prevent hanging on large user table
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
 
     // Remove indexes first
     try {

@@ -19,8 +19,30 @@ module.exports = {
       console.log('Constraint idx_classroommembership_unique_membership may not exist, continuing...');
     }
 
-    // 2. Rename column from student_user_id to student_id
-    await queryInterface.renameColumn('classroommembership', 'student_user_id', 'student_id');
+    // 2. Rename column from student_user_id to student_id (optimized to prevent hanging)
+    // Set timeouts to prevent hanging
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
+
+    // Check if column rename is needed
+    const [columnExists] = await queryInterface.sequelize.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'classroommembership'
+      AND column_name = 'student_user_id'
+    `);
+
+    if (columnExists.length > 0) {
+      console.log('Renaming student_user_id to student_id using optimized raw SQL...');
+      // Use raw SQL for faster execution than Sequelize's renameColumn
+      await queryInterface.sequelize.query(`
+        ALTER TABLE "classroommembership"
+        RENAME COLUMN student_user_id TO student_id;
+      `);
+      console.log('✅ Column renamed successfully');
+    } else {
+      console.log('⚠️ Column student_user_id does not exist or already renamed');
+    }
 
     // 3. Allow NULL values for classroom_id (remove NOT NULL constraint)
     await queryInterface.changeColumn('classroommembership', 'classroom_id', {
@@ -86,8 +108,30 @@ module.exports = {
       console.log('Index removal failed:', error.message);
     }
 
-    // Revert column name change
-    await queryInterface.renameColumn('classroommembership', 'student_id', 'student_user_id');
+    // Revert column name change (optimized to prevent hanging)
+    // Set timeouts to prevent hanging
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
+
+    // Check if column revert is needed
+    const [columnExists] = await queryInterface.sequelize.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'classroommembership'
+      AND column_name = 'student_id'
+    `);
+
+    if (columnExists.length > 0) {
+      console.log('Reverting student_id to student_user_id using optimized raw SQL...');
+      // Use raw SQL for faster execution than Sequelize's renameColumn
+      await queryInterface.sequelize.query(`
+        ALTER TABLE "classroommembership"
+        RENAME COLUMN student_id TO student_user_id;
+      `);
+      console.log('✅ Column reverted successfully');
+    } else {
+      console.log('⚠️ Column student_id does not exist or already reverted');
+    }
 
     // Restore NOT NULL constraint for classroom_id
     await queryInterface.changeColumn('classroommembership', 'classroom_id', {
