@@ -1,5 +1,6 @@
 import { DataTypes } from 'sequelize';
 import SettingsService from '../services/SettingsService.js';
+import { haveAdminAccess } from '../constants/adminAccess.js';
 
 export default function(sequelize) {
   const User = sequelize.define('User', {
@@ -11,7 +12,7 @@ export default function(sequelize) {
     email: {
       type: DataTypes.STRING,
       allowNull: true,
-      unique: false, // Base44 doesn't enforce unique emails
+      unique: true, // Made unique for player email pattern
       validate: {
         isEmail: true,
       },
@@ -71,7 +72,7 @@ export default function(sequelize) {
       type: DataTypes.STRING,
       allowNull: true,
       validate: {
-        isIn: [['teacher', 'student', 'parent', 'headmaster', null]]
+        isIn: [['teacher', 'student', 'parent', 'headmaster', 'player', null]]
       }
     },
     created_at: {
@@ -141,6 +142,18 @@ export default function(sequelize) {
       allowNull: true,
       comment: 'User ID of teacher this student is linked to for parent consent requirements. NULL = not linked to teacher'
     },
+    user_settings: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+      comment: 'User settings including privacy_code and achievements for player users'
+    },
+    is_online: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Whether user is currently connected (mainly for player users)'
+    },
   }, {
     tableName: 'user', // Match Base44 table name
     timestamps: false, // We handle timestamps manually
@@ -201,6 +214,19 @@ export default function(sequelize) {
       {
         fields: ['last_name'],
         name: 'idx_user_last_name'
+      },
+      {
+        fields: ['user_settings'],
+        name: 'idx_user_settings_gin',
+        using: 'gin'
+      },
+      {
+        fields: ['is_online'],
+        name: 'idx_user_online'
+      },
+      {
+        fields: ['user_type', 'is_online'],
+        name: 'idx_user_type_online'
       },
     ],
   });
@@ -276,14 +302,6 @@ export default function(sequelize) {
   };
 
   // System role checking methods
-  User.prototype.isAdmin = function() {
-    return this.role === 'admin';
-  };
-
-  User.prototype.isSysAdmin = function() {
-    return this.role === 'sysadmin';
-  };
-
   User.prototype.isUser = function() {
     return this.role === 'user';
   };
@@ -305,10 +323,40 @@ export default function(sequelize) {
     return this.user_type === 'headmaster';
   };
 
-  // Legacy compatibility methods
-  User.prototype.isStaff = function() {
-    // Staff functionality now maps to admin role
-    return this.role === 'admin' || this.role === 'sysadmin';
+  User.prototype.isPlayer = function() {
+    return this.user_type === 'player';
+  };
+
+  User.prototype.getPrivacyCode = function() {
+    return this.user_settings?.privacy_code || null;
+  };
+
+  User.prototype.setPrivacyCode = function(code) {
+    this.user_settings = { ...this.user_settings, privacy_code: code };
+  };
+
+  User.prototype.getAchievements = function() {
+    return this.user_settings?.achievements || [];
+  };
+
+  User.prototype.setAchievements = function(achievements) {
+    this.user_settings = { ...this.user_settings, achievements };
+  };
+
+  User.prototype.isOnline = function() {
+    return this.is_online;
+  };
+
+  User.prototype.setOnline = async function(isOnline = true) {
+    this.is_online = isOnline;
+    this.last_login = new Date();
+    this.updated_at = new Date();
+    return await this.save();
+  };
+
+  // New centralized admin access method
+  User.prototype.haveAdminAccess = function(action, req = null) {
+    return haveAdminAccess(this.role, action, req);
   };
 
   User.prototype.canAccess = function(requiredRole) {
