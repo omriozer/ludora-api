@@ -12,10 +12,11 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging on large operations
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 180000;'); // 3 minutes for complex operations
 
-    try {
-      console.log('🔄 Adding ClassroomMembership approval workflow...');
+    console.log('🔄 Adding ClassroomMembership approval workflow (optimized)...');
 
       // Step 1: Check current table structure
       const tableDescription = await queryInterface.describeTable('classroommembership');
@@ -28,7 +29,7 @@ module.exports = {
           allowNull: false,
           defaultValue: 'pending',
           comment: 'Membership approval status'
-        }, { transaction });
+        });
       } else {
         console.log('⚠️ Status column already exists, checking if it needs conversion to enum...');
 
@@ -46,7 +47,7 @@ module.exports = {
                 CREATE TYPE enum_classroommembership_status AS ENUM ('pending', 'active', 'denied', 'inactive');
               END IF;
             END $$;
-          `, { transaction });
+          `);
 
           // Step 2: Update existing values to match enum values
           await queryInterface.sequelize.query(`
@@ -58,14 +59,14 @@ module.exports = {
               WHEN status = 'inactive' OR status = 'removed' THEN 'inactive'
               ELSE 'pending'
             END
-          `, { transaction });
+          `);
 
           // Step 3: Convert the column type
           await queryInterface.changeColumn('classroommembership', 'status', {
             type: 'enum_classroommembership_status',
             allowNull: false,
             defaultValue: 'pending'
-          }, { transaction });
+          });
 
           console.log('✅ Successfully converted status column to enum');
         } else {
@@ -80,7 +81,7 @@ module.exports = {
           type: Sequelize.DATE,
           allowNull: true,
           comment: 'When membership was requested'
-        }, { transaction });
+        });
       }
 
       if (!tableDescription.approved_at) {
@@ -89,7 +90,7 @@ module.exports = {
           type: Sequelize.DATE,
           allowNull: true,
           comment: 'When membership was approved/denied'
-        }, { transaction });
+        });
       }
 
       // Step 4: Add approval workflow message fields
@@ -99,7 +100,7 @@ module.exports = {
           type: Sequelize.TEXT,
           allowNull: true,
           comment: 'Optional message from student when requesting'
-        }, { transaction });
+        });
       }
 
       if (!tableDescription.approval_message) {
@@ -108,7 +109,7 @@ module.exports = {
           type: Sequelize.TEXT,
           allowNull: true,
           comment: 'Optional message from teacher when approving/denying'
-        }, { transaction });
+        });
       }
 
       // Step 5: Add student display name field for privacy
@@ -118,7 +119,7 @@ module.exports = {
           type: Sequelize.STRING,
           allowNull: true,
           comment: 'Custom display name for privacy (optional)'
-        }, { transaction });
+        });
       }
 
       // Step 6: Update existing active memberships to have proper timestamps
@@ -129,7 +130,7 @@ module.exports = {
         UPDATE classroommembership
         SET requested_at = created_at
         WHERE requested_at IS NULL
-      `, { transaction });
+      `);
 
       // Set approved_at for active memberships that don't have it
       // Note: joined_at is varchar, so we need to convert it to timestamp if possible
@@ -144,76 +145,51 @@ module.exports = {
           ELSE created_at
         END
         WHERE status = 'active' AND approved_at IS NULL
-      `, { transaction });
+      `);
 
-      // Step 7: Create workflow-specific indexes
-      console.log('🔗 Creating approval workflow indexes...');
+      // Step 7: Create workflow-specific indexes using CONCURRENTLY
+      console.log('🔗 Creating approval workflow indexes using CONCURRENTLY...');
 
-      // Index for teacher's pending approvals
-      try {
-        await queryInterface.addIndex('classroommembership', {
-          fields: ['teacher_id', 'status'],
-          name: 'idx_classroommembership_teacher_status'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_teacher_status');
-      } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_teacher_status may already exist');
+      const indexes = [
+        { name: 'idx_classroommembership_teacher_status', columns: 'teacher_id, status', description: 'Teacher pending approvals' },
+        { name: 'idx_classroommembership_classroom_status', columns: 'classroom_id, status', description: 'Classroom status filtering' },
+        { name: 'idx_classroommembership_requested_at', columns: 'requested_at', description: 'Request timestamp ordering' },
+        { name: 'idx_classroommembership_approved_at', columns: 'approved_at', description: 'Approval timestamp ordering' },
+        { name: 'idx_classroommembership_teacher_workflow', columns: 'teacher_id, status, requested_at', description: 'Teacher dashboard queries' },
+        { name: 'idx_classroommembership_student_status', columns: 'student_id, status', description: 'Student-specific index' }
+      ];
+
+      let createdCount = 0;
+      for (const index of indexes) {
+        try {
+          // Check if index already exists
+          const [indexExists] = await queryInterface.sequelize.query(`
+            SELECT indexname FROM pg_indexes
+            WHERE tablename = 'classroommembership'
+            AND indexname = '${index.name}'
+          `);
+
+          if (indexExists.length > 0) {
+            console.log(`⚠️ Index ${index.name} already exists, skipping`);
+            continue;
+          }
+
+          console.log(`Creating ${index.name} (${index.description})...`);
+
+          // Use CONCURRENTLY to prevent table locks
+          await queryInterface.sequelize.query(`
+            CREATE INDEX CONCURRENTLY "${index.name}" ON "classroommembership" (${index.columns});
+          `);
+
+          console.log(`✅ Created ${index.name}`);
+          createdCount++;
+        } catch (error) {
+          console.log(`⚠️ Failed to create ${index.name}:`, error.message);
+          // Continue with other indexes instead of failing completely
+        }
       }
 
-      // Index for classroom status filtering
-      try {
-        await queryInterface.addIndex('classroommembership', {
-          fields: ['classroom_id', 'status'],
-          name: 'idx_classroommembership_classroom_status'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_classroom_status');
-      } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_classroom_status may already exist');
-      }
-
-      // Index for request timestamp ordering
-      try {
-        await queryInterface.addIndex('classroommembership', {
-          fields: ['requested_at'],
-          name: 'idx_classroommembership_requested_at'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_requested_at');
-      } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_requested_at may already exist');
-      }
-
-      // Index for approval timestamp ordering
-      try {
-        await queryInterface.addIndex('classroommembership', {
-          fields: ['approved_at'],
-          name: 'idx_classroommembership_approved_at'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_approved_at');
-      } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_approved_at may already exist');
-      }
-
-      // Performance index for teacher dashboard queries
-      try {
-        await queryInterface.addIndex('classroommembership', {
-          fields: ['teacher_id', 'status', 'requested_at'],
-          name: 'idx_classroommembership_teacher_workflow'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_teacher_workflow');
-      } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_teacher_workflow may already exist');
-      }
-
-      // Student-specific index using student_id
-      try {
-        await queryInterface.addIndex('classroommembership', {
-          fields: ['student_id', 'status'],
-          name: 'idx_classroommembership_student_status'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_student_status');
-      } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_student_status may already exist');
-      }
+      console.log(`✅ Created ${createdCount} workflow indexes using CONCURRENTLY`)
 
       // Step 8: Verify the migration
       const updatedTable = await queryInterface.describeTable('classroommembership');
@@ -227,69 +203,74 @@ module.exports = {
       console.log('✅ ClassroomMembership approval workflow migration completed successfully:');
       console.log('   - Added status enum with workflow states');
       console.log('   - Added approval timestamps and message fields');
-      console.log('   - Created workflow-optimized indexes');
+      console.log('   - Created workflow-optimized indexes using CONCURRENTLY');
       console.log('   - Updated existing memberships with proper timestamps');
       console.log('   - Compatible with unified student_id field');
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ ClassroomMembership approval workflow migration failed:', error);
-      throw error;
-    }
   },
 
   async down(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging during rollback
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
 
-    try {
-      console.log('🔄 Rolling back ClassroomMembership approval workflow...');
+    console.log('🔄 Rolling back ClassroomMembership approval workflow...');
 
-      // Remove workflow-specific indexes
-      const indexesToRemove = [
-        'idx_classroommembership_student_status',
-        'idx_classroommembership_teacher_workflow',
-        'idx_classroommembership_approved_at',
-        'idx_classroommembership_requested_at'
-      ];
+    // Remove workflow-specific indexes
+    const indexesToRemove = [
+      'idx_classroommembership_student_status',
+      'idx_classroommembership_teacher_workflow',
+      'idx_classroommembership_approved_at',
+      'idx_classroommembership_requested_at',
+      'idx_classroommembership_teacher_status',
+      'idx_classroommembership_classroom_status'
+    ];
 
-      for (const indexName of indexesToRemove) {
-        try {
-          await queryInterface.removeIndex('classroommembership', indexName, { transaction });
-          console.log(`✅ Removed index ${indexName}`);
-        } catch (error) {
-          console.log(`⚠️ Index ${indexName} may not exist:`, error.message);
+    let removedCount = 0;
+    for (const indexName of indexesToRemove) {
+      try {
+        // Check if index exists before trying to remove it
+        const [indexExists] = await queryInterface.sequelize.query(`
+          SELECT indexname FROM pg_indexes
+          WHERE tablename = 'classroommembership'
+          AND indexname = '${indexName}'
+        `);
+
+        if (indexExists.length === 0) {
+          console.log(`⚠️ Index ${indexName} does not exist, skipping`);
+          continue;
         }
+
+        // Drop index using raw SQL for better control
+        await queryInterface.sequelize.query(`DROP INDEX IF EXISTS "${indexName}";`);
+        console.log(`✅ Removed index ${indexName}`);
+        removedCount++;
+      } catch (error) {
+        console.log(`⚠️ Failed to remove ${indexName}:`, error.message);
+        // Continue with other indexes instead of failing completely
       }
-
-      // Remove approval workflow columns
-      const columnsToRemove = [
-        'student_display_name',
-        'approval_message',
-        'request_message',
-        'approved_at',
-        'requested_at'
-      ];
-
-      for (const columnName of columnsToRemove) {
-        try {
-          await queryInterface.removeColumn('classroommembership', columnName, { transaction });
-          console.log(`✅ Removed column ${columnName}`);
-        } catch (error) {
-          console.log(`⚠️ Column ${columnName} may not exist:`, error.message);
-        }
-      }
-
-      // Note: We don't remove the status enum completely as it might break existing data
-      // In production, enum modifications should be handled more carefully
-
-      console.log('✅ ClassroomMembership approval workflow rollback completed');
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ ClassroomMembership approval workflow rollback failed:', error);
-      throw error;
     }
+
+    // Remove approval workflow columns
+    const columnsToRemove = [
+      'student_display_name',
+      'approval_message',
+      'request_message',
+      'approved_at',
+      'requested_at'
+    ];
+
+    for (const columnName of columnsToRemove) {
+      try {
+        await queryInterface.removeColumn('classroommembership', columnName);
+        console.log(`✅ Removed column ${columnName}`);
+      } catch (error) {
+        console.log(`⚠️ Column ${columnName} may not exist:`, error.message);
+      }
+    }
+
+    // Note: We don't remove the status enum completely as it might break existing data
+    // In production, enum modifications should be handled more carefully
+
+    console.log(`✅ ClassroomMembership approval workflow rollback completed. Removed ${removedCount} indexes.`);
   }
 };

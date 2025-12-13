@@ -10,73 +10,88 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 120000;'); // 2 minutes for index creation
 
-    try {
-      console.log('🔄 Adding ClassroomMembership table indexes...');
+    console.log('🔄 Adding ClassroomMembership table indexes using CONCURRENTLY...');
 
-      // Student membership queries (unified student_id)
+    const indexes = [
+      { name: 'idx_classroommembership_student', columns: 'student_id', description: 'Student membership queries', unique: false },
+      { name: 'idx_classroommembership_unique_student_membership', columns: 'classroom_id, student_id', description: 'Unique membership constraint', unique: true }
+    ];
+
+    let createdCount = 0;
+    for (const index of indexes) {
       try {
-        await queryInterface.addIndex('classroommembership', {
-          fields: ['student_id'],
-          name: 'idx_classroommembership_student'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_student');
+        // Check if index already exists
+        const [indexExists] = await queryInterface.sequelize.query(`
+          SELECT indexname FROM pg_indexes
+          WHERE tablename = 'classroommembership'
+          AND indexname = '${index.name}'
+        `);
+
+        if (indexExists.length > 0) {
+          console.log(`⚠️ Index ${index.name} already exists, skipping`);
+          continue;
+        }
+
+        console.log(`Creating ${index.name} (${index.description})...`);
+
+        // Use CONCURRENTLY to prevent table locks
+        const uniqueClause = index.unique ? 'UNIQUE' : '';
+        await queryInterface.sequelize.query(`
+          CREATE ${uniqueClause} INDEX CONCURRENTLY "${index.name}" ON "classroommembership" (${index.columns});
+        `);
+
+        console.log(`✅ Created ${index.name}`);
+        createdCount++;
       } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_student may already exist');
+        console.log(`⚠️ Failed to create ${index.name}:`, error.message);
+        // Continue with other indexes instead of failing completely
       }
-
-      // Unique membership constraint (updated for student_id)
-      try {
-        await queryInterface.addIndex('classroommembership', {
-          unique: true,
-          fields: ['classroom_id', 'student_id'],
-          name: 'idx_classroommembership_unique_student_membership'
-        }, { transaction });
-        console.log('✅ Created idx_classroommembership_unique_student_membership');
-      } catch (error) {
-        console.log('⚠️ Index idx_classroommembership_unique_student_membership may already exist');
-      }
-
-      console.log('✅ ClassroomMembership table indexes completed successfully (2 indexes)');
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ ClassroomMembership indexes migration failed:', error);
-      throw error;
     }
+
+    console.log(`✅ ClassroomMembership table indexes completed. Created ${createdCount} new indexes.`);
   },
 
   async down(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging during rollback
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
 
-    try {
-      console.log('🔄 Rolling back ClassroomMembership table indexes...');
+    console.log('🔄 Rolling back ClassroomMembership table indexes...');
 
-      const indexesToRemove = [
-        'idx_classroommembership_student',
-        'idx_classroommembership_unique_student_membership'
-      ];
+    const indexesToRemove = [
+      'idx_classroommembership_student',
+      'idx_classroommembership_unique_student_membership'
+    ];
 
-      let removedCount = 0;
-      for (const indexName of indexesToRemove) {
-        try {
-          await queryInterface.removeIndex('classroommembership', indexName, { transaction });
-          console.log(`✅ Removed index ${indexName}`);
-          removedCount++;
-        } catch (error) {
-          console.log(`⚠️ Index ${indexName} may not exist:`, error.message);
+    let removedCount = 0;
+    for (const indexName of indexesToRemove) {
+      try {
+        // Check if index exists before trying to remove it
+        const [indexExists] = await queryInterface.sequelize.query(`
+          SELECT indexname FROM pg_indexes
+          WHERE tablename = 'classroommembership'
+          AND indexname = '${indexName}'
+        `);
+
+        if (indexExists.length === 0) {
+          console.log(`⚠️ Index ${indexName} does not exist, skipping`);
+          continue;
         }
+
+        // Drop index using raw SQL for better control
+        await queryInterface.sequelize.query(`DROP INDEX IF EXISTS "${indexName}";`);
+        console.log(`✅ Removed index ${indexName}`);
+        removedCount++;
+      } catch (error) {
+        console.log(`⚠️ Failed to remove ${indexName}:`, error.message);
+        // Continue with other indexes instead of failing completely
       }
-
-      console.log(`✅ ClassroomMembership indexes rollback completed. Removed ${removedCount} indexes.`);
-
-      await transaction.commit();
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ ClassroomMembership indexes rollback failed:', error);
-      throw error;
     }
+
+    console.log(`✅ ClassroomMembership indexes rollback completed. Removed ${removedCount} indexes.`);
   }
 };

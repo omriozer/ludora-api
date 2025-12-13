@@ -10,10 +10,12 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 120000;'); // 2 minutes for index creation
 
     try {
-      console.log('🔄 Adding Classroom table indexes...');
+      console.log('🔄 Adding ' + tableName + ' table indexes using CONCURRENTLY...');...');
 
       // Teacher active classrooms index
       try {
@@ -48,7 +50,9 @@ module.exports = {
   },
 
   async down(queryInterface, Sequelize) {
-    const transaction = await queryInterface.sequelize.transaction();
+    // Set timeouts to prevent hanging
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 120000;'); // 2 minutes for index creation
 
     try {
       console.log('🔄 Rolling back Classroom table indexes...');
