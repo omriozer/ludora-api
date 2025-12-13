@@ -6,121 +6,90 @@ module.exports = {
     /**
      * Rename all remaining student_user_id columns to student_id for unified system
      *
-     * This migration completes the transition from student_user_id to student_id
-     * across all tables in the system.
+     * Optimized version to prevent hanging during deployment
      */
 
-    // 1. Fix StudentInvitation table
-    try {
-      console.log('Checking StudentInvitation table...');
+    // Set reasonable lock timeouts to prevent hanging
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
 
-      // Check if column exists before renaming
-      const [results] = await queryInterface.sequelize.query(`
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name = 'studentinvitation'
-        AND column_name = 'student_user_id'
-      `);
+    console.log('Starting optimized student_user_id -> student_id migration...');
 
-      if (results.length > 0) {
-        console.log('Renaming student_user_id to student_id in studentinvitation table...');
-        await queryInterface.renameColumn('studentinvitation', 'student_user_id', 'student_id');
-        console.log('✅ StudentInvitation table updated');
+    // Single query to find all tables that need updating
+    const [tablesToUpdate] = await queryInterface.sequelize.query(`
+      SELECT table_name
+      FROM information_schema.columns
+      WHERE column_name = 'student_user_id'
+      AND table_name IN ('studentinvitation', 'parentconsent', 'classroommembership')
+      ORDER BY table_name
+    `);
 
-        // Update any indexes that reference the old column name
+    if (tablesToUpdate.length === 0) {
+      console.log('✅ No tables need updating - all already use student_id');
+      return;
+    }
+
+    console.log(`Found ${tablesToUpdate.length} table(s) to update:`, tablesToUpdate.map(t => t.table_name));
+
+    // Process each table with optimized operations
+    for (const { table_name } of tablesToUpdate) {
+      try {
+        console.log(`Processing ${table_name}...`);
+
+        // Use raw SQL for faster execution than Sequelize's renameColumn
+        await queryInterface.sequelize.query(`
+          ALTER TABLE "${table_name}"
+          RENAME COLUMN student_user_id TO student_id;
+        `);
+
+        // Handle index updates efficiently
+        const indexName = `idx_${table_name}_student_user_id`;
+        const newIndexName = `idx_${table_name}_student_id`;
+
         try {
-          await queryInterface.removeIndex('studentinvitation', 'idx_studentinvitation_student_user_id');
-          await queryInterface.addIndex('studentinvitation', {
-            fields: ['student_id'],
-            name: 'idx_studentinvitation_student_id'
-          });
+          // Check if old index exists and drop it
+          const [indexExists] = await queryInterface.sequelize.query(`
+            SELECT indexname FROM pg_indexes
+            WHERE tablename = '${table_name}'
+            AND indexname = '${indexName}'
+          `);
+
+          if (indexExists.length > 0) {
+            await queryInterface.sequelize.query(`DROP INDEX IF EXISTS "${indexName}";`);
+
+            // Create new index
+            await queryInterface.sequelize.query(`
+              CREATE INDEX CONCURRENTLY "${newIndexName}" ON "${table_name}" (student_id);
+            `);
+            console.log(`✅ Index updated for ${table_name}`);
+          }
         } catch (indexError) {
-          console.log('Index update not needed or failed:', indexError.message);
+          console.log(`Index update skipped for ${table_name}:`, indexError.message);
         }
-      } else {
-        console.log('StudentInvitation table already has student_id column');
+
+        console.log(`✅ ${table_name} updated successfully`);
+
+      } catch (error) {
+        console.log(`⚠️ Failed to update ${table_name}:`, error.message);
+        // Continue with other tables instead of failing completely
       }
-    } catch (error) {
-      console.log('StudentInvitation table update failed or not needed:', error.message);
     }
 
-    // 2. Fix ParentConsent table (if it exists)
-    try {
-      console.log('Checking ParentConsent table...');
+    // Final verification with single query
+    const [remainingColumns] = await queryInterface.sequelize.query(`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE column_name = 'student_user_id'
+      ORDER BY table_name
+    `);
 
-      // Check if table exists and has the column
-      const [parentConsentResults] = await queryInterface.sequelize.query(`
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name = 'parentconsent'
-        AND column_name = 'student_user_id'
-      `);
-
-      if (parentConsentResults.length > 0) {
-        console.log('Renaming student_user_id to student_id in parentconsent table...');
-        await queryInterface.renameColumn('parentconsent', 'student_user_id', 'student_id');
-        console.log('✅ ParentConsent table updated');
-
-        // Update any indexes that reference the old column name
-        try {
-          await queryInterface.removeIndex('parentconsent', 'idx_parentconsent_student_user_id');
-          await queryInterface.addIndex('parentconsent', {
-            fields: ['student_id'],
-            name: 'idx_parentconsent_student_id'
-          });
-        } catch (indexError) {
-          console.log('ParentConsent index update not needed or failed:', indexError.message);
-        }
-      } else {
-        console.log('ParentConsent table does not exist or already has student_id column');
-      }
-    } catch (error) {
-      console.log('ParentConsent table update failed or not needed:', error.message);
-    }
-
-    // 3. Double-check ClassroomMembership table (should already be done)
-    try {
-      console.log('Verifying ClassroomMembership table...');
-
-      const [classroomResults] = await queryInterface.sequelize.query(`
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name = 'classroommembership'
-        AND column_name = 'student_user_id'
-      `);
-
-      if (classroomResults.length > 0) {
-        console.log('ClassroomMembership still has student_user_id, fixing...');
-        await queryInterface.renameColumn('classroommembership', 'student_user_id', 'student_id');
-        console.log('✅ ClassroomMembership table updated');
-      } else {
-        console.log('✅ ClassroomMembership table already has student_id column');
-      }
-    } catch (error) {
-      console.log('ClassroomMembership verification failed:', error.message);
-    }
-
-    // 4. Check for any other tables with student_user_id columns
-    try {
-      console.log('Scanning for any remaining student_user_id columns...');
-
-      const [allResults] = await queryInterface.sequelize.query(`
-        SELECT table_name, column_name
-        FROM information_schema.columns
-        WHERE column_name = 'student_user_id'
-        ORDER BY table_name
-      `);
-
-      if (allResults.length > 0) {
-        console.log('⚠️ Found remaining student_user_id columns:');
-        allResults.forEach(result => {
-          console.log(`   - ${result.table_name}.${result.column_name}`);
-        });
-      } else {
-        console.log('✅ No remaining student_user_id columns found');
-      }
-    } catch (error) {
-      console.log('Full scan failed:', error.message);
+    if (remainingColumns.length > 0) {
+      console.log('⚠️ Some student_user_id columns remain:');
+      remainingColumns.forEach(result => {
+        console.log(`   - ${result.table_name}.${result.column_name}`);
+      });
+    } else {
+      console.log('✅ All student_user_id columns successfully renamed to student_id');
     }
 
     console.log('Student ID unification migration completed');
@@ -129,51 +98,73 @@ module.exports = {
   async down(queryInterface, Sequelize) {
     /**
      * Revert all column renames back to student_user_id
+     * Optimized version to prevent hanging during rollback
      */
 
-    console.log('Reverting student_id columns back to student_user_id...');
+    // Set reasonable lock timeouts to prevent hanging
+    await queryInterface.sequelize.query('SET lock_timeout = 30000;'); // 30 seconds
+    await queryInterface.sequelize.query('SET statement_timeout = 60000;'); // 60 seconds
 
-    // Revert StudentInvitation
-    try {
-      await queryInterface.renameColumn('studentinvitation', 'student_id', 'student_user_id');
+    console.log('Starting optimized rollback: student_id -> student_user_id...');
 
-      // Revert indexes
-      try {
-        await queryInterface.removeIndex('studentinvitation', 'idx_studentinvitation_student_id');
-        await queryInterface.addIndex('studentinvitation', {
-          fields: ['student_user_id'],
-          name: 'idx_studentinvitation_student_user_id'
-        });
-      } catch (indexError) {
-        console.log('StudentInvitation index revert failed:', indexError.message);
-      }
-    } catch (error) {
-      console.log('StudentInvitation revert failed:', error.message);
+    // Single query to find all tables that need reverting
+    const [tablesToRevert] = await queryInterface.sequelize.query(`
+      SELECT table_name
+      FROM information_schema.columns
+      WHERE column_name = 'student_id'
+      AND table_name IN ('studentinvitation', 'parentconsent', 'classroommembership')
+      ORDER BY table_name
+    `);
+
+    if (tablesToRevert.length === 0) {
+      console.log('✅ No tables need reverting - all already use student_user_id');
+      return;
     }
 
-    // Revert ParentConsent
-    try {
-      await queryInterface.renameColumn('parentconsent', 'student_id', 'student_user_id');
+    console.log(`Found ${tablesToRevert.length} table(s) to revert:`, tablesToRevert.map(t => t.table_name));
 
-      // Revert indexes
+    // Process each table with optimized operations
+    for (const { table_name } of tablesToRevert) {
       try {
-        await queryInterface.removeIndex('parentconsent', 'idx_parentconsent_student_id');
-        await queryInterface.addIndex('parentconsent', {
-          fields: ['student_user_id'],
-          name: 'idx_parentconsent_student_user_id'
-        });
-      } catch (indexError) {
-        console.log('ParentConsent index revert failed:', indexError.message);
-      }
-    } catch (error) {
-      console.log('ParentConsent revert failed:', error.message);
-    }
+        console.log(`Reverting ${table_name}...`);
 
-    // Revert ClassroomMembership if needed
-    try {
-      await queryInterface.renameColumn('classroommembership', 'student_id', 'student_user_id');
-    } catch (error) {
-      console.log('ClassroomMembership revert failed:', error.message);
+        // Use raw SQL for faster execution
+        await queryInterface.sequelize.query(`
+          ALTER TABLE "${table_name}"
+          RENAME COLUMN student_id TO student_user_id;
+        `);
+
+        // Handle index updates efficiently
+        const oldIndexName = `idx_${table_name}_student_id`;
+        const newIndexName = `idx_${table_name}_student_user_id`;
+
+        try {
+          // Check if old index exists and drop it
+          const [indexExists] = await queryInterface.sequelize.query(`
+            SELECT indexname FROM pg_indexes
+            WHERE tablename = '${table_name}'
+            AND indexname = '${oldIndexName}'
+          `);
+
+          if (indexExists.length > 0) {
+            await queryInterface.sequelize.query(`DROP INDEX IF EXISTS "${oldIndexName}";`);
+
+            // Create new index
+            await queryInterface.sequelize.query(`
+              CREATE INDEX CONCURRENTLY "${newIndexName}" ON "${table_name}" (student_user_id);
+            `);
+            console.log(`✅ Index reverted for ${table_name}`);
+          }
+        } catch (indexError) {
+          console.log(`Index revert skipped for ${table_name}:`, indexError.message);
+        }
+
+        console.log(`✅ ${table_name} reverted successfully`);
+
+      } catch (error) {
+        console.log(`⚠️ Failed to revert ${table_name}:`, error.message);
+        // Continue with other tables instead of failing completely
+      }
     }
 
     console.log('Column rename revert completed');
